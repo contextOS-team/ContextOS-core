@@ -1,0 +1,30 @@
+[project]
+id = "contextos"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+
+[db]
+port = 54322
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+
+[auth.external.linear]
+enabled = true
+client_id = "env(LINEAR_CLIENT_ID)"
+secret = "env(LINEAR_CLIENT_SECRET)"
+
+[auth.external.slack]
+enabled = false
+
+[auth.external.notion]
+enabled = false

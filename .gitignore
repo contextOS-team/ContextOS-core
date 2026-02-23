@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build outputs
+.next/
+dist/
+build/
+*.egg-info/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Supabase
+supabase/.temp/
+
+# Turbo
+.turbo/
+
+# Vercel
+.vercel/
+
+# Type checking
+*.tsbuildinfo
+
+# Testing
+coverage/
+.pytest_cache/
+htmlcov/
+
+# Misc
+*.log
