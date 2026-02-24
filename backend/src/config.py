@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     LINEAR_REDIRECT_URI: str = ""
 
     # Slack
+    SLACK_CLIENT_ID: str = ""
+    SLACK_CLIENT_SECRET: str = ""
+    SLACK_SIGNING_SECRET: str = ""
+    SLACK_REDIRECT_URI: str = ""
     SLACK_BOT_TOKEN: str = ""
 
     # Redis (for caching)
@@ -74,6 +78,17 @@ class Settings(BaseSettings):
         if self.LINEAR_REDIRECT_URI:
             return self.LINEAR_REDIRECT_URI
         return f"{self.BACKEND_URL}/api/linear/callback"
+
+    @property
+    def slack_redirect_uri(self) -> str:
+        """Return the Slack OAuth redirect URI.
+
+        Uses SLACK_REDIRECT_URI if set, otherwise defaults to
+        {BACKEND_URL}/api/slack/callback.
+        """
+        if self.SLACK_REDIRECT_URI:
+            return self.SLACK_REDIRECT_URI
+        return f"{self.BACKEND_URL}/api/slack/callback"
 
     model_config = {
         "env_file": "../.env",
