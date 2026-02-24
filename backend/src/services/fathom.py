@@ -9,9 +9,8 @@ Provides functions to:
 Fathom authentication uses a user-provided API key (not OAuth).
 The key is stored encrypted in Supabase Vault.
 
-The Fathom API base URL defaults to https://api.fathom.video/v1
-but is configurable via FATHOM_API_BASE_URL setting in case
-the API endpoint changes.
+The Fathom API base URL defaults to https://api.fathom.ai/external/v1
+but is configurable via FATHOM_API_BASE_URL setting.
 """
 
 import asyncio
@@ -73,8 +72,8 @@ async def connect_fathom(
     # Validate API key by making a test call
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            f"{base_url}/calls",
-            headers={"Authorization": f"Bearer {api_key}"},
+            f"{base_url}/meetings",
+            headers={"X-Api-Key": api_key},
             params={"limit": "1"},
         )
 
@@ -103,14 +102,14 @@ async def connect_fathom(
 
     if integration:
         integration.status = "connected"
-        integration.connected_at = datetime.now(timezone.utc)
+        integration.connected_at = datetime.utcnow()
         integration.deleted_at = None
     else:
         integration = WorkspaceIntegration(
             workspace_id=workspace_id,
             provider="fathom",
             status="connected",
-            connected_at=datetime.now(timezone.utc),
+            connected_at=datetime.utcnow(),
         )
         session.add(integration)
 
@@ -258,8 +257,8 @@ async def poll_transcripts(
                 params["cursor"] = cursor
 
             response = await client.get(
-                f"{base_url}/calls",
-                headers={"Authorization": f"Bearer {api_key}"},
+                f"{base_url}/meetings",
+                headers={"X-Api-Key": api_key},
                 params=params,
             )
 
@@ -420,7 +419,7 @@ async def poll_transcripts(
 
     if integration:
         config = dict(integration.config) if integration.config else {}
-        config["last_poll_at"] = datetime.now(timezone.utc).isoformat()
+        config["last_poll_at"] = datetime.utcnow().isoformat()
         integration.config = config
         await session.commit()
 

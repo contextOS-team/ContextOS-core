@@ -149,11 +149,12 @@ async def exchange_code(
     await store_token(session, bot_token_name, access_token_value)
 
     # Upsert OAuthToken record (stores Vault secret name, NOT actual token)
+    # Query WITHOUT deleted_at filter — a soft-deleted row still holds the
+    # unique constraint slot, so we must reuse it on reconnect.
     stmt = select(OAuthToken).where(
         OAuthToken.workspace_id == workspace_id,
         OAuthToken.user_id == user_id,
         OAuthToken.provider == "slack",
-        OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     result = await session.execute(stmt)
     oauth_token = result.scalar_one_or_none()
@@ -163,6 +164,7 @@ async def exchange_code(
         oauth_token.refresh_token = None  # Slack bot tokens have no refresh
         oauth_token.token_expires_at = None  # Slack bot tokens don't expire
         oauth_token.scopes = SLACK_BOT_SCOPES.split(",")
+        oauth_token.deleted_at = None  # un-soft-delete on reconnect
     else:
         oauth_token = OAuthToken(
             workspace_id=workspace_id,
@@ -186,7 +188,7 @@ async def exchange_code(
     if integration:
         integration.status = "connected"
         integration.external_id = team_id
-        integration.connected_at = datetime.now(timezone.utc)
+        integration.connected_at = datetime.utcnow()
         integration.deleted_at = None
     else:
         integration = WorkspaceIntegration(
@@ -194,7 +196,7 @@ async def exchange_code(
             provider="slack",
             status="connected",
             external_id=team_id,
-            connected_at=datetime.now(timezone.utc),
+            connected_at=datetime.utcnow(),
         )
         session.add(integration)
 
@@ -229,7 +231,7 @@ async def disconnect(
     oauth_token = result.scalar_one_or_none()
 
     if oauth_token:
-        oauth_token.deleted_at = datetime.now(timezone.utc)
+        oauth_token.deleted_at = datetime.utcnow()
 
     # Delete Vault secret
     bot_token_name_val = token_name("slack", workspace_id, "bot_access")

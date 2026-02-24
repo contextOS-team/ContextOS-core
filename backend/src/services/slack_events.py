@@ -355,7 +355,7 @@ async def _handle_message_delete(
     existing = result.scalar_one_or_none()
 
     if existing:
-        existing.deleted_at = datetime.now(timezone.utc)
+        existing.deleted_at = datetime.utcnow()
         await session.commit()
         logger.info(
             "Soft-deleted Slack message %s (ts=%s, channel=%s)",

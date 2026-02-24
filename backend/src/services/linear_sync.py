@@ -371,7 +371,7 @@ async def _update_sync_status(
         config = dict(integration.config) if integration.config else {}
         config["sync_status"] = status
         config["tickets_synced"] = tickets_synced
-        config["last_sync_at"] = datetime.now(timezone.utc).isoformat()
+        config["last_sync_at"] = datetime.utcnow().isoformat()
         if team_ids is not None:
             config["synced_teams"] = team_ids
         integration.config = config

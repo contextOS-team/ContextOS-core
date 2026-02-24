@@ -50,7 +50,7 @@ class Settings(BaseSettings):
 
     # Fathom
     FATHOM_API_KEY: str = ""
-    FATHOM_API_BASE_URL: str = "https://api.fathom.video/v1"
+    FATHOM_API_BASE_URL: str = "https://api.fathom.ai/external/v1"
 
     # Redis (for caching)
     REDIS_URL: str = "redis://localhost:6379/0"

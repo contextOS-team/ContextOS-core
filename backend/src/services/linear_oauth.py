@@ -9,7 +9,7 @@ Uses raw httpx + GraphQL per project decision (no Linear SDK).
 
 import hashlib
 import hmac
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import httpx
@@ -131,12 +131,10 @@ async def exchange_code(
     refresh_token_value = token_data.get("refresh_token")
     expires_in = token_data.get("expires_in")
 
-    # Calculate token expiry
+    # Calculate token expiry (naive UTC — matches TIMESTAMP WITHOUT TIME ZONE column)
     token_expires_at = None
     if expires_in:
-        token_expires_at = datetime.now(timezone.utc).replace(
-            microsecond=0
-        ) + __import__("datetime").timedelta(seconds=expires_in)
+        token_expires_at = datetime.utcnow().replace(microsecond=0) + timedelta(seconds=expires_in)
 
     # Store tokens in Vault (encrypted at rest)
     access_name = token_name("linear", workspace_id, "access")
@@ -147,11 +145,12 @@ async def exchange_code(
         await store_token(session, refresh_name, refresh_token_value)
 
     # Upsert OAuthToken record (stores Vault secret names, NOT actual tokens)
+    # Query WITHOUT deleted_at filter — a soft-deleted row still holds the
+    # unique constraint slot, so we must reuse it on reconnect.
     stmt = select(OAuthToken).where(
         OAuthToken.workspace_id == workspace_id,
         OAuthToken.user_id == user_id,
         OAuthToken.provider == "linear",
-        OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     result = await session.execute(stmt)
     oauth_token = result.scalar_one_or_none()
@@ -161,6 +160,7 @@ async def exchange_code(
         oauth_token.refresh_token = refresh_name if refresh_token_value else None
         oauth_token.token_expires_at = token_expires_at
         oauth_token.scopes = ["read", "write"]
+        oauth_token.deleted_at = None  # un-soft-delete on reconnect
     else:
         oauth_token = OAuthToken(
             workspace_id=workspace_id,
@@ -187,7 +187,7 @@ async def exchange_code(
     if integration:
         integration.status = "connected"
         integration.external_id = org_info.get("id")
-        integration.connected_at = datetime.now(timezone.utc)
+        integration.connected_at = datetime.utcnow()
         integration.deleted_at = None
     else:
         integration = WorkspaceIntegration(
@@ -195,7 +195,7 @@ async def exchange_code(
             provider="linear",
             status="connected",
             external_id=org_info.get("id"),
-            connected_at=datetime.now(timezone.utc),
+            connected_at=datetime.utcnow(),
         )
         session.add(integration)
 
@@ -278,7 +278,7 @@ async def refresh_access_token(
         raise OAuthError("No OAuth token found for this workspace")
 
     # If token is still valid, return current access token
-    if oauth_token.token_expires_at and oauth_token.token_expires_at > datetime.now(timezone.utc):
+    if oauth_token.token_expires_at and oauth_token.token_expires_at > datetime.utcnow():
         access_name = token_name("linear", workspace_id, "access")
         current_token = await read_token(session, access_name)
         if current_token:
@@ -327,9 +327,7 @@ async def refresh_access_token(
 
     # Update token expiry in DB
     if expires_in:
-        from datetime import timedelta
-
-        oauth_token.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        oauth_token.token_expires_at = datetime.utcnow().replace(microsecond=0) + timedelta(seconds=expires_in)
 
     await session.commit()
 
@@ -372,11 +370,9 @@ async def get_valid_access_token(
         raise OAuthError("No Linear integration found for this workspace")
 
     # Check if token is still valid (with 5 min buffer)
-    from datetime import timedelta
-
     if oauth_token.token_expires_at:
         buffer = timedelta(minutes=5)
-        if oauth_token.token_expires_at > (datetime.now(timezone.utc) + buffer):
+        if oauth_token.token_expires_at > (datetime.utcnow() + buffer):
             # Token still valid, read from Vault
             access_name = token_name("linear", workspace_id, "access")
             current_token = await read_token(session, access_name)
@@ -413,7 +409,7 @@ async def disconnect(
     oauth_token = result.scalar_one_or_none()
 
     if oauth_token:
-        oauth_token.deleted_at = datetime.now(timezone.utc)
+        oauth_token.deleted_at = datetime.utcnow()
 
     # Delete Vault secrets
     access_name = token_name("linear", workspace_id, "access")
