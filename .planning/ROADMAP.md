@@ -82,11 +82,12 @@ Plans:
   3. When a ticket is created or updated in Linear, the local data updates within seconds via webhook
   4. OAuth tokens refresh automatically before the 24-hour expiry without user intervention
   5. Webhook payloads are verified via HMAC-SHA256 -- tampered payloads are rejected
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: Linear OAuth flow with Vault token storage and auto-refresh (Daulet)
-- [ ] 02-02: Initial ticket sync, embedding generation, webhook listener (Daulet)
+- [ ] 02-01-PLAN.md -- Linear OAuth flow with Vault token storage, token refresh with advisory lock, connect/disconnect/status endpoints
+- [ ] 02-02-PLAN.md -- GraphQL client, initial ticket sync with cursor pagination, team selection, decoupled embedding generation
+- [ ] 02-03-PLAN.md -- Webhook receiver with HMAC-SHA256 verification, idempotent delivery tracking, event-driven ticket/comment updates with selective re-embedding
 
 ### Phase 3: Slack and Meeting Ingestion
 **Goal**: The system ingests real-time Slack messages from selected channels, stores threaded conversations, filters noise, ingests meeting transcripts from Fathom, and provides an integration setup page for managing all connections
@@ -196,7 +197,7 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 2/3 | Complete    | 2026-02-24 |
-| 2. Linear Integration | 0/2 | Not started | - |
+| 2. Linear Integration | 0/3 | Planned | - |
 | 3. Slack and Meeting Ingestion | 0/2 | Not started | - |
 | 4. Context Generation | 0/3 | Not started | - |
 | 5. Delivery Channels | 0/3 | Not started | - |
