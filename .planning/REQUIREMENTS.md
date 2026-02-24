@@ -9,11 +9,11 @@
 ### Foundation (Daulet)
 
 - [x] **FOUND-01**: Database schema with all core tables (workspaces, users, oauth_tokens, linear_tickets, slack_messages, context_pages, meeting_transcripts, embeddings), pgvector (768 dims), RLS policies via Supabase migrations
-- [ ] **FOUND-02**: User can sign up with email and password via Supabase Auth
-- [ ] **FOUND-03**: User can sign in with magic link via Supabase Auth
-- [ ] **FOUND-04**: User session persists across browser refresh
-- [ ] **FOUND-05**: API routes are protected (unauthenticated requests return 401)
-- [ ] **FOUND-06**: Workspace creation on first login with 1:1:1 tenancy model (one workspace = one Linear org + one Slack workspace)
+- [x] **FOUND-02**: User can sign up with email and password via Supabase Auth
+- [x] **FOUND-03**: User can sign in with magic link via Supabase Auth
+- [x] **FOUND-04**: User session persists across browser refresh
+- [x] **FOUND-05**: API routes are protected (unauthenticated requests return 401)
+- [x] **FOUND-06**: Workspace creation on first login with 1:1:1 tenancy model (one workspace = one Linear org + one Slack workspace)
 - [x] **FOUND-07**: Update pyproject.toml dependencies: replace anthropic with google-genai, remove llama-index packages, remove celery[redis]; add slack-bolt, keep redis for caching
 
 ### Linear Integration (Daulet)

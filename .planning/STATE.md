@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 1 of 6 (Foundation)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: Executing Phase 1
-Last activity: 2026-02-24 -- Completed 01-01: Database schema rewrite + backend app skeleton
+Last activity: 2026-02-24 -- Completed 01-02: JWT auth, workspace trigger, tests
 
-Progress: [=.........] 7%
+Progress: [==........] 13%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
+- Total plans completed: 2
 - Average duration: 4min
-- Total execution time: 0.07 hours
+- Total execution time: 0.13 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Foundation | 1 | 4min | 4min |
+| 1. Foundation | 2 | 8min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (4min)
-- Trend: Starting
+- Last 5 plans: 01-01 (4min), 01-02 (4min)
+- Trend: Consistent
 
 *Updated after each plan completion*
 
@@ -51,6 +51,9 @@ Recent decisions affecting current work:
 - [01-01]: Health endpoint checks DB connectivity via SELECT 1 query
 - [01-01]: Codegen target deferred to Phase 2 as Makefile placeholder
 - [01-01]: match_embeddings function filters out soft-deleted embeddings
+- [01-02]: Added audience="authenticated" to JWT decode for Supabase aud claim
+- [01-02]: Test settings patching must override get_settings in both src.config and src.auth
+- [01-02]: Repository layer deferred to Phase 2+; services query DB directly for now
 
 ### Pending Todos
 
@@ -66,5 +69,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Completed 01-01-PLAN.md
-Resume file: .planning/phases/01-foundation/01-01-SUMMARY.md
+Stopped at: Completed 01-02-PLAN.md
+Resume file: .planning/phases/01-foundation/01-02-SUMMARY.md

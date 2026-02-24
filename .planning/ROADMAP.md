@@ -68,7 +68,7 @@ Phase 6    Vault storage, Sentry,     --                         Chrome extensio
 
 Plans:
 - [x] 01-01-PLAN.md -- Database schema rewrite (soft deletes, new tables, 768-dim embeddings) + backend app skeleton (deps, config, FastAPI, SQLModel)
-- [ ] 01-02-PLAN.md -- JWT auth, workspace auto-creation trigger, API protection, tests
+- [x] 01-02-PLAN.md -- JWT auth, workspace auto-creation trigger, API protection, tests
 - [ ] 01-03-PLAN.md -- Auth pages UI (login, signup, magic link, dashboard shell)
 
 ### Phase 2: Linear Integration
@@ -195,7 +195,7 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/3 | Not started | - |
+| 1. Foundation | 2/3 | In Progress | - |
 | 2. Linear Integration | 0/2 | Not started | - |
 | 3. Slack and Meeting Ingestion | 0/2 | Not started | - |
 | 4. Context Generation | 0/3 | Not started | - |
