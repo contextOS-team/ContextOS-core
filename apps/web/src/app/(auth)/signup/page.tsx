@@ -56,7 +56,7 @@ export default function SignupPage() {
 
     // If email confirmation is disabled, the user is signed in immediately
     if (data.session) {
-      router.push('/')
+      router.push('/dashboard')
       router.refresh()
       return
     }

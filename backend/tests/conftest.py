@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
-from jose import jwt
+import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import Settings, get_settings

@@ -4,12 +4,11 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from src.auth import decode_supabase_jwt
+from src.auth import JWTError, decode_supabase_jwt
 from src.db import get_session
 from src.models.user import Profile, WorkspaceMember
 

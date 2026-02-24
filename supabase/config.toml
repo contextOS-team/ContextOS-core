@@ -1,6 +1,3 @@
-[project]
-id = "contextos"
-
 [api]
 enabled = true
 port = 54321

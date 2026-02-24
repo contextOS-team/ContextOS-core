@@ -3,14 +3,27 @@
 import uuid
 from datetime import datetime
 
+from sqlalchemy import text
 from sqlmodel import Field, SQLModel
 
 
 class TimestampMixin(SQLModel):
-    """Mixin providing created_at, updated_at, and deleted_at fields."""
+    """Mixin providing created_at, updated_at, and deleted_at fields.
 
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    Timestamps are managed by the database (default now(), moddatetime trigger).
+    Python-side defaults are not set to avoid naive datetime issues.
+    """
+
+    created_at: datetime | None = Field(
+        default=None,
+        nullable=False,
+        sa_column_kwargs={"server_default": text("now()")},
+    )
+    updated_at: datetime | None = Field(
+        default=None,
+        nullable=False,
+        sa_column_kwargs={"server_default": text("now()")},
+    )
     deleted_at: datetime | None = Field(default=None)
 
 

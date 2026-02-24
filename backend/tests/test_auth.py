@@ -4,10 +4,11 @@ import time
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
 
+from src.auth import JWTError
 from tests.conftest import TEST_EMAIL, TEST_JWT_SECRET, TEST_USER_ID, TEST_WORKSPACE_ID
 
 
@@ -39,8 +40,6 @@ def test_jwt_decode_valid_token(mock_settings) -> None:
 
 def test_jwt_decode_invalid_token(mock_settings) -> None:
     """decode_supabase_jwt raises error on garbage input."""
-    from jose import JWTError
-
     from src.auth import decode_supabase_jwt
 
     with pytest.raises(JWTError):
@@ -49,8 +48,6 @@ def test_jwt_decode_invalid_token(mock_settings) -> None:
 
 def test_jwt_decode_expired_token(mock_settings) -> None:
     """decode_supabase_jwt raises error on expired token."""
-    from jose import JWTError
-
     from src.auth import decode_supabase_jwt
 
     payload = {
@@ -68,8 +65,6 @@ def test_jwt_decode_expired_token(mock_settings) -> None:
 
 def test_jwt_decode_wrong_secret(mock_settings) -> None:
     """decode_supabase_jwt raises error when token signed with different secret."""
-    from jose import JWTError
-
     from src.auth import decode_supabase_jwt
 
     payload = {
@@ -86,8 +81,6 @@ def test_jwt_decode_wrong_secret(mock_settings) -> None:
 
 def test_jwt_decode_missing_sub_claim(mock_settings) -> None:
     """decode_supabase_jwt raises error when 'sub' claim is missing."""
-    from jose import JWTError
-
     from src.auth import decode_supabase_jwt
 
     payload = {
@@ -109,8 +102,7 @@ def test_jwt_decode_missing_sub_claim(mock_settings) -> None:
 def test_me_returns_401_without_token(client: TestClient) -> None:
     """GET /api/auth/me without Authorization header returns 401."""
     response = client.get("/api/auth/me")
-    assert response.status_code in (401, 403)
-    # FastAPI's HTTPBearer returns 403 by default when no credentials provided
+    assert response.status_code == 401
 
 
 def test_me_returns_401_with_invalid_token(client: TestClient) -> None:

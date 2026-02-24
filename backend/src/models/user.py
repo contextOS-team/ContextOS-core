@@ -3,6 +3,7 @@
 import uuid
 from datetime import datetime
 
+from sqlalchemy import text
 from sqlmodel import Field, SQLModel
 
 from src.models.base import TimestampMixin
@@ -31,4 +32,8 @@ class WorkspaceMember(SQLModel, table=True):
     user_id: uuid.UUID = Field(foreign_key="profiles.id", primary_key=True)
     role: str = Field(default="member", nullable=False)
     deleted_at: datetime | None = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime | None = Field(
+        default=None,
+        nullable=False,
+        sa_column_kwargs={"server_default": text("now()")},
+    )

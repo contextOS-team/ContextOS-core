@@ -20,7 +20,7 @@ dependencies = [
     "sqlmodel>=0.0.22",
     "asyncpg",
     "sqlalchemy[asyncio]>=2.0",
-    "python-jose[cryptography]",
+    "PyJWT[crypto]>=2.8",
 ]
 
 [project.optional-dependencies]
