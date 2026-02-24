@@ -6,6 +6,29 @@ ContextOS auto-generates rich context pages for engineering tickets by pulling d
 
 First users are the founding team (dogfooding). The product must be reliable enough for daily use within 2-3 weeks.
 
+## Team
+
+| Person | Role | Scope |
+|--------|------|-------|
+| **Daulet Ashikbayev** | Backend & Integrations | FastAPI backend, OAuth flows, Linear/Slack integrations, webhooks, database schema, MCP server, security/observability |
+| **Dulat** | AI/ML & Synthesis | Embedding model selection, context generation pipeline (LangGraph + Gemini Flash), synthesis prompt engineering, Slack-to-ticket linking logic, quality evaluation |
+| **Bekbol** | Frontend & Extensions | Next.js web dashboard (feed, detail, settings, integration setup), Chrome extension, frontend auth flows, UI/UX |
+
+## Current Milestone: v1.0 Dogfood
+
+**Goal:** Ship a daily-driver quality product where engineers get full AI-generated context on any ticket — pulling from Linear, Slack, and meeting transcripts — delivered as Linear comments, a web dashboard, and MCP tools in IDEs.
+
+**Target features:**
+- Foundation: DB schema, auth (backend + frontend), workspace tenancy
+- Linear integration: OAuth, ticket sync, webhooks, token refresh
+- Slack integration: OAuth, event ingestion, channel selection, message filtering
+- Meeting transcripts: Fathom API ingestion, transcript-to-ticket linking
+- Context generation: LangGraph pipeline, Gemini Flash synthesis, 5-section pages
+- Delivery: Linear comment bot, web dashboard, MCP server for IDEs
+- Dashboard: auth pages, context feed, detail view, settings, integration setup
+- Chrome extension: quick context access
+- Security/observability: Vault token storage, Sentry, Laminar
+
 ## Core Value
 
 When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, what the business requirements are, and a ready-to-paste AI prompt for their coding assistant. No more hunting through Slack threads and Notion pages.
@@ -39,6 +62,10 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 - [ ] Web dashboard: context page detail view with copy AI prompt button
 - [ ] Web dashboard: integration setup page (connect/disconnect Linear, Slack, Notion)
 - [ ] Web dashboard: settings page with API key generation
+- [ ] Web dashboard: auth pages (login, signup, magic link) connecting to Supabase Auth
+- [ ] Chrome extension for quick context access from browser
+- [ ] Fathom API integration for meeting transcript ingestion (Daulet: API, Dulat: linking)
+- [ ] Meeting transcript-to-ticket linking algorithm
 - [ ] Webhook signature verification (Linear HMAC-SHA256, Slack signing secret)
 - [ ] OAuth token storage in Supabase Vault
 - [ ] Sentry error tracking integration
@@ -58,7 +85,7 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 
 ## Context
 
-**Team:** Small founding team dogfooding the product. One engineer (Dulat) owns AI/ML decisions (embedding model selection, synthesis optimization).
+**Team:** Three-person founding team dogfooding the product. Daulet owns backend and integrations, Dulat owns AI/ML (embedding model, synthesis optimization, linking logic), Bekbol owns the web dashboard and Chrome extension.
 
 **Existing codebase:** Scaffold with config files and .gitkeep placeholders. No implementation code. All backend directories (api, agents, ingestion, synthesis, embeddings, workers) are empty. Frontend has Next.js config but no pages or components. MCP server has package.json but no source.
 
@@ -71,6 +98,7 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 - Railway project for backend deployment
 - Vercel project for frontend deployment
 - Gemini API key for synthesis (Dulat's choice over Claude for cost/speed)
+- Fathom API access for meeting transcript ingestion
 
 ## Constraints
 
@@ -105,6 +133,9 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 | Supabase for reads, API for actions | Instant reads via Supabase client, real-time subscriptions, backend for heavy lifting | -- Pending |
 | API key auth for MCP | Standard developer pattern, easy setup (generate key, paste in config) | -- Pending |
 | Defer Notion to v2 | Linear + Slack covers 80% of context. Notion adds complexity for diminishing returns in v1. | -- Pending |
+| Meeting transcripts in v1 | Fathom API ingestion adds meeting context to tickets. Daulet: API, Dulat: linking. | -- Pending |
+| Shared roadmap for all 3 members | Previously Daulet-scoped; expanded to cover Dulat (AI/ML) and Bekbol (frontend) | -- Pending |
+| Bekbol builds auth UI | Login/signup/magic-link pages in Next.js, connecting to Supabase Auth backend | -- Pending |
 
 ---
-*Last updated: 2026-02-24 after initialization*
+*Last updated: 2026-02-24 -- v1.0 milestone started, shared team scope*
