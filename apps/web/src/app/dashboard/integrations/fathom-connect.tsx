@@ -59,7 +59,14 @@ export function FathomConnect({ onConnected }: FathomConnectProps) {
         />
         <p className="text-xs text-muted-foreground">
           Find your API key in{' '}
-          <span className="font-medium">Fathom &rarr; Settings &rarr; API</span>
+          <a
+            href="https://fathom.video/api_clients/new"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >
+            Fathom &rarr; API Clients
+          </a>
         </p>
       </div>
 
