@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 1 of 6 (Foundation)
-Plan: 0 of 3 in current phase
-Status: Context gathered, ready to plan
-Last activity: 2026-02-24 -- Phase 1 context gathered (schema, auth, tenancy, infra decisions)
+Plan: 1 of 3 in current phase
+Status: Executing Phase 1
+Last activity: 2026-02-24 -- Completed 01-01: Database schema rewrite + backend app skeleton
 
-Progress: [..........] 0%
+Progress: [=.........] 7%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: -
-- Total execution time: 0 hours
+- Total plans completed: 1
+- Average duration: 4min
+- Total execution time: 0.07 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 1. Foundation | 1 | 4min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: -
-- Trend: -
+- Last 5 plans: 01-01 (4min)
+- Trend: Starting
 
 *Updated after each plan completion*
 
@@ -46,6 +46,11 @@ Recent decisions affecting current work:
 - [Roadmap]: DASH-01 (auth pages) pulled into Phase 1 so Bekbol works in parallel with Daulet from day one
 - [Roadmap]: DASH-04 (integration setup) pulled into Phase 3 so Bekbol delivers UI alongside Slack/Fathom backend
 - [Roadmap]: Phases 2+3 can overlap; Phase 4 starts after Phase 2 (Linear data needed for synthesis)
+- [01-01]: Used moddatetime extension for updated_at triggers instead of custom function
+- [01-01]: Switched build system from setuptools to hatchling for modern Python packaging
+- [01-01]: Health endpoint checks DB connectivity via SELECT 1 query
+- [01-01]: Codegen target deferred to Phase 2 as Makefile placeholder
+- [01-01]: match_embeddings function filters out soft-deleted embeddings
 
 ### Pending Todos
 
@@ -61,5 +66,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-foundation/01-CONTEXT.md
+Stopped at: Completed 01-01-PLAN.md
+Resume file: .planning/phases/01-foundation/01-01-SUMMARY.md

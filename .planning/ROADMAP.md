@@ -67,7 +67,7 @@ Phase 6    Vault storage, Sentry,     --                         Chrome extensio
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Database schema rewrite (soft deletes, new tables, 768-dim embeddings) + backend app skeleton (deps, config, FastAPI, SQLModel)
+- [x] 01-01-PLAN.md -- Database schema rewrite (soft deletes, new tables, 768-dim embeddings) + backend app skeleton (deps, config, FastAPI, SQLModel)
 - [ ] 01-02-PLAN.md -- JWT auth, workspace auto-creation trigger, API protection, tests
 - [ ] 01-03-PLAN.md -- Auth pages UI (login, signup, magic link, dashboard shell)
 
