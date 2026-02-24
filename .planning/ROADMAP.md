@@ -64,12 +64,12 @@ Phase 6    Vault storage, Sentry,     --                         Chrome extensio
   3. User session persists across browser refresh without re-login
   4. Unauthenticated API requests return 401; unauthenticated browser access redirects to login
   5. First login creates a workspace automatically; all subsequent data is scoped to that workspace
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: Database schema, RLS policies, and Supabase migrations (Daulet)
-- [ ] 01-02: Auth backend, workspace tenancy, API protection, dependency cleanup (Daulet)
-- [ ] 01-03: Auth pages -- login, signup, magic link UI (Bekbol)
+- [ ] 01-01-PLAN.md -- Database schema rewrite (soft deletes, new tables, 768-dim embeddings) + backend app skeleton (deps, config, FastAPI, SQLModel)
+- [ ] 01-02-PLAN.md -- JWT auth, workspace auto-creation trigger, API protection, tests
+- [ ] 01-03-PLAN.md -- Auth pages UI (login, signup, magic link, dashboard shell)
 
 ### Phase 2: Linear Integration
 **Goal**: The system has live Linear ticket data flowing in -- OAuth connected, initial sync complete, webhooks updating tickets in real-time with reliable token refresh
