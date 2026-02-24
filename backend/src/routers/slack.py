@@ -1,8 +1,9 @@
-"""Slack OAuth and Events API endpoints.
+"""Slack OAuth, Events API, and Channel Management endpoints.
 
 Provides connect, callback, disconnect, status endpoints for managing the
-Slack workspace integration, plus the Events API webhook endpoint for
-real-time message ingestion.
+Slack workspace integration, the Events API webhook endpoint for
+real-time message ingestion, and channel listing/selection endpoints
+for controlling which channels are monitored.
 
 The Events API endpoint is NOT JWT-protected -- Slack sends events directly.
 Security is provided by HMAC-SHA256 signature verification using the signing secret.
@@ -21,6 +22,11 @@ from src.db import get_session
 from src.dependencies import UserContext, get_current_user
 from src.models.integration import WorkspaceIntegration
 from src.models.user import WorkspaceMember
+from src.services.slack_channels import (
+    get_cached_channels,
+    list_channels as fetch_channels,
+    save_channel_selection,
+)
 from src.services.slack_events import process_event, verify_signature
 from src.services.slack_oauth import (
     SlackOAuthError,
@@ -150,6 +156,73 @@ async def get_status(
         "team_name": integration.external_id,
         "status": integration.status,
     }
+
+
+@router.get("/channels")
+async def get_channels(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get available Slack channels from cache.
+
+    Returns the cached channel list from workspace_integrations.config.
+    Use POST /channels/refresh to fetch fresh data from Slack API.
+    """
+    channels = await get_cached_channels(session, user.workspace_id)
+    return {"channels": channels}
+
+
+@router.post("/channels/refresh")
+async def refresh_channels(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Refresh the channel list from Slack API.
+
+    Fetches a fresh channel list from the Slack conversations.list API,
+    updates the cache, and returns the result. Triggered by the user
+    clicking the 'Refresh channels' button.
+    """
+    try:
+        channels = await fetch_channels(session, user.workspace_id)
+        return {"channels": channels}
+    except SlackOAuthError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.post("/channels/select")
+async def select_channels(
+    request: Request,
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Save the user's channel selection.
+
+    Accepts a JSON body with channel_ids to monitor:
+    {"channel_ids": ["C123", "C456"]}
+
+    Only messages from selected channels will be ingested.
+    """
+    body = await request.json()
+    channel_ids = body.get("channel_ids", [])
+
+    if not isinstance(channel_ids, list):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="channel_ids must be a list",
+        )
+
+    try:
+        await save_channel_selection(session, user.workspace_id, channel_ids)
+        return {"status": "ok", "selected_channels": channel_ids}
+    except SlackOAuthError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
 
 
 @router.post("/events")
