@@ -26,12 +26,12 @@
 
 ### Slack Integration (Daulet)
 
-- [ ] **SLCK-01**: User can connect Slack workspace via OAuth2 V2 flow with both bot token and user token scopes, handled by Python backend
-- [ ] **SLCK-02**: System ingests real-time Slack messages from user-selected channels via Events API (slack-bolt)
+- [x] **SLCK-01**: User can connect Slack workspace via OAuth2 V2 flow with both bot token and user token scopes, handled by Python backend
+- [x] **SLCK-02**: System ingests real-time Slack messages from user-selected channels via Events API (slack-bolt)
 - [ ] **SLCK-03**: User can select which Slack channels to monitor from their connected workspace
-- [ ] **SLCK-04**: Bot messages and messages shorter than 10 characters are automatically filtered out during ingestion
-- [ ] **SLCK-05**: Thread replies stored with thread_ts relationship for full conversation context
-- [ ] **SLCK-06**: Slack webhook/event signature verification using signing secret on raw request bytes
+- [x] **SLCK-04**: Bot messages and messages shorter than 10 characters are automatically filtered out during ingestion
+- [x] **SLCK-05**: Thread replies stored with thread_ts relationship for full conversation context
+- [x] **SLCK-06**: Slack webhook/event signature verification using signing secret on raw request bytes
 
 ### Meeting Transcripts (Daulet: API, Dulat: linking)
 

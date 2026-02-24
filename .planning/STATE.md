@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 2 - Linear Integration
+**Current focus:** Phase 3 - Slack and Meeting Ingestion
 
 ## Current Position
 
-Phase: 2 of 6 (Linear Integration)
-Plan: 3 of 3 in current phase (PHASE COMPLETE)
-Status: Phase 02 complete -- all 3 plans executed
-Last activity: 2026-02-24 -- Completed 02-03: Linear webhook receiver with HMAC verification
+Phase: 3 of 6 (Slack and Meeting Ingestion)
+Plan: 1 of 3 in current phase
+Status: Executing Phase 03 -- 03-01 Slack OAuth and Events API complete
+Last activity: 2026-02-24 -- Completed 03-01: Slack OAuth and Events API
 
-Progress: [======....] 40%
+Progress: [=======...] 47%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
+- Total plans completed: 7
 - Average duration: 6min
-- Total execution time: 0.63 hours
+- Total execution time: 0.73 hours
 
 **By Phase:**
 
@@ -29,10 +29,11 @@ Progress: [======....] 40%
 |-------|-------|-------|----------|
 | 1. Foundation | 3 | 12min | 4min |
 | 2. Linear Integration | 3 | 26min | 8.7min |
+| 3. Slack/Meeting Ingestion | 1 | 6min | 6min |
 
 **Recent Trend:**
-- Last 5 plans: 01-03 (4min), 02-01 (5min), 02-02 (4min), 02-03 (17min)
-- Trend: 02-03 longer due to complex test isolation debugging
+- Last 5 plans: 02-01 (5min), 02-02 (4min), 02-03 (17min), 03-01 (6min)
+- Trend: 03-01 fast, reusing patterns from Phase 2
 
 *Updated after each plan completion*
 
@@ -70,6 +71,11 @@ Recent decisions affecting current work:
 - [02-03]: Background task delegation for webhook event processing to ensure fast 200 response to Linear
 - [02-03]: Webhook service creates its own session via async_session() for background processing isolation
 - [02-03]: Comment embedding queued for the comment source_type, not re-embedding the parent ticket
+- [03-01]: Slack bot tokens do not expire and have no refresh tokens -- simpler than Linear OAuth
+- [03-01]: Module-level config import (import src.config) for slack router matches webhook pattern
+- [03-01]: Background task delegation for Slack event processing ensures fast 200 response
+- [03-01]: Channel monitoring defaults to all channels if no selected_channels configured
+- [03-01]: Aliased sqlalchemy.text as sa_text to avoid SQLModel/Field namespace collision
 
 ### Pending Todos
 
@@ -85,5 +91,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Completed 02-03-PLAN.md (Linear webhook receiver) -- Phase 02 COMPLETE
-Resume file: .planning/phases/02-linear-integration/02-03-SUMMARY.md
+Stopped at: Completed 03-01-PLAN.md (Slack OAuth and Events API)
+Resume file: .planning/phases/03-slack-meeting-ingestion/03-01-SUMMARY.md
