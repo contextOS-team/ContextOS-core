@@ -7,7 +7,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import Environment, get_settings
+from src.routers.auth import router as auth_router
 from src.routers.health import router as health_router
+from src.routers.workspaces import router as workspaces_router
 
 
 @asynccontextmanager
@@ -45,3 +47,5 @@ app.add_middleware(
 
 # Include routers
 app.include_router(health_router)
+app.include_router(auth_router)
+app.include_router(workspaces_router)

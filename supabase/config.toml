@@ -17,6 +17,15 @@ port = 54323
 enabled = true
 site_url = "http://localhost:3000"
 additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+# JWT access token lifetime (1 hour default -- Supabase refreshes automatically via @supabase/ssr)
+# jwt_expiry = 3600
+
+[auth.sessions]
+# 7-day session TTL per user decision. Supabase handles refresh token rotation
+# automatically via @supabase/ssr on the frontend. After 7 days of inactivity,
+# the user must re-authenticate.
+timebox = "168h"  # 7 days
+inactivity_timeout = "168h"  # 7 days
 
 [auth.email]
 enable_signup = true
