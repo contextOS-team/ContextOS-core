@@ -11,11 +11,11 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from src.config import get_settings
+import src.config as config_module
 from src.db import get_session
 from src.models.integration import WebhookDelivery, WorkspaceIntegration
 
@@ -28,7 +28,11 @@ _MAX_WEBHOOK_AGE_SECONDS = 60
 
 
 @router.post("/linear")
-async def receive_linear_webhook(request: Request, background_tasks: BackgroundTasks) -> dict:
+async def receive_linear_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
     """Receive and process a webhook event from Linear.
 
     This endpoint is NOT JWT-protected -- webhooks come from Linear directly.
@@ -42,7 +46,7 @@ async def receive_linear_webhook(request: Request, background_tasks: BackgroundT
     5. Determine workspace from organizationId in payload
     6. Delegate event processing to background task for fast response
     """
-    settings = get_settings()
+    settings = config_module.get_settings()
 
     # 1. Read raw body bytes
     raw_body = await request.body()
@@ -96,51 +100,43 @@ async def receive_linear_webhook(request: Request, background_tasks: BackgroundT
             detail="Missing Linear-Delivery header",
         )
 
-    # Get a fresh DB session for the idempotency check
-    async for session in get_session():
-        # Check if we already processed this delivery
-        stmt = select(WebhookDelivery).where(WebhookDelivery.delivery_id == delivery_id)
-        result = await session.execute(stmt)
-        existing = result.scalar_one_or_none()
+    # Check if we already processed this delivery
+    stmt = select(WebhookDelivery).where(WebhookDelivery.delivery_id == delivery_id)
+    result = await session.execute(stmt)
+    existing = result.scalar_one_or_none()
 
-        if existing:
-            # Already processed -- return 200 without re-processing
-            return {"status": "already_processed"}
+    if existing:
+        # Already processed -- return 200 without re-processing
+        return {"status": "already_processed"}
 
-        # Record this delivery for idempotency
-        delivery = WebhookDelivery(delivery_id=delivery_id, provider="linear")
-        session.add(delivery)
-        await session.commit()
+    # Record this delivery for idempotency
+    delivery = WebhookDelivery(delivery_id=delivery_id, provider="linear")
+    session.add(delivery)
+    await session.commit()
 
-        # 5. Determine workspace from organizationId
-        organization_id = payload.get("organizationId")
-        workspace_id = None
+    # 5. Determine workspace from organizationId
+    organization_id = payload.get("organizationId")
+    workspace_id = None
 
-        if organization_id:
-            ws_stmt = select(WorkspaceIntegration.workspace_id).where(
-                WorkspaceIntegration.provider == "linear",
-                WorkspaceIntegration.external_id == organization_id,
-            )
-            ws_result = await session.execute(ws_stmt)
-            workspace_id = ws_result.scalar_one_or_none()
+    if organization_id:
+        ws_stmt = select(WorkspaceIntegration.workspace_id).where(
+            WorkspaceIntegration.provider == "linear",
+            WorkspaceIntegration.external_id == organization_id,
+        )
+        ws_result = await session.execute(ws_stmt)
+        workspace_id = ws_result.scalar_one_or_none()
 
-        if workspace_id is None:
-            logger.warning(
-                "Webhook for unknown organization %s (delivery=%s)",
-                organization_id,
-                delivery_id,
-            )
-            return {"status": "unknown_organization"}
+    if workspace_id is None:
+        logger.warning(
+            "Webhook for unknown organization %s (delivery=%s)",
+            organization_id,
+            delivery_id,
+        )
+        return {"status": "unknown_organization"}
 
-        # 6. Delegate event processing to background task
-        from src.services.linear_webhook import process_webhook_event
+    # 6. Delegate event processing to background task
+    from src.services.linear_webhook import process_webhook_event
 
-        background_tasks.add_task(process_webhook_event, workspace_id, payload)
+    background_tasks.add_task(process_webhook_event, workspace_id, payload)
 
-        return {"status": "accepted"}
-
-    # Should never reach here, but satisfy type checker
-    raise HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="Session unavailable",
-    )
+    return {"status": "accepted"}
