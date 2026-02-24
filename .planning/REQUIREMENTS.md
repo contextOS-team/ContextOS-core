@@ -20,8 +20,8 @@
 
 - [x] **LIN-01**: User can connect Linear workspace via OAuth2 flow handled by Python backend (redirect → callback → store tokens in Supabase Vault)
 - [x] **LIN-02**: On first connect, system pulls all active tickets for selected team(s) with identifier, title, description, state, assignee, labels, project, comments; generates embeddings
-- [ ] **LIN-03**: Linear webhooks received at POST /api/webhooks/linear and verified via HMAC-SHA256 with webhook secret using raw request bytes
-- [ ] **LIN-04**: Webhook events (issue create/update, comment create, assignment change) update local linear_tickets data and trigger context page regeneration via FastAPI background tasks
+- [x] **LIN-03**: Linear webhooks received at POST /api/webhooks/linear and verified via HMAC-SHA256 with webhook secret using raw request bytes
+- [x] **LIN-04**: Webhook events (issue create/update, comment create, assignment change) update local linear_tickets data and trigger context page regeneration via FastAPI background tasks
 - [x] **LIN-05**: OAuth token refresh handles Linear's mandatory 24-hour expiry automatically with race condition prevention
 
 ### Slack Integration (Daulet)

@@ -10,29 +10,29 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 2 of 6 (Linear Integration)
-Plan: 2 of 3 in current phase
-Status: Plan 02-02 complete, continuing to 02-03
-Last activity: 2026-02-24 -- Completed 02-02: Linear ticket sync with GraphQL and pagination
+Plan: 3 of 3 in current phase (PHASE COMPLETE)
+Status: Phase 02 complete -- all 3 plans executed
+Last activity: 2026-02-24 -- Completed 02-03: Linear webhook receiver with HMAC verification
 
-Progress: [=====.....] 33%
+Progress: [======....] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 4min
-- Total execution time: 0.35 hours
+- Total plans completed: 6
+- Average duration: 6min
+- Total execution time: 0.63 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Foundation | 3 | 12min | 4min |
-| 2. Linear Integration | 2 | 9min | 4.5min |
+| 2. Linear Integration | 3 | 26min | 8.7min |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (4min), 01-03 (4min), 02-01 (5min), 02-02 (4min)
-- Trend: Consistent
+- Last 5 plans: 01-03 (4min), 02-01 (5min), 02-02 (4min), 02-03 (17min)
+- Trend: 02-03 longer due to complex test isolation debugging
 
 *Updated after each plan completion*
 
@@ -66,6 +66,10 @@ Recent decisions affecting current work:
 - [02-02]: Exponential backoff on 429: 1s initial, 2x multiplier, max 3 retries
 - [02-02]: Sync runs as FastAPI BackgroundTasks, progress stored in workspace_integrations.config JSONB
 - [02-02]: Embedding generation decoupled as stub with correct signatures for Phase 4
+- [02-03]: Module-level config import (import src.config) instead of from-import for reliable test patching across test ordering
+- [02-03]: Background task delegation for webhook event processing to ensure fast 200 response to Linear
+- [02-03]: Webhook service creates its own session via async_session() for background processing isolation
+- [02-03]: Comment embedding queued for the comment source_type, not re-embedding the parent ticket
 
 ### Pending Todos
 
@@ -81,5 +85,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Completed 02-02-PLAN.md (Linear ticket sync with GraphQL)
-Resume file: .planning/phases/02-linear-integration/02-02-SUMMARY.md
+Stopped at: Completed 02-03-PLAN.md (Linear webhook receiver) -- Phase 02 COMPLETE
+Resume file: .planning/phases/02-linear-integration/02-03-SUMMARY.md
