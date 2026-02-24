@@ -10,6 +10,7 @@ from src.config import Environment, get_settings
 from src.routers.auth import router as auth_router
 from src.routers.fathom import router as fathom_router
 from src.routers.health import router as health_router
+from src.routers.integrations import router as integrations_router
 from src.routers.linear import router as linear_router
 from src.routers.slack import router as slack_router
 from src.routers.webhooks import router as webhooks_router
@@ -52,6 +53,7 @@ app.add_middleware(
 # Include routers
 app.include_router(health_router)
 app.include_router(auth_router)
+app.include_router(integrations_router)
 app.include_router(linear_router)
 app.include_router(slack_router)
 app.include_router(fathom_router)
