@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 2 of 6 (Linear Integration)
-Plan: 1 of 3 in current phase
-Status: Plan 02-01 complete, continuing to 02-02
-Last activity: 2026-02-24 -- Completed 02-01: Linear OAuth with Vault token storage
+Plan: 2 of 3 in current phase
+Status: Plan 02-02 complete, continuing to 02-03
+Last activity: 2026-02-24 -- Completed 02-02: Linear ticket sync with GraphQL and pagination
 
-Progress: [====......] 25%
+Progress: [=====.....] 33%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
+- Total plans completed: 5
 - Average duration: 4min
-- Total execution time: 0.3 hours
+- Total execution time: 0.35 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Foundation | 3 | 12min | 4min |
-| 2. Linear Integration | 1 | 5min | 5min |
+| 2. Linear Integration | 2 | 9min | 4.5min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (4min), 01-02 (4min), 01-03 (4min), 02-01 (5min)
+- Last 5 plans: 01-02 (4min), 01-03 (4min), 02-01 (5min), 02-02 (4min)
 - Trend: Consistent
 
 *Updated after each plan completion*
@@ -62,6 +62,10 @@ Recent decisions affecting current work:
 - [02-01]: State parameter uses HMAC-SHA256 signing with LINEAR_CLIENT_SECRET for CSRF protection
 - [02-01]: Token values stored in Vault; DB columns store Vault secret name references, not actual tokens
 - [02-01]: Advisory lock key uses hashtext of workspace_id string for deterministic locking
+- [02-02]: Raw httpx GraphQL client with bare token auth (not Bearer) per Linear API spec
+- [02-02]: Exponential backoff on 429: 1s initial, 2x multiplier, max 3 retries
+- [02-02]: Sync runs as FastAPI BackgroundTasks, progress stored in workspace_integrations.config JSONB
+- [02-02]: Embedding generation decoupled as stub with correct signatures for Phase 4
 
 ### Pending Todos
 
@@ -77,5 +81,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Completed 02-01-PLAN.md (Linear OAuth with Vault storage)
-Resume file: .planning/phases/02-linear-integration/02-01-SUMMARY.md
+Stopped at: Completed 02-02-PLAN.md (Linear ticket sync with GraphQL)
+Resume file: .planning/phases/02-linear-integration/02-02-SUMMARY.md
