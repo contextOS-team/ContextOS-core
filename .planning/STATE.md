@@ -5,32 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 1 - Foundation
+**Current focus:** Phase 2 - Linear Integration
 
 ## Current Position
 
-Phase: 1 of 6 (Foundation) — COMPLETE
-Plan: 3 of 3 in current phase
-Status: Phase 1 complete, pending verification
-Last activity: 2026-02-24 -- Completed 01-03: Frontend auth UI (human-verified)
+Phase: 2 of 6 (Linear Integration)
+Plan: 1 of 3 in current phase
+Status: Plan 02-01 complete, continuing to 02-02
+Last activity: 2026-02-24 -- Completed 02-01: Linear OAuth with Vault token storage
 
-Progress: [===.......] 17%
+Progress: [====......] 25%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 4min
-- Total execution time: 0.2 hours
+- Total execution time: 0.3 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1. Foundation | 3 | 12min | 4min |
+| 2. Linear Integration | 1 | 5min | 5min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (4min), 01-02 (4min), 01-03 (4min)
+- Last 5 plans: 01-01 (4min), 01-02 (4min), 01-03 (4min), 02-01 (5min)
 - Trend: Consistent
 
 *Updated after each plan completion*
@@ -57,6 +58,10 @@ Recent decisions affecting current work:
 - [01-03]: Dashboard uses /dashboard path instead of (dashboard) route group for cleaner URLs
 - [01-03]: SignOutButton extracted as client component to keep dashboard layout as server component
 - [01-03]: Magic link emailRedirectTo falls back to window.location.origin when env var is unset
+- [02-01]: Vault secrets API (vault.create_secret/decrypted_secrets) used over raw pgsodium for simpler token storage
+- [02-01]: State parameter uses HMAC-SHA256 signing with LINEAR_CLIENT_SECRET for CSRF protection
+- [02-01]: Token values stored in Vault; DB columns store Vault secret name references, not actual tokens
+- [02-01]: Advisory lock key uses hashtext of workspace_id string for deterministic locking
 
 ### Pending Todos
 
@@ -72,5 +77,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Completed 01-03-PLAN.md (Phase 1 all plans done)
-Resume file: .planning/phases/01-foundation/01-03-SUMMARY.md
+Stopped at: Completed 02-01-PLAN.md (Linear OAuth with Vault storage)
+Resume file: .planning/phases/02-linear-integration/02-01-SUMMARY.md

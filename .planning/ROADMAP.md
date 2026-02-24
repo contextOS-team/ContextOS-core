@@ -69,7 +69,7 @@ Phase 6    Vault storage, Sentry,     --                         Chrome extensio
 Plans:
 - [x] 01-01-PLAN.md -- Database schema rewrite (soft deletes, new tables, 768-dim embeddings) + backend app skeleton (deps, config, FastAPI, SQLModel)
 - [x] 01-02-PLAN.md -- JWT auth, workspace auto-creation trigger, API protection, tests
-- [ ] 01-03-PLAN.md -- Auth pages UI (login, signup, magic link, dashboard shell)
+- [x] 01-03-PLAN.md -- Auth pages UI (login, signup, magic link, dashboard shell)
 
 ### Phase 2: Linear Integration
 **Goal**: The system has live Linear ticket data flowing in -- OAuth connected, initial sync complete, webhooks updating tickets in real-time with reliable token refresh
@@ -85,7 +85,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- Linear OAuth flow with Vault token storage, token refresh with advisory lock, connect/disconnect/status endpoints
+- [x] 02-01-PLAN.md -- Linear OAuth flow with Vault token storage, token refresh with advisory lock, connect/disconnect/status endpoints
 - [ ] 02-02-PLAN.md -- GraphQL client, initial ticket sync with cursor pagination, team selection, decoupled embedding generation
 - [ ] 02-03-PLAN.md -- Webhook receiver with HMAC-SHA256 verification, idempotent delivery tracking, event-driven ticket/comment updates with selective re-embedding
 
@@ -196,8 +196,8 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 2/3 | Complete    | 2026-02-24 |
-| 2. Linear Integration | 0/3 | Planned | - |
+| 1. Foundation | 3/3 | Complete    | 2026-02-24 |
+| 2. Linear Integration | 1/3 | In Progress | - |
 | 3. Slack and Meeting Ingestion | 0/2 | Not started | - |
 | 4. Context Generation | 0/3 | Not started | - |
 | 5. Delivery Channels | 0/3 | Not started | - |
