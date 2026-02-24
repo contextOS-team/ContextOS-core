@@ -102,11 +102,12 @@ Plans:
   5. Slack event signatures are verified -- tampered events are rejected
   6. Meeting transcripts from Fathom are ingested with participant info, timestamps, and full text
   7. Integration setup page shows connection status for Linear, Slack, and Fathom with connect/disconnect actions
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: Slack OAuth, Events API ingestion, channel selection, message filtering (Daulet)
-- [ ] 03-02: Fathom API integration and integration setup page (Daulet + Bekbol)
+- [ ] 03-01-PLAN.md -- Slack OAuth flow, Events API endpoint with signature verification, real-time message ingestion with filtering and threading
+- [ ] 03-02-PLAN.md -- Slack channel selection (list, save, refresh) and Fathom API transcript ingestion with speaker-segmented storage
+- [ ] 03-03-PLAN.md -- Integration setup page with cards for Linear, Slack, Fathom, channel picker, and Fathom API key form
 
 ### Phase 4: Context Generation
 **Goal**: The system generates rich 5-section AI context pages from Linear tickets, Slack conversations, and meeting transcripts -- the core product value that makes ContextOS worth using
