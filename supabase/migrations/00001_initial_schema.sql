@@ -165,7 +165,7 @@ create table public.embeddings (
   source_type text not null check (source_type in ('slack_message', 'linear_ticket', 'notion_page', 'meeting_transcript', 'context_page')),
   source_id uuid not null,
   content_hash text not null,  -- to detect changes
-  embedding extensions.vector(1536) not null,
+  embedding vector(1536) not null,
   metadata jsonb default '{}',
   created_at timestamptz not null default now(),
   unique (source_type, source_id)
@@ -175,13 +175,13 @@ create table public.embeddings (
 -- INDEXES
 -- ============================================================
 
--- Vector similarity search
-create index on public.embeddings using ivfflat (embedding extensions.vector_cosine_ops) with (lists = 100);
+-- Vector similarity search (HNSW works on empty tables, unlike IVFFlat)
+create index on public.embeddings using hnsw (embedding vector_cosine_ops);
 
 -- Text search
-create index on public.slack_messages using gin (text extensions.gin_trgm_ops);
-create index on public.linear_tickets using gin (title extensions.gin_trgm_ops);
-create index on public.notion_pages using gin (title extensions.gin_trgm_ops);
+create index on public.slack_messages using gin (text gin_trgm_ops);
+create index on public.linear_tickets using gin (title gin_trgm_ops);
+create index on public.notion_pages using gin (title gin_trgm_ops);
 
 -- Foreign key lookups
 create index on public.linear_tickets (workspace_id);
@@ -216,10 +216,16 @@ create policy "workspace_access" on public.workspaces
     id in (select workspace_id from public.workspace_members where user_id = auth.uid())
   );
 
-create policy "members_access" on public.workspace_members
-  for all using (
+-- Users can see members of workspaces they belong to
+create policy "members_select" on public.workspace_members
+  for select using (
     workspace_id in (select workspace_id from public.workspace_members where user_id = auth.uid())
   );
+
+-- Users can only manage their own membership row
+create policy "members_modify" on public.workspace_members
+  for all using (user_id = auth.uid())
+  with check (user_id = auth.uid());
 
 create policy "own_profile" on public.profiles
   for all using (id = auth.uid());
@@ -283,7 +289,7 @@ create trigger set_updated_at before update on public.context_pages for each row
 
 -- Similarity search function
 create or replace function public.match_embeddings(
-  query_embedding extensions.vector(1536),
+  query_embedding vector(1536),
   match_workspace_id uuid,
   match_source_type text default null,
   match_threshold float default 0.7,

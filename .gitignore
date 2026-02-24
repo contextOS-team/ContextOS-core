@@ -10,11 +10,13 @@ venv/
 dist/
 build/
 *.egg-info/
+*.egg
+.eggs/
 
-# Environment
+# Environment — catch all .env variants
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # IDE
 .vscode/
@@ -25,9 +27,6 @@ build/
 
 # Supabase
 supabase/.temp/
-
-# Turbo
-.turbo/
 
 # Vercel
 .vercel/
@@ -40,5 +39,19 @@ coverage/
 .pytest_cache/
 htmlcov/
 
+# Python tooling caches
+.mypy_cache/
+.ruff_cache/
+
+# Celery
+celerybeat-schedule*
+
+# Secrets — never commit these
+*.pem
+*.key
+*.cert
+
 # Misc
 *.log
+*.db
+*.sqlite3

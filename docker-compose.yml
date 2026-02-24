@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   redis:
     image: redis:7-alpine
@@ -7,13 +5,13 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
 
-  # Celery worker (uses backend code)
   celery-worker:
     build:
       context: ./backend
@@ -23,8 +21,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    volumes:
-      - ./backend:/app
+    restart: on-failure
     profiles:
       - workers
 

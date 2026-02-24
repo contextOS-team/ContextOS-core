@@ -1,10 +1,13 @@
-# Stage 1: Build dependencies
+# Stage 1: Install dependencies only
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
 COPY pyproject.toml .
+
+# Install only the dependencies (not the package itself)
 RUN pip install --no-cache-dir --upgrade pip \
+    && mkdir -p src && touch src/__init__.py \
     && pip install --no-cache-dir .
 
 # Stage 2: Production image
@@ -12,7 +15,6 @@ FROM python:3.12-slim AS production
 
 WORKDIR /app
 
-# Create non-root user
 RUN groupadd --gid 1000 appuser \
     && useradd --uid 1000 --gid 1000 --shell /bin/bash appuser
 
@@ -23,7 +25,6 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Copy application source
 COPY src/ ./src/
 
-# Switch to non-root user
 USER appuser
 
 EXPOSE 8000

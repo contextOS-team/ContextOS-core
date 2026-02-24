@@ -17,7 +17,7 @@ dependencies = [
     "pydantic>=2.0",
     "pydantic-settings",
     "httpx",
-    "laminai",
+    "lmnr",
     "sentry-sdk[fastapi]",
     "python-dotenv",
 ]
