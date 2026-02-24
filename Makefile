@@ -1,4 +1,4 @@
-.PHONY: dev dev-frontend dev-backend dev-workers setup db-reset lint typecheck test clean
+.PHONY: dev dev-frontend dev-backend setup setup-backend db-reset lint typecheck test codegen clean
 
 dev:
 	@echo "Starting Redis..."
@@ -9,32 +9,37 @@ dev-frontend:
 	cd apps/web && pnpm dev
 
 dev-backend:
-	cd backend && . .venv/bin/activate && uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+	cd backend && uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
-dev-workers:
-	docker compose --profile workers up
-
-setup:
+setup: setup-backend
 	@echo "Setting up ContextOS..."
 	cp -n .env.example .env || true
 	cd apps/web && pnpm install
-	cd backend && python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
 	docker compose up -d
 	@echo "Done! Edit .env with your keys, then run 'make dev'"
+
+setup-backend:
+	@echo "Setting up backend..."
+	cd backend && uv sync --all-extras || (cd backend && python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]")
+	@echo "Backend dependencies installed."
 
 db-reset:
 	supabase db reset
 
 lint:
 	cd apps/web && pnpm lint
-	cd backend && . .venv/bin/activate && ruff check .
+	cd backend && uv run ruff check . || (cd backend && . .venv/bin/activate && ruff check .)
 
 typecheck:
 	cd apps/web && pnpm typecheck
-	cd backend && . .venv/bin/activate && mypy src/
+	cd backend && uv run mypy src/ || (cd backend && . .venv/bin/activate && mypy src/)
 
 test:
-	cd backend && . .venv/bin/activate && pytest
+	cd backend && uv run pytest || (cd backend && . .venv/bin/activate && pytest)
+
+codegen:
+	@echo "OpenAPI TypeScript codegen deferred to Phase 2 (see CONTEXT.md cross-team contracts)."
+	@echo "Once FastAPI endpoints exist, this will generate TypeScript types from the OpenAPI spec."
 
 clean:
 	docker compose down -v

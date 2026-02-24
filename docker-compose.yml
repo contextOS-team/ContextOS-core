@@ -12,18 +12,5 @@ services:
       timeout: 5s
       retries: 3
 
-  celery-worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    command: celery -A src.workers.celery_app worker --loglevel=info
-    env_file: .env
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: on-failure
-    profiles:
-      - workers
-
 volumes:
   redis_data:

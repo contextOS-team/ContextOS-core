@@ -3,12 +3,15 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
+# Install uv for fast dependency resolution
+RUN pip install --no-cache-dir uv
+
 COPY pyproject.toml .
 
 # Install only the dependencies (not the package itself)
-RUN pip install --no-cache-dir --upgrade pip \
-    && mkdir -p src && touch src/__init__.py \
-    && pip install --no-cache-dir .
+RUN mkdir -p src && touch src/__init__.py \
+    && uv pip install --system . \
+    || pip install --no-cache-dir .
 
 # Stage 2: Production image
 FROM python:3.12-slim AS production
