@@ -36,6 +36,10 @@ class Settings(BaseSettings):
 
     # Linear
     LINEAR_API_KEY: str = ""
+    LINEAR_CLIENT_ID: str = ""
+    LINEAR_CLIENT_SECRET: str = ""
+    LINEAR_WEBHOOK_SECRET: str = ""
+    LINEAR_REDIRECT_URI: str = ""
 
     # Slack
     SLACK_BOT_TOKEN: str = ""
@@ -59,6 +63,17 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         """Split CORS_ORIGINS by comma into a list."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def linear_redirect_uri(self) -> str:
+        """Return the Linear OAuth redirect URI.
+
+        Uses LINEAR_REDIRECT_URI if set, otherwise defaults to
+        {BACKEND_URL}/api/linear/callback.
+        """
+        if self.LINEAR_REDIRECT_URI:
+            return self.LINEAR_REDIRECT_URI
+        return f"{self.BACKEND_URL}/api/linear/callback"
 
     model_config = {
         "env_file": "../.env",
