@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 3 of 6 (Slack and Meeting Ingestion)
-Plan: 2 of 3 in current phase
-Status: Executing Phase 03 -- 03-02 Slack Channel Selection and Fathom Ingestion complete
-Last activity: 2026-02-24 -- Completed 03-02: Slack Channel Selection and Fathom Transcript Ingestion
+Plan: 3 of 3 in current phase
+Status: Phase 03 complete -- all plans executed, visual verification passed
+Last activity: 2026-02-25 -- Completed 03-03: Integration Setup UI with bugfixes
 
-Progress: [========..] 53%
+Progress: [=========.] 60%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: 7min
-- Total execution time: 0.87 hours
+- Total execution time: 1.03 hours
 
 **By Phase:**
 
@@ -29,7 +29,7 @@ Progress: [========..] 53%
 |-------|-------|-------|----------|
 | 1. Foundation | 3 | 12min | 4min |
 | 2. Linear Integration | 3 | 26min | 8.7min |
-| 3. Slack/Meeting Ingestion | 2 | 14min | 7min |
+| 3. Slack/Meeting Ingestion | 3 | 24min | 8min |
 
 **Recent Trend:**
 - Last 5 plans: 02-02 (4min), 02-03 (17min), 03-01 (6min), 03-02 (8min)
@@ -84,6 +84,9 @@ Recent decisions affecting current work:
 - [03-02]: Fathom dedup uses fathom_id in raw_data JSONB (no dedicated DB column)
 - [03-02]: Processing transcripts skipped and retried on next poll cycle
 - [03-02]: Poll endpoint runs in BackgroundTasks, returns 202 immediately
+- [03-03]: OAuth upsert must query WITHOUT deleted_at filter to reuse soft-deleted rows on reconnect
+- [03-03]: All DB timestamp columns use datetime.utcnow() (naive UTC) -- never datetime.now(timezone.utc)
+- [03-03]: Fathom API base URL is api.fathom.ai/external/v1, auth header is X-Api-Key, endpoint is /meetings
 
 ### Pending Todos
 
@@ -98,6 +101,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-24
-Stopped at: Completed 03-02-PLAN.md (Slack Channel Selection and Fathom Transcript Ingestion)
-Resume file: .planning/phases/03-slack-meeting-ingestion/03-02-SUMMARY.md
+Last session: 2026-02-25
+Stopped at: Phase 03 complete -- ready for verification
+Resume file: .planning/phases/03-slack-meeting-ingestion/03-03-PLAN.md
