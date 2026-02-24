@@ -117,56 +117,56 @@
 
 | Requirement | Phase | Owner | Status |
 |-------------|-------|-------|--------|
-| FOUND-01 | TBD | Daulet | Pending |
-| FOUND-02 | TBD | Daulet | Pending |
-| FOUND-03 | TBD | Daulet | Pending |
-| FOUND-04 | TBD | Daulet | Pending |
-| FOUND-05 | TBD | Daulet | Pending |
-| FOUND-06 | TBD | Daulet | Pending |
-| FOUND-07 | TBD | Daulet | Pending |
-| LIN-01 | TBD | Daulet | Pending |
-| LIN-02 | TBD | Daulet | Pending |
-| LIN-03 | TBD | Daulet | Pending |
-| LIN-04 | TBD | Daulet | Pending |
-| LIN-05 | TBD | Daulet | Pending |
-| SLCK-01 | TBD | Daulet | Pending |
-| SLCK-02 | TBD | Daulet | Pending |
-| SLCK-03 | TBD | Daulet | Pending |
-| SLCK-04 | TBD | Daulet | Pending |
-| SLCK-05 | TBD | Daulet | Pending |
-| SLCK-06 | TBD | Daulet | Pending |
-| MEET-01 | TBD | Daulet | Pending |
-| MEET-02 | TBD | Dulat | Pending |
-| CTXG-01 | TBD | Dulat | Pending |
-| CTXG-02 | TBD | Dulat | Pending |
-| CTXG-03 | TBD | Dulat | Pending |
-| CTXG-04 | TBD | Dulat | Pending |
-| CTXG-05 | TBD | Dulat | Pending |
-| CTXG-06 | TBD | Dulat | Pending |
-| DLVR-01 | TBD | Daulet | Pending |
-| DLVR-02 | TBD | Daulet | Pending |
-| MCP-01 | TBD | Daulet | Pending |
-| MCP-02 | TBD | Daulet | Pending |
-| MCP-03 | TBD | Daulet | Pending |
-| DASH-01 | TBD | Bekbol | Pending |
-| DASH-02 | TBD | Bekbol | Pending |
-| DASH-03 | TBD | Bekbol | Pending |
-| DASH-04 | TBD | Bekbol | Pending |
-| DASH-05 | TBD | Bekbol | Pending |
-| EXT-01 | TBD | Bekbol | Pending |
-| SEC-01 | TBD | Daulet | Pending |
-| SEC-02 | TBD | Daulet | Pending |
-| SEC-03 | TBD | Daulet | Pending |
+| FOUND-01 | Phase 1 | Daulet | Pending |
+| FOUND-02 | Phase 1 | Daulet | Pending |
+| FOUND-03 | Phase 1 | Daulet | Pending |
+| FOUND-04 | Phase 1 | Daulet | Pending |
+| FOUND-05 | Phase 1 | Daulet | Pending |
+| FOUND-06 | Phase 1 | Daulet | Pending |
+| FOUND-07 | Phase 1 | Daulet | Pending |
+| DASH-01 | Phase 1 | Bekbol | Pending |
+| LIN-01 | Phase 2 | Daulet | Pending |
+| LIN-02 | Phase 2 | Daulet | Pending |
+| LIN-03 | Phase 2 | Daulet | Pending |
+| LIN-04 | Phase 2 | Daulet | Pending |
+| LIN-05 | Phase 2 | Daulet | Pending |
+| SLCK-01 | Phase 3 | Daulet | Pending |
+| SLCK-02 | Phase 3 | Daulet | Pending |
+| SLCK-03 | Phase 3 | Daulet | Pending |
+| SLCK-04 | Phase 3 | Daulet | Pending |
+| SLCK-05 | Phase 3 | Daulet | Pending |
+| SLCK-06 | Phase 3 | Daulet | Pending |
+| MEET-01 | Phase 3 | Daulet | Pending |
+| DASH-04 | Phase 3 | Bekbol | Pending |
+| CTXG-01 | Phase 4 | Dulat | Pending |
+| CTXG-02 | Phase 4 | Dulat | Pending |
+| CTXG-03 | Phase 4 | Dulat | Pending |
+| CTXG-04 | Phase 4 | Dulat | Pending |
+| CTXG-05 | Phase 4 | Dulat | Pending |
+| CTXG-06 | Phase 4 | Dulat | Pending |
+| MEET-02 | Phase 4 | Dulat | Pending |
+| DASH-02 | Phase 5 | Bekbol | Pending |
+| DASH-03 | Phase 5 | Bekbol | Pending |
+| DASH-05 | Phase 5 | Bekbol | Pending |
+| DLVR-01 | Phase 5 | Daulet | Pending |
+| DLVR-02 | Phase 5 | Daulet | Pending |
+| MCP-01 | Phase 5 | Daulet | Pending |
+| MCP-02 | Phase 5 | Daulet | Pending |
+| MCP-03 | Phase 5 | Daulet | Pending |
+| EXT-01 | Phase 6 | Bekbol | Pending |
+| SEC-01 | Phase 6 | Daulet | Pending |
+| SEC-02 | Phase 6 | Daulet | Pending |
+| SEC-03 | Phase 6 | Daulet | Pending |
 
 **Coverage:**
 - v1 requirements: 39 total
-- Daulet: 22 requirements
-- Dulat: 7 requirements
-- Bekbol: 7 requirements
-- Shared (Daulet+Dulat): 3 requirements (MEET-01 Daulet, MEET-02 Dulat, overlap in CTXG pipeline)
-- Mapped to phases: 0 (TBD — roadmapper will fill)
-- Unmapped: 39
+- Daulet: 22 requirements (Phases 1, 2, 3, 5, 6)
+- Dulat: 7 requirements (Phase 4)
+- Bekbol: 7 requirements (Phases 1, 3, 5, 6)
+- Shared context: MEET-01 (Daulet, Phase 3) + MEET-02 (Dulat, Phase 4)
+- Mapped to phases: 39/39
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-24*
-*Last updated: 2026-02-24 — v1.0 shared team scope*
+*Last updated: 2026-02-24 -- v1.0 roadmap created, all requirements mapped to phases*

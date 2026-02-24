@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Defining requirements for v1.0
+**Current focus:** Phase 1 - Foundation
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-24 — Milestone v1.0 started, shared team scope
+Phase: 1 of 6 (Foundation)
+Plan: 0 of 3 in current phase
+Status: Ready to plan
+Last activity: 2026-02-24 -- Roadmap created (6 phases, 39 requirements, 3 team members)
 
 Progress: [..........] 0%
 
@@ -42,10 +42,10 @@ Progress: [..........] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- [Milestone]: Expanded from Daulet-only scope to shared roadmap for Daulet, Dulat, and Bekbol
-- [Milestone]: Meeting transcripts (Fathom API) moved from v2 to v1 — Daulet: API, Dulat: linking
-- [Milestone]: Bekbol builds auth UI pages (login, signup, magic link) in Next.js
-- [Roadmap]: Previous research (SUMMARY.md) still valid — reuse for requirements and roadmap
+- [Roadmap]: 6 phases derived from 39 requirements across 3 team members
+- [Roadmap]: DASH-01 (auth pages) pulled into Phase 1 so Bekbol works in parallel with Daulet from day one
+- [Roadmap]: DASH-04 (integration setup) pulled into Phase 3 so Bekbol delivers UI alongside Slack/Fathom backend
+- [Roadmap]: Phases 2+3 can overlap; Phase 4 starts after Phase 2 (Linear data needed for synthesis)
 
 ### Pending Todos
 
@@ -53,13 +53,13 @@ None yet.
 
 ### Blockers/Concerns
 
-- Linear OAuth app registration required before Linear integration phase
-- Slack app registration required before Slack integration phase
-- Gemini API key required before context generation phase
-- Fathom API access required before meeting transcript phase
+- Linear OAuth app registration required before Phase 2
+- Slack app registration required before Phase 3
+- Fathom API access required before Phase 3
+- Gemini API key required before Phase 4
 
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Defining requirements for v1.0 milestone
+Stopped at: Roadmap created for v1.0 milestone
 Resume file: None
