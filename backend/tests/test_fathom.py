@@ -187,7 +187,7 @@ class TestConnectFathom:
         # Mock Fathom API validation response
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {"calls": []}
+        mock_response.json.return_value = {"items": []}
 
         # Mock DB query -- no existing integration
         mock_result = MagicMock()
@@ -218,7 +218,7 @@ class TestConnectFathom:
         assert result["status"] == "connected"
         # Verify Fathom API was called for validation
         assert len(api_call_made) == 1
-        assert "calls" in api_call_made[0]
+        assert "meetings" in api_call_made[0]
 
     @pytest.mark.asyncio
     async def test_connect_stores_key_in_vault(
@@ -231,7 +231,7 @@ class TestConnectFathom:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {"calls": []}
+        mock_response.json.return_value = {"items": []}
 
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
@@ -343,7 +343,7 @@ class TestPollTranscripts:
         mock_api_response = MagicMock()
         mock_api_response.status_code = 200
         mock_api_response.json.return_value = {
-            "calls": [_make_fathom_call()],
+            "items": [_make_fathom_call()],
         }
 
         mock_client = AsyncMock()
@@ -424,7 +424,7 @@ class TestPollTranscripts:
         mock_api_response = MagicMock()
         mock_api_response.status_code = 200
         mock_api_response.json.return_value = {
-            "calls": [_make_fathom_call()],
+            "items": [_make_fathom_call()],
         }
 
         mock_client = AsyncMock()
@@ -481,7 +481,7 @@ class TestPollTranscripts:
         mock_api_response = MagicMock()
         mock_api_response.status_code = 200
         mock_api_response.json.return_value = {
-            "calls": [processing_call],
+            "items": [processing_call],
         }
 
         mock_client = AsyncMock()
@@ -534,7 +534,7 @@ class TestPollTranscripts:
         call = _make_fathom_call()
         mock_api_response = MagicMock()
         mock_api_response.status_code = 200
-        mock_api_response.json.return_value = {"calls": [call]}
+        mock_api_response.json.return_value = {"items": [call]}
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_api_response)
@@ -597,7 +597,7 @@ class TestPollTranscripts:
         mock_api_response = MagicMock()
         mock_api_response.status_code = 200
         mock_api_response.json.return_value = {
-            "calls": [_make_fathom_call()],
+            "items": [_make_fathom_call()],
         }
 
         mock_client = AsyncMock()
@@ -711,7 +711,7 @@ class TestFathomConnectEndpoint:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {"calls": []}
+        mock_response.json.return_value = {"items": []}
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)

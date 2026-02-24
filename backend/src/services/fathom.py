@@ -280,7 +280,7 @@ async def poll_transcripts(
                 break
 
             data = response.json()
-            calls = data.get("calls", data.get("data", []))
+            calls = data.get("items", data.get("calls", []))
 
             if not calls:
                 break
