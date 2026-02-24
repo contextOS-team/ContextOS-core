@@ -2,6 +2,7 @@
 
 from src.models.base import BaseModel, TimestampMixin
 from src.models.integration import OAuthToken, WebhookDelivery, WorkspaceIntegration
+from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.slack import SlackMessage
 from src.models.ticket import LinearComment, LinearTicket
 from src.models.user import Profile, WorkspaceMember
@@ -11,6 +12,8 @@ __all__ = [
     "BaseModel",
     "LinearComment",
     "LinearTicket",
+    "MeetingSegment",
+    "MeetingTranscript",
     "OAuthToken",
     "SlackMessage",
     "TimestampMixin",

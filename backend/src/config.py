@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     SLACK_REDIRECT_URI: str = ""
     SLACK_BOT_TOKEN: str = ""
 
+    # Fathom
+    FATHOM_API_KEY: str = ""
+    FATHOM_API_BASE_URL: str = "https://api.fathom.video/v1"
+
     # Redis (for caching)
     REDIS_URL: str = "redis://localhost:6379/0"
 
