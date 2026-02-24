@@ -1,20 +1,22 @@
-"""Linear OAuth integration endpoints.
+"""Linear OAuth and sync integration endpoints.
 
-Provides connect, callback, disconnect, and status endpoints for
-managing the Linear workspace integration via OAuth2.
+Provides connect, callback, disconnect, status, team selection, and
+sync endpoints for managing the Linear workspace integration.
 """
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import func, select
 
 from src.config import Settings, get_settings
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
 from src.models.integration import WorkspaceIntegration
+from src.models.ticket import LinearTicket
 from src.services.linear_oauth import (
     OAuthError,
     _sign_state,
@@ -22,7 +24,9 @@ from src.services.linear_oauth import (
     build_auth_url,
     disconnect,
     exchange_code,
+    get_valid_access_token,
 )
+from src.services.linear_sync import fetch_teams, sync_tickets_for_teams
 
 logger = logging.getLogger(__name__)
 
@@ -147,4 +151,117 @@ async def get_status(
         "connected": integration.status == "connected",
         "organization_name": integration.external_id,
         "status": integration.status,
+    }
+
+
+# ---------- Team Selection ----------
+
+
+@router.get("/teams")
+async def get_teams(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Fetch the list of Linear teams for the connected organization.
+
+    Reads the access token from Vault and queries Linear's GraphQL API
+    for all teams in the organization.
+    """
+    try:
+        access_token = await get_valid_access_token(
+            session, user.workspace_id, user.user_id, settings
+        )
+    except OAuthError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Linear integration not connected: {e}",
+        )
+
+    teams = await fetch_teams(access_token)
+    return {"teams": teams}
+
+
+# ---------- Sync Endpoints ----------
+
+
+class SyncRequest(PydanticBaseModel):
+    """Request body for POST /api/linear/sync."""
+
+    team_ids: list[str]
+
+
+@router.post("/sync")
+async def start_sync(
+    body: SyncRequest,
+    background_tasks: BackgroundTasks,
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Start a background sync of Linear tickets for selected teams.
+
+    Validates that the Linear integration is connected, then runs the
+    sync as a FastAPI background task. Returns immediately with status.
+    """
+    # Verify integration is connected
+    stmt = select(WorkspaceIntegration).where(
+        WorkspaceIntegration.workspace_id == user.workspace_id,
+        WorkspaceIntegration.provider == "linear",
+    )
+    result = await session.execute(stmt)
+    integration = result.scalar_one_or_none()
+
+    if integration is None or integration.status != "connected":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Linear integration is not connected. Complete OAuth flow first.",
+        )
+
+    # Start sync in background
+    background_tasks.add_task(
+        sync_tickets_for_teams,
+        session,
+        user.workspace_id,
+        user.user_id,
+        body.team_ids,
+        settings,
+    )
+
+    return {"status": "sync_started", "team_ids": body.team_ids}
+
+
+@router.get("/sync/status")
+async def get_sync_status(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get the current sync status and ticket count.
+
+    Reads sync progress from workspace_integrations.config and counts
+    tickets in linear_tickets for the workspace.
+    """
+    # Get integration config
+    stmt = select(WorkspaceIntegration).where(
+        WorkspaceIntegration.workspace_id == user.workspace_id,
+        WorkspaceIntegration.provider == "linear",
+    )
+    result = await session.execute(stmt)
+    integration = result.scalar_one_or_none()
+
+    config = integration.config if integration else {}
+
+    # Count tickets
+    count_stmt = select(func.count()).select_from(LinearTicket).where(
+        LinearTicket.workspace_id == user.workspace_id,
+        LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    count_result = await session.execute(count_stmt)
+    tickets_count = count_result.scalar_one()
+
+    return {
+        "synced_teams": config.get("synced_teams", []),
+        "sync_status": config.get("sync_status"),
+        "last_sync_at": config.get("last_sync_at"),
+        "tickets_count": tickets_count,
     }
