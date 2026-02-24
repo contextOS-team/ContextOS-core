@@ -36,6 +36,7 @@ def decode_supabase_jwt(token: str) -> JWTPayload:
         token,
         settings.SUPABASE_JWT_SECRET,
         algorithms=["HS256"],
+        audience="authenticated",
         options={"verify_exp": True},
     )
 
