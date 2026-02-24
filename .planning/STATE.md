@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 3 of 6 (Slack and Meeting Ingestion)
-Plan: 1 of 3 in current phase
-Status: Executing Phase 03 -- 03-01 Slack OAuth and Events API complete
-Last activity: 2026-02-24 -- Completed 03-01: Slack OAuth and Events API
+Plan: 2 of 3 in current phase
+Status: Executing Phase 03 -- 03-02 Slack Channel Selection and Fathom Ingestion complete
+Last activity: 2026-02-24 -- Completed 03-02: Slack Channel Selection and Fathom Transcript Ingestion
 
-Progress: [=======...] 47%
+Progress: [========..] 53%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
-- Average duration: 6min
-- Total execution time: 0.73 hours
+- Total plans completed: 8
+- Average duration: 7min
+- Total execution time: 0.87 hours
 
 **By Phase:**
 
@@ -29,11 +29,11 @@ Progress: [=======...] 47%
 |-------|-------|-------|----------|
 | 1. Foundation | 3 | 12min | 4min |
 | 2. Linear Integration | 3 | 26min | 8.7min |
-| 3. Slack/Meeting Ingestion | 1 | 6min | 6min |
+| 3. Slack/Meeting Ingestion | 2 | 14min | 7min |
 
 **Recent Trend:**
-- Last 5 plans: 02-01 (5min), 02-02 (4min), 02-03 (17min), 03-01 (6min)
-- Trend: 03-01 fast, reusing patterns from Phase 2
+- Last 5 plans: 02-02 (4min), 02-03 (17min), 03-01 (6min), 03-02 (8min)
+- Trend: Consistent 6-8min for standard integration plans
 
 *Updated after each plan completion*
 
@@ -76,6 +76,14 @@ Recent decisions affecting current work:
 - [03-01]: Background task delegation for Slack event processing ensures fast 200 response
 - [03-01]: Channel monitoring defaults to all channels if no selected_channels configured
 - [03-01]: Aliased sqlalchemy.text as sa_text to avoid SQLModel/Field namespace collision
+- [03-02]: Slack conversations.list uses cursor pagination with limit=1000 per page
+- [03-02]: Channel list cached in workspace_integrations.config JSONB under available_channels
+- [03-02]: GET /channels reads from cache; POST /channels/refresh hits Slack API fresh
+- [03-02]: Fathom API key stored in Vault, key format: fathom_{workspace_id}_api_key
+- [03-02]: Fathom API base URL configurable via FATHOM_API_BASE_URL (api.fathom.video does not resolve)
+- [03-02]: Fathom dedup uses fathom_id in raw_data JSONB (no dedicated DB column)
+- [03-02]: Processing transcripts skipped and retried on next poll cycle
+- [03-02]: Poll endpoint runs in BackgroundTasks, returns 202 immediately
 
 ### Pending Todos
 
@@ -91,5 +99,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Completed 03-01-PLAN.md (Slack OAuth and Events API)
-Resume file: .planning/phases/03-slack-meeting-ingestion/03-01-SUMMARY.md
+Stopped at: Completed 03-02-PLAN.md (Slack Channel Selection and Fathom Transcript Ingestion)
+Resume file: .planning/phases/03-slack-meeting-ingestion/03-02-SUMMARY.md
