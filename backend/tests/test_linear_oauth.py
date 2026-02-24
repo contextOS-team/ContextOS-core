@@ -7,6 +7,7 @@ from uuid import UUID
 
 import pytest
 
+from src.config import get_settings
 from tests.conftest import (
     TEST_EMAIL,
     TEST_JWT_SECRET,
@@ -21,34 +22,69 @@ LINEAR_WEBHOOK_SECRET = "test-webhook-secret"
 
 
 @pytest.fixture()
-def linear_settings(mock_settings):
-    """Override mock_settings with Linear OAuth config."""
-    mock_settings.LINEAR_CLIENT_ID = LINEAR_CLIENT_ID
-    mock_settings.LINEAR_CLIENT_SECRET = LINEAR_CLIENT_SECRET
-    mock_settings.LINEAR_WEBHOOK_SECRET = LINEAR_WEBHOOK_SECRET
+def linear_settings():
+    """Create test settings with Linear OAuth config and patch everywhere."""
+    from tests.conftest import _make_test_settings
 
-    # Also patch get_settings in the linear router and services modules
-    import src.routers.linear
-    import src.services.linear_oauth
+    settings = _make_test_settings(
+        LINEAR_CLIENT_ID=LINEAR_CLIENT_ID,
+        LINEAR_CLIENT_SECRET=LINEAR_CLIENT_SECRET,
+        LINEAR_WEBHOOK_SECRET=LINEAR_WEBHOOK_SECRET,
+    )
+    get_settings.cache_clear()
 
-    original_linear_router = src.routers.linear.get_settings
-    src.routers.linear.get_settings = lambda: mock_settings
+    import sys
 
-    yield mock_settings
+    import src.auth
+    import src.config
 
-    src.routers.linear.get_settings = original_linear_router
+    old_config = src.config.get_settings
+    old_auth = src.auth.get_settings
+
+    _override = lambda: settings  # noqa: E731
+    src.config.get_settings = _override  # type: ignore[assignment]
+    src.auth.get_settings = _override  # type: ignore[assignment]
+
+    # Patch the router module if already imported (full suite scenario)
+    old_router = None
+    if "src.routers.linear" in sys.modules:
+        import src.routers.linear
+
+        old_router = src.routers.linear.get_settings
+        src.routers.linear.get_settings = _override  # type: ignore[assignment]
+
+    yield settings
+
+    src.config.get_settings = old_config  # type: ignore[assignment]
+    src.auth.get_settings = old_auth  # type: ignore[assignment]
+    if old_router is not None:
+        import src.routers.linear
+
+        src.routers.linear.get_settings = old_router  # type: ignore[assignment]
+    get_settings.cache_clear()
 
 
 @pytest.fixture()
 def app_with_linear(linear_settings, mock_session):
     """Create a FastAPI app with Linear settings and mocked session."""
-    from src.db import get_session
+    from src.db import get_session as get_session_dep
     from src.main import app as fastapi_app
 
     async def _mock_get_session():
         yield mock_session
 
-    fastapi_app.dependency_overrides[get_session] = _mock_get_session
+    fastapi_app.dependency_overrides[get_session_dep] = _mock_get_session
+    # Override get_settings via the original @lru_cache reference
+    fastapi_app.dependency_overrides[get_settings] = lambda: linear_settings
+    # The router's Depends(get_settings) may have captured a conftest _override
+    # lambda if the router was first imported during a mock_settings fixture.
+    # Find and override the actual callable from the route dependency graph.
+    for route in fastapi_app.routes:
+        if hasattr(route, "dependant"):
+            for dep in route.dependant.dependencies:
+                name = getattr(dep.call, "__name__", "")
+                if name in ("get_settings", "_override"):
+                    fastapi_app.dependency_overrides[dep.call] = lambda: linear_settings
     yield fastapi_app
     fastapi_app.dependency_overrides.clear()
 
