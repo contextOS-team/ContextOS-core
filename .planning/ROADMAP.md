@@ -158,11 +158,13 @@ Plans:
   2. All OAuth tokens (Linear, Slack, Fathom) are stored in Supabase Vault -- no plain-text token columns exist
   3. Backend errors are captured in Sentry with workspace_id, user_id, and endpoint context
   4. Every LLM synthesis call is traced in Laminar with prompt, response, latency, and cost visible
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 06-01: Chrome extension for quick context access (Bekbol)
-- [ ] 06-02: Vault token storage, Sentry error tracking, Laminar LLM observability (Daulet)
+- [ ] 06-01-PLAN.md -- Chrome extension (Manifest V3) for quick Linear ticket context access (Bekbol)
+- [ ] 06-02-PLAN.md -- Sentry error tracking (backend + frontend), structured logging, correlation IDs, rate limiting, Telegram alerting (Daulet)
+- [ ] 06-03-PLAN.md -- Laminar LLM observability with instrumented LLM client (Daulet)
+- [ ] 06-04-PLAN.md -- Vault token hardening with lazy migration, deep health endpoint (Daulet)
 
 ## Coverage
 
