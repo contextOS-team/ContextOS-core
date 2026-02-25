@@ -1,0 +1,487 @@
+"""GitHub webhook event processor.
+
+Handles real-time PR and review updates from GitHub webhooks.
+Routes events by type (pull_request, pull_request_review,
+pull_request_review_comment) and processes them idempotently.
+
+Per user decisions:
+- Bot PRs (dependabot[bot], renovate[bot], github-actions[bot]) are filtered
+- Unmonitored repos are skipped
+- Review comments stored as GithubReview records with file_path and line_range
+- Creates its own async session for background processing isolation
+"""
+
+import logging
+from datetime import datetime
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
+
+from src.db import async_session
+from src.models.github import GithubPullRequest, GithubReview
+from src.models.integration import OAuthToken, WorkspaceIntegration
+from src.services.github_linking import link_pr_to_ticket
+from src.services.github_repos import is_repo_monitored
+
+logger = logging.getLogger(__name__)
+
+# Known bot account suffixes to filter
+BOT_AUTHORS = {"dependabot[bot]", "renovate[bot]", "github-actions[bot]"}
+
+
+def _is_bot_author(login: str) -> bool:
+    """Check if the author login matches a known bot account.
+
+    Args:
+        login: GitHub user login string.
+
+    Returns:
+        True if the login matches a known bot pattern.
+    """
+    return login.lower() in {b.lower() for b in BOT_AUTHORS}
+
+
+def _map_pr_state(action: str, payload_pr: dict) -> str:
+    """Map a GitHub PR action + payload to a state string.
+
+    Args:
+        action: The webhook action (opened, closed, reopened, etc.).
+        payload_pr: The pull_request object from the payload.
+
+    Returns:
+        One of: "open", "closed", "merged".
+    """
+    if action == "closed":
+        if payload_pr.get("merged", False):
+            return "merged"
+        return "closed"
+    return "open"
+
+
+async def _lookup_workspace_from_installation(
+    installation_id: int, session: AsyncSession
+) -> UUID | None:
+    """Look up workspace_id from a GitHub App installation_id.
+
+    Queries OAuthToken where provider='github' and metadata_ contains
+    the installation_id to find the associated workspace.
+
+    Args:
+        installation_id: GitHub App installation ID from webhook payload.
+        session: Async database session.
+
+    Returns:
+        The workspace UUID, or None if not found.
+    """
+    stmt = select(OAuthToken).where(
+        OAuthToken.provider == "github",
+        OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    result = await session.execute(stmt)
+    tokens = result.scalars().all()
+
+    for token in tokens:
+        metadata = token.metadata_ or {}
+        if metadata.get("installation_id") == installation_id:
+            return token.workspace_id
+
+    return None
+
+
+async def process_github_event(
+    event_type: str, payload: dict, workspace_id: UUID | None = None
+) -> None:
+    """Main webhook event dispatcher.
+
+    Creates a fresh DB session and routes the event to the appropriate handler
+    based on event type.
+
+    Args:
+        event_type: The X-GitHub-Event header value.
+        payload: The full webhook payload from GitHub.
+        workspace_id: Optional pre-resolved workspace ID. If None, resolves
+                      from installation.id in the payload.
+    """
+    logger.info("Processing GitHub webhook: event=%s", event_type)
+
+    async with async_session() as session:
+        try:
+            # Resolve workspace from installation_id if not provided
+            if workspace_id is None:
+                installation = payload.get("installation", {})
+                installation_id = installation.get("id") if isinstance(installation, dict) else None
+                if installation_id is None:
+                    logger.warning("GitHub webhook missing installation.id, skipping")
+                    return
+
+                workspace_id = await _lookup_workspace_from_installation(
+                    installation_id, session
+                )
+                if workspace_id is None:
+                    logger.warning(
+                        "No workspace found for GitHub installation %s",
+                        installation_id,
+                    )
+                    return
+
+            action = payload.get("action", "")
+
+            if event_type == "pull_request":
+                await handle_pull_request_event(action, payload, workspace_id, session)
+            elif event_type == "pull_request_review":
+                await handle_review_event(action, payload, workspace_id, session)
+            elif event_type == "pull_request_review_comment":
+                await handle_review_comment_event(action, payload, workspace_id, session)
+            else:
+                logger.info("Ignoring unhandled GitHub event type: %s", event_type)
+
+            await session.commit()
+        except Exception:
+            logger.exception(
+                "Error processing GitHub webhook event=%s workspace=%s",
+                event_type,
+                workspace_id,
+            )
+            await session.rollback()
+            raise
+
+
+async def handle_pull_request_event(
+    action: str,
+    payload: dict,
+    workspace_id: UUID,
+    session: AsyncSession,
+) -> None:
+    """Handle a pull_request webhook event.
+
+    Actions: opened, closed, reopened, edited, converted_to_draft, ready_for_review.
+
+    1. Check if repo is monitored (skip if not)
+    2. Filter bot authors (dependabot, renovate, github-actions)
+    3. Extract PR data and upsert GithubPullRequest
+    4. Map state from action + merged flag
+    5. Attempt to link PR to Linear ticket
+
+    Args:
+        action: The webhook action string.
+        payload: The full webhook payload.
+        workspace_id: The resolved workspace UUID.
+        session: Async database session.
+    """
+    pr_data = payload.get("pull_request", {})
+    repo_data = payload.get("repository", {})
+    repo_full_name = repo_data.get("full_name", "")
+
+    # 1. Check if repo is monitored
+    if not await is_repo_monitored(workspace_id, repo_full_name, session):
+        logger.debug("Repo %s not monitored, skipping PR event", repo_full_name)
+        return
+
+    # 2. Filter bot authors
+    author_login = pr_data.get("user", {}).get("login", "")
+    if _is_bot_author(author_login):
+        logger.debug("Skipping bot PR author: %s", author_login)
+        return
+
+    # 3. Extract PR data
+    github_id = pr_data.get("id")
+    if not github_id:
+        logger.warning("PR event missing pull_request.id")
+        return
+
+    # 4. Map state
+    state = _map_pr_state(action, pr_data)
+
+    # Parse timestamps
+    github_created_at = _parse_github_timestamp(pr_data.get("created_at"))
+    github_updated_at = _parse_github_timestamp(pr_data.get("updated_at"))
+    github_merged_at = _parse_github_timestamp(pr_data.get("merged_at"))
+
+    # Extract reviewers
+    requested_reviewers = pr_data.get("requested_reviewers", [])
+    reviewers = [r.get("login", "") for r in requested_reviewers if isinstance(r, dict)]
+
+    # Upsert GithubPullRequest (on conflict: workspace_id + github_id)
+    stmt = select(GithubPullRequest).where(
+        GithubPullRequest.workspace_id == workspace_id,
+        GithubPullRequest.github_id == github_id,
+    )
+    result = await session.execute(stmt)
+    existing_pr = result.scalar_one_or_none()
+
+    head = pr_data.get("head", {})
+    base = pr_data.get("base", {})
+
+    if existing_pr:
+        existing_pr.title = pr_data.get("title", existing_pr.title)
+        existing_pr.description = pr_data.get("body")
+        existing_pr.state = state
+        existing_pr.is_draft = pr_data.get("draft", False)
+        existing_pr.reviewers = reviewers if reviewers else existing_pr.reviewers
+        existing_pr.github_updated_at = github_updated_at
+        existing_pr.github_merged_at = github_merged_at
+        existing_pr.raw_data = pr_data
+        existing_pr.deleted_at = None  # Restore if previously soft-deleted
+        pr_record = existing_pr
+    else:
+        pr_record = GithubPullRequest(
+            workspace_id=workspace_id,
+            github_id=github_id,
+            repo_full_name=repo_full_name,
+            number=pr_data.get("number", 0),
+            title=pr_data.get("title", ""),
+            description=pr_data.get("body"),
+            state=state,
+            author=author_login,
+            branch_name=head.get("ref", ""),
+            base_branch=base.get("ref", ""),
+            reviewers=reviewers if reviewers else None,
+            is_draft=pr_data.get("draft", False),
+            github_created_at=github_created_at,
+            github_updated_at=github_updated_at,
+            github_merged_at=github_merged_at,
+            raw_data=pr_data,
+        )
+        session.add(pr_record)
+
+    await session.flush()
+
+    # 5. Link PR to Linear ticket
+    await link_pr_to_ticket(pr_record, workspace_id, session)
+
+    logger.info(
+        "Upserted PR #%d (%s) state=%s for workspace %s",
+        pr_data.get("number", 0),
+        repo_full_name,
+        state,
+        workspace_id,
+    )
+
+
+async def handle_review_event(
+    action: str,
+    payload: dict,
+    workspace_id: UUID,
+    session: AsyncSession,
+) -> None:
+    """Handle a pull_request_review webhook event.
+
+    Action: submitted.
+
+    1. Check if repo is monitored
+    2. Extract review data
+    3. Look up parent GithubPullRequest
+    4. Upsert GithubReview
+
+    Args:
+        action: The webhook action string.
+        payload: The full webhook payload.
+        workspace_id: The resolved workspace UUID.
+        session: Async database session.
+    """
+    if action != "submitted":
+        logger.debug("Ignoring review action: %s", action)
+        return
+
+    repo_data = payload.get("repository", {})
+    repo_full_name = repo_data.get("full_name", "")
+
+    if not await is_repo_monitored(workspace_id, repo_full_name, session):
+        logger.debug("Repo %s not monitored, skipping review event", repo_full_name)
+        return
+
+    review_data = payload.get("review", {})
+    pr_data = payload.get("pull_request", {})
+
+    github_id = review_data.get("id")
+    if not github_id:
+        logger.warning("Review event missing review.id")
+        return
+
+    # Look up parent PR
+    pr_github_id = pr_data.get("id")
+    pr_record = None
+    if pr_github_id:
+        pr_stmt = select(GithubPullRequest).where(
+            GithubPullRequest.workspace_id == workspace_id,
+            GithubPullRequest.github_id == pr_github_id,
+        )
+        pr_result = await session.execute(pr_stmt)
+        pr_record = pr_result.scalar_one_or_none()
+
+    if not pr_record:
+        logger.warning(
+            "Parent PR not found for review %s (pr_github_id=%s)",
+            github_id,
+            pr_github_id,
+        )
+        return
+
+    # Upsert GithubReview
+    stmt = select(GithubReview).where(
+        GithubReview.workspace_id == workspace_id,
+        GithubReview.github_id == github_id,
+    )
+    result = await session.execute(stmt)
+    existing_review = result.scalar_one_or_none()
+
+    review_state = review_data.get("state", "").lower()
+    review_body = review_data.get("body")
+    review_author = review_data.get("user", {}).get("login", "")
+    submitted_at = _parse_github_timestamp(review_data.get("submitted_at"))
+
+    if existing_review:
+        existing_review.state = review_state
+        existing_review.body = review_body
+        existing_review.author = review_author
+        existing_review.github_submitted_at = submitted_at
+        existing_review.raw_data = review_data
+    else:
+        new_review = GithubReview(
+            workspace_id=workspace_id,
+            pull_request_id=pr_record.id,
+            github_id=github_id,
+            author=review_author,
+            state=review_state,
+            body=review_body,
+            github_submitted_at=submitted_at,
+            raw_data=review_data,
+        )
+        session.add(new_review)
+
+    logger.info(
+        "Upserted review %s (state=%s) for PR #%d",
+        github_id,
+        review_state,
+        pr_record.number,
+    )
+
+
+async def handle_review_comment_event(
+    action: str,
+    payload: dict,
+    workspace_id: UUID,
+    session: AsyncSession,
+) -> None:
+    """Handle a pull_request_review_comment webhook event.
+
+    Action: created.
+
+    Stores review comments as GithubReview records with file_path and
+    line_range filled in (per user decision: file path + line range + comment body).
+
+    Args:
+        action: The webhook action string.
+        payload: The full webhook payload.
+        workspace_id: The resolved workspace UUID.
+        session: Async database session.
+    """
+    if action != "created":
+        logger.debug("Ignoring review comment action: %s", action)
+        return
+
+    repo_data = payload.get("repository", {})
+    repo_full_name = repo_data.get("full_name", "")
+
+    if not await is_repo_monitored(workspace_id, repo_full_name, session):
+        logger.debug("Repo %s not monitored, skipping review comment", repo_full_name)
+        return
+
+    comment_data = payload.get("comment", {})
+    pr_data = payload.get("pull_request", {})
+
+    github_id = comment_data.get("id")
+    if not github_id:
+        logger.warning("Review comment event missing comment.id")
+        return
+
+    # Look up parent PR
+    pr_github_id = pr_data.get("id")
+    pr_record = None
+    if pr_github_id:
+        pr_stmt = select(GithubPullRequest).where(
+            GithubPullRequest.workspace_id == workspace_id,
+            GithubPullRequest.github_id == pr_github_id,
+        )
+        pr_result = await session.execute(pr_stmt)
+        pr_record = pr_result.scalar_one_or_none()
+
+    if not pr_record:
+        logger.warning(
+            "Parent PR not found for review comment %s (pr_github_id=%s)",
+            github_id,
+            pr_github_id,
+        )
+        return
+
+    # Extract file context
+    file_path = comment_data.get("path")
+    line = comment_data.get("line")
+    original_line = comment_data.get("original_line")
+    line_range = None
+    if line is not None:
+        line_range = str(line)
+        if original_line is not None and original_line != line:
+            line_range = f"{original_line}-{line}"
+
+    comment_body = comment_data.get("body")
+    comment_author = comment_data.get("user", {}).get("login", "")
+    submitted_at = _parse_github_timestamp(comment_data.get("created_at"))
+
+    # Upsert GithubReview with file context
+    stmt = select(GithubReview).where(
+        GithubReview.workspace_id == workspace_id,
+        GithubReview.github_id == github_id,
+    )
+    result = await session.execute(stmt)
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        existing.body = comment_body
+        existing.file_path = file_path
+        existing.line_range = line_range
+        existing.author = comment_author
+        existing.raw_data = comment_data
+    else:
+        new_review = GithubReview(
+            workspace_id=workspace_id,
+            pull_request_id=pr_record.id,
+            github_id=github_id,
+            author=comment_author,
+            state="commented",
+            body=comment_body,
+            file_path=file_path,
+            line_range=line_range,
+            github_submitted_at=submitted_at,
+            raw_data=comment_data,
+        )
+        session.add(new_review)
+
+    logger.info(
+        "Upserted review comment %s on %s:%s for PR #%d",
+        github_id,
+        file_path,
+        line_range,
+        pr_record.number,
+    )
+
+
+def _parse_github_timestamp(value: str | None) -> datetime | None:
+    """Parse a GitHub ISO 8601 timestamp to naive UTC datetime.
+
+    GitHub returns timestamps like "2024-01-01T00:00:00Z".
+
+    Args:
+        value: ISO 8601 timestamp string or None.
+
+    Returns:
+        Naive UTC datetime or None.
+    """
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return dt.replace(tzinfo=None)  # Naive UTC per project convention
+    except (ValueError, AttributeError):
+        return None
