@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 7 of 7 (GitHub Integration)
-Plan: 1 of 3 in current phase
-Status: Executing Phase 07 -- Plan 01 complete
-Last activity: 2026-02-25 -- Completed 07-01: GitHub App OAuth
+Plan: 3 of 3 in current phase
+Status: Phase 07 COMPLETE -- all 3 plans executed
+Last activity: 2026-02-25 -- Completed 07-03: Webhook Receiver and Integration UI
 
-Progress: [=========.] 60%
+Progress: [==========] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 10
-- Average duration: 7min
-- Total execution time: 1.17 hours
+- Total plans completed: 12
+- Average duration: 6.6min
+- Total execution time: 1.32 hours
 
 **By Phase:**
 
@@ -30,11 +30,11 @@ Progress: [=========.] 60%
 | 1. Foundation | 3 | 12min | 4min |
 | 2. Linear Integration | 3 | 26min | 8.7min |
 | 3. Slack/Meeting Ingestion | 3 | 24min | 8min |
-| 7. GitHub Integration | 1 | 8min | 8min |
+| 7. GitHub Integration | 3 | 19min | 6.3min |
 
 **Recent Trend:**
-- Last 5 plans: 02-03 (17min), 03-01 (6min), 03-02 (8min), 03-03 (10min), 07-01 (8min)
-- Trend: Consistent 8min for integration OAuth plans
+- Last 5 plans: 03-03 (10min), 07-01 (8min), 07-02 (6min), 07-03 (5min)
+- Trend: Decreasing times as patterns mature (8min -> 6min -> 5min)
 
 *Updated after each plan completion*
 
@@ -94,6 +94,13 @@ Recent decisions affecting current work:
 - [07-01]: HMAC-SHA256 signed state uses GITHUB_CLIENT_SECRET (same pattern as Linear/Slack)
 - [07-01]: installation_id stored in OAuthToken.metadata_ JSONB for token refresh
 - [07-01]: 'github' added to provider check constraints via migration ALTER
+- [07-02]: Sequential repo sync per user decision to avoid rate limit exhaustion
+- [07-02]: New repos NOT auto-monitored (explicit selection required, unlike Slack channels)
+- [07-02]: Branch-name-only linking with case-insensitive regex for team key matching
+- [07-03]: GitHub webhook signature uses X-Hub-Signature-256 with sha256= prefix format
+- [07-03]: Workspace resolved from installation.id by scanning OAuthToken metadata_ JSONB
+- [07-03]: Review comments stored as GithubReview records with file_path and line_range
+- [07-03]: Bot filtering via exact login match against known set (dependabot, renovate, github-actions)
 
 ### Pending Todos
 
@@ -114,5 +121,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 07-01-PLAN.md
-Resume file: .planning/phases/07-github-integration/07-02-PLAN.md
+Stopped at: Completed 07-03-PLAN.md -- Phase 7 complete
+Resume file: All phases complete
