@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 3 - Slack and Meeting Ingestion
+**Current focus:** Phase 6 - Extension and Hardening
 
 ## Current Position
 
-Phase: 3 of 6 (Slack and Meeting Ingestion)
-Plan: 3 of 3 in current phase
-Status: Phase 03 complete -- all plans executed, visual verification passed
-Last activity: 2026-02-25 -- Completed 03-03: Integration Setup UI with bugfixes
+Phase: 6 of 6 (Extension and Hardening)
+Plan: 1 of 4 in current phase
+Status: Executing Phase 06 -- completed 06-01 Chrome Extension
+Last activity: 2026-02-25 -- Completed 06-01: Chrome Extension
 
-Progress: [=========.] 60%
+Progress: [=========.] 62%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
+- Total plans completed: 10
 - Average duration: 7min
-- Total execution time: 1.03 hours
+- Total execution time: 1.15 hours
 
 **By Phase:**
 
@@ -30,10 +30,11 @@ Progress: [=========.] 60%
 | 1. Foundation | 3 | 12min | 4min |
 | 2. Linear Integration | 3 | 26min | 8.7min |
 | 3. Slack/Meeting Ingestion | 3 | 24min | 8min |
+| 6. Extension/Hardening | 1 | 7min | 7min |
 
 **Recent Trend:**
-- Last 5 plans: 02-02 (4min), 02-03 (17min), 03-01 (6min), 03-02 (8min)
-- Trend: Consistent 6-8min for standard integration plans
+- Last 5 plans: 02-03 (17min), 03-01 (6min), 03-02 (8min), 03-03 (10min), 06-01 (7min)
+- Trend: Consistent 7-8min for standard plans
 
 *Updated after each plan completion*
 
@@ -87,6 +88,9 @@ Recent decisions affecting current work:
 - [03-03]: OAuth upsert must query WITHOUT deleted_at filter to reuse soft-deleted rows on reconnect
 - [03-03]: All DB timestamp columns use datetime.utcnow() (naive UTC) -- never datetime.now(timezone.utc)
 - [03-03]: Fathom API base URL is api.fathom.ai/external/v1, auth header is X-Api-Key, endpoint is /meetings
+- [06-01]: Vanilla DOM manipulation in popup instead of React to avoid build pipeline dependency
+- [06-01]: Monkey-patched history.pushState/replaceState + MutationObserver for SPA navigation detection
+- [06-01]: API token stored in chrome.storage.local with settings panel for manual configuration
 
 ### Pending Todos
 
@@ -102,5 +106,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Phase 03 complete -- ready for verification
-Resume file: .planning/phases/03-slack-meeting-ingestion/03-03-PLAN.md
+Stopped at: Completed 06-01-PLAN.md
+Resume file: .planning/phases/06-extension-and-hardening/06-02-PLAN.md

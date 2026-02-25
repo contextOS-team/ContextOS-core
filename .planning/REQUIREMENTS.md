@@ -68,7 +68,7 @@
 
 ### Delivery: Chrome Extension (Bekbol)
 
-- [ ] **EXT-01**: Chrome extension displays context page for current Linear ticket from browser toolbar
+- [x] **EXT-01**: Chrome extension displays context page for current Linear ticket from browser toolbar
 
 ### Security & Observability (Daulet)
 
