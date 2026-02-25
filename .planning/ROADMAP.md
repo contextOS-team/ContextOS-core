@@ -179,7 +179,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 07-01-PLAN.md -- GitHub App OAuth flow with Vault token storage, DB schema for PR/review tables, SQLModel models
+- [x] 07-01-PLAN.md -- GitHub App OAuth flow with Vault token storage, DB schema for PR/review tables, SQLModel models
 - [ ] 07-02-PLAN.md -- Repo selection with searchable listing, initial PR sync with 60-day backfill, PR-to-Linear linking via branch name
 - [ ] 07-03-PLAN.md -- Webhook receiver with HMAC-SHA256 verification, idempotent event processing, integration setup UI card and repo picker
 
@@ -223,7 +223,7 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 | 4. Context Generation | 0/3 | Not started | - |
 | 5. Delivery Channels | 0/3 | Not started | - |
 | 6. Extension and Hardening | 0/2 | Not started | - |
-| 7. GitHub Integration | 0/3 | Not started | - |
+| 7. GitHub Integration | 1/3 | In progress | - |
 
 ---
 *Roadmap created: 2026-02-24*

@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 3 - Slack and Meeting Ingestion
+**Current focus:** Phase 7 - GitHub Integration
 
 ## Current Position
 
-Phase: 3 of 7 (Slack and Meeting Ingestion)
-Plan: 3 of 3 in current phase
-Status: Phase 03 complete -- all plans executed, visual verification passed
-Last activity: 2026-02-25 -- Completed 03-03: Integration Setup UI with bugfixes
+Phase: 7 of 7 (GitHub Integration)
+Plan: 1 of 3 in current phase
+Status: Executing Phase 07 -- Plan 01 complete
+Last activity: 2026-02-25 -- Completed 07-01: GitHub App OAuth
 
 Progress: [=========.] 60%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
+- Total plans completed: 10
 - Average duration: 7min
-- Total execution time: 1.03 hours
+- Total execution time: 1.17 hours
 
 **By Phase:**
 
@@ -30,10 +30,11 @@ Progress: [=========.] 60%
 | 1. Foundation | 3 | 12min | 4min |
 | 2. Linear Integration | 3 | 26min | 8.7min |
 | 3. Slack/Meeting Ingestion | 3 | 24min | 8min |
+| 7. GitHub Integration | 1 | 8min | 8min |
 
 **Recent Trend:**
-- Last 5 plans: 02-02 (4min), 02-03 (17min), 03-01 (6min), 03-02 (8min)
-- Trend: Consistent 6-8min for standard integration plans
+- Last 5 plans: 02-03 (17min), 03-01 (6min), 03-02 (8min), 03-03 (10min), 07-01 (8min)
+- Trend: Consistent 8min for integration OAuth plans
 
 *Updated after each plan completion*
 
@@ -87,6 +88,12 @@ Recent decisions affecting current work:
 - [03-03]: OAuth upsert must query WITHOUT deleted_at filter to reuse soft-deleted rows on reconnect
 - [03-03]: All DB timestamp columns use datetime.utcnow() (naive UTC) -- never datetime.now(timezone.utc)
 - [03-03]: Fathom API base URL is api.fathom.ai/external/v1, auth header is X-Api-Key, endpoint is /meetings
+- [07-01]: PyJWT with RS256 for GitHub App JWT signing (already a project dependency, no new library needed)
+- [07-01]: Installation access tokens stored in Vault with 1-hour expiry; refreshed on demand via App JWT
+- [07-01]: GitHub App installation flow (not standard OAuth2) per CONTEXT.md decision
+- [07-01]: HMAC-SHA256 signed state uses GITHUB_CLIENT_SECRET (same pattern as Linear/Slack)
+- [07-01]: installation_id stored in OAuthToken.metadata_ JSONB for token refresh
+- [07-01]: 'github' added to provider check constraints via migration ALTER
 
 ### Pending Todos
 
@@ -107,5 +114,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Phase 03 complete -- ready for verification
-Resume file: .planning/phases/03-slack-meeting-ingestion/03-03-PLAN.md
+Stopped at: Completed 07-01-PLAN.md
+Resume file: .planning/phases/07-github-integration/07-02-PLAN.md
