@@ -1,6 +1,6 @@
 # ContextOS
 
-AI-generated context pages for engineering tickets. When an engineer picks up a ticket, they immediately get the full story — where the feature came from, what was discussed in Slack, what decisions were made in meetings, and a ready-to-use AI implementation prompt. Integrates Linear, Slack, and meeting transcripts (Fathom).
+AI-generated context pages for engineering tickets. When an engineer picks up a ticket, they immediately get the full story — where the feature came from, what was discussed in Slack, what decisions were made in meetings, and a ready-to-use AI implementation prompt. Integrates Linear, Slack, GitHub, and meeting transcripts (Fathom).
 
 ## Stack
 
@@ -12,7 +12,7 @@ AI-generated context pages for engineering tickets. When an engineer picks up a 
 | Auth | Supabase Auth (email/password, magic link) |
 | AI | Google Gemini (synthesis) |
 | MCP Server | TypeScript, @modelcontextprotocol/sdk |
-| Integrations | Linear (OAuth + webhooks), Slack (OAuth + Events API), Fathom |
+| Integrations | Linear (OAuth + webhooks), Slack (OAuth + Events API), GitHub (App + webhooks), Fathom |
 | Observability | Laminar (LLM tracing), Sentry (errors) |
 | Hosting | Vercel (frontend), Railway (backend) |
 
@@ -23,8 +23,8 @@ AI-generated context pages for engineering tickets. When an engineer picks up a 
 ├── backend/           Python FastAPI backend (API, services, models)
 │   ├── src/
 │   │   ├── models/    SQLModel schemas (user, workspace, ticket, integration, slack)
-│   │   ├── routers/   API endpoints (auth, health, linear, slack, webhooks, workspaces)
-│   │   └── services/  Business logic (vault, linear_oauth, linear_sync, slack_oauth, ...)
+│   │   ├── routers/   API endpoints (auth, health, linear, slack, github, webhooks, workspaces)
+│   │   └── services/  Business logic (vault, linear_oauth, linear_sync, slack_oauth, github_oauth, ...)
 │   └── tests/         pytest test suite
 ├── packages/mcp-server/  MCP server for AI coding assistants
 └── supabase/          Database migrations and config
@@ -37,15 +37,28 @@ AI-generated context pages for engineering tickets. When an engineer picks up a 
 ```bash
 git clone git@github.com:contextOS-team/ContextOS-core.git
 cd ContextOS-core
-# Drop in the .env file from DM
-make setup
-# Terminal 1:
-make dev-frontend   # http://localhost:3000
-# Terminal 2:
-make dev-backend    # http://localhost:8000/docs
 ```
 
-`make setup` checks prerequisites, installs all dependencies, starts Supabase, applies migrations, generates the frontend env file, and starts Redis. If anything is missing it tells you exactly what to install.
+1. Drop the `.env` file from DM into the project root
+2. Run setup:
+   ```bash
+   make setup
+   ```
+3. Start dev servers in two terminals:
+   ```bash
+   # Terminal 1:
+   make dev-frontend   # http://localhost:3000
+
+   # Terminal 2:
+   make dev-backend    # http://localhost:8000/docs
+   ```
+
+That's it. `make setup` handles everything:
+- Checks prerequisites (node, pnpm, python3, uv, docker, supabase CLI) with install instructions if anything is missing
+- Installs frontend (pnpm) and backend (uv) dependencies
+- Starts Supabase and applies database migrations
+- Generates `apps/web/.env.local` from `NEXT_PUBLIC_*` variables in your `.env`
+- Starts Redis via Docker Compose
 
 ### Manual Setup (External Contributors)
 
@@ -130,6 +143,9 @@ make dev  # starts Redis, prints instructions
                     │ └──────┘     │
                     │ ┌──────┐     │
                     │ │Slack  │ OAuth + Events API
+                    │ └──────┘     │
+                    │ ┌──────┐     │
+                    │ │GitHub │ App + webhooks
                     │ └──────┘     │
                     │ ┌──────┐     │
                     │ │Fathom │ API key + polling
