@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     SLACK_REDIRECT_URI: str = ""
     SLACK_BOT_TOKEN: str = ""
 
+    # GitHub App
+    GITHUB_APP_ID: str = ""
+    GITHUB_APP_SLUG: str = ""
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    GITHUB_WEBHOOK_SECRET: str = ""
+    GITHUB_APP_PRIVATE_KEY: str = ""
+    GITHUB_REDIRECT_URI: str = ""
+
     # Fathom
     FATHOM_API_KEY: str = ""
     FATHOM_API_BASE_URL: str = "https://api.fathom.ai/external/v1"
@@ -82,6 +91,17 @@ class Settings(BaseSettings):
         if self.LINEAR_REDIRECT_URI:
             return self.LINEAR_REDIRECT_URI
         return f"{self.BACKEND_URL}/api/linear/callback"
+
+    @property
+    def github_redirect_uri(self) -> str:
+        """Return the GitHub OAuth redirect URI.
+
+        Uses GITHUB_REDIRECT_URI if set, otherwise defaults to
+        {BACKEND_URL}/api/github/callback.
+        """
+        if self.GITHUB_REDIRECT_URI:
+            return self.GITHUB_REDIRECT_URI
+        return f"{self.BACKEND_URL}/api/github/callback"
 
     @property
     def slack_redirect_uri(self) -> str:

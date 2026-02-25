@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.config import Environment, get_settings
 from src.routers.auth import router as auth_router
 from src.routers.fathom import router as fathom_router
+from src.routers.github import router as github_router
 from src.routers.health import router as health_router
 from src.routers.integrations import router as integrations_router
 from src.routers.linear import router as linear_router
@@ -57,5 +58,6 @@ app.include_router(integrations_router)
 app.include_router(linear_router)
 app.include_router(slack_router)
 app.include_router(fathom_router)
+app.include_router(github_router)
 app.include_router(workspaces_router)
 app.include_router(webhooks_router)
