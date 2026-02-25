@@ -9,7 +9,7 @@ directly. The state parameter provides CSRF protection via HMAC-SHA256.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import src.config as config_module
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
+from src.models.integration import WorkspaceIntegration
 from src.services.github_oauth import (
     GitHubOAuthError,
     _sign_state,
@@ -31,6 +32,7 @@ from src.services.github_repos import (
     refresh_repos,
     save_selected_repos,
 )
+from src.services.github_sync import sync_repos
 
 logger = logging.getLogger(__name__)
 
@@ -186,3 +188,82 @@ async def select_repos(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+# ---------- PR sync ----------
+
+
+@router.post("/sync", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_sync(
+    background_tasks: BackgroundTasks,
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Trigger PR sync for selected repos.
+
+    Runs the sync in a background task and returns 202 immediately.
+    Check GET /sync/status for progress.
+    """
+    from sqlmodel import select as sm_select
+
+    settings = config_module.get_settings()
+
+    # Get selected repos from config
+    stmt = sm_select(WorkspaceIntegration).where(
+        WorkspaceIntegration.workspace_id == user.workspace_id,
+        WorkspaceIntegration.provider == "github",
+    )
+    result = await session.execute(stmt)
+    integration = result.scalar_one_or_none()
+
+    if not integration or not integration.config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No GitHub integration found",
+        )
+
+    selected_repos = integration.config.get("selected_repos", [])
+    if not selected_repos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No repos selected for sync",
+        )
+
+    # Import async session factory for background task isolation
+    from src.db import async_session
+
+    async def _run_sync():
+        async with async_session() as bg_session:
+            await sync_repos(
+                user.workspace_id, selected_repos, bg_session, settings
+            )
+
+    background_tasks.add_task(_run_sync)
+
+    return {"status": "sync_started", "repos": selected_repos}
+
+
+@router.get("/sync/status")
+async def get_sync_status(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get per-repo sync status.
+
+    Reads repo_sync_status from workspace_integrations.config JSONB.
+    """
+    from sqlmodel import select as sm_select
+
+    stmt = sm_select(WorkspaceIntegration).where(
+        WorkspaceIntegration.workspace_id == user.workspace_id,
+        WorkspaceIntegration.provider == "github",
+    )
+    result = await session.execute(stmt)
+    integration = result.scalar_one_or_none()
+
+    if not integration or not integration.config:
+        return {"repo_sync_status": {}}
+
+    return {
+        "repo_sync_status": integration.config.get("repo_sync_status", {})
+    }
