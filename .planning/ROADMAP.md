@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 4: Context Generation** - LangGraph pipeline, Gemini synthesis, Slack-to-ticket linking, meeting-to-ticket linking (Dulat)
 - [ ] **Phase 5: Delivery Channels** - Dashboard feed/detail/settings, Linear comment bot, MCP server (Daulet + Bekbol)
 - [ ] **Phase 6: Extension and Hardening** - Chrome extension, Vault token storage, Sentry, Laminar (Daulet + Bekbol)
-- [ ] **Phase 7: GitHub Integration** - GitHub OAuth, PR/review ingestion, PR-to-Linear linking, webhook processing (Daulet)
+- [x] **Phase 7: GitHub Integration** - GitHub OAuth, PR/review ingestion, PR-to-Linear linking, webhook processing (Daulet) (completed 2026-02-25)
 
 ## Parallelization Map
 
@@ -223,7 +223,7 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 | 4. Context Generation | 0/3 | Not started | - |
 | 5. Delivery Channels | 0/3 | Not started | - |
 | 6. Extension and Hardening | 0/2 | Not started | - |
-| 7. GitHub Integration | 1/3 | In progress | - |
+| 7. GitHub Integration | 1/3 | Complete    | 2026-02-25 |
 
 ---
 *Roadmap created: 2026-02-24*
