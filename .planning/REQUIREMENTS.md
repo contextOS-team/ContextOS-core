@@ -73,7 +73,7 @@
 ### Security & Observability (Daulet)
 
 - [ ] **SEC-01**: All OAuth tokens (Linear, Slack, Fathom) stored in Supabase Vault, never in plain-text columns
-- [ ] **SEC-02**: Sentry SDK integrated in FastAPI backend with error context (workspace_id, user_id, endpoint)
+- [x] **SEC-02**: Sentry SDK integrated in FastAPI backend with error context (workspace_id, user_id, endpoint)
 - [ ] **SEC-03**: Laminar SDK integrated for LLM call tracing (prompts, responses, latency, cost)
 
 ## v2 Requirements
