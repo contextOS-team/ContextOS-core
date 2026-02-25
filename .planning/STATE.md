@@ -9,7 +9,7 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 
 ## Current Position
 
-Phase: 3 of 6 (Slack and Meeting Ingestion)
+Phase: 3 of 7 (Slack and Meeting Ingestion)
 Plan: 3 of 3 in current phase
 Status: Phase 03 complete -- all plans executed, visual verification passed
 Last activity: 2026-02-25 -- Completed 03-03: Integration Setup UI with bugfixes
@@ -92,12 +92,17 @@ Recent decisions affecting current work:
 
 None yet.
 
+### Roadmap Evolution
+
+- Phase 7 added: GitHub Integration
+
 ### Blockers/Concerns
 
 - Linear OAuth app registration required before Phase 2
 - Slack app registration required before Phase 3
 - Fathom API access required before Phase 3
 - Gemini API key required before Phase 4
+- GitHub OAuth app registration required before Phase 7
 
 ## Session Continuity
 
