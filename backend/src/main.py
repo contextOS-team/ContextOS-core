@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.config import Environment, get_settings
 from src.middleware.correlation import CorrelationIdMiddleware
 from src.middleware.rate_limit import RateLimitMiddleware
+from src.observability.laminar import init_laminar
 from src.observability.logging import configure_logging
 from src.observability.sentry import SentryContextMiddleware, init_sentry
 from src.routers.auth import router as auth_router
@@ -23,6 +24,9 @@ from src.routers.workspaces import router as workspaces_router
 # Initialize Sentry BEFORE app creation (must init early to capture all errors)
 settings = get_settings()
 init_sentry(settings)
+
+# Initialize Laminar for LLM observability (no-ops safely without API key)
+init_laminar(settings)
 
 # Configure structured logging
 configure_logging(settings.ENVIRONMENT)
