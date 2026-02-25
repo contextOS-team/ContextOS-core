@@ -32,27 +32,27 @@ AI-generated context pages for engineering tickets. When an engineer picks up a 
 
 ## Getting Started
 
-### Prerequisites
-
-- Node.js 22+ and pnpm 9+
-- Python 3.12+ and [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- Docker (for Redis)
-- Supabase CLI (`npx supabase` or `brew install supabase/tap/supabase`)
-
-### Quick Setup
+### Team Members (Quickest Path)
 
 ```bash
-# Clone and enter the repo
 git clone git@github.com:contextOS-team/ContextOS-core.git
 cd ContextOS-core
-
-# One-command setup (installs deps, copies .env, starts Docker)
+# Drop in the .env file from DM
 make setup
-
-# Edit .env with your keys (Supabase, Linear, Slack, etc.)
+# Terminal 1:
+make dev-frontend   # http://localhost:3000
+# Terminal 2:
+make dev-backend    # http://localhost:8000/docs
 ```
 
-### Manual Setup
+`make setup` checks prerequisites, installs all dependencies, starts Supabase, applies migrations, generates the frontend env file, and starts Redis. If anything is missing it tells you exactly what to install.
+
+### Manual Setup (External Contributors)
+
+<details>
+<summary>Click to expand</summary>
+
+**Prerequisites:** Node.js 22+, pnpm 9+, Python 3.12+, [uv](https://docs.astral.sh/uv/), Docker, Supabase CLI
 
 1. Copy environment variables:
    ```bash
@@ -80,6 +80,13 @@ make setup
    ```bash
    cd backend && uv sync --all-extras
    ```
+
+6. Generate frontend env:
+   ```bash
+   make setup-frontend-env
+   ```
+
+</details>
 
 ### Development
 

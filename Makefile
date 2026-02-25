@@ -1,4 +1,4 @@
-.PHONY: dev dev-frontend dev-backend setup setup-backend db-reset lint typecheck test codegen clean
+.PHONY: dev dev-frontend dev-backend setup setup-backend check-prereqs setup-frontend-env db-reset lint typecheck test codegen clean
 
 dev:
 	@echo "Starting Redis..."
@@ -11,12 +11,41 @@ dev-frontend:
 dev-backend:
 	cd backend && uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
-setup: setup-backend
+check-prereqs:
+	@echo "Checking prerequisites..."
+	@command -v node >/dev/null 2>&1 || { echo "node not found — install from https://nodejs.org or 'brew install node'"; exit 1; }
+	@command -v pnpm >/dev/null 2>&1 || { echo "pnpm not found — run 'npm install -g pnpm'"; exit 1; }
+	@command -v python3 >/dev/null 2>&1 || { echo "python3 not found — install from https://python.org or 'brew install python'"; exit 1; }
+	@command -v uv >/dev/null 2>&1 || { echo "uv not found — run 'curl -LsSf https://astral.sh/uv/install.sh | sh'"; exit 1; }
+	@command -v docker >/dev/null 2>&1 || { echo "docker not found — install from https://docker.com"; exit 1; }
+	@command -v supabase >/dev/null 2>&1 || { echo "supabase CLI not found — run 'brew install supabase/tap/supabase'"; exit 1; }
+	@echo "All prerequisites found."
+
+setup-frontend-env:
+	@if [ -f .env ]; then \
+		echo "Generating apps/web/.env.local from root .env..."; \
+		grep '^NEXT_PUBLIC_' .env > apps/web/.env.local; \
+		echo "Created apps/web/.env.local"; \
+	else \
+		echo "Warning: .env not found — skipping apps/web/.env.local generation"; \
+	fi
+
+setup: check-prereqs setup-backend
 	@echo "Setting up ContextOS..."
 	cp -n .env.example .env || true
+	@echo "Starting Supabase (skips if already running)..."
+	supabase start || true
+	@echo "Applying database migrations..."
+	supabase db reset
 	cd apps/web && pnpm install
+	$(MAKE) setup-frontend-env
 	docker compose up -d
-	@echo "Done! Edit .env with your keys, then run 'make dev'"
+	@echo ""
+	@echo "Setup complete! Next steps:"
+	@echo "  1. Edit .env with your keys (or drop in the .env from DM)"
+	@echo "  2. Run 'make setup-frontend-env' after updating .env"
+	@echo "  3. Terminal 1: make dev-frontend"
+	@echo "  4. Terminal 2: make dev-backend"
 
 setup-backend:
 	@echo "Setting up backend..."
