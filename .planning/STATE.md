@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 6 of 6 (Extension and Hardening)
-Plan: 3 of 4 in current phase
-Status: Executing Phase 06 -- completed 06-03 Laminar LLM Observability
-Last activity: 2026-02-25 -- Completed 06-03: Laminar LLM Observability
+Plan: 4 of 4 in current phase
+Status: Phase 06 COMPLETE -- all 4 plans executed
+Last activity: 2026-02-25 -- Completed 06-04: Vault Token Hardening + Deep Health Endpoint
 
-Progress: [=========.] 70%
+Progress: [==========] 75%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
-- Average duration: 7min
-- Total execution time: 1.35 hours
+- Total plans completed: 13
+- Average duration: 6.5min
+- Total execution time: 1.38 hours
 
 **By Phase:**
 
@@ -30,11 +30,11 @@ Progress: [=========.] 70%
 | 1. Foundation | 3 | 12min | 4min |
 | 2. Linear Integration | 3 | 26min | 8.7min |
 | 3. Slack/Meeting Ingestion | 3 | 24min | 8min |
-| 6. Extension/Hardening | 3 | 19min | 6.3min |
+| 6. Extension/Hardening | 4 | 21min | 5.3min |
 
 **Recent Trend:**
-- Last 5 plans: 03-02 (8min), 03-03 (10min), 06-01 (7min), 06-02 (8min), 06-03 (4min)
-- Trend: Consistent 4-8min for standard plans
+- Last 5 plans: 03-03 (10min), 06-01 (7min), 06-02 (8min), 06-03 (4min), 06-04 (2min)
+- Trend: Consistent 2-8min for standard plans
 
 *Updated after each plan completion*
 
@@ -100,6 +100,11 @@ Recent decisions affecting current work:
 - [06-03]: google-genai Client requires api_key at creation time -- pass "not-configured" placeholder when missing
 - [06-03]: Module-level config import (import src.config) for LLMClient matches webhook/slack patterns
 - [06-03]: Laminar init_laminar() called at module level in main.py alongside init_sentry()
+- [06-04]: Migration numbered 00004 (next sequential after 00003_vault_token_functions.sql)
+- [06-04]: vault_migrated_at is nullable TIMESTAMPTZ -- NULL means not yet verified as Vault-only
+- [06-04]: Token columns NOT dropped -- they store Vault secret name references needed for lookups
+- [06-04]: Health check overall status requires DB + Vault ok; external API degradation is tolerated
+- [06-04]: HEAD request with GET fallback for external API reachability checks
 
 ### Pending Todos
 
@@ -115,5 +120,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 06-03-PLAN.md
-Resume file: .planning/phases/06-extension-and-hardening/06-04-PLAN.md
+Stopped at: Completed 06-04-PLAN.md (Phase 06 complete)
+Resume file: None -- Phase 06 fully executed

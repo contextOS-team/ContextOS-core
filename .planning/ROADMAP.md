@@ -163,8 +163,8 @@ Plans:
 Plans:
 - [ ] 06-01-PLAN.md -- Chrome extension (Manifest V3) for quick Linear ticket context access (Bekbol)
 - [x] 06-02-PLAN.md -- Sentry error tracking (backend + frontend), structured logging, correlation IDs, rate limiting, Telegram alerting (Daulet)
-- [ ] 06-03-PLAN.md -- Laminar LLM observability with instrumented LLM client (Daulet)
-- [ ] 06-04-PLAN.md -- Vault token hardening with lazy migration, deep health endpoint (Daulet)
+- [x] 06-03-PLAN.md -- Laminar LLM observability with instrumented LLM client (Daulet)
+- [x] 06-04-PLAN.md -- Vault token hardening with lazy migration, deep health endpoint (Daulet)
 
 ## Coverage
 
@@ -204,7 +204,7 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 | 3. Slack and Meeting Ingestion | 0/2 | Not started | - |
 | 4. Context Generation | 0/3 | Not started | - |
 | 5. Delivery Channels | 0/3 | Not started | - |
-| 6. Extension and Hardening | 2/4 | In progress | - |
+| 6. Extension and Hardening | 4/4 | Complete | 2026-02-25 |
 
 ---
 *Roadmap created: 2026-02-24*
