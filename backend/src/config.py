@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # Sentry (error tracking)
     SENTRY_DSN: str = ""
 
+    # Telegram (critical error alerts via Sentry webhook)
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_CHAT_ID: str = ""
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 

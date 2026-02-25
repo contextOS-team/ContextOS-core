@@ -15,6 +15,7 @@ dependencies = [
     "httpx",
     "lmnr",
     "sentry-sdk[fastapi]",
+    "structlog",
     "python-dotenv",
     "slack-bolt",
     "sqlmodel>=0.0.22",
