@@ -7,6 +7,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import Environment, get_settings
+from src.middleware.correlation import CorrelationIdMiddleware
+from src.middleware.rate_limit import RateLimitMiddleware
+from src.observability.laminar import init_laminar
+from src.observability.logging import configure_logging
+from src.observability.sentry import SentryContextMiddleware, init_sentry
 from src.routers.auth import router as auth_router
 from src.routers.fathom import router as fathom_router
 from src.routers.github import router as github_router
@@ -16,6 +21,16 @@ from src.routers.linear import router as linear_router
 from src.routers.slack import router as slack_router
 from src.routers.webhooks import router as webhooks_router
 from src.routers.workspaces import router as workspaces_router
+
+# Initialize Sentry BEFORE app creation (must init early to capture all errors)
+settings = get_settings()
+init_sentry(settings)
+
+# Initialize Laminar for LLM observability (no-ops safely without API key)
+init_laminar(settings)
+
+# Configure structured logging
+configure_logging(settings.ENVIRONMENT)
 
 
 @asynccontextmanager
@@ -29,8 +44,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await engine.dispose()
 
 
-settings = get_settings()
-
 app = FastAPI(
     title="ContextOS",
     version="0.1.0",
@@ -42,7 +55,14 @@ app = FastAPI(
     openapi_url="/openapi.json" if settings.ENVIRONMENT != Environment.PROD else None,
 )
 
-# CORS middleware
+# Middleware stack (order matters -- bottom = first executed on request):
+# 1. RateLimitMiddleware (first: reject abusive requests early)
+# 2. CorrelationIdMiddleware (assign correlation ID for all subsequent logging)
+# 3. CORSMiddleware (handle CORS headers)
+# 4. SentryContextMiddleware (tag Sentry scope with user/workspace context)
+
+app.add_middleware(SentryContextMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -50,6 +70,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(CorrelationIdMiddleware)
+
+app.add_middleware(RateLimitMiddleware)
 
 # Include routers
 app.include_router(health_router)

@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     SUPABASE_JWT_SECRET: str = ""
 
-    # Google Gemini
-    GOOGLE_GENAI_API_KEY: str = ""
+    # Google Gemini (SDK reads from GEMINI_API_KEY env var automatically)
+    GEMINI_API_KEY: str = ""
 
     # Linear
     LINEAR_API_KEY: str = ""
@@ -69,6 +69,10 @@ class Settings(BaseSettings):
 
     # Sentry (error tracking)
     SENTRY_DSN: str = ""
+
+    # Telegram (critical error alerts via Sentry webhook)
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_CHAT_ID: str = ""
 
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"

@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 7 - GitHub Integration
+**Current focus:** Phase 6 - Extension and Hardening
 
 ## Current Position
 
-Phase: 7 of 7 (GitHub Integration)
-Plan: 3 of 3 in current phase
-Status: Phase 07 COMPLETE -- all 3 plans executed
-Last activity: 2026-02-25 -- Completed 07-03: Webhook Receiver and Integration UI
+Phase: 6 of 6 (Extension and Hardening)
+Plan: 4 of 4 in current phase
+Status: Phase 06 COMPLETE -- all 4 plans executed
+Last activity: 2026-02-25 -- Completed 06-04: Vault Token Hardening + Deep Health Endpoint
 
-Progress: [==========] 100%
+Progress: [==========] 75%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
-- Average duration: 6.6min
-- Total execution time: 1.32 hours
+- Total plans completed: 13
+- Average duration: 6.5min
+- Total execution time: 1.38 hours
 
 **By Phase:**
 
@@ -30,11 +30,11 @@ Progress: [==========] 100%
 | 1. Foundation | 3 | 12min | 4min |
 | 2. Linear Integration | 3 | 26min | 8.7min |
 | 3. Slack/Meeting Ingestion | 3 | 24min | 8min |
-| 7. GitHub Integration | 3 | 19min | 6.3min |
+| 6. Extension/Hardening | 4 | 21min | 5.3min |
 
 **Recent Trend:**
-- Last 5 plans: 03-03 (10min), 07-01 (8min), 07-02 (6min), 07-03 (5min)
-- Trend: Decreasing times as patterns mature (8min -> 6min -> 5min)
+- Last 5 plans: 03-03 (10min), 06-01 (7min), 06-02 (8min), 06-03 (4min), 06-04 (2min)
+- Trend: Consistent 2-8min for standard plans
 
 *Updated after each plan completion*
 
@@ -88,27 +88,27 @@ Recent decisions affecting current work:
 - [03-03]: OAuth upsert must query WITHOUT deleted_at filter to reuse soft-deleted rows on reconnect
 - [03-03]: All DB timestamp columns use datetime.utcnow() (naive UTC) -- never datetime.now(timezone.utc)
 - [03-03]: Fathom API base URL is api.fathom.ai/external/v1, auth header is X-Api-Key, endpoint is /meetings
-- [07-01]: PyJWT with RS256 for GitHub App JWT signing (already a project dependency, no new library needed)
-- [07-01]: Installation access tokens stored in Vault with 1-hour expiry; refreshed on demand via App JWT
-- [07-01]: GitHub App installation flow (not standard OAuth2) per CONTEXT.md decision
-- [07-01]: HMAC-SHA256 signed state uses GITHUB_CLIENT_SECRET (same pattern as Linear/Slack)
-- [07-01]: installation_id stored in OAuthToken.metadata_ JSONB for token refresh
-- [07-01]: 'github' added to provider check constraints via migration ALTER
-- [07-02]: Sequential repo sync per user decision to avoid rate limit exhaustion
-- [07-02]: New repos NOT auto-monitored (explicit selection required, unlike Slack channels)
-- [07-02]: Branch-name-only linking with case-insensitive regex for team key matching
-- [07-03]: GitHub webhook signature uses X-Hub-Signature-256 with sha256= prefix format
-- [07-03]: Workspace resolved from installation.id by scanning OAuthToken metadata_ JSONB
-- [07-03]: Review comments stored as GithubReview records with file_path and line_range
-- [07-03]: Bot filtering via exact login match against known set (dependabot, renovate, github-actions)
+- [06-01]: Vanilla DOM manipulation in popup instead of React to avoid build pipeline dependency
+- [06-01]: Monkey-patched history.pushState/replaceState + MutationObserver for SPA navigation detection
+- [06-01]: API token stored in chrome.storage.local with settings panel for manual configuration
+- [06-02]: SqlalchemyIntegration imported lazily to avoid import-time failure without sqlalchemy
+- [06-02]: SentryInit client component wraps Sentry.init() for server layout compatibility
+- [06-02]: In-memory sliding window rate limiter (no Redis) for MVP single-instance deployment
+- [06-02]: Middleware order: RateLimit -> Correlation -> CORS -> SentryContext
+- [06-02]: Structlog with ProcessorFormatter for unified structured logging
+- [06-02]: Telegram alerting via Sentry webhook config (no custom bot code)
+- [06-03]: google-genai Client requires api_key at creation time -- pass "not-configured" placeholder when missing
+- [06-03]: Module-level config import (import src.config) for LLMClient matches webhook/slack patterns
+- [06-03]: Laminar init_laminar() called at module level in main.py alongside init_sentry()
+- [06-04]: Migration numbered 00004 (next sequential after 00003_vault_token_functions.sql)
+- [06-04]: vault_migrated_at is nullable TIMESTAMPTZ -- NULL means not yet verified as Vault-only
+- [06-04]: Token columns NOT dropped -- they store Vault secret name references needed for lookups
+- [06-04]: Health check overall status requires DB + Vault ok; external API degradation is tolerated
+- [06-04]: HEAD request with GET fallback for external API reachability checks
 
 ### Pending Todos
 
 None yet.
-
-### Roadmap Evolution
-
-- Phase 7 added: GitHub Integration
 
 ### Blockers/Concerns
 
@@ -116,10 +116,9 @@ None yet.
 - Slack app registration required before Phase 3
 - Fathom API access required before Phase 3
 - Gemini API key required before Phase 4
-- GitHub OAuth app registration required before Phase 7
 
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 07-03-PLAN.md -- Phase 7 complete
-Resume file: All phases complete
+Stopped at: Completed 06-04-PLAN.md (Phase 06 complete)
+Resume file: None -- Phase 06 fully executed

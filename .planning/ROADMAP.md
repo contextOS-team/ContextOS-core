@@ -18,7 +18,6 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 4: Context Generation** - LangGraph pipeline, Gemini synthesis, Slack-to-ticket linking, meeting-to-ticket linking (Dulat)
 - [ ] **Phase 5: Delivery Channels** - Dashboard feed/detail/settings, Linear comment bot, MCP server (Daulet + Bekbol)
 - [ ] **Phase 6: Extension and Hardening** - Chrome extension, Vault token storage, Sentry, Laminar (Daulet + Bekbol)
-- [x] **Phase 7: GitHub Integration** - GitHub OAuth, PR/review ingestion, PR-to-Linear linking, webhook processing (Daulet) (completed 2026-02-25)
 
 ## Parallelization Map
 
@@ -159,29 +158,13 @@ Plans:
   2. All OAuth tokens (Linear, Slack, Fathom) are stored in Supabase Vault -- no plain-text token columns exist
   3. Backend errors are captured in Sentry with workspace_id, user_id, and endpoint context
   4. Every LLM synthesis call is traced in Laminar with prompt, response, latency, and cost visible
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 06-01: Chrome extension for quick context access (Bekbol)
-- [ ] 06-02: Vault token storage, Sentry error tracking, Laminar LLM observability (Daulet)
-
-### Phase 7: GitHub Integration
-**Goal**: GitHub PR data (reviews, comments, branch links) flows into the system, connecting code execution to Linear tickets so context pages include implementation details
-**Depends on**: Phase 6
-**Owner**: Daulet
-**Requirements**: GH-01, GH-02, GH-03, GH-04, GH-05
-**Success Criteria** (what must be TRUE):
-  1. User can connect their GitHub organization via OAuth from the integration setup page
-  2. User can select which repos to monitor; only events from selected repos are ingested
-  3. PRs are automatically linked to Linear issues via branch name, title, or commit message patterns
-  4. PR reviews and review comments are stored with author, state, and file/line context
-  5. GitHub webhook signatures are verified -- tampered payloads are rejected
-**Plans**: 3 plans
-
-Plans:
-- [x] 07-01-PLAN.md -- GitHub App OAuth flow with Vault token storage, DB schema for PR/review tables, SQLModel models
-- [ ] 07-02-PLAN.md -- Repo selection with searchable listing, initial PR sync with 60-day backfill, PR-to-Linear linking via branch name
-- [ ] 07-03-PLAN.md -- Webhook receiver with HMAC-SHA256 verification, idempotent event processing, integration setup UI card and repo picker
+- [ ] 06-01-PLAN.md -- Chrome extension (Manifest V3) for quick Linear ticket context access (Bekbol)
+- [x] 06-02-PLAN.md -- Sentry error tracking (backend + frontend), structured logging, correlation IDs, rate limiting, Telegram alerting (Daulet)
+- [x] 06-03-PLAN.md -- Laminar LLM observability with instrumented LLM client (Daulet)
+- [x] 06-04-PLAN.md -- Vault token hardening with lazy migration, deep health endpoint (Daulet)
 
 ## Coverage
 
@@ -202,14 +185,13 @@ Plans:
 | MCP Server | MCP-01, MCP-02, MCP-03 (3) | Phase 5 | Daulet |
 | Chrome Extension | EXT-01 (1) | Phase 6 | Bekbol |
 | Security and Observability | SEC-01, SEC-02, SEC-03 (3) | Phase 6 | Daulet |
-| GitHub Integration | GH-01, GH-02, GH-03, GH-04, GH-05 (5) | Phase 7 | Daulet |
 
 No orphaned requirements. No duplicate mappings.
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 --> 2 --> 3 --> 4 --> 5 --> 6 --> 7
+Phases execute in numeric order: 1 --> 2 --> 3 --> 4 --> 5 --> 6
 Phases 2 and 3 can overlap (both depend only on Phase 1; Bekbol works on DASH-04 while Daulet does Phase 2).
 Phase 4 can begin once Phase 2 completes (Linear data exists); Phase 3 Slack data is additive.
 Phase 5 plans run in parallel: Bekbol (dashboard) + Daulet (comment bot, MCP).
@@ -222,8 +204,7 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 | 3. Slack and Meeting Ingestion | 0/2 | Not started | - |
 | 4. Context Generation | 0/3 | Not started | - |
 | 5. Delivery Channels | 0/3 | Not started | - |
-| 6. Extension and Hardening | 0/2 | Not started | - |
-| 7. GitHub Integration | 1/3 | Complete    | 2026-02-25 |
+| 6. Extension and Hardening | 4/4 | Complete | 2026-02-25 |
 
 ---
 *Roadmap created: 2026-02-24*
