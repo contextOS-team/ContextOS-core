@@ -60,6 +60,7 @@ export interface IntegrationStatusResponse {
   linear: ProviderStatus
   slack: ProviderStatus
   fathom: ProviderStatus
+  github: ProviderStatus
 }
 
 export function getIntegrationStatus(): Promise<IntegrationStatusResponse> {
@@ -143,4 +144,48 @@ export function disconnectFathom(): Promise<{ status: string }> {
   return apiFetch<{ status: string }>('/api/fathom/disconnect', {
     method: 'POST',
   })
+}
+
+// ---------------------------------------------------------------------------
+// GitHub
+// ---------------------------------------------------------------------------
+
+export function connectGithub(): Promise<{ installation_url: string }> {
+  return apiFetch<{ installation_url: string }>('/api/github/connect')
+}
+
+export function disconnectGithub(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/github/disconnect', {
+    method: 'POST',
+  })
+}
+
+export interface GithubRepo {
+  full_name: string
+  name: string
+  private: boolean
+  description: string | null
+  language: string | null
+}
+
+export function getGithubRepos(): Promise<{ repos: GithubRepo[] }> {
+  return apiFetch<{ repos: GithubRepo[] }>('/api/github/repos')
+}
+
+export function refreshGithubRepos(): Promise<{ repos: GithubRepo[] }> {
+  return apiFetch<{ repos: GithubRepo[] }>('/api/github/repos/refresh', {
+    method: 'POST',
+  })
+}
+
+export function saveGithubRepoSelection(
+  repoFullNames: string[]
+): Promise<{ status: string; selected_repos: string[] }> {
+  return apiFetch<{ status: string; selected_repos: string[] }>(
+    '/api/github/repos/select',
+    {
+      method: 'POST',
+      body: JSON.stringify({ repo_full_names: repoFullNames }),
+    }
+  )
 }

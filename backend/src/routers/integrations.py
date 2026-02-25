@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
-PROVIDERS = ["linear", "slack", "fathom"]
+PROVIDERS = ["linear", "slack", "fathom", "github"]
 
 
 def _disconnected_status() -> dict:
@@ -43,6 +43,12 @@ def _build_provider_status(integration: WorkspaceIntegration) -> dict:
         config = integration.config or {}
         selected = config.get("selected_channels", [])
         result["selected_channels_count"] = len(selected) if isinstance(selected, list) else 0
+
+    # For GitHub, include selected_repos_count from config
+    if integration.provider == "github":
+        config = integration.config or {}
+        selected = config.get("selected_repos", [])
+        result["selected_repos_count"] = len(selected) if isinstance(selected, list) else 0
 
     return result
 

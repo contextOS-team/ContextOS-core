@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Workflow, MessageSquare, Video } from 'lucide-react'
+import { Workflow, MessageSquare, Video, GitBranch } from 'lucide-react'
 import {
   getIntegrationStatus,
   connectLinear,
@@ -9,11 +9,14 @@ import {
   connectSlack,
   disconnectSlack,
   disconnectFathom,
+  connectGithub,
+  disconnectGithub,
   type IntegrationStatusResponse,
 } from '@/lib/api'
 import { IntegrationCard } from './integration-card'
 import { SlackChannels } from './slack-channels'
 import { FathomConnect } from './fathom-connect'
+import { GithubRepos } from './github-repos'
 
 export default function IntegrationsPage() {
   const [statuses, setStatuses] = useState<IntegrationStatusResponse | null>(
@@ -80,6 +83,23 @@ export default function IntegrationsPage() {
     await fetchStatuses()
   }
 
+  // --- GitHub handlers ---
+  async function handleConnectGithub() {
+    try {
+      const { installation_url } = await connectGithub()
+      window.location.href = installation_url
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to start GitHub connection'
+      )
+    }
+  }
+
+  async function handleDisconnectGithub() {
+    await disconnectGithub()
+    await fetchStatuses()
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -89,8 +109,8 @@ export default function IntegrationsPage() {
             Connect your tools to enable context generation
           </p>
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          {[1, 2, 3].map((i) => (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
             <div
               key={i}
               className="h-48 animate-pulse rounded-xl border bg-muted/30"
@@ -116,6 +136,11 @@ export default function IntegrationsPage() {
     external_name: null,
     connected_at: null,
   }
+  const github = statuses?.github ?? {
+    status: 'disconnected' as const,
+    external_name: null,
+    connected_at: null,
+  }
 
   return (
     <div className="space-y-6">
@@ -135,7 +160,7 @@ export default function IntegrationsPage() {
       )}
 
       {/* Integration cards grid */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {/* Linear */}
         <IntegrationCard
           name="Linear"
@@ -176,6 +201,20 @@ export default function IntegrationsPage() {
           onDisconnect={handleDisconnectFathom}
           connectForm={<FathomConnect onConnected={fetchStatuses} />}
         />
+
+        {/* GitHub */}
+        <IntegrationCard
+          name="GitHub"
+          icon={<GitBranch className="h-5 w-5 text-gray-800" />}
+          description="Import PRs, reviews, and code context from GitHub"
+          status={github.status}
+          externalName={github.external_name}
+          connectedAt={github.connected_at}
+          onConnect={handleConnectGithub}
+          onDisconnect={handleDisconnectGithub}
+        >
+          <GithubRepos onSaved={fetchStatuses} />
+        </IntegrationCard>
       </div>
     </div>
   )
