@@ -1,7 +1,7 @@
-"""GitHub App OAuth integration endpoints.
+"""GitHub App integration endpoints.
 
-Provides connect, callback, disconnect, and status endpoints for managing
-the GitHub App installation integration.
+Provides OAuth connect/callback/disconnect/status endpoints, repo listing/
+selection endpoints, and PR sync trigger/status endpoints.
 
 The callback endpoint is NOT JWT-protected because GitHub redirects here
 directly. The state parameter provides CSRF protection via HMAC-SHA256.
@@ -9,8 +9,9 @@ directly. The state parameter provides CSRF protection via HMAC-SHA256.
 
 import logging
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import src.config as config_module
@@ -24,6 +25,11 @@ from src.services.github_oauth import (
     disconnect,
     get_status,
     handle_callback,
+)
+from src.services.github_repos import (
+    get_cached_repos,
+    refresh_repos,
+    save_selected_repos,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,3 +118,71 @@ async def get_github_status(
     authenticated user's workspace.
     """
     return await get_status(user.workspace_id, session)
+
+
+# ---------- Repo listing and selection ----------
+
+
+class RepoSelectRequest(BaseModel):
+    """Request body for selecting repos to monitor."""
+
+    repo_full_names: list[str]
+
+
+@router.get("/repos")
+async def get_repos(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get cached list of available repos.
+
+    Returns the cached repo list from workspace_integrations.config
+    without making a GitHub API call. Use POST /repos/refresh to
+    fetch a fresh list from GitHub.
+    """
+    repos = await get_cached_repos(user.workspace_id, session)
+    return {"repos": repos}
+
+
+@router.post("/repos/refresh")
+async def refresh_repos_endpoint(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Refresh repo list from GitHub API.
+
+    Fetches a fresh list of installation repositories from the
+    GitHub API and updates the cache.
+    """
+    settings = config_module.get_settings()
+    try:
+        repos = await refresh_repos(user.workspace_id, session, settings)
+        return {"repos": repos}
+    except GitHubOAuthError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.post("/repos/select")
+async def select_repos(
+    body: RepoSelectRequest,
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Select repos to monitor for PR sync and webhooks.
+
+    Validates the provided repo names against the cached available
+    repos list and saves the selection.
+    """
+    try:
+        selected = await save_selected_repos(
+            user.workspace_id, body.repo_full_names, session
+        )
+        return {"selected_repos": selected}
+    except GitHubOAuthError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
