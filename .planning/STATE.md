@@ -97,6 +97,9 @@ Recent decisions affecting current work:
 - [06-02]: Middleware order: RateLimit -> Correlation -> CORS -> SentryContext
 - [06-02]: Structlog with ProcessorFormatter for unified structured logging
 - [06-02]: Telegram alerting via Sentry webhook config (no custom bot code)
+- [06-03]: google-genai Client requires api_key at creation time -- pass "not-configured" placeholder when missing
+- [06-03]: Module-level config import (import src.config) for LLMClient matches webhook/slack patterns
+- [06-03]: Laminar init_laminar() called at module level in main.py alongside init_sentry()
 
 ### Pending Todos
 
@@ -112,5 +115,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 06-02-PLAN.md
-Resume file: .planning/phases/06-extension-and-hardening/06-03-PLAN.md
+Stopped at: Completed 06-03-PLAN.md
+Resume file: .planning/phases/06-extension-and-hardening/06-04-PLAN.md
