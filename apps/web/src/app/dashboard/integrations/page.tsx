@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Workflow, MessageSquare, Video, GitBranch } from 'lucide-react'
 import {
   getIntegrationStatus,
@@ -24,6 +25,28 @@ export default function IntegrationsPage() {
   )
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const searchParams = useSearchParams()
+
+  // Handle GitHub OAuth callback query params
+  useEffect(() => {
+    const githubStatus = searchParams.get('github')
+    if (githubStatus === 'connected') {
+      const account = searchParams.get('account')
+      setError(null)
+      // Clean URL without reloading
+      window.history.replaceState({}, '', '/dashboard/integrations')
+    } else if (githubStatus === 'error') {
+      const reason = searchParams.get('reason') || 'unknown'
+      const messages: Record<string, string> = {
+        invalid_state: 'GitHub connection failed: invalid or expired session. Please try again.',
+        callback_failed: 'GitHub connection failed. Please try again.',
+        internal_error: 'An internal error occurred during GitHub connection. Please try again.',
+      }
+      setError(messages[reason] || `GitHub connection failed: ${reason}`)
+      window.history.replaceState({}, '', '/dashboard/integrations')
+    }
+  }, [searchParams])
 
   const fetchStatuses = useCallback(async () => {
     try {

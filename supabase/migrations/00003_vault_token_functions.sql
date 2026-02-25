@@ -47,7 +47,8 @@ begin
     return new_id;
   end if;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer
+set search_path = vault, public;
 
 -- Read a decrypted secret by name
 create or replace function public.read_vault_secret(
@@ -61,7 +62,8 @@ begin
   where name = secret_name;
   return result;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer
+set search_path = vault, public;
 
 -- Delete a secret by name
 create or replace function public.delete_vault_secret(
@@ -71,7 +73,17 @@ begin
   delete from vault.secrets
   where name = secret_name;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer
+set search_path = vault, public;
+
+-- ============================================================
+-- VAULT PERMISSIONS
+-- ============================================================
+-- In local Supabase, vault.secrets is owned by supabase_admin.
+-- The postgres role (used by the backend) needs INSERT/UPDATE access.
+-- Grant full access so security-definer functions can operate.
+grant all on vault.secrets to postgres;
+grant all on vault.decrypted_secrets to postgres;
 
 -- ============================================================
 -- WEBHOOK DELIVERIES (idempotency tracking)
@@ -79,7 +91,7 @@ $$ language plpgsql security definer;
 create table public.webhook_deliveries (
   id uuid primary key default gen_random_uuid(),
   delivery_id text not null unique,
-  provider text not null check (provider in ('linear', 'slack')),
+  provider text not null check (provider in ('linear', 'slack', 'github')),
   processed_at timestamptz not null default now()
 );
 

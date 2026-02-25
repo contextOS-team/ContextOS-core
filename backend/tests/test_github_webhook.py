@@ -554,12 +554,8 @@ async def test_lookup_workspace_from_installation_id() -> None:
     workspace_id = UUID(TEST_WORKSPACE_ID)
     mock_session = AsyncMock()
 
-    mock_token = MagicMock()
-    mock_token.workspace_id = workspace_id
-    mock_token.metadata_ = {"installation_id": 12345}
-
     mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = [mock_token]
+    mock_result.scalar_one_or_none.return_value = workspace_id
 
     mock_session.execute.return_value = mock_result
 
@@ -575,7 +571,7 @@ async def test_lookup_workspace_not_found_returns_none() -> None:
     mock_session = AsyncMock()
 
     mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = []
+    mock_result.scalar_one_or_none.return_value = None
 
     mock_session.execute.return_value = mock_result
 

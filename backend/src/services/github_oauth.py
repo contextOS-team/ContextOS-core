@@ -16,6 +16,7 @@ Uses httpx for all GitHub API calls (consistent with project pattern).
 
 import hashlib
 import hmac
+import logging
 import time
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -28,6 +29,8 @@ from sqlmodel import select
 from src.config import Settings
 from src.models.integration import OAuthToken, WorkspaceIntegration
 from src.services.vault import delete_token, read_token, store_token, token_name
+
+logger = logging.getLogger(__name__)
 
 # GitHub API endpoints
 GITHUB_API_BASE = "https://api.github.com"
@@ -94,7 +97,8 @@ def _create_app_jwt(settings: Settings) -> str:
 def build_install_url(state: str, settings: Settings) -> str:
     """Construct the GitHub App installation URL.
 
-    Redirects the user to GitHub to install the App on their org/account.
+    Uses the GitHub App install flow with redirect URI so GitHub redirects
+    back to our callback after the user installs or authorizes the app.
 
     Args:
         state: Pre-signed state parameter (use _sign_state to create).
@@ -103,9 +107,10 @@ def build_install_url(state: str, settings: Settings) -> str:
     Returns:
         Full installation URL to redirect the user to.
     """
+    redirect_uri = settings.github_redirect_uri
     return (
         f"https://github.com/apps/{settings.GITHUB_APP_SLUG}"
-        f"/installations/new?state={state}"
+        f"/installations/new?state={state}&redirect_uri={redirect_uri}"
     )
 
 
@@ -207,7 +212,7 @@ async def handle_callback(
     permissions = token_data.get("permissions", {})
     # Fetch installation details for account info
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
                 f"{GITHUB_API_BASE}/app/installations/{installation_id}",
                 headers={
@@ -277,7 +282,7 @@ async def _create_installation_token(installation_id: int, app_jwt: str) -> dict
     Raises:
         GitHubOAuthError: If the API call fails.
     """
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             f"{GITHUB_API_BASE}/app/installations/{installation_id}/access_tokens",
             headers={
@@ -332,7 +337,11 @@ async def get_installation_token(
     # Check if token is still valid (with 5 min buffer)
     if oauth_token.token_expires_at:
         buffer = timedelta(minutes=5)
-        if oauth_token.token_expires_at > (datetime.utcnow() + buffer):
+        # Ensure both sides are naive UTC for comparison
+        expires_at = oauth_token.token_expires_at
+        if expires_at.tzinfo is not None:
+            expires_at = expires_at.replace(tzinfo=None)
+        if expires_at > (datetime.utcnow() + buffer):
             # Token still valid, read from Vault
             access_name = token_name("github", workspace_id, "access_token")
             current_token = await read_token(session, access_name)
@@ -375,29 +384,62 @@ async def disconnect(
     session: AsyncSession,
     workspace_id: UUID,
     user_id: UUID,
+    settings: Settings | None = None,
 ) -> None:
-    """Disconnect GitHub integration.
+    """Disconnect GitHub integration and uninstall the GitHub App.
 
-    Soft-deletes the OAuthToken, deletes Vault secrets, and marks
-    WorkspaceIntegration as disconnected. Existing PR data is preserved.
+    Calls DELETE /app/installations/{id} to remove the app from the
+    user's GitHub account/org, then soft-deletes the OAuthToken, deletes
+    Vault secrets, and marks WorkspaceIntegration as disconnected.
+    Existing PR data is preserved.
 
     Args:
         session: Async database session.
         workspace_id: Workspace to disconnect.
         user_id: User who initiated the disconnect.
+        settings: Application settings (needed for App JWT to uninstall).
     """
-    # Soft-delete OAuthToken
-    stmt = select(OAuthToken).where(
+    # Get installation_id before we soft-delete everything
+    installation_id = None
+    oauth_stmt = select(OAuthToken).where(
         OAuthToken.workspace_id == workspace_id,
         OAuthToken.user_id == user_id,
         OAuthToken.provider == "github",
         OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
     )
-    result = await session.execute(stmt)
-    oauth_token = result.scalar_one_or_none()
+    oauth_result = await session.execute(oauth_stmt)
+    oauth_token = oauth_result.scalar_one_or_none()
 
     if oauth_token:
+        installation_id = (oauth_token.metadata_ or {}).get("installation_id")
         oauth_token.deleted_at = datetime.utcnow()
+
+    # Uninstall the GitHub App from the user's account/org
+    if installation_id and settings:
+        try:
+            app_jwt = _create_app_jwt(settings)
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.delete(
+                    f"{GITHUB_API_BASE}/app/installations/{installation_id}",
+                    headers={
+                        "Authorization": f"Bearer {app_jwt}",
+                        "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28",
+                    },
+                )
+                if resp.status_code == 204:
+                    logger.info(
+                        "Uninstalled GitHub App installation %s", installation_id
+                    )
+                else:
+                    logger.warning(
+                        "Failed to uninstall GitHub App installation %s: %s %s",
+                        installation_id, resp.status_code, resp.text,
+                    )
+        except httpx.HTTPError as e:
+            logger.warning(
+                "HTTP error uninstalling GitHub App: %s", e
+            )
 
     # Delete Vault secret
     access_name = token_name("github", workspace_id, "access_token")

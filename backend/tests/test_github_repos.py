@@ -377,7 +377,7 @@ class TestLinkHeaderParsing:
 
     def test_parse_link_next_extracts_url(self):
         """_parse_link_next extracts the next URL from Link header."""
-        from src.services.github_repos import _parse_link_next
+        from src.services.github_common import parse_link_next as _parse_link_next
 
         link = (
             '<https://api.github.com/installation/repositories?page=2&per_page=100>; rel="next", '
@@ -388,7 +388,7 @@ class TestLinkHeaderParsing:
 
     def test_parse_link_next_returns_none_for_last_page(self):
         """_parse_link_next returns None when no next link."""
-        from src.services.github_repos import _parse_link_next
+        from src.services.github_common import parse_link_next as _parse_link_next
 
         link = '<https://api.github.com/installation/repositories?page=1&per_page=100>; rel="last"'
         result = _parse_link_next(link)
@@ -396,7 +396,7 @@ class TestLinkHeaderParsing:
 
     def test_parse_link_next_returns_none_for_empty(self):
         """_parse_link_next returns None for empty/None input."""
-        from src.services.github_repos import _parse_link_next
+        from src.services.github_common import parse_link_next as _parse_link_next
 
         assert _parse_link_next(None) is None
         assert _parse_link_next("") is None

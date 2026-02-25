@@ -83,14 +83,20 @@ async def callback(
         )
         account = result.get("account", "")
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?github=connected&account={account}",
+            url=f"{frontend_url}/dashboard/integrations?github=connected&account={account}",
             status_code=status.HTTP_302_FOUND,
         )
     except GitHubOAuthError as e:
         logger.error("GitHub App callback failed: %s", e)
         reason = "invalid_state" if "state" in str(e).lower() else "callback_failed"
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?github=error&reason={reason}",
+            url=f"{frontend_url}/dashboard/integrations?github=error&reason={reason}",
+            status_code=status.HTTP_302_FOUND,
+        )
+    except Exception as e:
+        logger.exception("Unexpected error in GitHub callback: %s", e)
+        return RedirectResponse(
+            url=f"{frontend_url}/dashboard/integrations?github=error&reason=internal_error",
             status_code=status.HTTP_302_FOUND,
         )
 
@@ -100,12 +106,14 @@ async def disconnect_github(
     user: UserContext = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Disconnect the GitHub integration.
+    """Disconnect the GitHub integration and uninstall the GitHub App.
 
-    Soft-deletes OAuth tokens and marks the integration as disconnected.
+    Removes the app from the user's GitHub account/org, soft-deletes
+    OAuth tokens, and marks the integration as disconnected.
     Existing PR data is preserved.
     """
-    await disconnect(session, user.workspace_id, user.user_id)
+    settings = config_module.get_settings()
+    await disconnect(session, user.workspace_id, user.user_id, settings)
     return {"status": "disconnected"}
 
 

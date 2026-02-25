@@ -11,7 +11,6 @@ New repos are NOT auto-monitored (unlike Slack channels -- per user decision).
 """
 
 import logging
-import re
 from uuid import UUID
 
 import httpx
@@ -20,44 +19,10 @@ from sqlmodel import select
 
 from src.config import Settings
 from src.models.integration import WorkspaceIntegration
+from src.services.github_common import GITHUB_API_BASE, github_headers, parse_link_next
 from src.services.github_oauth import GitHubOAuthError, get_installation_token
 
 logger = logging.getLogger(__name__)
-
-# GitHub API base URL
-GITHUB_API_BASE = "https://api.github.com"
-
-# Standard GitHub API headers
-GITHUB_API_VERSION = "2022-11-28"
-
-
-def _github_headers(token: str) -> dict[str, str]:
-    """Build standard GitHub API request headers."""
-    return {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": GITHUB_API_VERSION,
-    }
-
-
-def _parse_link_next(link_header: str | None) -> str | None:
-    """Parse the GitHub Link header to extract the 'next' page URL.
-
-    GitHub uses RFC 5988 Link headers for pagination:
-    <https://api.github.com/...?page=2>; rel="next", <...>; rel="last"
-
-    Args:
-        link_header: The raw Link header value.
-
-    Returns:
-        The URL for the next page, or None if no next page.
-    """
-    if not link_header:
-        return None
-
-    # Match <URL>; rel="next"
-    match = re.search(r'<([^>]+)>;\s*rel="next"', link_header)
-    return match.group(1) if match else None
 
 
 async def list_repos(
@@ -91,7 +56,7 @@ async def list_repos(
 
     async with httpx.AsyncClient() as client:
         while url:
-            response = await client.get(url, headers=_github_headers(token))
+            response = await client.get(url, headers=github_headers(token))
 
             if response.status_code != 200:
                 raise GitHubOAuthError(
@@ -112,7 +77,7 @@ async def list_repos(
                 })
 
             # Parse Link header for next page
-            url = _parse_link_next(response.headers.get("link"))
+            url = parse_link_next(response.headers.get("link"))
 
     # Cache in workspace_integrations.config
     stmt = select(WorkspaceIntegration).where(

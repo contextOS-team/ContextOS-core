@@ -12,9 +12,7 @@ Per user decisions:
 - Unlinked PRs stored gracefully (null linear_ticket_id)
 """
 
-import asyncio
 import logging
-import time
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -27,128 +25,23 @@ from src.config import Settings
 from src.models.github import GithubPullRequest, GithubReview
 from src.models.integration import WorkspaceIntegration
 from src.services import embedding
+from src.services.github_common import (
+    GITHUB_API_BASE,
+    check_rate_limit,
+    github_headers,
+    is_bot_author,
+    map_pr_state,
+    map_review_state,
+    parse_github_timestamp,
+    parse_link_next,
+)
 from src.services.github_linking import link_pr_to_ticket
 from src.services.github_oauth import GitHubOAuthError, get_installation_token
 
 logger = logging.getLogger(__name__)
 
-# GitHub API base URL
-GITHUB_API_BASE = "https://api.github.com"
-
-# GitHub API version header
-GITHUB_API_VERSION = "2022-11-28"
-
 # Backfill window: 60 days per user decision
 BACKFILL_DAYS = 60
-
-# Bot accounts to filter per user decision
-BOT_ACCOUNTS = frozenset({
-    "dependabot[bot]",
-    "renovate[bot]",
-    "github-actions[bot]",
-})
-
-# Rate limit threshold: pause when remaining < this value
-RATE_LIMIT_THRESHOLD = 100
-
-
-def _github_headers(token: str) -> dict[str, str]:
-    """Build standard GitHub API request headers."""
-    return {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": GITHUB_API_VERSION,
-    }
-
-
-def _parse_link_next(link_header: str | None) -> str | None:
-    """Parse GitHub Link header to extract the 'next' page URL."""
-    if not link_header:
-        return None
-    import re
-    match = re.search(r'<([^>]+)>;\s*rel="next"', link_header)
-    return match.group(1) if match else None
-
-
-async def _check_rate_limit(response: httpx.Response) -> None:
-    """Check GitHub API rate limit headers and sleep if needed.
-
-    Monitors X-RateLimit-Remaining and X-RateLimit-Reset headers.
-    If remaining requests < RATE_LIMIT_THRESHOLD, sleeps until the
-    reset timestamp.
-
-    Args:
-        response: The httpx response to check headers on.
-    """
-    remaining = response.headers.get("x-ratelimit-remaining")
-    reset_at = response.headers.get("x-ratelimit-reset")
-
-    if remaining is not None and int(remaining) < RATE_LIMIT_THRESHOLD:
-        if reset_at:
-            reset_timestamp = int(reset_at)
-            wait_seconds = max(reset_timestamp - int(time.time()), 1)
-            logger.warning(
-                "GitHub rate limit low (%s remaining), sleeping %d seconds",
-                remaining,
-                wait_seconds,
-            )
-            await asyncio.sleep(wait_seconds)
-
-
-def _map_pr_state(state: str, merged_at: str | None) -> str:
-    """Map GitHub PR state to our model's state enum.
-
-    GitHub uses 'open' and 'closed', but we distinguish 'merged'.
-    A closed PR with a merged_at timestamp is 'merged'.
-
-    Args:
-        state: GitHub PR state ('open' or 'closed').
-        merged_at: ISO timestamp if the PR was merged, None otherwise.
-
-    Returns:
-        One of 'open', 'closed', or 'merged'.
-    """
-    if state == "closed" and merged_at:
-        return "merged"
-    return state
-
-
-def _parse_datetime(iso_str: str | None) -> datetime | None:
-    """Parse an ISO 8601 datetime string to naive UTC datetime.
-
-    Args:
-        iso_str: ISO 8601 datetime string (e.g., "2024-01-01T00:00:00Z").
-
-    Returns:
-        Naive UTC datetime, or None if input is None/empty.
-    """
-    if not iso_str:
-        return None
-    try:
-        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
-        return dt.replace(tzinfo=None)  # Naive UTC per project convention
-    except (ValueError, AttributeError):
-        return None
-
-
-def _map_review_state(state: str) -> str:
-    """Map GitHub review state to our model's state enum.
-
-    GitHub review states: APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED, PENDING
-
-    Args:
-        state: GitHub review state string.
-
-    Returns:
-        Lowercase state matching the DB check constraint.
-    """
-    state_map = {
-        "APPROVED": "approved",
-        "CHANGES_REQUESTED": "changes_requested",
-        "COMMENTED": "commented",
-        "DISMISSED": "dismissed",
-    }
-    return state_map.get(state, "commented")
 
 
 async def sync_repos(
@@ -243,7 +136,7 @@ async def sync_single_repo(
 
     async with httpx.AsyncClient() as client:
         while url:
-            response = await client.get(url, headers=_github_headers(token))
+            response = await client.get(url, headers=github_headers(token))
 
             if response.status_code != 200:
                 raise GitHubOAuthError(
@@ -251,21 +144,21 @@ async def sync_single_repo(
                     f"{response.status_code} {response.text}"
                 )
 
-            await _check_rate_limit(response)
+            await check_rate_limit(response)
 
             prs = response.json()
             reached_cutoff = False
 
             for pr_data in prs:
                 # Check if PR is older than backfill window
-                updated_at = _parse_datetime(pr_data.get("updated_at"))
+                updated_at = parse_github_timestamp(pr_data.get("updated_at"))
                 if updated_at and updated_at < cutoff:
                     reached_cutoff = True
                     break
 
                 # Filter bot accounts
                 author = pr_data.get("user", {}).get("login", "")
-                if author in BOT_ACCOUNTS:
+                if is_bot_author(author):
                     continue
 
                 # Upsert the PR
@@ -298,7 +191,7 @@ async def sync_single_repo(
                 break
 
             # Parse Link header for next page
-            url = _parse_link_next(response.headers.get("link"))
+            url = parse_link_next(response.headers.get("link"))
 
     await session.flush()
 
@@ -327,19 +220,10 @@ async def _upsert_pr(
     """Upsert a GitHub pull request record.
 
     Uses ON CONFLICT (workspace_id, github_id) DO UPDATE for idempotent upserts.
-
-    Args:
-        session: Async database session.
-        workspace_id: Workspace to associate the PR with.
-        repo_full_name: Full repo name.
-        pr_data: Raw PR data from GitHub API.
-
-    Returns:
-        The upserted GithubPullRequest record.
     """
     github_id = pr_data["id"]
     merged_at = pr_data.get("merged_at")
-    state = _map_pr_state(pr_data.get("state", "open"), merged_at)
+    state = map_pr_state(pr_data.get("state", "open"), merged_at)
 
     # Extract reviewer logins from requested_reviewers
     reviewers = [
@@ -362,9 +246,9 @@ async def _upsert_pr(
         "base_branch": base.get("ref", ""),
         "reviewers": reviewers,
         "is_draft": pr_data.get("draft", False),
-        "github_created_at": _parse_datetime(pr_data.get("created_at")),
-        "github_updated_at": _parse_datetime(pr_data.get("updated_at")),
-        "github_merged_at": _parse_datetime(merged_at),
+        "github_created_at": parse_github_timestamp(pr_data.get("created_at")),
+        "github_updated_at": parse_github_timestamp(pr_data.get("updated_at")),
+        "github_merged_at": parse_github_timestamp(merged_at),
         "raw_data": pr_data,
     }
 
@@ -406,20 +290,9 @@ async def _fetch_reviews(
     repo: str,
     pr_number: int,
 ) -> list[dict]:
-    """Fetch reviews for a specific PR.
-
-    Args:
-        client: Reusable httpx client.
-        token: GitHub installation access token.
-        owner: Repo owner.
-        repo: Repo name.
-        pr_number: PR number.
-
-    Returns:
-        List of review dicts from GitHub API.
-    """
+    """Fetch reviews for a specific PR."""
     url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/reviews"
-    response = await client.get(url, headers=_github_headers(token))
+    response = await client.get(url, headers=github_headers(token))
 
     if response.status_code != 200:
         logger.warning(
@@ -428,7 +301,7 @@ async def _fetch_reviews(
         )
         return []
 
-    await _check_rate_limit(response)
+    await check_rate_limit(response)
     return response.json()
 
 
@@ -441,15 +314,9 @@ async def _upsert_review(
     """Upsert a GitHub review record.
 
     Uses ON CONFLICT (workspace_id, github_id) DO UPDATE for idempotent upserts.
-
-    Args:
-        session: Async database session.
-        workspace_id: Workspace to associate the review with.
-        pull_request_id: UUID of the parent PR record.
-        review_data: Raw review data from GitHub API.
     """
     github_id = review_data["id"]
-    state = _map_review_state(review_data.get("state", "COMMENTED"))
+    state = map_review_state(review_data.get("state", "COMMENTED"))
 
     values = {
         "workspace_id": workspace_id,
@@ -458,7 +325,7 @@ async def _upsert_review(
         "author": review_data.get("user", {}).get("login", "unknown"),
         "state": state,
         "body": review_data.get("body"),
-        "github_submitted_at": _parse_datetime(review_data.get("submitted_at")),
+        "github_submitted_at": parse_github_timestamp(review_data.get("submitted_at")),
         "raw_data": review_data,
     }
 
@@ -487,18 +354,7 @@ async def _update_repo_sync_status(
     synced: int,
     total: int,
 ) -> None:
-    """Update per-repo sync status in workspace_integrations.config JSONB.
-
-    Stores sync progress under config.repo_sync_status.{repo_full_name}.
-
-    Args:
-        session: Async database session.
-        workspace_id: Workspace to update.
-        repo_full_name: Full repo name.
-        status: Sync status (syncing, synced, error).
-        synced: Number of PRs synced so far.
-        total: Total PRs expected (0 if unknown).
-    """
+    """Update per-repo sync status in workspace_integrations.config JSONB."""
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
         WorkspaceIntegration.provider == "github",
