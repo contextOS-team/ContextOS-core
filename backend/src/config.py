@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str = ""
     SUPABASE_JWT_SECRET: str = ""
 
-    # Google Gemini
-    GOOGLE_GENAI_API_KEY: str = ""
+    # Google Gemini (SDK reads from GEMINI_API_KEY env var automatically)
+    GEMINI_API_KEY: str = ""
 
     # Linear
     LINEAR_API_KEY: str = ""

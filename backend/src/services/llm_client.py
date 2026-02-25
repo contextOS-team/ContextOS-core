@@ -19,7 +19,6 @@ from uuid import UUID
 from google import genai
 from google.genai.types import GenerateContentConfig
 
-import src.config
 from src.observability.laminar import observe, set_laminar_metadata
 
 logger = logging.getLogger(__name__)
@@ -48,24 +47,16 @@ class LLMClient:
     when the SDK is initialized.
 
     Args:
-        model_name: Gemini model identifier.  Defaults to ``gemini-2.0-flash``.
+        model_name: Gemini model identifier.  Defaults to ``gemini-3-flash-preview``.
     """
 
     def __init__(
         self,
-        model_name: str = "gemini-2.0-flash",
-        api_key: str | None = None,
+        model_name: str = "gemini-3-flash-preview",
     ) -> None:
         self.model_name = model_name
-        # Resolve API key: explicit > settings > env.
-        resolved_key = api_key or src.config.get_settings().GOOGLE_GENAI_API_KEY
-        if not resolved_key:
-            logger.warning(
-                "LLMClient created without GOOGLE_GENAI_API_KEY -- "
-                "calls will fail until a key is provided"
-            )
-        # google-genai requires api_key at Client creation time.
-        self._client = genai.Client(api_key=resolved_key or "not-configured")
+        # google-genai Client reads API key from GEMINI_API_KEY env var.
+        self._client = genai.Client()
 
     @observe(name="llm_generate")
     async def generate(
