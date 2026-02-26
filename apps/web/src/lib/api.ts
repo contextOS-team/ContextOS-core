@@ -54,6 +54,7 @@ export interface ProviderStatus {
   external_name: string | null
   connected_at: string | null
   selected_channels_count?: number
+  selected_repos_count?: number
 }
 
 export interface IntegrationStatusResponse {
