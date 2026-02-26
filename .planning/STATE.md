@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 7 - GitHub Integration
+**Current focus:** Phase 07.1 - Tech Debt Cleanup
 
 ## Current Position
 
-Phase: 7 of 7 (GitHub Integration)
-Plan: 3 of 3 in current phase
-Status: Phase 07 COMPLETE -- all 3 plans executed
-Last activity: 2026-02-25 -- Completed 07-03: Webhook Receiver and Integration UI
+Phase: 07.1 (Tech Debt Cleanup)
+Plan: 2 of 2 in current phase
+Status: Phase 07.1 COMPLETE -- all 2 plans executed
+Last activity: 2026-02-26 -- Completed 07.1-02: Documentation Fixes
 
 Progress: [==========] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
-- Average duration: 6.6min
-- Total execution time: 1.32 hours
+- Total plans completed: 14
+- Average duration: 6.1min
+- Total execution time: 1.38 hours
 
 **By Phase:**
 
@@ -31,10 +31,11 @@ Progress: [==========] 100%
 | 2. Linear Integration | 3 | 26min | 8.7min |
 | 3. Slack/Meeting Ingestion | 3 | 24min | 8min |
 | 7. GitHub Integration | 3 | 19min | 6.3min |
+| 7.1 Tech Debt Cleanup | 2 | 6min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 03-03 (10min), 07-01 (8min), 07-02 (6min), 07-03 (5min)
-- Trend: Decreasing times as patterns mature (8min -> 6min -> 5min)
+- Last 5 plans: 07-01 (8min), 07-02 (6min), 07-03 (5min), 07.1-01 (3min), 07.1-02 (3min)
+- Trend: Decreasing times as patterns mature (8min -> 5min -> 3min)
 
 *Updated after each plan completion*
 
@@ -101,6 +102,7 @@ Recent decisions affecting current work:
 - [07-03]: Workspace resolved from installation.id by scanning OAuthToken metadata_ JSONB
 - [07-03]: Review comments stored as GithubReview records with file_path and line_range
 - [07-03]: Bot filtering via exact login match against known set (dependabot, renovate, github-actions)
+- [07.1-02]: REQUIREMENTS.md traceability table updated with correct statuses and GH-01..05 entries
 
 ### Pending Todos
 
@@ -109,6 +111,7 @@ None yet.
 ### Roadmap Evolution
 
 - Phase 7 added: GitHub Integration
+- Phase 07.1 inserted after Phase 7: tech debt cleanup (URGENT)
 
 ### Blockers/Concerns
 
@@ -120,6 +123,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-25
-Stopped at: Completed 07-03-PLAN.md -- Phase 7 complete
+Last session: 2026-02-26
+Stopped at: Completed 07.1-02-PLAN.md -- Phase 07.1 Tech Debt Cleanup complete
 Resume file: All phases complete

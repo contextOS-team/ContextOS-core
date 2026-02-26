@@ -187,7 +187,7 @@ Plans:
 
 ## Coverage
 
-**39/39 v1 requirements mapped.**
+**44/44 v1 requirements mapped.**
 
 | Category | Requirements | Phase | Owner |
 |----------|-------------|-------|-------|
@@ -226,6 +226,7 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 | 5. Delivery Channels | 0/3 | Not started | - |
 | 6. Extension and Hardening | 4/4 | Complete | 2026-02-25 |
 | 7. GitHub Integration | 3/3 | Complete    | 2026-02-25 |
+| 7.1 Tech Debt Cleanup | 2/2 | Complete | 2026-02-26 |
 
 ---
 *Roadmap created: 2026-02-24*
@@ -239,5 +240,5 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 **Plans:** 2 plans
 
 Plans:
-- [ ] 07.1-01-PLAN.md -- Code fixes: migration rename, env var, TypeScript type, datetime.utcnow(), unawaited coroutines, dead code, stale docstring
-- [ ] 07.1-02-PLAN.md -- Documentation fixes: REQUIREMENTS.md traceability table (GH items, statuses, DASH-04 checkbox)
+- [x] 07.1-01-PLAN.md -- Code fixes: migration rename, env var, TypeScript type, datetime.utcnow(), unawaited coroutines, dead code, stale docstring
+- [x] 07.1-02-PLAN.md -- Documentation fixes: REQUIREMENTS.md traceability table (GH items, statuses, DASH-04 checkbox)
