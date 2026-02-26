@@ -18,7 +18,7 @@ import hashlib
 import hmac
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import httpx
@@ -173,7 +173,7 @@ async def handle_callback(
             token_expires_at = token_expires_at.replace(tzinfo=None)
         except (ValueError, AttributeError):
             # Default to 1 hour from now if parsing fails
-            token_expires_at = datetime.utcnow() + timedelta(hours=1)
+            token_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
 
     # Store installation access token in Vault
     access_name = token_name("github", workspace_id, "access_token")
@@ -238,7 +238,7 @@ async def handle_callback(
     if integration:
         integration.status = "connected"
         integration.external_id = account_login or str(installation_id)
-        integration.connected_at = datetime.utcnow()
+        integration.connected_at = datetime.now(timezone.utc).replace(tzinfo=None)
         integration.config = {
             "installation_id": installation_id,
             "account_login": account_login,
@@ -250,7 +250,7 @@ async def handle_callback(
             provider="github",
             status="connected",
             external_id=account_login or str(installation_id),
-            connected_at=datetime.utcnow(),
+            connected_at=datetime.now(timezone.utc).replace(tzinfo=None),
             config={
                 "installation_id": installation_id,
                 "account_login": account_login,
@@ -341,7 +341,7 @@ async def get_installation_token(
         expires_at = oauth_token.token_expires_at
         if expires_at.tzinfo is not None:
             expires_at = expires_at.replace(tzinfo=None)
-        if expires_at > (datetime.utcnow() + buffer):
+        if expires_at > (datetime.now(timezone.utc).replace(tzinfo=None) + buffer):
             # Token still valid, read from Vault
             access_name = token_name("github", workspace_id, "access_token")
             current_token = await read_token(session, access_name)
@@ -367,7 +367,7 @@ async def get_installation_token(
             token_expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
             token_expires_at = token_expires_at.replace(tzinfo=None)
         except (ValueError, AttributeError):
-            token_expires_at = datetime.utcnow() + timedelta(hours=1)
+            token_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
 
     # Store new token in Vault
     access_name = token_name("github", workspace_id, "access_token")
@@ -412,7 +412,7 @@ async def disconnect(
 
     if oauth_token:
         installation_id = (oauth_token.metadata_ or {}).get("installation_id")
-        oauth_token.deleted_at = datetime.utcnow()
+        oauth_token.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Uninstall the GitHub App from the user's account/org
     if installation_id and settings:

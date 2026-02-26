@@ -1,7 +1,7 @@
 """Tests for GitHub PR sync, linking, and backfill services."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
@@ -93,7 +93,7 @@ class TestSyncSingleRepo:
 
         settings = MagicMock()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         pr_data = {
             "id": 100001,
             "number": 42,
@@ -180,7 +180,7 @@ class TestSyncSingleRepo:
         from src.services.github_sync import sync_single_repo
 
         settings = MagicMock()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         bot_pr = {
             "id": 100002,
@@ -276,7 +276,7 @@ class TestSyncSingleRepo:
         from src.services.github_sync import sync_single_repo
 
         settings = MagicMock()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         draft_pr = {
             "id": 100004,
@@ -355,7 +355,7 @@ class TestSyncSingleRepo:
         from src.services.github_sync import sync_single_repo
 
         settings = MagicMock()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         # Recent PR (within window)
         recent_pr = {

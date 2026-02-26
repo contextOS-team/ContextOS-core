@@ -13,7 +13,7 @@ Per user decisions:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import httpx
@@ -124,7 +124,7 @@ async def sync_single_repo(
     token = await get_installation_token(workspace_id, session, settings)
 
     owner, repo = repo_full_name.split("/", 1)
-    cutoff = datetime.utcnow() - timedelta(days=BACKFILL_DAYS)
+    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=BACKFILL_DAYS)
 
     pr_count = 0
     review_count = 0

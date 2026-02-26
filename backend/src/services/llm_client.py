@@ -5,8 +5,8 @@ automatically traced in Laminar with prompt, response, latency, and token
 counts.  The client uses the Google GenAI SDK (``google-genai``) to call
 Gemini models.
 
-Phase 4 (Context Generation) will consume ``LLMClient`` directly -- no
-additional observability wiring needed by callers.
+Context generation consumes ``LLMClient`` directly -- no additional
+observability wiring needed by callers.
 """
 
 from __future__ import annotations
@@ -129,8 +129,7 @@ class LLMClient:
         """Generate a context page from ticket data and related sources.
 
         Builds a synthesis prompt from the provided data and calls
-        :meth:`generate`.  Phase 4 will refine the prompt template;
-        this is a working placeholder.
+        :meth:`generate`.
 
         Args:
             ticket_data: Dict with ticket fields (title, description, etc.).
@@ -141,7 +140,7 @@ class LLMClient:
         Returns:
             ``LLMResponse`` from the synthesis call.
         """
-        # Build synthesis prompt -- Phase 4 will provide the real template.
+        # Build synthesis prompt
         source_texts = "\n\n".join(
             f"### Source: {s.get('type', 'unknown')}\n{s.get('content', '')}"
             for s in sources

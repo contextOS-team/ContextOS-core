@@ -241,6 +241,7 @@ async def test_handle_pull_request_opened() -> None:
     }
 
     mock_session = AsyncMock()
+    mock_session.add = MagicMock()  # session.add() is synchronous
     # is_repo_monitored: returns True
     mock_integration = MagicMock()
     mock_integration.config = {"selected_repos": ["org/repo"]}
@@ -302,6 +303,7 @@ async def test_handle_pull_request_closed_merged() -> None:
     }
 
     mock_session = AsyncMock()
+    mock_session.add = MagicMock()  # session.add() is synchronous
 
     mock_integration = MagicMock()
     mock_integration.config = {"selected_repos": ["org/repo"]}
@@ -353,6 +355,7 @@ async def test_handle_pull_request_bot_filtered() -> None:
     }
 
     mock_session = AsyncMock()
+    mock_session.add = MagicMock()  # session.add() is synchronous
     mock_integration = MagicMock()
     mock_integration.config = {"selected_repos": ["org/repo"]}
     mock_int_result = MagicMock()
@@ -390,6 +393,7 @@ async def test_handle_pull_request_unmonitored_repo_skipped() -> None:
     }
 
     mock_session = AsyncMock()
+    mock_session.add = MagicMock()  # session.add() is synchronous
     # is_repo_monitored returns False (repo not in selected_repos)
     mock_integration = MagicMock()
     mock_integration.config = {"selected_repos": ["org/other-repo"]}
@@ -435,6 +439,7 @@ async def test_handle_review_submitted() -> None:
     }
 
     mock_session = AsyncMock()
+    mock_session.add = MagicMock()  # session.add() is synchronous
 
     # is_repo_monitored: True
     mock_integration = MagicMock()
@@ -502,6 +507,7 @@ async def test_handle_review_comment_with_file_context() -> None:
     }
 
     mock_session = AsyncMock()
+    mock_session.add = MagicMock()  # session.add() is synchronous
 
     # is_repo_monitored: True
     mock_integration = MagicMock()

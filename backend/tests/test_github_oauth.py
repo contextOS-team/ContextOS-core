@@ -1,7 +1,7 @@
 """Tests for GitHub App OAuth integration endpoints and services."""
 
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
@@ -424,7 +424,7 @@ class TestInstallationToken:
 
         # Mock expired OAuthToken
         mock_oauth_token = MagicMock()
-        mock_oauth_token.token_expires_at = datetime.utcnow() - timedelta(hours=1)
+        mock_oauth_token.token_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
         mock_oauth_token.metadata_ = {"installation_id": 12345}
         mock_oauth_token.deleted_at = None
 
@@ -496,7 +496,7 @@ class TestInstallationToken:
 
         # Mock valid OAuthToken (expires in 30 minutes)
         mock_oauth_token = MagicMock()
-        mock_oauth_token.token_expires_at = datetime.utcnow() + timedelta(minutes=30)
+        mock_oauth_token.token_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=30)
         mock_oauth_token.metadata_ = {"installation_id": 12345}
         mock_oauth_token.deleted_at = None
 

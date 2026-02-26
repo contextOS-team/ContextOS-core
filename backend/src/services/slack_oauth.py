@@ -188,7 +188,7 @@ async def exchange_code(
     if integration:
         integration.status = "connected"
         integration.external_id = team_id
-        integration.connected_at = datetime.utcnow()
+        integration.connected_at = datetime.now(timezone.utc).replace(tzinfo=None)
         integration.deleted_at = None
     else:
         integration = WorkspaceIntegration(
@@ -196,7 +196,7 @@ async def exchange_code(
             provider="slack",
             status="connected",
             external_id=team_id,
-            connected_at=datetime.utcnow(),
+            connected_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         session.add(integration)
 
@@ -231,7 +231,7 @@ async def disconnect(
     oauth_token = result.scalar_one_or_none()
 
     if oauth_token:
-        oauth_token.deleted_at = datetime.utcnow()
+        oauth_token.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Delete Vault secret
     bot_token_name_val = token_name("slack", workspace_id, "bot_access")

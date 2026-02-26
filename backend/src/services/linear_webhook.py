@@ -281,7 +281,7 @@ async def handle_issue_remove(session: AsyncSession, workspace_id: UUID, data: d
     ticket = result.scalar_one_or_none()
 
     if ticket:
-        ticket.deleted_at = datetime.utcnow()
+        ticket.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
         logger.info("Soft-deleted ticket %s (linear_id=%s)", ticket.id, linear_id)
 
 
@@ -336,7 +336,7 @@ async def handle_comment_remove(session: AsyncSession, workspace_id: UUID, data:
     comment = result.scalar_one_or_none()
 
     if comment:
-        comment.deleted_at = datetime.utcnow()
+        comment.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
         logger.info("Soft-deleted comment %s (linear_id=%s)", comment.id, linear_id)
 
 

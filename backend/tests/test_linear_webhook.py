@@ -433,6 +433,7 @@ async def test_comment_create_inserts_comment() -> None:
         patch("src.services.linear_webhook.async_session") as mock_session_ctx,
     ):
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()  # session.add() is synchronous
         mock_session.execute.side_effect = [ticket_result, comment_result, integration_result]
         mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -481,6 +482,7 @@ async def test_comment_create_queues_embedding() -> None:
     ):
         mock_embedding.queue_embedding_generation = AsyncMock()
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()  # session.add() is synchronous
         mock_session.execute.side_effect = [ticket_result, comment_result, integration_result]
         mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)

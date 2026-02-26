@@ -102,14 +102,14 @@ async def connect_fathom(
 
     if integration:
         integration.status = "connected"
-        integration.connected_at = datetime.utcnow()
+        integration.connected_at = datetime.now(timezone.utc).replace(tzinfo=None)
         integration.deleted_at = None
     else:
         integration = WorkspaceIntegration(
             workspace_id=workspace_id,
             provider="fathom",
             status="connected",
-            connected_at=datetime.utcnow(),
+            connected_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         session.add(integration)
 
@@ -419,7 +419,7 @@ async def poll_transcripts(
 
     if integration:
         config = dict(integration.config) if integration.config else {}
-        config["last_poll_at"] = datetime.utcnow().isoformat()
+        config["last_poll_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         integration.config = config
         await session.commit()
 
