@@ -32,7 +32,6 @@ export default function IntegrationsPage() {
   useEffect(() => {
     const githubStatus = searchParams.get('github')
     if (githubStatus === 'connected') {
-      const account = searchParams.get('account')
       setError(null)
       // Clean URL without reloading
       window.history.replaceState({}, '', '/dashboard/integrations')
@@ -151,16 +150,16 @@ export default function IntegrationsPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Integrations</h2>
+          <h1 className="text-3xl font-semibold tracking-tight">Integrations</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Connect your tools to enable context generation
+            Manage your tool connections for context generation
           </p>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-6 md:grid-cols-2">
           {[1, 2, 3, 4].map((i) => (
             <div
               key={i}
-              className="h-48 animate-pulse rounded-xl border bg-muted/30"
+              className="h-56 animate-pulse rounded-xl border bg-muted/30"
             />
           ))}
         </div>
@@ -189,13 +188,18 @@ export default function IntegrationsPage() {
     connected_at: null,
   }
 
+  const connectedCount = [linear, slack, fathom, github].filter(
+    (s) => s.status === 'connected'
+  ).length
+
   return (
     <div className="space-y-6">
       {/* Page header */}
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Integrations</h2>
+        <h1 className="text-3xl font-semibold tracking-tight">Integrations</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Connect your tools to enable context generation
+          Manage your tool connections for context generation
+          <span className="ml-2 text-foreground font-medium">{connectedCount}/4 connected</span>
         </p>
       </div>
 
@@ -207,11 +211,12 @@ export default function IntegrationsPage() {
       )}
 
       {/* Integration cards grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 md:grid-cols-2">
         {/* Linear */}
         <IntegrationCard
           name="Linear"
-          icon={<Workflow className="h-5 w-5 text-violet-600" />}
+          icon={<Workflow className="h-6 w-6 text-violet-600" />}
+          iconBgClass="bg-violet-50"
           description="Import issues and project context from Linear"
           status={linear.status}
           externalName={linear.external_name}
@@ -223,7 +228,8 @@ export default function IntegrationsPage() {
         {/* Slack */}
         <IntegrationCard
           name="Slack"
-          icon={<MessageSquare className="h-5 w-5 text-emerald-600" />}
+          icon={<MessageSquare className="h-6 w-6 text-emerald-600" />}
+          iconBgClass="bg-emerald-50"
           description="Monitor channels for relevant discussions and decisions"
           status={slack.status}
           externalName={slack.external_name}
@@ -237,7 +243,8 @@ export default function IntegrationsPage() {
         {/* Fathom */}
         <IntegrationCard
           name="Fathom"
-          icon={<Video className="h-5 w-5 text-blue-600" />}
+          icon={<Video className="h-6 w-6 text-blue-600" />}
+          iconBgClass="bg-blue-50"
           description="Ingest meeting transcripts for context enrichment"
           status={fathom.status}
           externalName={fathom.external_name}
@@ -252,7 +259,8 @@ export default function IntegrationsPage() {
         {/* GitHub */}
         <IntegrationCard
           name="GitHub"
-          icon={<GitBranch className="h-5 w-5 text-gray-800" />}
+          icon={<GitBranch className="h-6 w-6 text-gray-800" />}
+          iconBgClass="bg-gray-100"
           description="Import PRs, reviews, and code context from GitHub"
           status={github.status}
           externalName={github.external_name}

@@ -254,4 +254,14 @@ Plans:
 Plans:
 - [x] 07.2-01-PLAN.md -- CRITICAL: Linear Bearer auth header fix + Fathom API include_transcript param + Fathom response field name corrections
 - [x] 07.2-02-PLAN.md -- HIGH: Test datetime mismatch fixes, LLM operator precedence fix, frontend disconnect error handling, unawaited coroutine warnings
-- [ ] 07.2-03-PLAN.md -- MEDIUM: Fathom key clearing, setTimeout cleanup, OAuth state signing extraction to shared module
+- [x] 07.2-03-PLAN.md -- MEDIUM: Fathom key clearing, setTimeout cleanup, OAuth state signing extraction to shared module
+
+### Phase 08: Dashboard UI/UX Redesign (INSERTED)
+
+**Goal:** Transform the ContextOS dashboard from a scaffolded prototype into a polished, Linear-inspired developer dashboard with collapsible sidebar, indigo accent color, and integration health hub
+**Requirements**: DASH-02 (partial -- dashboard polish)
+**Depends on:** Phase 07.2
+**Plans:** 1/1 plans complete
+
+Plans:
+- [x] 08-01-PLAN.md -- Theme tokens (indigo), sidebar component, layout rewrite, home page health hub, integration card redesign, integrations page update

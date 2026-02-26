@@ -5,10 +5,10 @@ import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
-  CardHeader,
   CardTitle,
   CardDescription,
 } from '@/components/ui/card'
+import { formatRelativeTime } from '@/lib/utils'
 
 type IntegrationStatus = 'connected' | 'disconnected' | 'error'
 
@@ -25,6 +25,8 @@ interface IntegrationCardProps {
   children?: React.ReactNode
   /** Form shown inline when clicking Connect instead of redirecting (e.g. Fathom API key form). */
   connectForm?: React.ReactNode
+  /** Custom background class for the icon container. */
+  iconBgClass?: string
 }
 
 function StatusBadge({ status }: { status: IntegrationStatus }) {
@@ -55,21 +57,6 @@ function StatusBadge({ status }: { status: IntegrationStatus }) {
   )
 }
 
-function formatRelativeTime(isoDate: string): string {
-  const date = new Date(isoDate)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffSec = Math.floor(diffMs / 1000)
-  const diffMin = Math.floor(diffSec / 60)
-  const diffHours = Math.floor(diffMin / 60)
-  const diffDays = Math.floor(diffHours / 24)
-
-  if (diffDays > 0) return `${diffDays}d ago`
-  if (diffHours > 0) return `${diffHours}h ago`
-  if (diffMin > 0) return `${diffMin}m ago`
-  return 'just now'
-}
-
 export function IntegrationCard({
   name,
   icon,
@@ -81,6 +68,7 @@ export function IntegrationCard({
   onDisconnect,
   children,
   connectForm,
+  iconBgClass,
 }: IntegrationCardProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
@@ -116,59 +104,59 @@ export function IntegrationCard({
   }
 
   return (
-    <Card className="gap-0 py-0 overflow-hidden transition-shadow hover:shadow-md">
-      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 px-6 pt-6 pb-4">
+    <Card className="gap-0 py-0 overflow-hidden transition-shadow hover:shadow-md hover:border-primary/20">
+      <div className="flex flex-row items-start justify-between gap-4 px-7 pt-7 pb-4">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted/50">
+          <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${iconBgClass ?? 'bg-muted/50'}`}>
             {icon}
           </div>
           <div className="space-y-1">
-            <CardTitle className="text-base">{name}</CardTitle>
-            <CardDescription className="text-xs leading-relaxed">
+            <CardTitle className="text-lg">{name}</CardTitle>
+            <CardDescription className="text-sm leading-relaxed">
               {description}
             </CardDescription>
           </div>
         </div>
         <StatusBadge status={status} />
-      </CardHeader>
+      </div>
 
-      <CardContent className="px-6 pb-5 pt-0">
+      <CardContent className="px-7 pb-6 pt-0">
         {/* Connection info */}
         {status === 'connected' && (externalName || connectedAt) && (
-          <p className="mb-4 text-xs text-muted-foreground">
+          <div className="mb-4">
             {externalName && (
-              <span className="font-medium text-foreground">
-                {externalName}
-              </span>
+              <p className="text-sm font-medium text-foreground">
+                {/^[0-9a-f]{8}-/i.test(externalName) ? 'Connected' : externalName}
+              </p>
             )}
-            {externalName && connectedAt && ' \u00b7 '}
-            {connectedAt && <>Connected {formatRelativeTime(connectedAt)}</>}
-          </p>
+            {connectedAt && (
+              <p className="text-xs text-muted-foreground">
+                Connected {formatRelativeTime(connectedAt)}
+              </p>
+            )}
+          </div>
         )}
 
         {/* Action buttons */}
         <div className="flex items-center gap-2">
           {status === 'connected' ? (
             <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDisconnect}
-                disabled={isLoading}
-                className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
-              >
-                {isLoading ? 'Disconnecting...' : 'Disconnect'}
-              </Button>
               {children && (
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
                   onClick={() => setIsExpanded(!isExpanded)}
-                  className="text-muted-foreground"
                 >
                   {isExpanded ? 'Hide settings' : 'Settings'}
                 </Button>
               )}
+              <button
+                onClick={handleDisconnect}
+                disabled={isLoading}
+                className="text-xs text-muted-foreground hover:text-red-600 transition-colors disabled:opacity-50"
+              >
+                {isLoading ? 'Disconnecting...' : 'Disconnect'}
+              </button>
             </>
           ) : (
             !showConnectForm && (
@@ -193,7 +181,7 @@ export function IntegrationCard({
 
       {/* Expandable content (channel picker, etc.) */}
       {children && status === 'connected' && isExpanded && (
-        <div className="border-t bg-muted/30 px-6 py-5">{children}</div>
+        <div className="border-t bg-muted/30 px-7 py-5">{children}</div>
       )}
     </Card>
   )
