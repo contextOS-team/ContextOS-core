@@ -29,6 +29,7 @@ export function FathomConnect({ onConnected }: FathomConnectProps) {
 
     try {
       await connectFathom(apiKey.trim())
+      setApiKey('')
       onConnected?.()
     } catch (err) {
       setError(

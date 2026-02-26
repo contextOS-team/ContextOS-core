@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Lock, Globe, RefreshCw, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,6 +25,7 @@ export function GithubRepos({ onSaved }: GithubReposProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchRepos = useCallback(async () => {
     setIsLoading(true)
@@ -42,6 +43,14 @@ export function GithubRepos({ onSaved }: GithubReposProps) {
   useEffect(() => {
     fetchRepos()
   }, [fetchRepos])
+
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) {
+        clearTimeout(successTimeoutRef.current)
+      }
+    }
+  }, [])
 
   async function handleRefresh() {
     setIsRefreshing(true)
@@ -67,7 +76,7 @@ export function GithubRepos({ onSaved }: GithubReposProps) {
       setSaveSuccess(true)
       onSaved?.()
       // Clear success message after 3 seconds
-      setTimeout(() => setSaveSuccess(false), 3000)
+      successTimeoutRef.current = setTimeout(() => setSaveSuccess(false), 3000)
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Failed to save selection'
