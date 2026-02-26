@@ -406,6 +406,7 @@ class TestMessageProcessing:
         }
         workspace_id = UUID(TEST_WORKSPACE_ID)
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
 
         # Mock channel monitoring check -- returns integration with all channels
         mock_integration = MagicMock()
@@ -446,6 +447,7 @@ class TestMessageProcessing:
         }
         workspace_id = UUID(TEST_WORKSPACE_ID)
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
 
         mock_integration = MagicMock()
         mock_integration.config = {}
@@ -504,6 +506,7 @@ class TestMessageProcessing:
         }
         workspace_id = UUID(TEST_WORKSPACE_ID)
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
 
         mock_integration = MagicMock()
         mock_integration.config = {}
@@ -550,6 +553,7 @@ class TestMessageProcessing:
         }
         workspace_id = UUID(TEST_WORKSPACE_ID)
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
 
         # Mock finding existing message
         existing_msg = MagicMock()
@@ -591,6 +595,7 @@ class TestMessageProcessing:
         }
         workspace_id = UUID(TEST_WORKSPACE_ID)
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
 
         # Mock finding existing message
         existing_msg = MagicMock()
@@ -623,6 +628,7 @@ class TestMessageProcessing:
         }
         workspace_id = UUID(TEST_WORKSPACE_ID)
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
 
         # Mock integration with specific selected_channels (not including C_UNMONITORED)
         mock_integration = MagicMock()
@@ -697,6 +703,7 @@ class TestSlackOAuthService:
         from src.services.slack_oauth import exchange_code
 
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
 
         # Mock httpx response
         mock_response = MagicMock()
@@ -758,6 +765,7 @@ class TestSlackOAuthService:
         from src.services.slack_oauth import disconnect
 
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
 
         # Mock OAuthToken query
         mock_oauth_token = MagicMock()

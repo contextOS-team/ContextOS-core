@@ -79,7 +79,13 @@ export default function IntegrationsPage() {
   }
 
   async function handleDisconnectLinear() {
-    await disconnectLinear()
+    try {
+      await disconnectLinear()
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to disconnect Linear'
+      )
+    }
     await fetchStatuses()
   }
 
@@ -96,13 +102,25 @@ export default function IntegrationsPage() {
   }
 
   async function handleDisconnectSlack() {
-    await disconnectSlack()
+    try {
+      await disconnectSlack()
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to disconnect Slack'
+      )
+    }
     await fetchStatuses()
   }
 
   // --- Fathom handlers ---
   async function handleDisconnectFathom() {
-    await disconnectFathom()
+    try {
+      await disconnectFathom()
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to disconnect Fathom'
+      )
+    }
     await fetchStatuses()
   }
 
@@ -119,7 +137,13 @@ export default function IntegrationsPage() {
   }
 
   async function handleDisconnectGithub() {
-    await disconnectGithub()
+    try {
+      await disconnectGithub()
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to disconnect GitHub'
+      )
+    }
     await fetchStatuses()
   }
 
