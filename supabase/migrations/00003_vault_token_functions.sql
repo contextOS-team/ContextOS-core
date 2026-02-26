@@ -3,11 +3,14 @@
 -- Phase 2: Linear Integration
 -- ============================================================
 
--- Enable pgsodium (required by Supabase Vault)
-create extension if not exists pgsodium with schema pgsodium;
-
--- Enable Supabase Vault (wraps pgsodium with a simpler API)
-create extension if not exists supabase_vault with schema vault;
+-- pgsodium and supabase_vault are pre-installed by Supabase local dev.
+-- No need to CREATE EXTENSION; they are managed by the platform.
+-- Verify vault schema exists (will fail fast if something is wrong).
+do $$ begin
+  if not exists (select 1 from information_schema.schemata where schema_name = 'vault') then
+    raise exception 'vault schema not found — supabase_vault extension is not installed';
+  end if;
+end $$;
 
 -- ============================================================
 -- VAULT HELPER FUNCTIONS
@@ -17,6 +20,8 @@ create extension if not exists supabase_vault with schema vault;
 -- e.g., oauth_linear_<uuid>_access, oauth_linear_<uuid>_refresh
 
 -- Store or update a secret by name
+-- Uses vault.create_secret / vault.update_secret (the official API) instead of
+-- direct INSERT/UPDATE, which require pgsodium crypto function privileges.
 create or replace function public.store_vault_secret(
   secret_name text,
   secret_value text,
@@ -32,18 +37,13 @@ begin
   where name = secret_name;
 
   if existing_id is not null then
-    -- Update existing secret
-    update vault.secrets
-    set secret = secret_value,
-        description = coalesce(store_vault_secret.description, vault.secrets.description),
-        updated_at = now()
-    where id = existing_id;
+    -- Update existing secret via vault API
+    perform vault.update_secret(existing_id, secret_value, store_vault_secret.secret_name,
+      coalesce(store_vault_secret.description, (select s.description from vault.secrets s where s.id = existing_id)));
     return existing_id;
   else
-    -- Insert new secret
-    insert into vault.secrets (name, secret, description)
-    values (secret_name, secret_value, description)
-    returning id into new_id;
+    -- Insert new secret via vault API
+    new_id := vault.create_secret(secret_value, secret_name, coalesce(description, ''));
     return new_id;
   end if;
 end;
@@ -79,11 +79,12 @@ set search_path = vault, public;
 -- ============================================================
 -- VAULT PERMISSIONS
 -- ============================================================
--- In local Supabase, vault.secrets is owned by supabase_admin.
--- The postgres role (used by the backend) needs INSERT/UPDATE access.
--- Grant full access so security-definer functions can operate.
-grant all on vault.secrets to postgres;
-grant all on vault.decrypted_secrets to postgres;
+-- The postgres role needs SELECT access on vault tables for reads/lookups,
+-- and DELETE access for secret removal. INSERT/UPDATE go through the
+-- vault.create_secret / vault.update_secret API functions instead of
+-- direct DML (which would require pgsodium crypto function privileges).
+grant select, delete on vault.secrets to postgres;
+grant select on vault.decrypted_secrets to postgres;
 
 -- ============================================================
 -- WEBHOOK DELIVERIES (idempotency tracking)
