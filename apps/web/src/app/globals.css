@@ -173,25 +173,12 @@
   }
 }
 
-@keyframes pulse-dot {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
-
 .animate-fade-in-up {
   animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .animate-scale-in {
   animation: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.animate-pulse-dot {
-  animation: pulse-dot 2s ease-in-out infinite;
 }
 
 /* Stagger children */
@@ -204,18 +191,6 @@
 .stagger-children > *:nth-child(4) { animation-delay: 150ms; }
 .stagger-children > *:nth-child(5) { animation-delay: 200ms; }
 .stagger-children > *:nth-child(6) { animation-delay: 250ms; }
-
-/* Progress ring animation */
-@keyframes draw-ring {
-  from {
-    stroke-dashoffset: var(--circumference);
-  }
-}
-
-.animate-draw-ring {
-  animation: draw-ring 1s cubic-bezier(0.16, 1, 0.3, 1) both;
-  animation-delay: 300ms;
-}
 
 /* Subtle noise texture for depth */
 .noise-bg::before {
