@@ -63,7 +63,7 @@
 - [x] **DASH-01**: Auth pages — login, signup, and magic link pages connecting to Supabase Auth
 - [ ] **DASH-02**: Context pages feed with status indicators (generating, ready, stale) and real-time updates via Supabase Realtime
 - [ ] **DASH-03**: Context page detail view with formatted 5-section display and copy AI prompt button
-- [ ] **DASH-04**: Integration setup page — connect/disconnect Linear, Slack, and Fathom with status display
+- [x] **DASH-04**: Integration setup page — connect/disconnect Linear, Slack, and Fathom with status display
 - [ ] **DASH-05**: Settings page with API key generation for MCP server
 
 ### Delivery: Chrome Extension (Bekbol)
@@ -75,6 +75,14 @@
 - [x] **SEC-01**: All OAuth tokens (Linear, Slack, Fathom) stored in Supabase Vault, never in plain-text columns
 - [x] **SEC-02**: Sentry SDK integrated in FastAPI backend with error context (workspace_id, user_id, endpoint)
 - [x] **SEC-03**: Laminar SDK integrated for LLM call tracing (prompts, responses, latency, cost)
+
+### GitHub Integration (Daulet)
+
+- [x] **GH-01**: User can connect GitHub organization via OAuth from integration setup page, with GitHub App installation flow and Vault-encrypted token storage
+- [x] **GH-02**: User can select which repos to monitor; only events from selected repos are ingested
+- [x] **GH-03**: PRs automatically linked to Linear issues via branch name pattern matching (case-insensitive team key regex)
+- [x] **GH-04**: PR reviews and review comments stored with author, state, file_path, and line_range context
+- [x] **GH-05**: GitHub webhook signatures verified via HMAC-SHA256 with X-Hub-Signature-256 header
 
 ## v2 Requirements
 
@@ -117,27 +125,27 @@
 
 | Requirement | Phase | Owner | Status |
 |-------------|-------|-------|--------|
-| FOUND-01 | Phase 1 | Daulet | Pending |
-| FOUND-02 | Phase 1 | Daulet | Pending |
-| FOUND-03 | Phase 1 | Daulet | Pending |
-| FOUND-04 | Phase 1 | Daulet | Pending |
-| FOUND-05 | Phase 1 | Daulet | Pending |
-| FOUND-06 | Phase 1 | Daulet | Pending |
-| FOUND-07 | Phase 1 | Daulet | Pending |
-| DASH-01 | Phase 1 | Bekbol | Pending |
-| LIN-01 | Phase 2 | Daulet | Pending |
-| LIN-02 | Phase 2 | Daulet | Pending |
-| LIN-03 | Phase 2 | Daulet | Pending |
-| LIN-04 | Phase 2 | Daulet | Pending |
-| LIN-05 | Phase 2 | Daulet | Pending |
-| SLCK-01 | Phase 3 | Daulet | Pending |
-| SLCK-02 | Phase 3 | Daulet | Pending |
-| SLCK-03 | Phase 3 | Daulet | Pending |
-| SLCK-04 | Phase 3 | Daulet | Pending |
-| SLCK-05 | Phase 3 | Daulet | Pending |
-| SLCK-06 | Phase 3 | Daulet | Pending |
-| MEET-01 | Phase 3 | Daulet | Pending |
-| DASH-04 | Phase 3 | Bekbol | Pending |
+| FOUND-01 | Phase 1 | Daulet | Done |
+| FOUND-02 | Phase 1 | Daulet | Done |
+| FOUND-03 | Phase 1 | Daulet | Done |
+| FOUND-04 | Phase 1 | Daulet | Done |
+| FOUND-05 | Phase 1 | Daulet | Done |
+| FOUND-06 | Phase 1 | Daulet | Done |
+| FOUND-07 | Phase 1 | Daulet | Done |
+| DASH-01 | Phase 1 | Bekbol | Done |
+| LIN-01 | Phase 2 | Daulet | Done |
+| LIN-02 | Phase 2 | Daulet | Done |
+| LIN-03 | Phase 2 | Daulet | Done |
+| LIN-04 | Phase 2 | Daulet | Done |
+| LIN-05 | Phase 2 | Daulet | Done |
+| SLCK-01 | Phase 3 | Daulet | Done |
+| SLCK-02 | Phase 3 | Daulet | Done |
+| SLCK-03 | Phase 3 | Daulet | Done |
+| SLCK-04 | Phase 3 | Daulet | Done |
+| SLCK-05 | Phase 3 | Daulet | Done |
+| SLCK-06 | Phase 3 | Daulet | Done |
+| MEET-01 | Phase 3 | Daulet | Done |
+| DASH-04 | Phase 3 | Bekbol | Done |
 | CTXG-01 | Phase 4 | Dulat | Pending |
 | CTXG-02 | Phase 4 | Dulat | Pending |
 | CTXG-03 | Phase 4 | Dulat | Pending |
@@ -153,20 +161,25 @@
 | MCP-01 | Phase 5 | Daulet | Pending |
 | MCP-02 | Phase 5 | Daulet | Pending |
 | MCP-03 | Phase 5 | Daulet | Pending |
-| EXT-01 | Phase 6 | Bekbol | Pending |
-| SEC-01 | Phase 6 | Daulet | Pending |
-| SEC-02 | Phase 6 | Daulet | Pending |
-| SEC-03 | Phase 6 | Daulet | Pending |
+| EXT-01 | Phase 6 | Bekbol | Done |
+| SEC-01 | Phase 6 | Daulet | Done |
+| SEC-02 | Phase 6 | Daulet | Done |
+| SEC-03 | Phase 6 | Daulet | Done |
+| GH-01 | Phase 7 | Daulet | Done |
+| GH-02 | Phase 7 | Daulet | Done |
+| GH-03 | Phase 7 | Daulet | Done |
+| GH-04 | Phase 7 | Daulet | Done |
+| GH-05 | Phase 7 | Daulet | Done |
 
 **Coverage:**
-- v1 requirements: 39 total
-- Daulet: 22 requirements (Phases 1, 2, 3, 5, 6)
+- v1 requirements: 44 total (39 original + 5 GitHub)
+- Daulet: 27 requirements (Phases 1, 2, 3, 5, 6, 7)
 - Dulat: 7 requirements (Phase 4)
 - Bekbol: 7 requirements (Phases 1, 3, 5, 6)
 - Shared context: MEET-01 (Daulet, Phase 3) + MEET-02 (Dulat, Phase 4)
-- Mapped to phases: 39/39
+- Mapped to phases: 44/44
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-24*
-*Last updated: 2026-02-24 -- v1.0 roadmap created, all requirements mapped to phases*
+*Last updated: 2026-02-26 -- Phase 07.1 tech debt cleanup: added GH-01..05, fixed statuses, updated counts*
