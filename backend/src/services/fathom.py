@@ -252,7 +252,7 @@ async def poll_transcripts(
         cursor: str | None = None
 
         while True:
-            params: dict = {"limit": "50"}
+            params: dict = {"limit": "50", "include_transcript": "true"}
             if cursor:
                 params["cursor"] = cursor
 
@@ -305,8 +305,8 @@ async def poll_transcripts(
                     continue
 
                 # Check if transcript content is available
-                transcript_content = call.get("transcript")
-                if not transcript_content:
+                transcript_data = call.get("transcript")
+                if not transcript_data:
                     # Transcript still processing, skip for now
                     processing_count += 1
                     logger.info(
@@ -317,7 +317,7 @@ async def poll_transcripts(
 
                 # Extract metadata
                 title = call.get("title", "Untitled Meeting")
-                participants = call.get("participants", [])
+                participants = call.get("calendar_invitees", [])
                 if isinstance(participants, list) and participants:
                     if isinstance(participants[0], dict):
                         participant_names = [
@@ -330,7 +330,7 @@ async def poll_transcripts(
                     participant_names = []
 
                 meeting_date = None
-                date_str = call.get("created_at") or call.get("date")
+                date_str = call.get("scheduled_start_time") or call.get("recording_start_time") or call.get("created_at")
                 if date_str:
                     try:
                         meeting_date = datetime.fromisoformat(
@@ -339,27 +339,32 @@ async def poll_transcripts(
                     except (ValueError, AttributeError):
                         pass
 
-                duration = call.get("duration_minutes") or call.get("duration")
                 duration_minutes = None
-                if duration is not None:
+                rec_start = call.get("recording_start_time")
+                rec_end = call.get("recording_end_time")
+                if rec_start and rec_end:
                     try:
-                        duration_minutes = int(duration)
-                    except (ValueError, TypeError):
+                        start_dt = datetime.fromisoformat(rec_start.replace("Z", "+00:00"))
+                        end_dt = datetime.fromisoformat(rec_end.replace("Z", "+00:00"))
+                        duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+                    except (ValueError, AttributeError):
                         pass
 
-                # Build full transcript text from segments if available
-                segments = call.get("segments", [])
-                if segments:
-                    full_text = "\n".join(
-                        f"{seg.get('speaker', 'Unknown')}: {seg.get('text', '')}"
-                        for seg in segments
-                    )
-                elif isinstance(transcript_content, str):
-                    full_text = transcript_content
+                # Build full transcript text from transcript items
+                if isinstance(transcript_data, list) and transcript_data:
+                    if isinstance(transcript_data[0], dict):
+                        full_text = "\n".join(
+                            f"{seg.get('speaker', 'Unknown')}: {seg.get('text', '')}"
+                            for seg in transcript_data
+                        )
+                    else:
+                        full_text = str(transcript_data)
+                elif isinstance(transcript_data, str):
+                    full_text = transcript_data
                 else:
-                    full_text = str(transcript_content)
+                    full_text = str(transcript_data)
 
-                summary = call.get("summary")
+                summary = call.get("default_summary")
 
                 # Create MeetingTranscript record
                 meeting = MeetingTranscript(
@@ -377,7 +382,8 @@ async def poll_transcripts(
                 await session.flush()  # Get the generated ID
 
                 # Create MeetingSegment records for speaker turns
-                for seg in segments:
+                segment_items = transcript_data if isinstance(transcript_data, list) and transcript_data and isinstance(transcript_data[0], dict) else []
+                for seg in segment_items:
                     segment = MeetingSegment(
                         workspace_id=workspace_id,
                         transcript_id=meeting.id,

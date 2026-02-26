@@ -105,17 +105,17 @@ def _make_fathom_call(
     call: dict = {
         "id": call_id,
         "title": title,
-        "created_at": "2026-02-24T10:00:00Z",
-        "duration_minutes": 45,
-        "participants": [
+        "scheduled_start_time": "2026-02-24T10:00:00Z",
+        "recording_start_time": "2026-02-24T10:02:00Z",
+        "recording_end_time": "2026-02-24T10:47:00Z",
+        "calendar_invitees": [
             {"name": "Alice Smith", "email": "alice@example.com"},
             {"name": "Bob Jones", "email": "bob@example.com"},
         ],
-        "summary": "Discussed sprint goals and priorities.",
+        "default_summary": "Discussed sprint goals and priorities.",
     }
     if has_transcript:
-        call["transcript"] = "Alice: Let's review the sprint.\nBob: Sounds good."
-        call["segments"] = [
+        call["transcript"] = [
             {
                 "speaker": "Alice Smith",
                 "text": "Let's review the sprint.",
@@ -131,7 +131,6 @@ def _make_fathom_call(
         ]
     else:
         call["transcript"] = None
-        call["segments"] = []
     return call
 
 
@@ -183,6 +182,7 @@ class TestConnectFathom:
         from src.services.fathom import connect_fathom
 
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
 
         # Mock Fathom API validation response
         mock_response = MagicMock()
@@ -228,6 +228,7 @@ class TestConnectFathom:
         from src.services.fathom import connect_fathom
 
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
 
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -271,6 +272,7 @@ class TestConnectFathom:
         from src.services.fathom import FathomError, connect_fathom
 
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
 
         mock_response = MagicMock()
         mock_response.status_code = 401
@@ -302,6 +304,7 @@ class TestDisconnectFathom:
         from src.services.fathom import disconnect_fathom
 
         mock_session = AsyncMock()
+        mock_session.add = MagicMock()
 
         mock_integration = MagicMock()
         mock_integration.status = "connected"
