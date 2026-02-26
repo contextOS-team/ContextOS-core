@@ -31,7 +31,7 @@ class LinearAPIError(Exception):
 class LinearGraphQLClient:
     """Async GraphQL client for the Linear API.
 
-    Linear uses bare token auth (not "Bearer"). The client handles:
+    Linear uses Bearer token auth. The client handles:
     - Authentication via Authorization header
     - Exponential backoff on 429 (rate limit) responses
     - Cursor-based pagination via fetch_all_pages
@@ -40,7 +40,7 @@ class LinearGraphQLClient:
     def __init__(self, access_token: str) -> None:
         self._access_token = access_token
         self._client = httpx.AsyncClient(
-            headers={"Authorization": access_token},
+            headers={"Authorization": f"Bearer {access_token}"},
             timeout=30.0,
         )
 

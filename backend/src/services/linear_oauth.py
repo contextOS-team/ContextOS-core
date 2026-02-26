@@ -219,7 +219,7 @@ async def _fetch_organization(access_token: str) -> dict:
     async with httpx.AsyncClient() as client:
         response = await client.post(
             LINEAR_API_URL,
-            headers={"Authorization": access_token},
+            headers={"Authorization": f"Bearer {access_token}"},
             json={"query": "{ organization { id name } }"},
         )
 
