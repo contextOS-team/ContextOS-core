@@ -31,11 +31,11 @@ Progress: [==========] 100%
 | 2. Linear Integration | 3 | 26min | 8.7min |
 | 3. Slack/Meeting Ingestion | 3 | 24min | 8min |
 | 7. GitHub Integration | 3 | 19min | 6.3min |
-| 7.1 Tech Debt Cleanup | 2 | 6min | 3min |
+| 7.1 Tech Debt Cleanup | 2 | 10min | 5min |
 
 **Recent Trend:**
-- Last 5 plans: 07-01 (8min), 07-02 (6min), 07-03 (5min), 07.1-01 (3min), 07.1-02 (3min)
-- Trend: Decreasing times as patterns mature (8min -> 5min -> 3min)
+- Last 5 plans: 07-02 (6min), 07-03 (5min), 07.1-01 (7min), 07.1-02 (3min)
+- Trend: Consistent execution times (5-7min)
 
 *Updated after each plan completion*
 
@@ -87,7 +87,7 @@ Recent decisions affecting current work:
 - [03-02]: Processing transcripts skipped and retried on next poll cycle
 - [03-02]: Poll endpoint runs in BackgroundTasks, returns 202 immediately
 - [03-03]: OAuth upsert must query WITHOUT deleted_at filter to reuse soft-deleted rows on reconnect
-- [03-03]: All DB timestamp columns use datetime.utcnow() (naive UTC) -- never datetime.now(timezone.utc)
+- [03-03]: All DB timestamp columns use naive UTC -- originally datetime.utcnow(), updated to datetime.now(timezone.utc).replace(tzinfo=None) in 07.1-01
 - [03-03]: Fathom API base URL is api.fathom.ai/external/v1, auth header is X-Api-Key, endpoint is /meetings
 - [07-01]: PyJWT with RS256 for GitHub App JWT signing (already a project dependency, no new library needed)
 - [07-01]: Installation access tokens stored in Vault with 1-hour expiry; refreshed on demand via App JWT
@@ -102,6 +102,8 @@ Recent decisions affecting current work:
 - [07-03]: Workspace resolved from installation.id by scanning OAuthToken metadata_ JSONB
 - [07-03]: Review comments stored as GithubReview records with file_path and line_range
 - [07-03]: Bot filtering via exact login match against known set (dependabot, renovate, github-actions)
+- [07.1-01]: datetime.now(timezone.utc).replace(tzinfo=None) replaces datetime.utcnow() across all backend code
+- [07.1-01]: mock_session.add = MagicMock() pattern for AsyncMock sessions to prevent unawaited coroutine warnings
 - [07.1-02]: REQUIREMENTS.md traceability table updated with correct statuses and GH-01..05 entries
 
 ### Pending Todos
@@ -124,5 +126,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 07.1-02-PLAN.md -- Phase 07.1 Tech Debt Cleanup complete
+Stopped at: Completed 07.1-01-PLAN.md -- all Phase 07.1 plans now executed
 Resume file: All phases complete

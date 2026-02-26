@@ -237,7 +237,7 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 **Goal:** Fix all 12 tech debt items and 3 integration issues identified in the v1.0 milestone audit -- cleanup only, no new features
 **Requirements**: N/A (tech debt items traced to milestone audit, not formal requirement IDs)
 **Depends on:** Phase 7
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 07.1-01-PLAN.md -- Code fixes: migration rename, env var, TypeScript type, datetime.utcnow(), unawaited coroutines, dead code, stale docstring
