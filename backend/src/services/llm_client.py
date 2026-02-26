@@ -103,9 +103,9 @@ class LLMClient:
 
         # Extract token counts from usage metadata.
         usage = response.usage_metadata
-        prompt_tokens = usage.prompt_token_count or 0 if usage else 0
-        completion_tokens = usage.candidates_token_count or 0 if usage else 0
-        total_tokens = usage.total_token_count or 0 if usage else 0
+        prompt_tokens = (usage.prompt_token_count or 0) if usage else 0
+        completion_tokens = (usage.candidates_token_count or 0) if usage else 0
+        total_tokens = (usage.total_token_count or 0) if usage else 0
 
         text = response.text or ""
 

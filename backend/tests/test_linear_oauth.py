@@ -365,7 +365,7 @@ class TestTokenRefresh:
         from src.services.linear_oauth import refresh_access_token
 
         mock_oauth_token = MagicMock()
-        mock_oauth_token.token_expires_at = datetime.now(timezone.utc) - timedelta(
+        mock_oauth_token.token_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
             hours=1
         )
         mock_oauth_token.refresh_token = "vault_ref_name"
@@ -437,7 +437,7 @@ class TestTokenRefresh:
         from src.services.linear_oauth import OAuthError, refresh_access_token
 
         mock_oauth_token = MagicMock()
-        mock_oauth_token.token_expires_at = datetime.now(timezone.utc) - timedelta(
+        mock_oauth_token.token_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
             hours=1
         )
 
