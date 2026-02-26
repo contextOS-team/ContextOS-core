@@ -101,7 +101,7 @@ class TestGraphQLClient:
             call_kwargs = mock_post.call_args
             # The auth header is set on the client, not per-request
             # So we verify the client was constructed with the token
-            assert client._client.headers["Authorization"] == "lin_api_test_token"
+            assert client._client.headers["Authorization"] == "Bearer lin_api_test_token"
 
     @pytest.mark.asyncio
     async def test_graphql_client_retries_on_429(self):
