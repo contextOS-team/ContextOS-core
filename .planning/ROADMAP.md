@@ -265,3 +265,10 @@ Plans:
 
 Plans:
 - [x] 08-01-PLAN.md -- Theme tokens (indigo), sidebar component, layout rewrite, home page health hub, integration card redesign, integrations page update
+
+### Phase 08.1: Dashboard Design Polish (INSERTED)
+
+**Goal:** Elevate the dashboard from AI-template aesthetic to a distinctive, craft-polished ContextOS product -- fix empty space, remove generic patterns, add information density, and establish visual identity
+**Requirements**: DASH-02 (continuation -- dashboard polish)
+**Depends on:** Phase 08
+**Plans:** 0/0 plans
