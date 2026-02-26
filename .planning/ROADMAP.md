@@ -271,4 +271,8 @@ Plans:
 **Goal:** Elevate the dashboard from AI-template aesthetic to a distinctive, craft-polished ContextOS product -- fix empty space, remove generic patterns, add information density, and establish visual identity
 **Requirements**: DASH-02 (continuation -- dashboard polish)
 **Depends on:** Phase 08
-**Plans:** 0/0 plans
+**Plans:** 1/2 plans executed
+
+Plans:
+- [ ] 08.1-01-PLAN.md -- Foundation: Typography swap (DM Sans -> Inter), color shift (indigo -> deep blue), sidebar -> top nav, brand SVG logos
+- [ ] 08.1-02-PLAN.md -- Home page density redesign, integration card polish, status indicator refinement, animation cleanup

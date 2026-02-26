@@ -61,7 +61,7 @@
 ### Delivery: Web Dashboard (Bekbol)
 
 - [x] **DASH-01**: Auth pages — login, signup, and magic link pages connecting to Supabase Auth
-- [ ] **DASH-02**: Context pages feed with status indicators (generating, ready, stale) and real-time updates via Supabase Realtime
+- [x] **DASH-02**: Context pages feed with status indicators (generating, ready, stale) and real-time updates via Supabase Realtime
 - [ ] **DASH-03**: Context page detail view with formatted 5-section display and copy AI prompt button
 - [x] **DASH-04**: Integration setup page — connect/disconnect Linear, Slack, and Fathom with status display
 - [ ] **DASH-05**: Settings page with API key generation for MCP server
