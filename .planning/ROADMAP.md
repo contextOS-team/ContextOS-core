@@ -227,6 +227,7 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 | 6. Extension and Hardening | 4/4 | Complete | 2026-02-25 |
 | 7. GitHub Integration | 3/3 | Complete    | 2026-02-25 |
 | 7.1 Tech Debt Cleanup | 2/2 | Complete | 2026-02-26 |
+| 7.2 Integration Bug Fixes & Hardening | 0/3 | Planned | - |
 
 ---
 *Roadmap created: 2026-02-24*
@@ -242,3 +243,15 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 Plans:
 - [x] 07.1-01-PLAN.md -- Code fixes: migration rename, env var, TypeScript type, datetime.utcnow(), unawaited coroutines, dead code, stale docstring
 - [x] 07.1-02-PLAN.md -- Documentation fixes: REQUIREMENTS.md traceability table (GH items, statuses, DASH-04 checkbox)
+
+### Phase 07.2: Integration Bug Fixes and Hardening (INSERTED)
+
+**Goal:** Fix 3 CRITICAL integration bugs (Linear auth header, Fathom API params/field names), 5 HIGH-severity bugs (test failures, operator precedence, missing error handling, unawaited coroutines), and 3 MEDIUM code quality issues (key clearing, setTimeout leaks, triplicated OAuth code)
+**Requirements**: N/A (issues traced to codebase audit, not formal requirement IDs)
+**Depends on:** Phase 07.1
+**Plans:** 2/3 plans executed
+
+Plans:
+- [x] 07.2-01-PLAN.md -- CRITICAL: Linear Bearer auth header fix + Fathom API include_transcript param + Fathom response field name corrections
+- [x] 07.2-02-PLAN.md -- HIGH: Test datetime mismatch fixes, LLM operator precedence fix, frontend disconnect error handling, unawaited coroutine warnings
+- [ ] 07.2-03-PLAN.md -- MEDIUM: Fathom key clearing, setTimeout cleanup, OAuth state signing extraction to shared module
