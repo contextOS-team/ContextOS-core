@@ -64,6 +64,37 @@ def linear_settings():
     get_settings.cache_clear()
 
 
+def _collect_settings_deps(app):
+    """Walk the full dependency tree of every route and yield all callables
+    whose name is ``get_settings`` or ``_override`` (monkey-patched variant).
+
+    FastAPI's ``dependency_overrides`` must use the exact function object that
+    ``Depends()`` captured at import time.  When other test fixtures
+    monkey-patch ``src.config.get_settings`` *before* the router module is
+    first imported, the captured reference is the monkey-patch lambda, not the
+    original ``@lru_cache`` function.  This helper finds every such reference
+    so we can override them all.
+    """
+    seen: set[int] = set()
+
+    def _walk(dependant):
+        for dep in dependant.dependencies:
+            obj_id = id(dep.call)
+            if obj_id in seen:
+                continue
+            seen.add(obj_id)
+            name = getattr(dep.call, "__name__", "")
+            if name in ("get_settings", "_override"):
+                yield dep.call
+            # Recurse into sub-dependencies
+            if hasattr(dep, "dependant") and dep.dependant is not None:
+                yield from _walk(dep.dependant)
+
+    for route in app.routes:
+        if hasattr(route, "dependant"):
+            yield from _walk(route.dependant)
+
+
 @pytest.fixture()
 def app_with_linear(linear_settings, mock_session):
     """Create a FastAPI app with Linear settings and mocked session."""
@@ -76,15 +107,9 @@ def app_with_linear(linear_settings, mock_session):
     fastapi_app.dependency_overrides[get_session_dep] = _mock_get_session
     # Override get_settings via the original @lru_cache reference
     fastapi_app.dependency_overrides[get_settings] = lambda: linear_settings
-    # The router's Depends(get_settings) may have captured a conftest _override
-    # lambda if the router was first imported during a mock_settings fixture.
-    # Find and override the actual callable from the route dependency graph.
-    for route in fastapi_app.routes:
-        if hasattr(route, "dependant"):
-            for dep in route.dependant.dependencies:
-                name = getattr(dep.call, "__name__", "")
-                if name in ("get_settings", "_override"):
-                    fastapi_app.dependency_overrides[dep.call] = lambda: linear_settings
+    # Walk the full dependency tree to find every captured get_settings reference.
+    for dep_call in _collect_settings_deps(fastapi_app):
+        fastapi_app.dependency_overrides[dep_call] = lambda: linear_settings
     yield fastapi_app
     fastapi_app.dependency_overrides.clear()
 

@@ -167,6 +167,7 @@ async def exchange_code(
     if integration:
         integration.status = "connected"
         integration.external_id = team_id
+        integration.config = {**integration.config, "external_name": team_name} if team_name else integration.config
         integration.connected_at = datetime.now(timezone.utc).replace(tzinfo=None)
         integration.deleted_at = None
     else:
@@ -175,6 +176,7 @@ async def exchange_code(
             provider="slack",
             status="connected",
             external_id=team_id,
+            config={"external_name": team_name} if team_name else {},
             connected_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         session.add(integration)

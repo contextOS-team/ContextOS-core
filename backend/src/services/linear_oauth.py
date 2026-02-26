@@ -163,9 +163,11 @@ async def exchange_code(
     int_result = await session.execute(int_stmt)
     integration = int_result.scalar_one_or_none()
 
+    org_name = org_info.get("name")
     if integration:
         integration.status = "connected"
         integration.external_id = org_info.get("id")
+        integration.config = {**integration.config, "external_name": org_name} if org_name else integration.config
         integration.connected_at = datetime.now(timezone.utc).replace(tzinfo=None)
         integration.deleted_at = None
     else:
@@ -174,6 +176,7 @@ async def exchange_code(
             provider="linear",
             status="connected",
             external_id=org_info.get("id"),
+            config={"external_name": org_name} if org_name else {},
             connected_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         session.add(integration)

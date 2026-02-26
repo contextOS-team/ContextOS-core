@@ -32,9 +32,10 @@ def _disconnected_status() -> dict:
 
 def _build_provider_status(integration: WorkspaceIntegration) -> dict:
     """Build the status dict for a single provider from its WorkspaceIntegration record."""
+    config = integration.config or {}
     result: dict = {
         "status": integration.status,
-        "external_name": integration.external_id,
+        "external_name": config.get("external_name") or integration.external_id,
         "connected_at": integration.connected_at.isoformat() if integration.connected_at else None,
     }
 
