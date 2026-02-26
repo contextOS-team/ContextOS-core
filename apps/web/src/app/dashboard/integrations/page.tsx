@@ -65,68 +65,39 @@ export default function IntegrationsPage() {
     fetchStatuses()
   }, [fetchStatuses])
 
-  async function handleConnectLinear() {
-    try {
-      const { authorization_url } = await connectLinear()
-      window.location.href = authorization_url
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start Linear connection')
+  function makeConnectHandler(
+    connectFn: () => Promise<{ authorization_url?: string; installation_url?: string }>,
+    urlKey: 'authorization_url' | 'installation_url'
+  ) {
+    return async () => {
+      try {
+        const result = await connectFn()
+        const url = result[urlKey]
+        if (url) window.location.href = url
+      } catch (err) {
+        setError(err instanceof Error ? err.message : `Failed to start connection`)
+      }
     }
   }
 
-  async function handleDisconnectLinear() {
-    try {
-      await disconnectLinear()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to disconnect Linear')
-    }
-    await fetchStatuses()
-  }
-
-  async function handleConnectSlack() {
-    try {
-      const { authorization_url } = await connectSlack()
-      window.location.href = authorization_url
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start Slack connection')
+  function makeDisconnectHandler(disconnectFn: () => Promise<unknown>, name: string) {
+    return async () => {
+      try {
+        await disconnectFn()
+      } catch (err) {
+        setError(err instanceof Error ? err.message : `Failed to disconnect ${name}`)
+      }
+      await fetchStatuses()
     }
   }
 
-  async function handleDisconnectSlack() {
-    try {
-      await disconnectSlack()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to disconnect Slack')
-    }
-    await fetchStatuses()
-  }
-
-  async function handleDisconnectFathom() {
-    try {
-      await disconnectFathom()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to disconnect Fathom')
-    }
-    await fetchStatuses()
-  }
-
-  async function handleConnectGithub() {
-    try {
-      const { installation_url } = await connectGithub()
-      window.location.href = installation_url
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start GitHub connection')
-    }
-  }
-
-  async function handleDisconnectGithub() {
-    try {
-      await disconnectGithub()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to disconnect GitHub')
-    }
-    await fetchStatuses()
-  }
+  const handleConnectLinear = makeConnectHandler(connectLinear, 'authorization_url')
+  const handleDisconnectLinear = makeDisconnectHandler(disconnectLinear, 'Linear')
+  const handleConnectSlack = makeConnectHandler(connectSlack, 'authorization_url')
+  const handleDisconnectSlack = makeDisconnectHandler(disconnectSlack, 'Slack')
+  const handleDisconnectFathom = makeDisconnectHandler(disconnectFathom, 'Fathom')
+  const handleConnectGithub = makeConnectHandler(connectGithub, 'installation_url')
+  const handleDisconnectGithub = makeDisconnectHandler(disconnectGithub, 'GitHub')
 
   if (isLoading) {
     return (

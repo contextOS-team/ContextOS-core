@@ -11,6 +11,7 @@ from src.middleware.correlation import CorrelationIdMiddleware
 from src.middleware.rate_limit import RateLimitMiddleware
 from src.observability.laminar import init_laminar
 from src.observability.logging import configure_logging
+from src.middleware.security_headers import SecurityHeadersMiddleware
 from src.observability.sentry import SentryContextMiddleware, init_sentry
 from src.routers.auth import router as auth_router
 from src.routers.fathom import router as fathom_router
@@ -60,6 +61,9 @@ app = FastAPI(
 # 2. CorrelationIdMiddleware (assign correlation ID for all subsequent logging)
 # 3. CORSMiddleware (handle CORS headers)
 # 4. SentryContextMiddleware (tag Sentry scope with user/workspace context)
+# 5. SecurityHeadersMiddleware (outermost: add security headers to all responses)
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(SentryContextMiddleware)
 
@@ -67,8 +71,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Correlation-ID"],
 )
 
 app.add_middleware(CorrelationIdMiddleware)

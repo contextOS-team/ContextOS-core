@@ -11,17 +11,19 @@ Slack's OAuth V2 flow:
 - Team info (id, name) comes from the token exchange response.
 """
 
-from datetime import datetime, timezone
 from uuid import UUID
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 
 from src.config import Settings
-from src.models.integration import OAuthToken, WorkspaceIntegration
-from src.services.oauth_common import OAuthStateError, sign_oauth_state, verify_oauth_state
-from src.services.vault import delete_token, read_token, store_token, token_name
+from src.models.integration import Provider
+from src.services.oauth_common import (
+    disconnect_provider,
+    upsert_oauth_token,
+    upsert_workspace_integration,
+)
+from src.services.vault import read_token, store_token, token_name
 
 # Slack OAuth V2 endpoints
 SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
@@ -34,18 +36,6 @@ SLACK_BOT_SCOPES = "channels:read,channels:history,groups:read,groups:history,us
 class SlackOAuthError(Exception):
     """Raised when a Slack OAuth operation fails."""
 
-
-def _sign_state(workspace_id: UUID, secret: str) -> str:
-    """Create a signed state parameter. Delegates to shared utility."""
-    return sign_oauth_state(workspace_id, secret)
-
-
-def _verify_state(state: str, secret: str) -> UUID:
-    """Verify a signed state parameter. Wraps shared utility with provider error."""
-    try:
-        return verify_oauth_state(state, secret)
-    except OAuthStateError as e:
-        raise SlackOAuthError(str(e)) from e
 
 
 def build_auth_url(state: str, settings: Settings) -> str:
@@ -124,62 +114,21 @@ async def exchange_code(
     team_name = data.get("team", {}).get("name", "")
 
     # Store bot token in Vault (encrypted at rest)
-    bot_token_name = token_name("slack", workspace_id, "bot_access")
+    bot_token_name = token_name(Provider.SLACK, workspace_id, "bot_access")
     await store_token(session, bot_token_name, access_token_value)
 
-    # Upsert OAuthToken record (stores Vault secret name, NOT actual token)
-    # Query WITHOUT deleted_at filter — a soft-deleted row still holds the
-    # unique constraint slot, so we must reuse it on reconnect.
-    stmt = select(OAuthToken).where(
-        OAuthToken.workspace_id == workspace_id,
-        OAuthToken.user_id == user_id,
-        OAuthToken.provider == "slack",
+    await upsert_oauth_token(
+        session, workspace_id, user_id, Provider.SLACK,
+        access_token_name=bot_token_name,
+        token_expires_at=None,
+        scopes=SLACK_BOT_SCOPES.split(","),
     )
-    result = await session.execute(stmt)
-    oauth_token = result.scalar_one_or_none()
 
-    if oauth_token:
-        oauth_token.access_token = bot_token_name
-        oauth_token.refresh_token = None  # Slack bot tokens have no refresh
-        oauth_token.token_expires_at = None  # Slack bot tokens don't expire
-        oauth_token.scopes = SLACK_BOT_SCOPES.split(",")
-        oauth_token.deleted_at = None  # un-soft-delete on reconnect
-    else:
-        oauth_token = OAuthToken(
-            workspace_id=workspace_id,
-            user_id=user_id,
-            provider="slack",
-            access_token=bot_token_name,
-            refresh_token=None,
-            token_expires_at=None,
-            scopes=SLACK_BOT_SCOPES.split(","),
-        )
-        session.add(oauth_token)
-
-    # Upsert WorkspaceIntegration
-    int_stmt = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "slack",
+    await upsert_workspace_integration(
+        session, workspace_id, Provider.SLACK,
+        external_id=team_id,
+        config={"external_name": team_name} if team_name else None,
     )
-    int_result = await session.execute(int_stmt)
-    integration = int_result.scalar_one_or_none()
-
-    if integration:
-        integration.status = "connected"
-        integration.external_id = team_id
-        integration.config = {**integration.config, "external_name": team_name} if team_name else integration.config
-        integration.connected_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        integration.deleted_at = None
-    else:
-        integration = WorkspaceIntegration(
-            workspace_id=workspace_id,
-            provider="slack",
-            status="connected",
-            external_id=team_id,
-            config={"external_name": team_name} if team_name else {},
-            connected_at=datetime.now(timezone.utc).replace(tzinfo=None),
-        )
-        session.add(integration)
 
     await session.commit()
 
@@ -201,35 +150,11 @@ async def disconnect(
         workspace_id: Workspace to disconnect.
         user_id: User who initiated the disconnect.
     """
-    # Soft-delete OAuthToken
-    stmt = select(OAuthToken).where(
-        OAuthToken.workspace_id == workspace_id,
-        OAuthToken.user_id == user_id,
-        OAuthToken.provider == "slack",
-        OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
+    bot_token_name_val = token_name(Provider.SLACK, workspace_id, "bot_access")
+    await disconnect_provider(
+        session, workspace_id, user_id, Provider.SLACK,
+        vault_token_names=[bot_token_name_val],
     )
-    result = await session.execute(stmt)
-    oauth_token = result.scalar_one_or_none()
-
-    if oauth_token:
-        oauth_token.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
-
-    # Delete Vault secret
-    bot_token_name_val = token_name("slack", workspace_id, "bot_access")
-    await delete_token(session, bot_token_name_val)
-
-    # Mark integration as disconnected
-    int_stmt = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "slack",
-    )
-    int_result = await session.execute(int_stmt)
-    integration = int_result.scalar_one_or_none()
-
-    if integration:
-        integration.status = "disconnected"
-
-    await session.commit()
 
 
 async def get_bot_token(
@@ -251,7 +176,7 @@ async def get_bot_token(
     Raises:
         SlackOAuthError: If no bot token is found.
     """
-    bot_token_name_val = token_name("slack", workspace_id, "bot_access")
+    bot_token_name_val = token_name(Provider.SLACK, workspace_id, "bot_access")
     token_value = await read_token(session, bot_token_name_val)
 
     if not token_value:

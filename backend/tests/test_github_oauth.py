@@ -186,10 +186,11 @@ class TestCallback:
         self, github_settings, mock_session
     ):
         """handle_callback stores installation access token in Vault and creates records."""
-        from src.services.github_oauth import handle_callback, _sign_state
+        from src.services.github_oauth import handle_callback
+        from src.services.oauth_common import sign_oauth_state
 
         # Create a valid state
-        state = _sign_state(UUID(TEST_WORKSPACE_ID), GITHUB_CLIENT_SECRET)
+        state = sign_oauth_state(UUID(TEST_WORKSPACE_ID), GITHUB_CLIENT_SECRET)
 
         # Mock installation token response
         mock_token_response = MagicMock()

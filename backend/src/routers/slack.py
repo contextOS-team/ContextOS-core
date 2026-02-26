@@ -12,6 +12,8 @@ Security is provided by HMAC-SHA256 signature verification using the signing sec
 import json
 import logging
 
+import sqlalchemy.exc
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +22,7 @@ from sqlmodel import select
 import src.config as config_module
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
-from src.models.integration import WorkspaceIntegration
+from src.models.integration import Provider, WorkspaceIntegration
 from src.models.user import WorkspaceMember
 from src.services.slack_channels import (
     get_cached_channels,
@@ -30,12 +32,11 @@ from src.services.slack_channels import (
 from src.services.slack_events import process_event, verify_signature
 from src.services.slack_oauth import (
     SlackOAuthError,
-    _sign_state,
-    _verify_state,
     build_auth_url,
     disconnect,
     exchange_code,
 )
+from src.services.oauth_common import sign_oauth_state, verify_state_or_raise
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ async def connect(
     should redirect the user to.
     """
     settings = config_module.get_settings()
-    state = _sign_state(user.workspace_id, settings.SLACK_CLIENT_SECRET)
+    state = sign_oauth_state(user.workspace_id, settings.SLACK_CLIENT_SECRET)
     authorization_url = build_auth_url(state, settings)
     return {"authorization_url": authorization_url}
 
@@ -75,7 +76,7 @@ async def callback(
     frontend_url = settings.CORS_ORIGINS.split(",")[0].strip()
 
     try:
-        workspace_id = _verify_state(state, settings.SLACK_CLIENT_SECRET)
+        workspace_id = verify_state_or_raise(state, settings.SLACK_CLIENT_SECRET, SlackOAuthError)
     except SlackOAuthError as e:
         logger.error("Slack OAuth state verification failed: %s", e)
         return RedirectResponse(
@@ -139,7 +140,7 @@ async def get_status(
     """
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == user.workspace_id,
-        WorkspaceIntegration.provider == "slack",
+        WorkspaceIntegration.provider == Provider.SLACK,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()
@@ -289,7 +290,7 @@ async def receive_slack_events(
 
         # Look up workspace by team_id (matching workspace_integrations.external_id)
         ws_stmt = select(WorkspaceIntegration).where(
-            WorkspaceIntegration.provider == "slack",
+            WorkspaceIntegration.provider == Provider.SLACK,
             WorkspaceIntegration.external_id == team_id,
         )
         ws_result = await session.execute(ws_stmt)
@@ -327,7 +328,7 @@ async def _process_event_background(
     async with async_session() as session:
         try:
             await process_event(payload, workspace_id, session)
-        except Exception:
+        except (sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError):
             logger.exception(
                 "Error processing Slack event for workspace %s",
                 workspace_id,

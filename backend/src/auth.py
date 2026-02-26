@@ -80,7 +80,7 @@ def decode_supabase_jwt(token: str) -> JWTPayload:
         raise JWTError("Invalid audience claim") from e
     except jwt.PyJWTError as e:
         raise JWTError(f"Invalid token: {e}") from e
-    except Exception as e:
+    except (httpx.HTTPError, ValueError, KeyError) as e:
         raise JWTError(f"JWT verification failed: {e}") from e
 
     # Validate required 'sub' claim

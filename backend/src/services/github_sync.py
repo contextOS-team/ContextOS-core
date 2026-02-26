@@ -17,13 +17,14 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import httpx
+import sqlalchemy.exc
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.config import Settings
 from src.models.github import GithubPullRequest, GithubReview
-from src.models.integration import WorkspaceIntegration
+from src.models.integration import Provider, WorkspaceIntegration
 from src.services import embedding
 from src.services.github_common import (
     GITHUB_API_BASE,
@@ -86,7 +87,7 @@ async def sync_repos(
             total_reviews += review_count
             results[repo] = {"status": "synced", "prs": pr_count, "reviews": review_count}
 
-        except Exception as e:
+        except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError) as e:
             logger.error("Sync failed for repo %s: %s", repo, e)
             await _update_repo_sync_status(
                 session, workspace_id, repo, "error", 0, 0
@@ -357,7 +358,7 @@ async def _update_repo_sync_status(
     """Update per-repo sync status in workspace_integrations.config JSONB."""
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "github",
+        WorkspaceIntegration.provider == Provider.GITHUB,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()

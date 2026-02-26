@@ -12,12 +12,15 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+import httpx
+import sqlalchemy.exc
+
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import func, select
 
 from src.config import Settings
-from src.models.integration import WorkspaceIntegration
+from src.models.integration import Provider, WorkspaceIntegration
 from src.models.ticket import LinearComment, LinearTicket
 from src.services import embedding
 from src.services.linear_graphql import LinearGraphQLClient
@@ -167,7 +170,7 @@ async def sync_tickets_for_teams(
             session, workspace_id, "complete", total_tickets, team_ids
         )
 
-    except Exception:
+    except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError):
         await _update_sync_status(session, workspace_id, "error", total_tickets)
         raise
     finally:
@@ -362,7 +365,7 @@ async def _update_sync_status(
     """
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "linear",
+        WorkspaceIntegration.provider == Provider.LINEAR,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()

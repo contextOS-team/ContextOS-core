@@ -2,12 +2,26 @@
 
 import uuid
 from datetime import datetime
+from enum import Enum
 
 from sqlalchemy import Column, String, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlmodel import Field, SQLModel
 
 from src.models.base import BaseModel, TimestampMixin
+
+
+class Provider(str, Enum):
+    """Integration provider identifiers.
+
+    Inherits from str so Provider.LINEAR == "linear" is True,
+    avoiding any DB migration or API contract changes.
+    """
+
+    LINEAR = "linear"
+    GITHUB = "github"
+    SLACK = "slack"
+    FATHOM = "fathom"
 
 
 class OAuthToken(BaseModel, table=True):

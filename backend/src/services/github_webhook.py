@@ -14,13 +14,16 @@ Per user decisions:
 import logging
 from uuid import UUID
 
+import httpx
+import sqlalchemy.exc
+
 from sqlalchemy import cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.db import async_session
 from src.models.github import GithubPullRequest, GithubReview
-from src.models.integration import OAuthToken
+from src.models.integration import OAuthToken, Provider
 from src.services.github_common import (
     is_bot_author,
     map_pr_state,
@@ -49,7 +52,7 @@ async def _lookup_workspace_from_installation(
         The workspace UUID, or None if not found.
     """
     stmt = select(OAuthToken.workspace_id).where(
-        OAuthToken.provider == "github",
+        OAuthToken.provider == Provider.GITHUB,
         OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
         OAuthToken.metadata_["installation_id"].as_string() == str(installation_id),
     )
@@ -105,7 +108,7 @@ async def process_github_event(
                 logger.info("Ignoring unhandled GitHub event type: %s", event_type)
 
             await session.commit()
-        except Exception:
+        except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError):
             logger.exception(
                 "Error processing GitHub webhook event=%s workspace=%s",
                 event_type,

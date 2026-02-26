@@ -12,13 +12,13 @@ from sqlmodel import select
 
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
-from src.models.integration import WorkspaceIntegration
+from src.models.integration import Provider, WorkspaceIntegration
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
-PROVIDERS = ["linear", "slack", "fathom", "github"]
+PROVIDERS = [Provider.LINEAR, Provider.SLACK, Provider.FATHOM, Provider.GITHUB]
 
 
 def _disconnected_status() -> dict:
@@ -40,13 +40,13 @@ def _build_provider_status(integration: WorkspaceIntegration) -> dict:
     }
 
     # For Slack, include selected_channels_count from config
-    if integration.provider == "slack":
+    if integration.provider == Provider.SLACK:
         config = integration.config or {}
         selected = config.get("selected_channels", [])
         result["selected_channels_count"] = len(selected) if isinstance(selected, list) else 0
 
     # For GitHub, include selected_repos_count from config
-    if integration.provider == "github":
+    if integration.provider == Provider.GITHUB:
         config = integration.config or {}
         selected = config.get("selected_repos", [])
         result["selected_repos_count"] = len(selected) if isinstance(selected, list) else 0

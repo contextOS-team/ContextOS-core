@@ -9,6 +9,9 @@ directly. The state parameter provides CSRF protection via HMAC-SHA256.
 
 import logging
 
+import httpx
+import sqlalchemy.exc
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -17,16 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import src.config as config_module
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
-from src.models.integration import WorkspaceIntegration
+from src.models.integration import Provider, WorkspaceIntegration
 from src.services.github_oauth import (
     GitHubOAuthError,
-    _sign_state,
-    _verify_state,
     build_install_url,
     disconnect,
     get_status,
     handle_callback,
 )
+from src.services.oauth_common import sign_oauth_state
 from src.services.github_repos import (
     get_cached_repos,
     refresh_repos,
@@ -49,7 +51,7 @@ async def connect(
     should redirect the user to install the GitHub App.
     """
     settings = config_module.get_settings()
-    state = _sign_state(user.workspace_id, settings.GITHUB_CLIENT_SECRET)
+    state = sign_oauth_state(user.workspace_id, settings.GITHUB_CLIENT_SECRET)
     installation_url = build_install_url(state, settings)
     return {"installation_url": installation_url}
 
@@ -93,7 +95,7 @@ async def callback(
             url=f"{frontend_url}/dashboard/integrations?github=error&reason={reason}",
             status_code=status.HTTP_302_FOUND,
         )
-    except Exception as e:
+    except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError) as e:
         logger.exception("Unexpected error in GitHub callback: %s", e)
         return RedirectResponse(
             url=f"{frontend_url}/dashboard/integrations?github=error&reason=internal_error",
@@ -219,7 +221,7 @@ async def trigger_sync(
     # Get selected repos from config
     stmt = sm_select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == user.workspace_id,
-        WorkspaceIntegration.provider == "github",
+        WorkspaceIntegration.provider == Provider.GITHUB,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()
@@ -264,7 +266,7 @@ async def get_sync_status(
 
     stmt = sm_select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == user.workspace_id,
-        WorkspaceIntegration.provider == "github",
+        WorkspaceIntegration.provider == Provider.GITHUB,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()

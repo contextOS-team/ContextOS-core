@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
-import { formatRelativeTime } from '@/lib/utils'
+import { displayName, formatRelativeTime } from '@/lib/utils'
 import {
   LinearLogo,
   SlackLogo,
@@ -60,13 +60,6 @@ function getGreeting(): string {
   if (hour < 12) return 'Good morning'
   if (hour < 18) return 'Good afternoon'
   return 'Good evening'
-}
-
-function displayName(name: string | null | undefined): string | null {
-  if (!name) return null
-  if (/^[0-9a-f]{8}-/i.test(name)) return null
-  if (/^[A-Z][A-Z0-9]{6,}$/.test(name)) return null
-  return name
 }
 
 export default function DashboardPage() {

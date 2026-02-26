@@ -15,17 +15,16 @@ from sqlmodel import func, select
 from src.config import Settings, get_settings
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
-from src.models.integration import WorkspaceIntegration
+from src.models.integration import Provider, WorkspaceIntegration
 from src.models.ticket import LinearTicket
 from src.services.linear_oauth import (
     OAuthError,
-    _sign_state,
-    _verify_state,
     build_auth_url,
     disconnect,
     exchange_code,
     get_valid_access_token,
 )
+from src.services.oauth_common import sign_oauth_state, verify_state_or_raise
 from src.services.linear_sync import fetch_teams, sync_tickets_for_teams
 
 logger = logging.getLogger(__name__)
@@ -43,7 +42,7 @@ async def connect(
     Returns a JSON object with the authorization URL that the frontend
     should redirect the user to.
     """
-    state = _sign_state(user.workspace_id, settings.LINEAR_CLIENT_SECRET)
+    state = sign_oauth_state(user.workspace_id, settings.LINEAR_CLIENT_SECRET)
     authorization_url = build_auth_url(state, settings)
     return {"authorization_url": authorization_url}
 
@@ -66,7 +65,7 @@ async def callback(
     frontend_url = settings.CORS_ORIGINS.split(",")[0].strip()
 
     try:
-        workspace_id = _verify_state(state, settings.LINEAR_CLIENT_SECRET)
+        workspace_id = verify_state_or_raise(state, settings.LINEAR_CLIENT_SECRET, OAuthError)
     except OAuthError as e:
         logger.error("OAuth state verification failed: %s", e)
         return RedirectResponse(
@@ -134,7 +133,7 @@ async def get_status(
     """
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == user.workspace_id,
-        WorkspaceIntegration.provider == "linear",
+        WorkspaceIntegration.provider == Provider.LINEAR,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()
@@ -207,7 +206,7 @@ async def start_sync(
     # Verify integration is connected
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == user.workspace_id,
-        WorkspaceIntegration.provider == "linear",
+        WorkspaceIntegration.provider == Provider.LINEAR,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()
@@ -244,7 +243,7 @@ async def get_sync_status(
     # Get integration config
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == user.workspace_id,
-        WorkspaceIntegration.provider == "linear",
+        WorkspaceIntegration.provider == Provider.LINEAR,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()

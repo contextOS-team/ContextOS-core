@@ -25,8 +25,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.config import Settings
-from src.models.integration import OAuthToken, WorkspaceIntegration
-from src.services.oauth_common import OAuthStateError, sign_oauth_state, verify_oauth_state
+from src.models.integration import OAuthToken, Provider, WorkspaceIntegration
+from src.services.oauth_common import (
+    TOKEN_REFRESH_BUFFER,
+    upsert_oauth_token,
+    upsert_workspace_integration,
+    verify_state_or_raise,
+)
 from src.services.vault import delete_token, read_token, store_token, token_name
 
 logger = logging.getLogger(__name__)
@@ -38,18 +43,6 @@ GITHUB_API_BASE = "https://api.github.com"
 class GitHubOAuthError(Exception):
     """Raised when a GitHub OAuth operation fails."""
 
-
-def _sign_state(workspace_id: UUID, secret: str) -> str:
-    """Create a signed state parameter. Delegates to shared utility."""
-    return sign_oauth_state(workspace_id, secret)
-
-
-def _verify_state(state: str, secret: str) -> UUID:
-    """Verify a signed state parameter. Wraps shared utility with provider error."""
-    try:
-        return verify_oauth_state(state, secret)
-    except OAuthStateError as e:
-        raise GitHubOAuthError(str(e)) from e
 
 
 def _create_app_jwt(settings: Settings) -> str:
@@ -120,7 +113,7 @@ async def handle_callback(
         GitHubOAuthError: If state is invalid or token generation fails.
     """
     # Verify state and extract workspace_id
-    workspace_id = _verify_state(state, settings.GITHUB_CLIENT_SECRET)
+    workspace_id = verify_state_or_raise(state, settings.GITHUB_CLIENT_SECRET, GitHubOAuthError)
 
     # Look up workspace owner for user_id
     from src.models.user import WorkspaceMember
@@ -155,36 +148,15 @@ async def handle_callback(
             token_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
 
     # Store installation access token in Vault
-    access_name = token_name("github", workspace_id, "access_token")
+    access_name = token_name(Provider.GITHUB, workspace_id, "access_token")
     await store_token(session, access_name, access_token_value)
 
-    # Upsert OAuthToken record (stores Vault secret name, NOT actual token)
-    # Query WITHOUT deleted_at filter to reuse soft-deleted rows on reconnect
-    oauth_stmt = select(OAuthToken).where(
-        OAuthToken.workspace_id == workspace_id,
-        OAuthToken.user_id == user_id,
-        OAuthToken.provider == "github",
+    await upsert_oauth_token(
+        session, workspace_id, user_id, Provider.GITHUB,
+        access_token_name=access_name,
+        token_expires_at=token_expires_at,
+        metadata={"installation_id": installation_id},
     )
-    oauth_result = await session.execute(oauth_stmt)
-    oauth_token = oauth_result.scalar_one_or_none()
-
-    if oauth_token:
-        oauth_token.access_token = access_name
-        oauth_token.refresh_token = None  # No refresh token -- we re-generate via App JWT
-        oauth_token.token_expires_at = token_expires_at
-        oauth_token.metadata_ = {"installation_id": installation_id}
-        oauth_token.deleted_at = None  # un-soft-delete on reconnect
-    else:
-        oauth_token = OAuthToken(
-            workspace_id=workspace_id,
-            user_id=user_id,
-            provider="github",
-            access_token=access_name,
-            refresh_token=None,
-            token_expires_at=token_expires_at,
-            metadata_={"installation_id": installation_id},
-        )
-        session.add(oauth_token)
 
     # Get installation account info
     account_login = ""
@@ -206,36 +178,11 @@ async def handle_callback(
     except httpx.HTTPError:
         pass  # Non-critical -- we can proceed without the account name
 
-    # Upsert WorkspaceIntegration
-    int_stmt = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "github",
+    await upsert_workspace_integration(
+        session, workspace_id, Provider.GITHUB,
+        external_id=account_login or str(installation_id),
+        config={"installation_id": installation_id, "account_login": account_login},
     )
-    int_result = await session.execute(int_stmt)
-    integration = int_result.scalar_one_or_none()
-
-    if integration:
-        integration.status = "connected"
-        integration.external_id = account_login or str(installation_id)
-        integration.connected_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        integration.config = {
-            "installation_id": installation_id,
-            "account_login": account_login,
-        }
-        integration.deleted_at = None
-    else:
-        integration = WorkspaceIntegration(
-            workspace_id=workspace_id,
-            provider="github",
-            status="connected",
-            external_id=account_login or str(installation_id),
-            connected_at=datetime.now(timezone.utc).replace(tzinfo=None),
-            config={
-                "installation_id": installation_id,
-                "account_login": account_login,
-            },
-        )
-        session.add(integration)
 
     await session.commit()
 
@@ -304,7 +251,7 @@ async def get_installation_token(
     # Find the OAuthToken record
     stmt = select(OAuthToken).where(
         OAuthToken.workspace_id == workspace_id,
-        OAuthToken.provider == "github",
+        OAuthToken.provider == Provider.GITHUB,
         OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     result = await session.execute(stmt)
@@ -315,14 +262,13 @@ async def get_installation_token(
 
     # Check if token is still valid (with 5 min buffer)
     if oauth_token.token_expires_at:
-        buffer = timedelta(minutes=5)
         # Ensure both sides are naive UTC for comparison
         expires_at = oauth_token.token_expires_at
         if expires_at.tzinfo is not None:
             expires_at = expires_at.replace(tzinfo=None)
-        if expires_at > (datetime.now(timezone.utc).replace(tzinfo=None) + buffer):
+        if expires_at > (datetime.now(timezone.utc).replace(tzinfo=None) + TOKEN_REFRESH_BUFFER):
             # Token still valid, read from Vault
-            access_name = token_name("github", workspace_id, "access_token")
+            access_name = token_name(Provider.GITHUB, workspace_id, "access_token")
             current_token = await read_token(session, access_name)
             if current_token:
                 return current_token
@@ -349,7 +295,7 @@ async def get_installation_token(
             token_expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
 
     # Store new token in Vault
-    access_name = token_name("github", workspace_id, "access_token")
+    access_name = token_name(Provider.GITHUB, workspace_id, "access_token")
     await store_token(session, access_name, new_token)
 
     # Update expiry in DB
@@ -383,7 +329,7 @@ async def disconnect(
     oauth_stmt = select(OAuthToken).where(
         OAuthToken.workspace_id == workspace_id,
         OAuthToken.user_id == user_id,
-        OAuthToken.provider == "github",
+        OAuthToken.provider == Provider.GITHUB,
         OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     oauth_result = await session.execute(oauth_stmt)
@@ -421,13 +367,13 @@ async def disconnect(
             )
 
     # Delete Vault secret
-    access_name = token_name("github", workspace_id, "access_token")
+    access_name = token_name(Provider.GITHUB, workspace_id, "access_token")
     await delete_token(session, access_name)
 
     # Mark integration as disconnected
     int_stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "github",
+        WorkspaceIntegration.provider == Provider.GITHUB,
     )
     int_result = await session.execute(int_stmt)
     integration = int_result.scalar_one_or_none()
@@ -453,7 +399,7 @@ async def get_status(
     """
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "github",
+        WorkspaceIntegration.provider == Provider.GITHUB,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()

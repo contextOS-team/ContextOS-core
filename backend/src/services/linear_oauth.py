@@ -16,9 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.config import Settings
-from src.models.integration import OAuthToken, WorkspaceIntegration
-from src.services.oauth_common import OAuthStateError, sign_oauth_state, verify_oauth_state
-from src.services.vault import delete_token, read_token, store_token, token_name
+from src.models.integration import OAuthToken, Provider, WorkspaceIntegration
+from src.services.oauth_common import (
+    TOKEN_REFRESH_BUFFER,
+    disconnect_provider,
+    upsert_oauth_token,
+    upsert_workspace_integration,
+)
+from src.services.vault import read_token, store_token, token_name
 
 # Linear OAuth endpoints
 LINEAR_AUTHORIZE_URL = "https://linear.app/oauth/authorize"
@@ -29,18 +34,6 @@ LINEAR_API_URL = "https://api.linear.app/graphql"
 class OAuthError(Exception):
     """Raised when an OAuth operation fails."""
 
-
-def _sign_state(workspace_id: UUID, secret: str) -> str:
-    """Create a signed state parameter. Delegates to shared utility."""
-    return sign_oauth_state(workspace_id, secret)
-
-
-def _verify_state(state: str, secret: str) -> UUID:
-    """Verify a signed state parameter. Wraps shared utility with provider error."""
-    try:
-        return verify_oauth_state(state, secret)
-    except OAuthStateError as e:
-        raise OAuthError(str(e)) from e
 
 
 def build_auth_url(state: str, settings: Settings) -> str:
@@ -116,70 +109,32 @@ async def exchange_code(
         token_expires_at = datetime.now(timezone.utc).replace(tzinfo=None).replace(microsecond=0) + timedelta(seconds=expires_in)
 
     # Store tokens in Vault (encrypted at rest)
-    access_name = token_name("linear", workspace_id, "access")
+    access_name = token_name(Provider.LINEAR, workspace_id, "access")
     await store_token(session, access_name, access_token_value)
 
-    refresh_name = token_name("linear", workspace_id, "refresh")
+    refresh_name = token_name(Provider.LINEAR, workspace_id, "refresh")
     if refresh_token_value:
         await store_token(session, refresh_name, refresh_token_value)
 
     # Upsert OAuthToken record (stores Vault secret names, NOT actual tokens)
-    # Query WITHOUT deleted_at filter — a soft-deleted row still holds the
-    # unique constraint slot, so we must reuse it on reconnect.
-    stmt = select(OAuthToken).where(
-        OAuthToken.workspace_id == workspace_id,
-        OAuthToken.user_id == user_id,
-        OAuthToken.provider == "linear",
+    await upsert_oauth_token(
+        session, workspace_id, user_id, Provider.LINEAR,
+        access_token_name=access_name,
+        refresh_token_name=refresh_name if refresh_token_value else None,
+        token_expires_at=token_expires_at,
+        scopes=["read", "write"],
     )
-    result = await session.execute(stmt)
-    oauth_token = result.scalar_one_or_none()
-
-    if oauth_token:
-        oauth_token.access_token = access_name
-        oauth_token.refresh_token = refresh_name if refresh_token_value else None
-        oauth_token.token_expires_at = token_expires_at
-        oauth_token.scopes = ["read", "write"]
-        oauth_token.deleted_at = None  # un-soft-delete on reconnect
-    else:
-        oauth_token = OAuthToken(
-            workspace_id=workspace_id,
-            user_id=user_id,
-            provider="linear",
-            access_token=access_name,
-            refresh_token=refresh_name if refresh_token_value else None,
-            token_expires_at=token_expires_at,
-            scopes=["read", "write"],
-        )
-        session.add(oauth_token)
 
     # Fetch Linear organization info
     org_info = await _fetch_organization(access_token_value)
 
     # Upsert WorkspaceIntegration
-    int_stmt = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "linear",
-    )
-    int_result = await session.execute(int_stmt)
-    integration = int_result.scalar_one_or_none()
-
     org_name = org_info.get("name")
-    if integration:
-        integration.status = "connected"
-        integration.external_id = org_info.get("id")
-        integration.config = {**integration.config, "external_name": org_name} if org_name else integration.config
-        integration.connected_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        integration.deleted_at = None
-    else:
-        integration = WorkspaceIntegration(
-            workspace_id=workspace_id,
-            provider="linear",
-            status="connected",
-            external_id=org_info.get("id"),
-            config={"external_name": org_name} if org_name else {},
-            connected_at=datetime.now(timezone.utc).replace(tzinfo=None),
-        )
-        session.add(integration)
+    await upsert_workspace_integration(
+        session, workspace_id, Provider.LINEAR,
+        external_id=org_info.get("id"),
+        config={"external_name": org_name} if org_name else None,
+    )
 
     await session.commit()
 
@@ -250,7 +205,7 @@ async def refresh_access_token(
     stmt = select(OAuthToken).where(
         OAuthToken.workspace_id == workspace_id,
         OAuthToken.user_id == user_id,
-        OAuthToken.provider == "linear",
+        OAuthToken.provider == Provider.LINEAR,
         OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     result = await session.execute(stmt)
@@ -261,13 +216,13 @@ async def refresh_access_token(
 
     # If token is still valid, return current access token
     if oauth_token.token_expires_at and oauth_token.token_expires_at > datetime.now(timezone.utc).replace(tzinfo=None):
-        access_name = token_name("linear", workspace_id, "access")
+        access_name = token_name(Provider.LINEAR, workspace_id, "access")
         current_token = await read_token(session, access_name)
         if current_token:
             return current_token
 
     # Read refresh token from Vault
-    refresh_name = token_name("linear", workspace_id, "refresh")
+    refresh_name = token_name(Provider.LINEAR, workspace_id, "refresh")
     refresh_token_value = await read_token(session, refresh_name)
 
     if not refresh_token_value:
@@ -301,7 +256,7 @@ async def refresh_access_token(
     expires_in = token_data.get("expires_in")
 
     # Store new tokens in Vault
-    access_name = token_name("linear", workspace_id, "access")
+    access_name = token_name(Provider.LINEAR, workspace_id, "access")
     await store_token(session, access_name, new_access_token)
 
     if new_refresh_token:
@@ -342,7 +297,7 @@ async def get_valid_access_token(
     stmt = select(OAuthToken).where(
         OAuthToken.workspace_id == workspace_id,
         OAuthToken.user_id == user_id,
-        OAuthToken.provider == "linear",
+        OAuthToken.provider == Provider.LINEAR,
         OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     result = await session.execute(stmt)
@@ -353,10 +308,9 @@ async def get_valid_access_token(
 
     # Check if token is still valid (with 5 min buffer)
     if oauth_token.token_expires_at:
-        buffer = timedelta(minutes=5)
-        if oauth_token.token_expires_at > (datetime.now(timezone.utc).replace(tzinfo=None) + buffer):
+        if oauth_token.token_expires_at > (datetime.now(timezone.utc).replace(tzinfo=None) + TOKEN_REFRESH_BUFFER):
             # Token still valid, read from Vault
-            access_name = token_name("linear", workspace_id, "access")
+            access_name = token_name(Provider.LINEAR, workspace_id, "access")
             current_token = await read_token(session, access_name)
             if current_token:
                 return current_token
@@ -380,37 +334,12 @@ async def disconnect(
         workspace_id: Workspace to disconnect.
         user_id: User who initiated the disconnect.
     """
-    # Soft-delete OAuthToken
-    stmt = select(OAuthToken).where(
-        OAuthToken.workspace_id == workspace_id,
-        OAuthToken.user_id == user_id,
-        OAuthToken.provider == "linear",
-        OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
+    access_name = token_name(Provider.LINEAR, workspace_id, "access")
+    refresh_name = token_name(Provider.LINEAR, workspace_id, "refresh")
+    await disconnect_provider(
+        session, workspace_id, user_id, Provider.LINEAR,
+        vault_token_names=[access_name, refresh_name],
     )
-    result = await session.execute(stmt)
-    oauth_token = result.scalar_one_or_none()
-
-    if oauth_token:
-        oauth_token.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
-
-    # Delete Vault secrets
-    access_name = token_name("linear", workspace_id, "access")
-    refresh_name = token_name("linear", workspace_id, "refresh")
-    await delete_token(session, access_name)
-    await delete_token(session, refresh_name)
-
-    # Mark integration as disconnected
-    int_stmt = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "linear",
-    )
-    int_result = await session.execute(int_stmt)
-    integration = int_result.scalar_one_or_none()
-
-    if integration:
-        integration.status = "disconnected"
-
-    await session.commit()
 
 
 async def _mark_integration_error(session: AsyncSession, workspace_id: UUID) -> None:
@@ -420,7 +349,7 @@ async def _mark_integration_error(session: AsyncSession, workspace_id: UUID) -> 
     """
     int_stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "linear",
+        WorkspaceIntegration.provider == Provider.LINEAR,
     )
     int_result = await session.execute(int_stmt)
     integration = int_result.scalar_one_or_none()

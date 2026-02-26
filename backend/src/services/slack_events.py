@@ -26,7 +26,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from src.models.integration import WorkspaceIntegration
+from src.models.integration import Provider, WorkspaceIntegration
 from src.models.slack import SlackMessage
 from src.services import embedding
 
@@ -172,7 +172,7 @@ async def _is_channel_monitored(
     """
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "slack",
+        WorkspaceIntegration.provider == Provider.SLACK,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()

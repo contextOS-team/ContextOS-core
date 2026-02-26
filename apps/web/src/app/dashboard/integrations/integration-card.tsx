@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { formatRelativeTime } from '@/lib/utils'
+import { displayName, formatRelativeTime } from '@/lib/utils'
 import { ChevronDown, Loader2 } from 'lucide-react'
 
 type IntegrationStatus = 'connected' | 'disconnected' | 'error'
@@ -77,9 +77,7 @@ export function IntegrationCard({
     }
   }
 
-  const displayName = externalName && !(/^[0-9a-f]{8}-/i.test(externalName) || /^[A-Z][A-Z0-9]{6,}$/.test(externalName))
-    ? externalName
-    : null
+  const displayedName = displayName(externalName)
 
   return (
     <Card className="gap-0 py-0 overflow-hidden transition-all duration-200 hover:shadow-lg hover:shadow-black/[0.03] dark:hover:shadow-black/20 group">
@@ -94,11 +92,11 @@ export function IntegrationCard({
           </div>
         </div>
         {/* Connection info inline with header */}
-        {status === 'connected' && (displayName || connectedAt) && (
+        {status === 'connected' && (displayedName || connectedAt) && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
-            {displayName && (
+            {displayedName && (
               <span className="font-medium text-foreground/70 truncate max-w-[120px]">
-                {displayName}
+                {displayedName}
               </span>
             )}
             {connectedAt && (

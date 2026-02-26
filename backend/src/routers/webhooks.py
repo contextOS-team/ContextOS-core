@@ -17,7 +17,7 @@ from sqlmodel import select
 
 import src.config as config_module
 from src.db import get_session
-from src.models.integration import WebhookDelivery, WorkspaceIntegration
+from src.models.integration import Provider, WebhookDelivery, WorkspaceIntegration
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ async def receive_linear_webhook(
         return {"status": "already_processed"}
 
     # Record this delivery for idempotency
-    delivery = WebhookDelivery(delivery_id=delivery_id, provider="linear")
+    delivery = WebhookDelivery(delivery_id=delivery_id, provider=Provider.LINEAR)
     session.add(delivery)
     await session.commit()
 
@@ -120,7 +120,7 @@ async def receive_linear_webhook(
 
     if organization_id:
         ws_stmt = select(WorkspaceIntegration.workspace_id).where(
-            WorkspaceIntegration.provider == "linear",
+            WorkspaceIntegration.provider == Provider.LINEAR,
             WorkspaceIntegration.external_id == organization_id,
         )
         ws_result = await session.execute(ws_stmt)
@@ -207,7 +207,7 @@ async def receive_github_webhook(
             return {"status": "already_processed"}
 
         # Record this delivery for idempotency
-        delivery = WebhookDelivery(delivery_id=delivery_id, provider="github")
+        delivery = WebhookDelivery(delivery_id=delivery_id, provider=Provider.GITHUB)
         session.add(delivery)
         await session.commit()
 

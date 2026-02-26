@@ -23,3 +23,14 @@ export function formatRelativeTime(isoDate: string): string {
   if (diffMin > 0) return `${diffMin}m ago`
   return 'just now'
 }
+
+/**
+ * Filters out external IDs that aren't human-readable display names.
+ * Returns null for UUIDs and workspace ID patterns.
+ */
+export function displayName(name: string | null | undefined): string | null {
+  if (!name) return null
+  if (/^[0-9a-f]{8}-/i.test(name)) return null
+  if (/^[A-Z][A-Z0-9]{6,}$/.test(name)) return null
+  return name
+}

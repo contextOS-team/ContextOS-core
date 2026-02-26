@@ -14,11 +14,14 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+import httpx
+import sqlalchemy.exc
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.db import async_session
-from src.models.integration import OAuthToken, WorkspaceIntegration
+from src.models.integration import OAuthToken, Provider, WorkspaceIntegration
 from src.models.ticket import LinearComment, LinearTicket
 from src.services import embedding
 from src.services.linear_oauth import get_valid_access_token
@@ -94,7 +97,7 @@ async def process_webhook_event(workspace_id: UUID, event: dict) -> None:
                 logger.info("Ignoring unknown event type: %s", event_type)
 
             await session.commit()
-        except Exception:
+        except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError):
             logger.exception(
                 "Error processing webhook event type=%s action=%s workspace=%s",
                 event_type,
@@ -124,7 +127,7 @@ async def _is_team_synced(session: AsyncSession, workspace_id: UUID, team_id: st
 
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "linear",
+        WorkspaceIntegration.provider == Provider.LINEAR,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()
@@ -154,7 +157,7 @@ async def _get_access_token(session: AsyncSession, workspace_id: UUID) -> str | 
     # Find the user who connected Linear for this workspace
     stmt = select(OAuthToken.user_id).where(
         OAuthToken.workspace_id == workspace_id,
-        OAuthToken.provider == "linear",
+        OAuthToken.provider == Provider.LINEAR,
         OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     result = await session.execute(stmt)
@@ -167,7 +170,7 @@ async def _get_access_token(session: AsyncSession, workspace_id: UUID) -> str | 
     try:
         settings = get_settings()
         return await get_valid_access_token(session, workspace_id, user_id, settings)
-    except Exception:
+    except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError) as exc:
         logger.exception("Failed to get access token for workspace %s", workspace_id)
         return None
 

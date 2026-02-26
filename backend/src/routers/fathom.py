@@ -9,6 +9,9 @@ in Supabase Vault (not in plaintext).
 
 import logging
 
+import httpx
+import sqlalchemy.exc
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -117,7 +120,7 @@ async def _poll_background(workspace_id) -> None:
                 workspace_id,
                 result,
             )
-        except Exception:
+        except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError):
             logger.exception(
                 "Error polling Fathom transcripts for workspace %s",
                 workspace_id,

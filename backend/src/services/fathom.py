@@ -22,7 +22,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from src.models.integration import WorkspaceIntegration
+from src.models.integration import Provider, WorkspaceIntegration
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.services import embedding
 from src.services.vault import delete_token, read_token, store_token
@@ -95,7 +95,7 @@ async def connect_fathom(
     # Upsert WorkspaceIntegration
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "fathom",
+        WorkspaceIntegration.provider == Provider.FATHOM,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()
@@ -107,7 +107,7 @@ async def connect_fathom(
     else:
         integration = WorkspaceIntegration(
             workspace_id=workspace_id,
-            provider="fathom",
+            provider=Provider.FATHOM,
             status="connected",
             connected_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
@@ -138,7 +138,7 @@ async def disconnect_fathom(
     # Mark integration as disconnected
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "fathom",
+        WorkspaceIntegration.provider == Provider.FATHOM,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()
@@ -189,7 +189,7 @@ async def get_fathom_status(
     """
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "fathom",
+        WorkspaceIntegration.provider == Provider.FATHOM,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()
@@ -418,7 +418,7 @@ async def poll_transcripts(
     # Update last_poll_at in workspace_integrations.config
     int_stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "fathom",
+        WorkspaceIntegration.provider == Provider.FATHOM,
     )
     int_result = await session.execute(int_stmt)
     integration = int_result.scalar_one_or_none()
