@@ -15,13 +15,13 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex flex-col min-h-screen bg-background">
       <Sidebar
         userEmail={user.email ?? ''}
         userFullName={user.user_metadata?.full_name}
       />
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-8 py-8">
+        <div className="mx-auto max-w-5xl px-6 py-10 lg:px-10">
           {children}
         </div>
       </main>
