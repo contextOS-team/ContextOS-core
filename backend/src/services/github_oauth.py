@@ -14,8 +14,6 @@ Uses PyJWT with RS256 for App JWT signing (GitHub requires RS256-signed JWTs).
 Uses httpx for all GitHub API calls (consistent with project pattern).
 """
 
-import hashlib
-import hmac
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -28,6 +26,7 @@ from sqlmodel import select
 
 from src.config import Settings
 from src.models.integration import OAuthToken, WorkspaceIntegration
+from src.services.oauth_common import OAuthStateError, sign_oauth_state, verify_oauth_state
 from src.services.vault import delete_token, read_token, store_token, token_name
 
 logger = logging.getLogger(__name__)
@@ -41,36 +40,16 @@ class GitHubOAuthError(Exception):
 
 
 def _sign_state(workspace_id: UUID, secret: str) -> str:
-    """Create a signed state parameter encoding workspace_id.
-
-    Uses HMAC-SHA256 with GITHUB_CLIENT_SECRET to prevent CSRF.
-    Format: {workspace_id}:{signature}
-    """
-    message = str(workspace_id)
-    signature = hmac.new(
-        secret.encode(), message.encode(), hashlib.sha256
-    ).hexdigest()
-    return f"{message}:{signature}"
+    """Create a signed state parameter. Delegates to shared utility."""
+    return sign_oauth_state(workspace_id, secret)
 
 
 def _verify_state(state: str, secret: str) -> UUID:
-    """Verify and extract workspace_id from a signed state parameter.
-
-    Raises GitHubOAuthError if the signature is invalid.
-    """
+    """Verify a signed state parameter. Wraps shared utility with provider error."""
     try:
-        workspace_str, signature = state.rsplit(":", 1)
-    except ValueError as e:
-        raise GitHubOAuthError("Invalid state parameter format") from e
-
-    expected = hmac.new(
-        secret.encode(), workspace_str.encode(), hashlib.sha256
-    ).hexdigest()
-
-    if not hmac.compare_digest(signature, expected):
-        raise GitHubOAuthError("Invalid state signature")
-
-    return UUID(workspace_str)
+        return verify_oauth_state(state, secret)
+    except OAuthStateError as e:
+        raise GitHubOAuthError(str(e)) from e
 
 
 def _create_app_jwt(settings: Settings) -> str:
