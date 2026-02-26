@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: in-progress
-last_updated: "2026-02-26T11:05:17Z"
+last_updated: "2026-02-26T11:26:14Z"
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 23
-  completed_plans: 22
+  completed_plans: 23
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 
 ## Current Position
 
-Phase: 08.1 (Dashboard Design Polish)
-Plan: 2 of 2 in current phase
-Status: Plan 01 complete, Plan 02 remaining
-Last activity: 2026-02-26 -- Completed visual identity foundation (Inter font, deep blue, top nav, brand logos)
+Phase: 08.1 (Dashboard Design Polish) -- COMPLETE
+Plan: 2 of 2 in current phase (all done)
+Status: Phase 08.1 complete
+Last activity: 2026-02-26 -- Completed dashboard redesign (status-first home page, brand logos, refined cards)
 
-Progress: [=========.] 95% (08.1: 1/2 plans)
+Progress: [==========] 100% (08.1: 2/2 plans)
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [=========.] 95% (08.1: 1/2 plans)
 | Phase 07.2 P02 | 3min | 2 tasks | 4 files |
 | Phase 07.2 P03 | 3min | 2 tasks | 7 files |
 | Phase 08.1 P01 | 3min | 3 tasks | 5 files |
+| Phase 08.1 P02 | 6min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -129,6 +130,10 @@ Recent decisions affecting current work:
 - [08.1-01]: Light/transparent top nav with backdrop-blur matches warm off-white page feel better than dark bar
 - [08.1-01]: Kept export name as Sidebar to minimize import changes across layout
 - [08.1-01]: Active nav indicator uses bottom border accent line extending below nav item
+- [08.1-02]: Compact status rows (Linear-inspired) for home page over card grid -- higher density, faster scanning
+- [08.1-02]: Status indicators use solid 1.5px dots (emerald/red/hollow ring) -- no animation, no pills
+- [08.1-02]: Marketing-copy descriptions removed entirely, not replaced with placeholders
+- [08.1-02]: draw-ring animation removed alongside pulse-dot since setup progress ring eliminated
 
 ### Pending Todos
 
@@ -151,5 +156,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 08.1-01-PLAN.md (Visual Identity Foundation)
-Resume file: .planning/phases/08.1-dashboard-design-polish/08.1-02-PLAN.md
+Stopped at: Completed 08.1-02-PLAN.md (Dashboard Redesign) -- Phase 08.1 complete
+Resume file: N/A -- all plans complete
