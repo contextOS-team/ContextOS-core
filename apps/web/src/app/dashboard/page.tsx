@@ -41,8 +41,8 @@ const INTEGRATIONS = [
     key: 'fathom' as const,
     name: 'Fathom',
     logo: FathomLogo,
-    brandColor: 'bg-purple-500',
-    brandBorder: 'border-l-purple-500',
+    brandColor: 'bg-cyan-500',
+    brandBorder: 'border-l-cyan-500',
     logoClass: '', // Fathom logo has its own fill
   },
   {
