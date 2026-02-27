@@ -276,3 +276,15 @@ Plans:
 Plans:
 - [ ] 08.1-01-PLAN.md -- Foundation: Typography swap (DM Sans -> Inter), color shift (indigo -> deep blue), sidebar -> top nav, brand SVG logos
 - [ ] 08.1-02-PLAN.md -- Home page density redesign, integration card polish, status indicator refinement, animation cleanup
+
+### Phase 08.1.1: Notion Integration (INSERTED)
+
+**Goal:** Add Notion as a data source -- OAuth connection, page/database ingestion with full content converted to markdown, real-time webhook updates, and integration card on the dashboard
+**Requirements**: N/A (inserted phase -- covers NOT-01, NOT-02 from v2 requirements, pulled forward)
+**Depends on:** Phase 8.1
+**Plans:** 3 plans
+
+Plans:
+- [ ] 08.1.1-01-PLAN.md -- Notion OAuth flow, Notion API client with block-to-markdown conversion, notion_pages DB table, router endpoints
+- [ ] 08.1.1-02-PLAN.md -- Webhook receiver with HMAC-SHA256 verification, sync service extraction, page re-sync on update, test coverage
+- [ ] 08.1.1-03-PLAN.md -- NotionLogo component, frontend API functions, integration card, home page row, unified status endpoint update
