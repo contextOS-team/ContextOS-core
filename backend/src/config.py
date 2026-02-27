@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     GITHUB_APP_PRIVATE_KEY: str = ""
     GITHUB_REDIRECT_URI: str = ""
 
+    # Notion
+    NOTION_CLIENT_ID: str = ""
+    NOTION_CLIENT_SECRET: str = ""
+    NOTION_REDIRECT_URI: str = ""
+    NOTION_WEBHOOK_SECRET: str = ""
+
     # Fathom
     FATHOM_API_KEY: str = ""
     FATHOM_API_BASE_URL: str = "https://api.fathom.ai/external/v1"
@@ -106,6 +112,17 @@ class Settings(BaseSettings):
         if self.GITHUB_REDIRECT_URI:
             return self.GITHUB_REDIRECT_URI
         return f"{self.BACKEND_URL}/api/github/callback"
+
+    @property
+    def notion_redirect_uri(self) -> str:
+        """Return the Notion OAuth redirect URI.
+
+        Uses NOTION_REDIRECT_URI if set, otherwise defaults to
+        {BACKEND_URL}/api/notion/callback.
+        """
+        if self.NOTION_REDIRECT_URI:
+            return self.NOTION_REDIRECT_URI
+        return f"{self.BACKEND_URL}/api/notion/callback"
 
     @property
     def slack_redirect_uri(self) -> str:

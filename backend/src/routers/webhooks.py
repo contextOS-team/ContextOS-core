@@ -1,8 +1,9 @@
 """Webhook receiver endpoints for third-party integrations.
 
-Supports Linear and GitHub webhooks with HMAC-SHA256 signature verification,
-idempotent delivery tracking, and replay protection via webhook timestamp
-validation (Linear) or X-Hub-Signature-256 header (GitHub).
+Supports Linear, GitHub, and Notion webhooks with HMAC-SHA256 signature
+verification, idempotent delivery tracking, and replay protection via
+webhook timestamp validation (Linear), X-Hub-Signature-256 header (GitHub),
+or X-Notion-Signature header (Notion).
 """
 
 import hashlib
@@ -227,5 +228,130 @@ async def receive_github_webhook(
     from src.services.github_webhook import process_github_event
 
     background_tasks.add_task(process_github_event, event_type, payload)
+
+    return {"status": "accepted"}
+
+
+@router.post("/notion")
+async def receive_notion_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Receive and process a webhook event from Notion.
+
+    This endpoint is NOT JWT-protected -- webhooks come from Notion directly.
+    Security is provided by HMAC-SHA256 signature verification via the
+    X-Notion-Signature header using NOTION_WEBHOOK_SECRET.
+
+    Steps:
+    1. Read raw body bytes (HMAC must be computed on exact bytes Notion sent)
+    2. Verify HMAC-SHA256 signature from X-Notion-Signature header
+    3. Parse JSON payload
+    4. Handle verification flow (initial webhook setup)
+    5. Generate delivery_id for idempotency
+    6. Check WebhookDelivery for duplicate
+    7. Record delivery
+    8. Determine workspace from Notion workspace_id in payload
+    9. Delegate event processing to background task for fast response
+    """
+    settings = config_module.get_settings()
+
+    # 1. Read raw body bytes
+    raw_body = await request.body()
+
+    # 2. Verify HMAC-SHA256 signature
+    signature = request.headers.get("X-Notion-Signature")
+    if not signature:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing X-Notion-Signature header",
+        )
+
+    if not settings.NOTION_WEBHOOK_SECRET:
+        logger.error("NOTION_WEBHOOK_SECRET not configured")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Webhook secret not configured",
+        )
+
+    expected_signature = hmac.new(
+        settings.NOTION_WEBHOOK_SECRET.encode(),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(signature, expected_signature):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid signature",
+        )
+
+    # 3. Parse JSON body
+    try:
+        payload = json.loads(raw_body)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body",
+        )
+
+    # 4. Handle initial verification flow
+    # When Notion first sets up a webhook, it may send a verification request.
+    if "verification_token" in payload:
+        logger.info(
+            "Notion webhook verification request received. Token: %s",
+            payload["verification_token"],
+        )
+        return {"status": "verified"}
+
+    # 5. Generate delivery_id for idempotency
+    # Notion may not provide a delivery header, so derive from payload content.
+    event_type = payload.get("type", "unknown")
+    entity_id = payload.get("entity", {}).get("id", "")
+    event_timestamp = payload.get("timestamp", "")
+    delivery_id = hashlib.sha256(
+        f"{event_type}:{entity_id}:{event_timestamp}".encode()
+    ).hexdigest()
+
+    # 6. Check if we already processed this delivery
+    stmt = select(WebhookDelivery).where(
+        WebhookDelivery.delivery_id == delivery_id
+    )
+    result = await session.execute(stmt)
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        return {"status": "already_processed"}
+
+    # 7. Record this delivery for idempotency
+    delivery = WebhookDelivery(delivery_id=delivery_id, provider=Provider.NOTION)
+    session.add(delivery)
+    await session.commit()
+
+    # 8. Determine workspace from Notion workspace_id in payload
+    notion_workspace_id = payload.get("workspace_id", "")
+    workspace_id = None
+
+    if notion_workspace_id:
+        ws_stmt = select(WorkspaceIntegration.workspace_id).where(
+            WorkspaceIntegration.provider == Provider.NOTION,
+            WorkspaceIntegration.external_id == notion_workspace_id,
+        )
+        ws_result = await session.execute(ws_stmt)
+        workspace_id = ws_result.scalar_one_or_none()
+
+    if workspace_id is None:
+        logger.warning(
+            "Notion webhook for unknown workspace %s (delivery=%s)",
+            notion_workspace_id,
+            delivery_id,
+        )
+        return {"status": "unknown_workspace"}
+
+    # 9. Delegate event processing to background task
+    from src.services.notion_webhook import process_notion_webhook_event
+
+    background_tasks.add_task(process_notion_webhook_event, workspace_id, payload)
 
     return {"status": "accepted"}
