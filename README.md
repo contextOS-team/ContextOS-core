@@ -44,13 +44,16 @@ cd ContextOS-core
    ```bash
    make setup
    ```
-3. Start dev servers in two terminals:
+3. Start dev servers in three terminals:
    ```bash
    # Terminal 1:
    make dev-frontend   # http://localhost:3000
 
    # Terminal 2:
    make dev-backend    # http://localhost:8000/docs
+
+   # Terminal 3:
+   make dev-ngrok      # OAuth callbacks & webhooks
    ```
 
 That's it. `make setup` handles everything:
@@ -65,7 +68,7 @@ That's it. `make setup` handles everything:
 <details>
 <summary>Click to expand</summary>
 
-**Prerequisites:** Node.js 22+, pnpm 9+, Python 3.12+, [uv](https://docs.astral.sh/uv/), Docker, Supabase CLI
+**Prerequisites:** Node.js 22+, pnpm 9+, Python 3.12+, [uv](https://docs.astral.sh/uv/), Docker, Supabase CLI, [ngrok](https://ngrok.com/) (for OAuth callbacks)
 
 1. Copy environment variables:
    ```bash
@@ -118,6 +121,7 @@ make dev  # starts Redis, prints instructions
 |---------|-------------|
 | `make dev-frontend` | Start Next.js dev server (Turbopack) |
 | `make dev-backend` | Start FastAPI with hot reload |
+| `make dev-ngrok` | Start ngrok tunnel for OAuth callbacks & webhooks |
 | `make test` | Run backend test suite |
 | `make lint` | Lint frontend + backend |
 | `make typecheck` | TypeScript + mypy type checks |

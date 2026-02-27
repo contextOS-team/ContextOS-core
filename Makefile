@@ -1,15 +1,31 @@
-.PHONY: dev dev-frontend dev-backend setup setup-backend check-prereqs setup-frontend-env db-reset lint typecheck test codegen clean
+.PHONY: dev dev-frontend dev-backend dev-ngrok setup setup-backend check-prereqs setup-frontend-env db-reset lint typecheck test codegen clean
 
 dev:
 	@echo "Starting Redis..."
 	docker compose up -d
-	@echo "Redis started. Run 'make dev-frontend' and 'make dev-backend' in separate terminals."
+	@echo "Redis started."
+	@echo ""
+	@echo "Run these in separate terminals:"
+	@echo "  1. make dev-frontend    # http://localhost:3000"
+	@echo "  2. make dev-backend     # http://localhost:8000/docs"
+	@echo "  3. make dev-ngrok       # OAuth callbacks & webhooks"
 
 dev-frontend:
 	cd apps/web && pnpm dev
 
 dev-backend:
 	cd backend && uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+
+dev-ngrok:
+	@NGROK_DOMAIN=$$(grep '^NGROK_DOMAIN=' .env 2>/dev/null | cut -d= -f2-); \
+	if [ -z "$$NGROK_DOMAIN" ]; then \
+		echo "Error: NGROK_DOMAIN not set in .env"; \
+		echo "Get a free static domain at https://dashboard.ngrok.com/domains"; \
+		exit 1; \
+	fi; \
+	echo "Starting ngrok tunnel to localhost:8000..."; \
+	echo "Public URL: https://$$NGROK_DOMAIN"; \
+	ngrok http 8000 --domain=$$NGROK_DOMAIN
 
 check-prereqs:
 	@echo "Checking prerequisites..."
@@ -19,6 +35,7 @@ check-prereqs:
 	@command -v uv >/dev/null 2>&1 || { echo "uv not found — run 'curl -LsSf https://astral.sh/uv/install.sh | sh'"; exit 1; }
 	@command -v docker >/dev/null 2>&1 || { echo "docker not found — install from https://docker.com"; exit 1; }
 	@command -v supabase >/dev/null 2>&1 || { echo "supabase CLI not found — run 'brew install supabase/tap/supabase'"; exit 1; }
+	@command -v ngrok >/dev/null 2>&1 || { echo "ngrok not found — run 'brew install ngrok' (needed for OAuth callbacks)"; exit 1; }
 	@echo "All prerequisites found."
 
 setup-frontend-env:
