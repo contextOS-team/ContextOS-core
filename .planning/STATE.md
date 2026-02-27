@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-last_updated: "2026-02-27T16:22:22.475Z"
+last_updated: "2026-02-27T16:31:29.686Z"
 progress:
   total_phases: 10
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 26
-  completed_plans: 24
+  completed_plans: 26
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 08.1.1 (Notion Integration)
-Plan: 2 of 3 in current phase (plan 01 complete)
-Status: Executing phase 08.1.1
-Last activity: 2026-02-27 -- Completed Notion OAuth, API client, router (plan 01)
+Plan: 3 of 3 in current phase (plans 01, 02, 03 complete)
+Status: Phase 08.1.1 complete
+Last activity: 2026-02-27 -- Completed Notion dashboard UI (plan 03)
 
-Progress: [===-------] 33% (08.1.1: 1/3 plans)
+Progress: [==========] 100% (08.1.1: 3/3 plans)
 
 ## Performance Metrics
 
@@ -57,6 +57,8 @@ Progress: [===-------] 33% (08.1.1: 1/3 plans)
 | Phase 08.1 P01 | 3min | 3 tasks | 5 files |
 | Phase 08.1 P02 | 6min | 3 tasks | 4 files |
 | Phase 08.1.1 P01 | 5min | 3 tasks | 5 files |
+| Phase 08.1.1 P02 | 4min | 2 tasks | 6 files |
+| Phase 08.1.1 P03 | 3min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -139,6 +141,14 @@ Recent decisions affecting current work:
 - [Phase 08.1.1]: [08.1.1-01]: Notion tokens are long-lived with no fixed expiry; get_valid_access_token reads from Vault without refresh check
 - [Phase 08.1.1]: [08.1.1-01]: blocks_to_markdown handles 15+ block types including tables, code, callouts, images
 - [Phase 08.1.1]: [08.1.1-01]: Background sync creates own session via async_session() for task isolation (same as webhook pattern)
+- [Phase 08.1.1]: [08.1.1-02]: NOTION_WEBHOOK_SECRET as single env var for HMAC verification (same pattern as LINEAR_WEBHOOK_SECRET)
+- [Phase 08.1.1]: [08.1.1-02]: Delivery ID derived from SHA256 hash of event_type+entity_id+timestamp (Notion has no delivery header)
+- [Phase 08.1.1]: [08.1.1-02]: Webhook verification flow returns {status: verified} for initial setup handshake
+- [Phase 08.1.1]: [08.1.1-02]: sync_page_by_id creates own session for background task isolation
+- [Phase 08.1.1]: NotionLogo uses currentColor for outer shape and white for inner page -- matches official Notion brand
+- [Phase 08.1.1]: OAuth callback params for GitHub and Notion handled in single DRY useEffect loop
+- [Phase 08.1.1]: Notion pages_synced displayed inline with workspace name in integration card
+- [Phase 08.1.1]: Notion uses same brandColor/brandBorder as GitHub (bg-foreground) since Notion is a black logo
 
 ### Pending Todos
 
@@ -162,5 +172,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Completed 08.1.1-01-PLAN.md
-Resume file: .planning/phases/08.1.1-notion-integration/08.1.1-01-SUMMARY.md
+Stopped at: Completed 08.1.1-03-PLAN.md
+Resume file: .planning/phases/08.1.1-notion-integration/08.1.1-03-SUMMARY.md
