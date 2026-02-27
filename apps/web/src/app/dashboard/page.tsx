@@ -11,12 +11,14 @@ import {
   SlackLogo,
   GitHubLogo,
   FathomLogo,
+  NotionLogo,
 } from '@/components/icons/brand-logos'
 import {
   getIntegrationStatus,
   connectLinear,
   connectSlack,
   connectGithub,
+  connectNotion,
   type IntegrationStatusResponse,
 } from '@/lib/api'
 
@@ -49,6 +51,14 @@ const INTEGRATIONS = [
     key: 'github' as const,
     name: 'GitHub',
     logo: GitHubLogo,
+    brandColor: 'bg-foreground',
+    brandBorder: 'border-l-foreground',
+    logoClass: 'text-foreground dark:text-foreground',
+  },
+  {
+    key: 'notion' as const,
+    name: 'Notion',
+    logo: NotionLogo,
     brandColor: 'bg-foreground',
     brandBorder: 'border-l-foreground',
     logoClass: 'text-foreground dark:text-foreground',
@@ -107,6 +117,9 @@ export default function DashboardPage() {
         } else if (key === 'github') {
           const { installation_url } = await connectGithub()
           window.location.href = installation_url
+        } else if (key === 'notion') {
+          const { authorization_url } = await connectNotion()
+          window.location.href = authorization_url
         } else {
           router.push('/dashboard/integrations')
         }
@@ -132,7 +145,7 @@ export default function DashboardPage() {
       <div className="space-y-6 animate-fade-in-up">
         <div className="h-4 w-48 animate-pulse rounded bg-muted" />
         <div className="rounded-xl border bg-card p-1">
-          {Array.from({ length: 4 }).map((_, i) => (
+          {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="h-[52px] animate-pulse rounded-lg bg-muted/50 mb-1 last:mb-0" />
           ))}
         </div>
@@ -148,7 +161,7 @@ export default function DashboardPage() {
           {getGreeting()}{firstName ? `, ${firstName}` : ''}
         </p>
         <span className="text-xs text-muted-foreground font-mono tabular-nums">
-          {connectedCount}/4 connected
+          {connectedCount}/5 connected
         </span>
       </div>
 

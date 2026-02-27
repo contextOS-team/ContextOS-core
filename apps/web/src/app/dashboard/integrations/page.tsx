@@ -9,6 +9,7 @@ import {
   SlackLogo,
   GitHubLogo,
   FathomLogo,
+  NotionLogo,
 } from '@/components/icons/brand-logos'
 import {
   getIntegrationStatus,
@@ -19,6 +20,9 @@ import {
   disconnectFathom,
   connectGithub,
   disconnectGithub,
+  connectNotion,
+  disconnectNotion,
+  resyncNotion,
   type IntegrationStatusResponse,
 } from '@/lib/api'
 import { IntegrationCard } from './integration-card'
@@ -33,19 +37,24 @@ export default function IntegrationsPage() {
   const searchParams = useSearchParams()
 
   useEffect(() => {
-    const githubStatus = searchParams.get('github')
-    if (githubStatus === 'connected') {
-      setError(null)
-      window.history.replaceState({}, '', '/dashboard/integrations')
-    } else if (githubStatus === 'error') {
-      const reason = searchParams.get('reason') || 'unknown'
-      const messages: Record<string, string> = {
-        invalid_state: 'GitHub connection failed: invalid or expired session. Please try again.',
-        callback_failed: 'GitHub connection failed. Please try again.',
-        internal_error: 'An internal error occurred during GitHub connection. Please try again.',
+    // Handle OAuth callback params for GitHub and Notion
+    for (const provider of ['github', 'notion'] as const) {
+      const status = searchParams.get(provider)
+      if (status === 'connected') {
+        setError(null)
+        window.history.replaceState({}, '', '/dashboard/integrations')
+      } else if (status === 'error') {
+        const reason = searchParams.get('reason') || 'unknown'
+        const label = provider === 'github' ? 'GitHub' : 'Notion'
+        const messages: Record<string, string> = {
+          invalid_state: `${label} connection failed: invalid or expired session. Please try again.`,
+          callback_failed: `${label} connection failed. Please try again.`,
+          exchange_failed: `${label} connection failed. Please try again.`,
+          internal_error: `An internal error occurred during ${label} connection. Please try again.`,
+        }
+        setError(messages[reason] || `${label} connection failed: ${reason}`)
+        window.history.replaceState({}, '', '/dashboard/integrations')
       }
-      setError(messages[reason] || `GitHub connection failed: ${reason}`)
-      window.history.replaceState({}, '', '/dashboard/integrations')
     }
   }, [searchParams])
 
@@ -98,6 +107,16 @@ export default function IntegrationsPage() {
   const handleDisconnectFathom = makeDisconnectHandler(disconnectFathom, 'Fathom')
   const handleConnectGithub = makeConnectHandler(connectGithub, 'installation_url')
   const handleDisconnectGithub = makeDisconnectHandler(disconnectGithub, 'GitHub')
+  const handleConnectNotion = makeConnectHandler(connectNotion, 'authorization_url')
+  const handleDisconnectNotion = makeDisconnectHandler(disconnectNotion, 'Notion')
+
+  const handleResyncNotion = async () => {
+    try {
+      await resyncNotion()
+    } catch {
+      setError('Failed to start Notion re-sync. Please try again.')
+    }
+  }
 
   if (isLoading) {
     return (
@@ -107,7 +126,7 @@ export default function IntegrationsPage() {
           <div className="h-4 w-32 animate-pulse rounded-lg bg-muted mt-2" />
         </div>
         <div className="grid gap-3 md:grid-cols-2 stagger-children">
-          {[1, 2, 3, 4].map((i) => (
+          {[1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="h-44 animate-pulse rounded-2xl bg-muted" />
           ))}
         </div>
@@ -119,8 +138,13 @@ export default function IntegrationsPage() {
   const slack = statuses?.slack ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const fathom = statuses?.fathom ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const github = statuses?.github ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
+  const notion = statuses?.notion ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
 
-  const connectedCount = [linear, slack, fathom, github].filter((s) => s.status === 'connected').length
+  const notionDisplayName = notion.external_name
+    ? `${notion.external_name}${notion.pages_synced ? ` - ${notion.pages_synced} pages` : ''}`
+    : null
+
+  const connectedCount = [linear, slack, fathom, github, notion].filter((s) => s.status === 'connected').length
 
   return (
     <div className="space-y-6 animate-fade-in-up">
@@ -130,7 +154,7 @@ export default function IntegrationsPage() {
         <p className="text-sm text-muted-foreground mt-1">
           Manage your tool connections
           <span className="ml-2 text-xs font-mono text-muted-foreground/60">
-            {connectedCount}/4
+            {connectedCount}/5
           </span>
         </p>
       </div>
@@ -192,6 +216,40 @@ export default function IntegrationsPage() {
           onDisconnect={handleDisconnectGithub}
         >
           <GithubRepos onSaved={fetchStatuses} />
+        </IntegrationCard>
+
+        <IntegrationCard
+          name="Notion"
+          icon={<NotionLogo width={20} height={20} className="text-foreground" />}
+          status={notion.status}
+          externalName={notionDisplayName}
+          connectedAt={notion.connected_at}
+          onConnect={handleConnectNotion}
+          onDisconnect={handleDisconnectNotion}
+        >
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Re-import all pages from Notion
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResyncNotion}
+                className="text-[13px]"
+              >
+                Re-sync
+              </Button>
+            </div>
+            <a
+              href="https://www.notion.so/my-integrations"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Manage access in Notion settings
+            </a>
+          </div>
         </IntegrationCard>
       </div>
     </div>

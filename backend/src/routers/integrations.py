@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
-PROVIDERS = [Provider.LINEAR, Provider.SLACK, Provider.FATHOM, Provider.GITHUB]
+PROVIDERS = [Provider.LINEAR, Provider.SLACK, Provider.FATHOM, Provider.GITHUB, Provider.NOTION]
 
 
 def _disconnected_status() -> dict:
@@ -50,6 +50,11 @@ def _build_provider_status(integration: WorkspaceIntegration) -> dict:
         config = integration.config or {}
         selected = config.get("selected_repos", [])
         result["selected_repos_count"] = len(selected) if isinstance(selected, list) else 0
+
+    # For Notion, include pages_synced count from config
+    if integration.provider == Provider.NOTION:
+        config = integration.config or {}
+        result["pages_synced"] = config.get("pages_synced", 0)
 
     return result
 
