@@ -55,6 +55,7 @@ export interface ProviderStatus {
   connected_at: string | null
   selected_channels_count?: number
   selected_repos_count?: number
+  pages_synced?: number
 }
 
 export interface IntegrationStatusResponse {
@@ -62,6 +63,7 @@ export interface IntegrationStatusResponse {
   slack: ProviderStatus
   fathom: ProviderStatus
   github: ProviderStatus
+  notion: ProviderStatus
 }
 
 export function getIntegrationStatus(): Promise<IntegrationStatusResponse> {
@@ -189,4 +191,30 @@ export function saveGithubRepoSelection(
       body: JSON.stringify({ repo_full_names: repoFullNames }),
     }
   )
+}
+
+// ---------------------------------------------------------------------------
+// Notion
+// ---------------------------------------------------------------------------
+
+export function connectNotion(): Promise<{ authorization_url: string }> {
+  return apiFetch<{ authorization_url: string }>('/api/notion/connect')
+}
+
+export function disconnectNotion(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/notion/disconnect', {
+    method: 'POST',
+  })
+}
+
+export function syncNotion(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/notion/sync', {
+    method: 'POST',
+  })
+}
+
+export function resyncNotion(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/notion/resync', {
+    method: 'POST',
+  })
 }
