@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: in-progress
-last_updated: "2026-02-26T11:26:14Z"
+status: unknown
+last_updated: "2026-02-27T16:22:22.475Z"
 progress:
-  total_phases: 8
+  total_phases: 10
   completed_phases: 8
-  total_plans: 23
-  completed_plans: 23
+  total_plans: 26
+  completed_plans: 24
 ---
 
 # Project State
@@ -22,12 +22,12 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 
 ## Current Position
 
-Phase: 08.1 (Dashboard Design Polish) -- COMPLETE
-Plan: 2 of 2 in current phase (all done)
-Status: Phase 08.1 complete
-Last activity: 2026-02-26 -- Completed dashboard redesign (status-first home page, brand logos, refined cards)
+Phase: 08.1.1 (Notion Integration)
+Plan: 2 of 3 in current phase (plan 01 complete)
+Status: Executing phase 08.1.1
+Last activity: 2026-02-27 -- Completed Notion OAuth, API client, router (plan 01)
 
-Progress: [==========] 100% (08.1: 2/2 plans)
+Progress: [===-------] 33% (08.1.1: 1/3 plans)
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [==========] 100% (08.1: 2/2 plans)
 | Phase 07.2 P03 | 3min | 2 tasks | 7 files |
 | Phase 08.1 P01 | 3min | 3 tasks | 5 files |
 | Phase 08.1 P02 | 6min | 3 tasks | 4 files |
+| Phase 08.1.1 P01 | 5min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -134,6 +135,10 @@ Recent decisions affecting current work:
 - [08.1-02]: Status indicators use solid 1.5px dots (emerald/red/hollow ring) -- no animation, no pills
 - [08.1-02]: Marketing-copy descriptions removed entirely, not replaced with placeholders
 - [08.1-02]: draw-ring animation removed alongside pulse-dot since setup progress ring eliminated
+- [Phase 08.1.1]: [08.1.1-01]: Notion token exchange uses HTTP Basic Auth (base64 client_id:client_secret) per Notion API spec
+- [Phase 08.1.1]: [08.1.1-01]: Notion tokens are long-lived with no fixed expiry; get_valid_access_token reads from Vault without refresh check
+- [Phase 08.1.1]: [08.1.1-01]: blocks_to_markdown handles 15+ block types including tables, code, callouts, images
+- [Phase 08.1.1]: [08.1.1-01]: Background sync creates own session via async_session() for task isolation (same as webhook pattern)
 
 ### Pending Todos
 
@@ -157,5 +162,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-27
-Stopped at: Phase 08.1.1 context gathered
-Resume file: .planning/phases/08.1.1-notion-integration/08.1.1-CONTEXT.md
+Stopped at: Completed 08.1.1-01-PLAN.md
+Resume file: .planning/phases/08.1.1-notion-integration/08.1.1-01-SUMMARY.md

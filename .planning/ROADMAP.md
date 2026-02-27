@@ -282,7 +282,7 @@ Plans:
 **Goal:** Add Notion as a data source -- OAuth connection, page/database ingestion with full content converted to markdown, real-time webhook updates, and integration card on the dashboard
 **Requirements**: N/A (inserted phase -- covers NOT-01, NOT-02 from v2 requirements, pulled forward)
 **Depends on:** Phase 8.1
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] 08.1.1-01-PLAN.md -- Notion OAuth flow, Notion API client with block-to-markdown conversion, notion_pages DB table, router endpoints
