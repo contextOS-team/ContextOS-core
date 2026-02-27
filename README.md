@@ -12,7 +12,7 @@ AI-generated context pages for engineering tickets. When an engineer picks up a 
 | Auth | Supabase Auth (email/password, magic link) |
 | AI | Google Gemini (synthesis) |
 | MCP Server | TypeScript, @modelcontextprotocol/sdk |
-| Integrations | Linear (OAuth + webhooks), Slack (OAuth + Events API), GitHub (App + webhooks), Fathom |
+| Integrations | Linear (OAuth + webhooks), Slack (OAuth + Events API), GitHub (App + webhooks), Notion (OAuth + webhooks), Fathom |
 | Observability | Laminar (LLM tracing), Sentry (errors) |
 | Hosting | Vercel (frontend), Railway (backend) |
 
@@ -23,8 +23,8 @@ AI-generated context pages for engineering tickets. When an engineer picks up a 
 ├── backend/           Python FastAPI backend (API, services, models)
 │   ├── src/
 │   │   ├── models/    SQLModel schemas (user, workspace, ticket, integration, slack)
-│   │   ├── routers/   API endpoints (auth, health, linear, slack, github, webhooks, workspaces)
-│   │   └── services/  Business logic (vault, linear_oauth, linear_sync, slack_oauth, github_oauth, ...)
+│   │   ├── routers/   API endpoints (auth, health, linear, slack, github, notion, webhooks, workspaces)
+│   │   └── services/  Business logic (vault, linear_oauth, linear_sync, slack_oauth, github_oauth, notion_oauth, ...)
 │   └── tests/         pytest test suite
 ├── packages/mcp-server/  MCP server for AI coding assistants
 └── supabase/          Database migrations and config
@@ -70,7 +70,7 @@ That's it. `make setup` handles everything:
 1. Copy environment variables:
    ```bash
    cp .env.example .env
-   # Fill in your Supabase, Linear, Slack, and other keys
+   # Fill in your Supabase, Linear, Slack, Notion, and other keys
    ```
 
 2. Start Supabase locally:
@@ -146,6 +146,9 @@ make dev  # starts Redis, prints instructions
                     │ └──────┘     │
                     │ ┌──────┐     │
                     │ │GitHub │ App + webhooks
+                    │ └──────┘     │
+                    │ ┌──────┐     │
+                    │ │Notion │ OAuth + webhooks
                     │ └──────┘     │
                     │ ┌──────┐     │
                     │ │Fathom │ API key + polling
