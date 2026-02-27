@@ -260,7 +260,26 @@ async def receive_notion_webhook(
     # 1. Read raw body bytes
     raw_body = await request.body()
 
-    # 2. Verify HMAC-SHA256 signature
+    # 2. Parse JSON body first (needed for verification check)
+    try:
+        payload = json.loads(raw_body)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body",
+        )
+
+    # 3. Handle initial verification flow BEFORE signature check.
+    # Notion sends a verification request during webhook setup that may
+    # not have a valid HMAC signature yet (chicken-and-egg).
+    if "verification_token" in payload:
+        logger.info(
+            "Notion webhook verification request received. Token: %s",
+            payload["verification_token"],
+        )
+        return {"status": "verified"}
+
+    # 4. Verify HMAC-SHA256 signature for all real events
     signature = request.headers.get("X-Notion-Signature")
     if not signature:
         raise HTTPException(
@@ -286,24 +305,6 @@ async def receive_notion_webhook(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid signature",
         )
-
-    # 3. Parse JSON body
-    try:
-        payload = json.loads(raw_body)
-    except json.JSONDecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid JSON body",
-        )
-
-    # 4. Handle initial verification flow
-    # When Notion first sets up a webhook, it may send a verification request.
-    if "verification_token" in payload:
-        logger.info(
-            "Notion webhook verification request received. Token: %s",
-            payload["verification_token"],
-        )
-        return {"status": "verified"}
 
     # 5. Generate delivery_id for idempotency
     # Notion may not provide a delivery header, so derive from payload content.
