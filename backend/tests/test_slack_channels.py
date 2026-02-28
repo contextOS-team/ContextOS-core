@@ -22,7 +22,8 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from src.config import Settings, get_settings
+import src.config
+from src.config import Settings
 from tests.conftest import (
     TEST_EMAIL,
     TEST_JWT_SECRET,
@@ -39,29 +40,14 @@ SLACK_SIGNING_SECRET = "test-slack-signing-secret"
 
 @pytest.fixture()
 def channel_settings() -> Settings:
-    """Create test settings with Slack config and patch everywhere."""
+    """Create test settings with Slack config."""
     settings = _make_test_settings(
         SLACK_CLIENT_ID=SLACK_CLIENT_ID,
         SLACK_CLIENT_SECRET=SLACK_CLIENT_SECRET,
         SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET,
     )
-    get_settings.cache_clear()
-
-    import src.auth
-    import src.config
-
-    old_config = src.config.get_settings
-    old_auth = src.auth.get_settings
-
-    _override = lambda: settings  # noqa: E731
-    src.config.get_settings = _override  # type: ignore[assignment]
-    src.auth.get_settings = _override  # type: ignore[assignment]
-
+    src.config._settings = settings
     yield settings
-
-    src.config.get_settings = old_config  # type: ignore[assignment]
-    src.auth.get_settings = old_auth  # type: ignore[assignment]
-    get_settings.cache_clear()
 
 
 @pytest.fixture()
@@ -74,7 +60,6 @@ def channel_app(channel_settings: Settings, mock_session: AsyncMock):
         yield mock_session
 
     fastapi_app.dependency_overrides[get_session_dep] = _mock_get_session
-    fastapi_app.dependency_overrides[get_settings] = lambda: channel_settings
 
     yield fastapi_app
     fastapi_app.dependency_overrides.clear()

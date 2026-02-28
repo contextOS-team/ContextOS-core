@@ -21,7 +21,8 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from src.config import Settings, get_settings
+import src.config
+from src.config import Settings
 from tests.conftest import TEST_WORKSPACE_ID, _make_test_settings
 
 # Webhook secret used across tests
@@ -37,16 +38,7 @@ def gh_webhook_settings() -> Settings:
 @pytest.fixture()
 def gh_webhook_app(gh_webhook_settings: Settings, mock_session: AsyncMock):
     """Create a FastAPI app with webhook-specific settings and mocked DB session."""
-    get_settings.cache_clear()
-
-    import src.auth
-    import src.config
-
-    old_config = src.config.get_settings
-    old_auth = src.auth.get_settings
-
-    src.config.get_settings = lambda: gh_webhook_settings  # type: ignore[assignment]
-    src.auth.get_settings = lambda: gh_webhook_settings  # type: ignore[assignment]
+    src.config._settings = gh_webhook_settings
 
     from src.db import get_session as get_session_dep
     from src.main import app as fastapi_app
@@ -59,9 +51,6 @@ def gh_webhook_app(gh_webhook_settings: Settings, mock_session: AsyncMock):
     yield fastapi_app
 
     fastapi_app.dependency_overrides.clear()
-    src.config.get_settings = old_config  # type: ignore[assignment]
-    src.auth.get_settings = old_auth  # type: ignore[assignment]
-    get_settings.cache_clear()
 
 
 @pytest.fixture()

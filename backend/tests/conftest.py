@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import src.config
 from src.config import Settings, get_settings
 
 # Test constants
@@ -21,12 +22,38 @@ TEST_EMAIL = "test@example.com"
 TEST_DATABASE_URL = "postgresql+asyncpg://test:test@localhost:5432/test"
 
 
+@pytest.fixture(autouse=True)
+def _reset_settings():
+    """Reset settings singleton before and after every test.
+
+    This ensures no test leaks real .env values into subsequent tests.
+    Setting _settings directly (instead of monkey-patching get_settings)
+    keeps the function identity stable so dependency_overrides always works.
+    """
+    src.config._settings = None
+    yield
+    src.config._settings = None
+
+
 def _make_test_settings(**overrides: str) -> Settings:
-    """Create a Settings instance with test defaults."""
+    """Create a Settings instance with test defaults.
+
+    Explicitly blanks NGROK_DOMAIN and all *_REDIRECT_URI fields so that
+    pydantic doesn't leak values from the real .env file into test settings.
+    Without this, derived properties like linear_redirect_uri would silently
+    use whatever NGROK_DOMAIN is in the developer's .env.
+    """
     defaults = {
         "SUPABASE_JWT_SECRET": TEST_JWT_SECRET,
         "DATABASE_URL": TEST_DATABASE_URL,
         "ENVIRONMENT": "dev",
+        # Prevent .env file leakage into derived OAuth redirect URIs
+        "NGROK_DOMAIN": "",
+        "BACKEND_URL": "http://localhost:8000",
+        "LINEAR_REDIRECT_URI": "",
+        "SLACK_REDIRECT_URI": "",
+        "GITHUB_REDIRECT_URI": "",
+        "NOTION_REDIRECT_URI": "",
     }
     defaults.update(overrides)
     return Settings(**defaults)
@@ -34,29 +61,15 @@ def _make_test_settings(**overrides: str) -> Settings:
 
 @pytest.fixture()
 def mock_settings() -> Generator[Settings, None, None]:
-    """Override get_settings() everywhere with test values for the duration of a test.
+    """Inject test settings into the config singleton.
 
-    Patches get_settings in src.config AND in any module that imported it directly
-    (e.g., src.auth does `from src.config import get_settings`).
+    Sets src.config._settings directly so that both get_settings() calls
+    and Depends(get_settings) resolve to the test settings.
     """
     test_settings = _make_test_settings()
-    get_settings.cache_clear()
-
-    import src.auth
-    import src.config
-
-    original_config = src.config.get_settings
-    original_auth = src.auth.get_settings
-
-    def _override() -> Settings:
-        return test_settings
-
-    src.config.get_settings = _override  # type: ignore[assignment]
-    src.auth.get_settings = _override  # type: ignore[assignment]
+    src.config._settings = test_settings
     yield test_settings
-    src.config.get_settings = original_config  # type: ignore[assignment]
-    src.auth.get_settings = original_auth  # type: ignore[assignment]
-    get_settings.cache_clear()
+    src.config._settings = None
 
 
 @pytest.fixture()
@@ -126,8 +139,6 @@ def app(mock_settings: Settings, mock_session: AsyncMock):
 
     Overrides get_session to return a mock session, avoiding real DB connections.
     """
-    # Import app after settings are overridden so engine creation uses test URL
-    # We must override the session dependency to avoid actual DB connections
     from src.db import get_session
     from src.main import app as fastapi_app
 

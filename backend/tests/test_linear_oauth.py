@@ -7,7 +7,7 @@ from uuid import UUID
 
 import pytest
 
-from src.config import get_settings
+import src.config
 from tests.conftest import (
     TEST_EMAIL,
     TEST_JWT_SECRET,
@@ -23,7 +23,7 @@ LINEAR_WEBHOOK_SECRET = "test-webhook-secret"
 
 @pytest.fixture()
 def linear_settings():
-    """Create test settings with Linear OAuth config and patch everywhere."""
+    """Create test settings with Linear OAuth config."""
     from tests.conftest import _make_test_settings
 
     settings = _make_test_settings(
@@ -31,68 +31,8 @@ def linear_settings():
         LINEAR_CLIENT_SECRET=LINEAR_CLIENT_SECRET,
         LINEAR_WEBHOOK_SECRET=LINEAR_WEBHOOK_SECRET,
     )
-    get_settings.cache_clear()
-
-    import sys
-
-    import src.auth
-    import src.config
-
-    old_config = src.config.get_settings
-    old_auth = src.auth.get_settings
-
-    _override = lambda: settings  # noqa: E731
-    src.config.get_settings = _override  # type: ignore[assignment]
-    src.auth.get_settings = _override  # type: ignore[assignment]
-
-    # Patch the router module if already imported (full suite scenario)
-    old_router = None
-    if "src.routers.linear" in sys.modules:
-        import src.routers.linear
-
-        old_router = src.routers.linear.get_settings
-        src.routers.linear.get_settings = _override  # type: ignore[assignment]
-
+    src.config._settings = settings
     yield settings
-
-    src.config.get_settings = old_config  # type: ignore[assignment]
-    src.auth.get_settings = old_auth  # type: ignore[assignment]
-    if old_router is not None:
-        import src.routers.linear
-
-        src.routers.linear.get_settings = old_router  # type: ignore[assignment]
-    get_settings.cache_clear()
-
-
-def _collect_settings_deps(app):
-    """Walk the full dependency tree of every route and yield all callables
-    whose name is ``get_settings`` or ``_override`` (monkey-patched variant).
-
-    FastAPI's ``dependency_overrides`` must use the exact function object that
-    ``Depends()`` captured at import time.  When other test fixtures
-    monkey-patch ``src.config.get_settings`` *before* the router module is
-    first imported, the captured reference is the monkey-patch lambda, not the
-    original ``@lru_cache`` function.  This helper finds every such reference
-    so we can override them all.
-    """
-    seen: set[int] = set()
-
-    def _walk(dependant):
-        for dep in dependant.dependencies:
-            obj_id = id(dep.call)
-            if obj_id in seen:
-                continue
-            seen.add(obj_id)
-            name = getattr(dep.call, "__name__", "")
-            if name in ("get_settings", "_override"):
-                yield dep.call
-            # Recurse into sub-dependencies
-            if hasattr(dep, "dependant") and dep.dependant is not None:
-                yield from _walk(dep.dependant)
-
-    for route in app.routes:
-        if hasattr(route, "dependant"):
-            yield from _walk(route.dependant)
 
 
 @pytest.fixture()
@@ -105,11 +45,6 @@ def app_with_linear(linear_settings, mock_session):
         yield mock_session
 
     fastapi_app.dependency_overrides[get_session_dep] = _mock_get_session
-    # Override get_settings via the original @lru_cache reference
-    fastapi_app.dependency_overrides[get_settings] = lambda: linear_settings
-    # Walk the full dependency tree to find every captured get_settings reference.
-    for dep_call in _collect_settings_deps(fastapi_app):
-        fastapi_app.dependency_overrides[dep_call] = lambda: linear_settings
     yield fastapi_app
     fastapi_app.dependency_overrides.clear()
 

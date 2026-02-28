@@ -21,7 +21,8 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from src.config import Settings, get_settings
+import src.config
+from src.config import Settings
 from tests.conftest import (
     TEST_EMAIL,
     TEST_JWT_SECRET,
@@ -33,28 +34,13 @@ from tests.conftest import (
 
 @pytest.fixture()
 def fathom_settings() -> Settings:
-    """Create test settings with Fathom config and patch everywhere."""
+    """Create test settings with Fathom config."""
     settings = _make_test_settings(
         FATHOM_API_KEY="test-fathom-api-key",
         FATHOM_API_BASE_URL="https://api.fathom.video/v1",
     )
-    get_settings.cache_clear()
-
-    import src.auth
-    import src.config
-
-    old_config = src.config.get_settings
-    old_auth = src.auth.get_settings
-
-    _override = lambda: settings  # noqa: E731
-    src.config.get_settings = _override  # type: ignore[assignment]
-    src.auth.get_settings = _override  # type: ignore[assignment]
-
+    src.config._settings = settings
     yield settings
-
-    src.config.get_settings = old_config  # type: ignore[assignment]
-    src.auth.get_settings = old_auth  # type: ignore[assignment]
-    get_settings.cache_clear()
 
 
 @pytest.fixture()
@@ -67,7 +53,6 @@ def fathom_app(fathom_settings: Settings, mock_session: AsyncMock):
         yield mock_session
 
     fastapi_app.dependency_overrides[get_session_dep] = _mock_get_session
-    fastapi_app.dependency_overrides[get_settings] = lambda: fathom_settings
 
     yield fastapi_app
     fastapi_app.dependency_overrides.clear()

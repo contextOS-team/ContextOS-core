@@ -41,13 +41,15 @@ check-prereqs:
 setup-frontend-env:
 	@if [ -f .env ]; then \
 		echo "Generating apps/web/.env.local from root .env..."; \
-		grep '^NEXT_PUBLIC_' .env > apps/web/.env.local; \
-		SUPABASE_URL=$$(grep '^SUPABASE_URL=' .env | cut -d= -f2-); \
-		SUPABASE_KEY=$$(grep '^SUPABASE_KEY=' .env | cut -d= -f2-); \
-		BACKEND_URL=$$(grep '^BACKEND_URL=' .env | cut -d= -f2-); \
-		[ -n "$$SUPABASE_URL" ] && echo "NEXT_PUBLIC_SUPABASE_URL=$$SUPABASE_URL" >> apps/web/.env.local; \
-		[ -n "$$SUPABASE_KEY" ] && echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$$SUPABASE_KEY" >> apps/web/.env.local; \
-		[ -n "$$BACKEND_URL" ] && echo "NEXT_PUBLIC_BACKEND_URL=$$BACKEND_URL" >> apps/web/.env.local; \
+		_val() { grep "^$$1=" .env 2>/dev/null | head -1 | cut -d= -f2-; }; \
+		{ \
+			echo "NEXT_PUBLIC_SUPABASE_URL=$$(_val SUPABASE_URL)"; \
+			echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$$(_val SUPABASE_ANON_KEY)"; \
+			echo "NEXT_PUBLIC_SENTRY_DSN=$$(_val SENTRY_DSN)"; \
+			echo "NEXT_PUBLIC_BACKEND_URL=$$(_val BACKEND_URL)"; \
+			APP=$$(grep '^APP_URL=' .env 2>/dev/null | head -1 | cut -d= -f2-); \
+			echo "NEXT_PUBLIC_APP_URL=$${APP:-http://localhost:3000}"; \
+		} > apps/web/.env.local; \
 		echo "Created apps/web/.env.local"; \
 	else \
 		echo "Warning: .env not found — skipping apps/web/.env.local generation"; \

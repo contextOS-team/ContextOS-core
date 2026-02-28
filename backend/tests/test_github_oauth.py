@@ -7,7 +7,7 @@ from uuid import UUID
 
 import pytest
 
-from src.config import get_settings
+import src.config
 from tests.conftest import (
     TEST_EMAIL,
     TEST_JWT_SECRET,
@@ -53,7 +53,7 @@ iWLtoXMS3/OgPRN/l5qw82npGQBKZXa7zm/sVhzdWQ1uayvOOVHwcvYJqCaFBTpa
 
 @pytest.fixture()
 def github_settings():
-    """Create test settings with GitHub App config and patch everywhere."""
+    """Create test settings with GitHub App config."""
     from tests.conftest import _make_test_settings
 
     settings = _make_test_settings(
@@ -64,37 +64,8 @@ def github_settings():
         GITHUB_WEBHOOK_SECRET=GITHUB_WEBHOOK_SECRET,
         GITHUB_APP_PRIVATE_KEY=GITHUB_APP_PRIVATE_KEY,
     )
-    get_settings.cache_clear()
-
-    import sys
-
-    import src.auth
-    import src.config
-
-    old_config = src.config.get_settings
-    old_auth = src.auth.get_settings
-
-    _override = lambda: settings  # noqa: E731
-    src.config.get_settings = _override  # type: ignore[assignment]
-    src.auth.get_settings = _override  # type: ignore[assignment]
-
-    # Patch the router module if already imported
-    old_router = None
-    if "src.routers.github" in sys.modules:
-        import src.routers.github
-
-        old_router = getattr(src.routers.github.config_module, "get_settings", None)
-        src.routers.github.config_module.get_settings = _override  # type: ignore[assignment]
-
+    src.config._settings = settings
     yield settings
-
-    src.config.get_settings = old_config  # type: ignore[assignment]
-    src.auth.get_settings = old_auth  # type: ignore[assignment]
-    if old_router is not None:
-        import src.routers.github
-
-        src.routers.github.config_module.get_settings = old_router  # type: ignore[assignment]
-    get_settings.cache_clear()
 
 
 @pytest.fixture()
@@ -107,14 +78,6 @@ def app_with_github(github_settings, mock_session):
         yield mock_session
 
     fastapi_app.dependency_overrides[get_session_dep] = _mock_get_session
-    fastapi_app.dependency_overrides[get_settings] = lambda: github_settings
-    # Override get_settings for any route dependency that captured a different callable
-    for route in fastapi_app.routes:
-        if hasattr(route, "dependant"):
-            for dep in route.dependant.dependencies:
-                name = getattr(dep.call, "__name__", "")
-                if name in ("get_settings", "_override"):
-                    fastapi_app.dependency_overrides[dep.call] = lambda: github_settings
     yield fastapi_app
     fastapi_app.dependency_overrides.clear()
 

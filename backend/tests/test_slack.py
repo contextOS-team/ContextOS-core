@@ -28,7 +28,8 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from src.config import Settings, get_settings
+import src.config
+from src.config import Settings
 from tests.conftest import (
     TEST_EMAIL,
     TEST_JWT_SECRET,
@@ -45,42 +46,14 @@ SLACK_SIGNING_SECRET = "test-slack-signing-secret"
 
 @pytest.fixture()
 def slack_settings() -> Settings:
-    """Create test settings with Slack OAuth config and patch everywhere."""
+    """Create test settings with Slack OAuth config."""
     settings = _make_test_settings(
         SLACK_CLIENT_ID=SLACK_CLIENT_ID,
         SLACK_CLIENT_SECRET=SLACK_CLIENT_SECRET,
         SLACK_SIGNING_SECRET=SLACK_SIGNING_SECRET,
     )
-    get_settings.cache_clear()
-
-    import sys
-
-    import src.auth
-    import src.config
-
-    old_config = src.config.get_settings
-    old_auth = src.auth.get_settings
-
-    _override = lambda: settings  # noqa: E731
-    src.config.get_settings = _override  # type: ignore[assignment]
-    src.auth.get_settings = _override  # type: ignore[assignment]
-
-    # Patch the router module if already imported
-    old_router = None
-    if "src.routers.slack" in sys.modules:
-        import src.routers.slack
-
-        old_router = getattr(src.routers.slack, "get_settings", None)
-
+    src.config._settings = settings
     yield settings
-
-    src.config.get_settings = old_config  # type: ignore[assignment]
-    src.auth.get_settings = old_auth  # type: ignore[assignment]
-    if old_router is not None:
-        import src.routers.slack
-
-        src.routers.slack.get_settings = old_router  # type: ignore[assignment]
-    get_settings.cache_clear()
 
 
 @pytest.fixture()
@@ -93,15 +66,6 @@ def slack_app(slack_settings: Settings, mock_session: AsyncMock):
         yield mock_session
 
     fastapi_app.dependency_overrides[get_session_dep] = _mock_get_session
-
-    # Override get_settings via dependency overrides for routes that use Depends(get_settings)
-    fastapi_app.dependency_overrides[get_settings] = lambda: slack_settings
-    for route in fastapi_app.routes:
-        if hasattr(route, "dependant"):
-            for dep in route.dependant.dependencies:
-                name = getattr(dep.call, "__name__", "")
-                if name in ("get_settings", "_override"):
-                    fastapi_app.dependency_overrides[dep.call] = lambda: slack_settings
 
     yield fastapi_app
     fastapi_app.dependency_overrides.clear()

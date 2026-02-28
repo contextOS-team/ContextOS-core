@@ -1,9 +1,11 @@
 """Application configuration loaded from environment variables."""
 
+import logging
 from enum import Enum
-from functools import lru_cache
 
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 
 class Environment(str, Enum):
@@ -28,7 +30,8 @@ class Settings(BaseSettings):
 
     # Supabase
     SUPABASE_URL: str = ""
-    SUPABASE_KEY: str = ""
+    SUPABASE_ANON_KEY: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
     SUPABASE_JWT_SECRET: str = ""
 
     # Google Gemini (SDK reads from GEMINI_API_KEY env var automatically)
@@ -86,54 +89,48 @@ class Settings(BaseSettings):
     # Backend URL
     BACKEND_URL: str = "http://localhost:8000"
 
+    # ngrok (optional — used to build OAuth redirect URIs in local dev)
+    NGROK_DOMAIN: str = ""
+
     @property
     def cors_origin_list(self) -> list[str]:
         """Split CORS_ORIGINS by comma into a list."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     @property
-    def linear_redirect_uri(self) -> str:
-        """Return the Linear OAuth redirect URI.
+    def _public_base_url(self) -> str:
+        """Return the public-facing base URL.
 
-        Uses LINEAR_REDIRECT_URI if set, otherwise defaults to
-        {BACKEND_URL}/api/linear/callback.
+        Uses NGROK_DOMAIN if set (for OAuth callbacks that need a public URL),
+        otherwise falls back to BACKEND_URL.
         """
+        if self.NGROK_DOMAIN:
+            return f"https://{self.NGROK_DOMAIN}"
+        return self.BACKEND_URL
+
+    @property
+    def linear_redirect_uri(self) -> str:
         if self.LINEAR_REDIRECT_URI:
             return self.LINEAR_REDIRECT_URI
-        return f"{self.BACKEND_URL}/api/linear/callback"
+        return f"{self._public_base_url}/api/linear/callback"
 
     @property
     def github_redirect_uri(self) -> str:
-        """Return the GitHub OAuth redirect URI.
-
-        Uses GITHUB_REDIRECT_URI if set, otherwise defaults to
-        {BACKEND_URL}/api/github/callback.
-        """
         if self.GITHUB_REDIRECT_URI:
             return self.GITHUB_REDIRECT_URI
-        return f"{self.BACKEND_URL}/api/github/callback"
+        return f"{self._public_base_url}/api/github/callback"
 
     @property
     def notion_redirect_uri(self) -> str:
-        """Return the Notion OAuth redirect URI.
-
-        Uses NOTION_REDIRECT_URI if set, otherwise defaults to
-        {BACKEND_URL}/api/notion/callback.
-        """
         if self.NOTION_REDIRECT_URI:
             return self.NOTION_REDIRECT_URI
-        return f"{self.BACKEND_URL}/api/notion/callback"
+        return f"{self._public_base_url}/api/notion/callback"
 
     @property
     def slack_redirect_uri(self) -> str:
-        """Return the Slack OAuth redirect URI.
-
-        Uses SLACK_REDIRECT_URI if set, otherwise defaults to
-        {BACKEND_URL}/api/slack/callback.
-        """
         if self.SLACK_REDIRECT_URI:
             return self.SLACK_REDIRECT_URI
-        return f"{self.BACKEND_URL}/api/slack/callback"
+        return f"{self._public_base_url}/api/slack/callback"
 
     model_config = {
         "env_file": "../.env",
@@ -142,8 +139,30 @@ class Settings(BaseSettings):
         "extra": "ignore",
     }
 
+    def model_post_init(self, __context) -> None:
+        """Warn when OAuth credentials are configured but NGROK_DOMAIN is empty."""
+        oauth_providers = {
+            "Linear": self.LINEAR_CLIENT_ID,
+            "Slack": self.SLACK_CLIENT_ID,
+            "GitHub": self.GITHUB_CLIENT_ID,
+            "Notion": self.NOTION_CLIENT_ID,
+        }
+        configured = [name for name, val in oauth_providers.items() if val]
+        if configured and not self.NGROK_DOMAIN:
+            logger.warning(
+                "OAuth credentials set for %s but NGROK_DOMAIN is empty. "
+                "Redirect URIs will point to localhost and OAuth flows will fail. "
+                "Set NGROK_DOMAIN in .env or run `make dev-ngrok`.",
+                ", ".join(configured),
+            )
 
-@lru_cache
+
+_settings: Settings | None = None
+
+
 def get_settings() -> Settings:
     """Return the application settings (cached singleton)."""
-    return Settings()
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings

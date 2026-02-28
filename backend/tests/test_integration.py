@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # Supabase local defaults
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "http://127.0.0.1:54321")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get(
-    "SUPABASE_KEY", "sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz"
+    "SUPABASE_SERVICE_ROLE_KEY", "sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz"
 )
 SUPABASE_JWT_SECRET = os.environ.get(
     "SUPABASE_JWT_SECRET",
@@ -52,7 +52,7 @@ def _patch_env():
     env_overrides = {
         "DATABASE_URL": DATABASE_URL,
         "SUPABASE_URL": SUPABASE_URL,
-        "SUPABASE_KEY": SUPABASE_SERVICE_ROLE_KEY,
+        "SUPABASE_SERVICE_ROLE_KEY": SUPABASE_SERVICE_ROLE_KEY,
         "SUPABASE_JWT_SECRET": SUPABASE_JWT_SECRET,
         "ENVIRONMENT": "dev",
     }
@@ -137,8 +137,10 @@ async def client(_patch_env):
 
     Function-scoped to avoid asyncpg event loop issues.
     """
+    import src.config
     from src.config import get_settings
-    get_settings.cache_clear()
+
+    src.config._settings = None
 
     # Create a fresh engine on THIS event loop
     test_engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
@@ -150,15 +152,8 @@ async def client(_patch_env):
         async with test_session_factory() as session:
             yield session
 
-    # Patch auth settings into the app's config
-    import src.auth
-    import src.config
-
-    original_get_settings = src.config.get_settings
-    original_auth_get_settings = src.auth.get_settings
     test_settings = get_settings()
-    src.config.get_settings = lambda: test_settings  # type: ignore[assignment]
-    src.auth.get_settings = lambda: test_settings  # type: ignore[assignment]
+    src.config._settings = test_settings
 
     from src.db import get_session
     from src.main import app
@@ -170,10 +165,7 @@ async def client(_patch_env):
         yield ac
 
     app.dependency_overrides.clear()
-    src.config.get_settings = original_get_settings  # type: ignore[assignment]
-    src.auth.get_settings = original_auth_get_settings  # type: ignore[assignment]
     await test_engine.dispose()
-    get_settings.cache_clear()
 
 
 # ---------------------------------------------------------------------------
