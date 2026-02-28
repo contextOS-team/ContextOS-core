@@ -1,6 +1,8 @@
 """SQLModel models for ContextOS."""
 
 from src.models.base import BaseModel, TimestampMixin
+from src.models.context_page import ContextPage
+from src.models.embedding import Embedding
 from src.models.github import GithubPullRequest, GithubReview
 from src.models.integration import OAuthToken, WebhookDelivery, WorkspaceIntegration
 from src.models.meeting import MeetingSegment, MeetingTranscript
@@ -11,6 +13,8 @@ from src.models.workspace import Workspace
 
 __all__ = [
     "BaseModel",
+    "ContextPage",
+    "Embedding",
     "GithubPullRequest",
     "GithubReview",
     "LinearComment",

@@ -242,3 +242,74 @@ export function getNotionPages(
     `/api/notion/pages?page=${page}&page_size=${pageSize}`
   )
 }
+
+// ---------------------------------------------------------------------------
+// Context Pages
+// ---------------------------------------------------------------------------
+
+export interface ContextPageSource {
+  type: string
+  id: string
+  title: string
+  relevance_score: number
+}
+
+export interface ContextPageResponse {
+  id: string
+  ticket_identifier: string
+  title: string
+  content: string
+  summary: string | null
+  status: 'draft' | 'generating' | 'ready' | 'stale'
+  sources: ContextPageSource[]
+  generated_at: string | null
+  generation_model: string | null
+  generation_tokens_used: number | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export function getContextPage(
+  ticketIdentifier: string
+): Promise<ContextPageResponse> {
+  return apiFetch<ContextPageResponse>(
+    `/api/context/${encodeURIComponent(ticketIdentifier)}`
+  )
+}
+
+export function generateContextPage(
+  ticketIdentifier: string
+): Promise<{ status: string; message: string; ticket_identifier: string }> {
+  return apiFetch<{
+    status: string
+    message: string
+    ticket_identifier: string
+  }>(`/api/context/${encodeURIComponent(ticketIdentifier)}/generate`, {
+    method: 'POST',
+  })
+}
+
+export interface SearchResult {
+  id: string
+  source_type: string
+  source_id: string
+  similarity: number
+  metadata: Record<string, unknown> | null
+}
+
+export interface SearchResponse {
+  query: string
+  results: SearchResult[]
+  count: number
+}
+
+export function searchContext(
+  query: string,
+  sourceType?: string,
+  limit?: number
+): Promise<SearchResponse> {
+  const params = new URLSearchParams({ q: query })
+  if (sourceType) params.set('source_type', sourceType)
+  if (limit) params.set('limit', String(limit))
+  return apiFetch<SearchResponse>(`/api/context/?${params.toString()}`)
+}

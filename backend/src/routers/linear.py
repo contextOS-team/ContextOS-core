@@ -217,15 +217,25 @@ async def start_sync(
             detail="Linear integration is not connected. Complete OAuth flow first.",
         )
 
-    # Start sync in background
-    background_tasks.add_task(
-        sync_tickets_for_teams,
-        session,
-        user.workspace_id,
-        user.user_id,
-        body.team_ids,
-        settings,
-    )
+    # Start sync in background with its own session
+    # (request session closes when response is sent, before background task runs)
+    async def _run_sync():
+        from src.db import async_session
+        async with async_session() as bg_session:
+            try:
+                await sync_tickets_for_teams(
+                    bg_session,
+                    user.workspace_id,
+                    user.user_id,
+                    body.team_ids,
+                    settings,
+                )
+                await bg_session.commit()
+            except Exception:
+                await bg_session.rollback()
+                raise
+
+    background_tasks.add_task(_run_sync)
 
     return {"status": "sync_started", "team_ids": body.team_ids}
 

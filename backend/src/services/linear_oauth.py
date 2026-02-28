@@ -309,7 +309,9 @@ async def get_valid_access_token(
 
     # Check if token is still valid (with 5 min buffer)
     if oauth_token.token_expires_at:
-        if oauth_token.token_expires_at > (datetime.now(timezone.utc).replace(tzinfo=None) + TOKEN_REFRESH_BUFFER):
+        expires_at = oauth_token.token_expires_at.replace(tzinfo=None) if oauth_token.token_expires_at.tzinfo else oauth_token.token_expires_at
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        if expires_at > (now_utc + TOKEN_REFRESH_BUFFER):
             # Token still valid, read from Vault
             access_name = token_name(Provider.LINEAR, workspace_id, "access")
             current_token = await read_token(session, access_name)

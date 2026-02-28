@@ -30,6 +30,7 @@ from src.services.github_common import (
     map_review_state,
     parse_github_timestamp,
 )
+from src.services.embedding import queue_embedding_generation
 from src.services.github_linking import link_pr_to_ticket
 from src.services.github_repos import is_repo_monitored
 
@@ -213,6 +214,11 @@ async def handle_pull_request_event(
     # 5. Link PR to Linear ticket
     await link_pr_to_ticket(pr_record, workspace_id, session)
 
+    # 6. Queue embedding generation for the PR
+    await queue_embedding_generation(
+        session, workspace_id, "github_pull_request", [pr_record.id]
+    )
+
     logger.info(
         "Upserted PR #%d (%s) state=%s for workspace %s",
         pr_data.get("number", 0),
@@ -283,14 +289,16 @@ async def handle_review_event(
     review_author = review_data.get("user", {}).get("login", "")
     submitted_at = parse_github_timestamp(review_data.get("submitted_at"))
 
+    review_record: GithubReview
     if existing_review:
         existing_review.state = review_state
         existing_review.body = review_body
         existing_review.author = review_author
         existing_review.github_submitted_at = submitted_at
         existing_review.raw_data = review_data
+        review_record = existing_review
     else:
-        new_review = GithubReview(
+        review_record = GithubReview(
             workspace_id=workspace_id,
             pull_request_id=pr_record.id,
             github_id=github_id,
@@ -300,7 +308,15 @@ async def handle_review_event(
             github_submitted_at=submitted_at,
             raw_data=review_data,
         )
-        session.add(new_review)
+        session.add(review_record)
+
+    await session.flush()
+
+    # Queue embedding generation for the review
+    if review_record.body:
+        await queue_embedding_generation(
+            session, workspace_id, "github_review", [review_record.id]
+        )
 
     logger.info(
         "Upserted review %s (state=%s) for PR #%d",
@@ -380,14 +396,16 @@ async def handle_review_comment_event(
     result = await session.execute(stmt)
     existing = result.scalar_one_or_none()
 
+    review_comment_record: GithubReview
     if existing:
         existing.body = comment_body
         existing.file_path = file_path
         existing.line_range = line_range
         existing.author = comment_author
         existing.raw_data = comment_data
+        review_comment_record = existing
     else:
-        new_review = GithubReview(
+        review_comment_record = GithubReview(
             workspace_id=workspace_id,
             pull_request_id=pr_record.id,
             github_id=github_id,
@@ -399,7 +417,15 @@ async def handle_review_comment_event(
             github_submitted_at=submitted_at,
             raw_data=comment_data,
         )
-        session.add(new_review)
+        session.add(review_comment_record)
+
+    await session.flush()
+
+    # Queue embedding generation for the review comment
+    if review_comment_record.body:
+        await queue_embedding_generation(
+            session, workspace_id, "github_review", [review_comment_record.id]
+        )
 
     logger.info(
         "Upserted review comment %s on %s:%s for PR #%d",

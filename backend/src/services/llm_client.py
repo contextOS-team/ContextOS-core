@@ -2,8 +2,7 @@
 
 All LLM calls in ContextOS go through this client so that every call is
 automatically traced in Laminar with prompt, response, latency, and token
-counts.  The client uses the Google GenAI SDK (``google-genai``) to call
-Gemini models.
+counts.  The client uses the OpenAI SDK to call GPT models.
 
 Context generation consumes ``LLMClient`` directly -- no additional
 observability wiring needed by callers.
@@ -16,8 +15,7 @@ import time
 from dataclasses import dataclass
 from uuid import UUID
 
-from google import genai
-from google.genai.types import GenerateContentConfig
+from openai import AsyncOpenAI
 
 from src.observability.laminar import observe, set_laminar_metadata
 
@@ -40,23 +38,24 @@ class LLMResponse:
 
 
 class LLMClient:
-    """Laminar-instrumented wrapper around Google GenAI (Gemini).
+    """Laminar-instrumented wrapper around OpenAI.
 
     All generation methods are decorated with ``@observe`` so Laminar
     automatically records prompt, response, latency, and token counts
     when the SDK is initialized.
 
     Args:
-        model_name: Gemini model identifier.  Defaults to ``gemini-3-flash-preview``.
+        model_name: OpenAI model identifier.  Defaults to ``gpt-4o-mini``.
     """
 
     def __init__(
         self,
-        model_name: str = "gemini-3-flash-preview",
+        model_name: str = "gpt-4o-mini",
     ) -> None:
         self.model_name = model_name
-        # google-genai Client reads API key from GEMINI_API_KEY env var.
-        self._client = genai.Client()
+        from src.config import get_settings
+        settings = get_settings()
+        self._client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
     @observe(name="llm_generate")
     async def generate(
@@ -66,7 +65,7 @@ class LLMClient:
         workspace_id: UUID | None = None,
         ticket_identifier: str | None = None,
     ) -> LLMResponse:
-        """Generate a response from the Gemini model.
+        """Generate a response from the OpenAI model.
 
         Args:
             prompt: User/content prompt to send.
@@ -78,7 +77,7 @@ class LLMClient:
             An ``LLMResponse`` with text, token counts, latency, and model name.
 
         Raises:
-            Exception: Propagates any Google GenAI errors (auth, quota, etc.)
+            Exception: Propagates any OpenAI errors (auth, quota, etc.)
                 so callers can handle them explicitly.
         """
         if workspace_id is not None or ticket_identifier is not None:
@@ -87,27 +86,27 @@ class LLMClient:
                 ticket_identifier=ticket_identifier,
             )
 
-        config = GenerateContentConfig(
-            system_instruction=system_prompt,
-        ) if system_prompt else None
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
 
         start = time.monotonic()
 
-        response = await self._client.aio.models.generate_content(
+        response = await self._client.chat.completions.create(
             model=self.model_name,
-            contents=prompt,
-            config=config,
+            messages=messages,
         )
 
         elapsed_ms = (time.monotonic() - start) * 1000
 
         # Extract token counts from usage metadata.
-        usage = response.usage_metadata
-        prompt_tokens = (usage.prompt_token_count or 0) if usage else 0
-        completion_tokens = (usage.candidates_token_count or 0) if usage else 0
-        total_tokens = (usage.total_token_count or 0) if usage else 0
+        usage = response.usage
+        prompt_tokens = usage.prompt_tokens if usage else 0
+        completion_tokens = usage.completion_tokens if usage else 0
+        total_tokens = usage.total_tokens if usage else 0
 
-        text = response.text or ""
+        text = response.choices[0].message.content or "" if response.choices else ""
 
         return LLMResponse(
             text=text,

@@ -26,6 +26,7 @@ function getInitials(fullName: string | null | undefined, email: string): string
 
 const navItems = [
   { href: '/dashboard', label: 'Home' },
+  { href: '/dashboard/context', label: 'Context' },
   { href: '/dashboard/integrations', label: 'Integrations' },
 ]
 

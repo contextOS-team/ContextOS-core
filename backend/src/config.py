@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # Google Gemini (SDK reads from GEMINI_API_KEY env var automatically)
     GEMINI_API_KEY: str = ""
 
+    # OpenAI (for embeddings via text-embedding-3-small)
+    OPENAI_API_KEY: str = ""
+
     # Linear
     LINEAR_API_KEY: str = ""
     LINEAR_CLIENT_ID: str = ""

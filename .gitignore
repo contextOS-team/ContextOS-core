@@ -25,8 +25,15 @@ build/
 *.swo
 .DS_Store
 
+# Claude Code
+.claude/
+
+# Ralph (cloned installer — not project code)
+ralph-claude-code/
+
 # Supabase
 supabase/.temp/
+supabase/.branches/
 
 # Vercel
 .vercel/

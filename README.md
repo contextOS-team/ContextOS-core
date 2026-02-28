@@ -7,10 +7,10 @@ AI-generated context pages for engineering tickets. When an engineer picks up a 
 | Layer | Technology |
 |-------|-----------|
 | Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS v4, shadcn/ui |
-| Backend | Python 3.12, FastAPI, SQLModel, LangGraph |
+| Backend | Python 3.12, FastAPI, SQLModel |
 | Database | Supabase (PostgreSQL + pgvector + Vault) |
 | Auth | Supabase Auth (email/password, magic link) |
-| AI | Google Gemini (synthesis) |
+| AI | OpenAI GPT-4o-mini (synthesis), OpenAI text-embedding-3-small (embeddings) |
 | MCP Server | TypeScript, @modelcontextprotocol/sdk |
 | Integrations | Linear (OAuth + webhooks), Slack (OAuth + Events API), GitHub (App + webhooks), Notion (OAuth + webhooks), Fathom |
 | Observability | Laminar (LLM tracing), Sentry (errors) |
@@ -29,6 +29,10 @@ AI-generated context pages for engineering tickets. When an engineer picks up a 
 ├── packages/mcp-server/  MCP server for AI coding assistants
 └── supabase/          Database migrations and config
 ```
+
+## Integration Setup
+
+See **[docs/INTEGRATION_SETUP.md](docs/INTEGRATION_SETUP.md)** for step-by-step instructions on connecting Linear and Slack.
 
 ## Getting Started
 

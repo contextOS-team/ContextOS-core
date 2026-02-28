@@ -15,6 +15,17 @@ from uuid import UUID
 import httpx
 import sqlalchemy.exc
 
+
+def _parse_iso(iso_str: str | None) -> datetime | None:
+    """Parse ISO-8601 string to naive UTC datetime."""
+    if not iso_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        return dt.replace(tzinfo=None)
+    except (ValueError, TypeError):
+        return None
+
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import func, select
@@ -259,8 +270,8 @@ async def _upsert_tickets(
             "team_name": issue.get("team", {}).get("name") if issue.get("team") else None,
             "project_name": issue.get("project", {}).get("name") if issue.get("project") else None,
             "labels": labels if labels else None,
-            "linear_created_at": issue.get("createdAt"),
-            "linear_updated_at": issue.get("updatedAt"),
+            "linear_created_at": _parse_iso(issue.get("createdAt")),
+            "linear_updated_at": _parse_iso(issue.get("updatedAt")),
             "raw_data": issue,
         }
 
@@ -326,8 +337,8 @@ async def _upsert_comments(
                 "linear_id": comment["id"],
                 "body": comment["body"],
                 "author_name": comment.get("user", {}).get("name") if comment.get("user") else None,
-                "linear_created_at": comment.get("createdAt"),
-                "linear_updated_at": comment.get("updatedAt"),
+                "linear_created_at": _parse_iso(comment.get("createdAt")),
+                "linear_updated_at": _parse_iso(comment.get("updatedAt")),
             }
 
             stmt = insert(LinearComment).values(**values)
