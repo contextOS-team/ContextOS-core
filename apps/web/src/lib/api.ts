@@ -218,3 +218,27 @@ export function resyncNotion(): Promise<{ status: string }> {
     method: 'POST',
   })
 }
+
+export interface NotionPageInfo {
+  id: string
+  notion_id: string
+  title: string
+  page_type: string | null
+  url: string | null
+}
+
+export interface NotionPagesResponse {
+  pages: NotionPageInfo[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export function getNotionPages(
+  page: number = 1,
+  pageSize: number = 10
+): Promise<NotionPagesResponse> {
+  return apiFetch<NotionPagesResponse>(
+    `/api/notion/pages?page=${page}&page_size=${pageSize}`
+  )
+}

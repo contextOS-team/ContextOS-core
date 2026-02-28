@@ -29,6 +29,7 @@ import { IntegrationCard } from './integration-card'
 import { SlackChannels } from './slack-channels'
 import { FathomConnect } from './fathom-connect'
 import { GithubRepos } from './github-repos'
+import { NotionPages } from './notion-pages'
 
 export default function IntegrationsPage() {
   const [statuses, setStatuses] = useState<IntegrationStatusResponse | null>(null)
@@ -113,6 +114,10 @@ export default function IntegrationsPage() {
   const handleResyncNotion = async () => {
     try {
       await resyncNotion()
+      // Sync runs in background. Refresh statuses so the card header
+      // updates when the sync completes. The page list re-fetches on
+      // next card expand (component mounts fresh).
+      await fetchStatuses()
     } catch {
       setError('Failed to start Notion re-sync. Please try again.')
     }
@@ -125,10 +130,17 @@ export default function IntegrationsPage() {
           <div className="h-8 w-48 animate-pulse rounded-lg bg-muted" />
           <div className="h-4 w-32 animate-pulse rounded-lg bg-muted mt-2" />
         </div>
-        <div className="grid gap-3 md:grid-cols-2 stagger-children">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-44 animate-pulse rounded-2xl bg-muted" />
-          ))}
+        <div className="grid gap-3 md:grid-cols-2 items-start">
+          <div className="flex flex-col gap-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-24 animate-pulse rounded-2xl bg-muted" />
+            ))}
+          </div>
+          <div className="flex flex-col gap-3">
+            {[4, 5].map((i) => (
+              <div key={i} className="h-24 animate-pulse rounded-2xl bg-muted" />
+            ))}
+          </div>
         </div>
       </div>
     )
@@ -172,85 +184,92 @@ export default function IntegrationsPage() {
       )}
 
       {/* Cards */}
-      <div className="grid gap-3 md:grid-cols-2 stagger-children">
-        <IntegrationCard
-          name="Linear"
-          icon={<LinearLogo width={20} height={20} className="text-violet-600 dark:text-violet-400" />}
-          status={linear.status}
-          externalName={linear.external_name}
-          connectedAt={linear.connected_at}
-          onConnect={handleConnectLinear}
-          onDisconnect={handleDisconnectLinear}
-        />
+      <div className="grid gap-3 md:grid-cols-2 items-start">
+        {/* Left column */}
+        <div className="flex flex-col gap-3 stagger-children">
+          <IntegrationCard
+            name="Linear"
+            icon={<LinearLogo width={20} height={20} className="text-violet-600 dark:text-violet-400" />}
+            status={linear.status}
+            externalName={linear.external_name}
+            connectedAt={linear.connected_at}
+            onConnect={handleConnectLinear}
+            onDisconnect={handleDisconnectLinear}
+          />
 
-        <IntegrationCard
-          name="Slack"
-          icon={<SlackLogo width={20} height={20} />}
-          status={slack.status}
-          externalName={slack.external_name}
-          connectedAt={slack.connected_at}
-          onConnect={handleConnectSlack}
-          onDisconnect={handleDisconnectSlack}
-        >
-          <SlackChannels onSaved={fetchStatuses} />
-        </IntegrationCard>
+          <IntegrationCard
+            name="Fathom"
+            icon={<FathomLogo width={20} height={20} />}
+            status={fathom.status}
+            externalName={fathom.external_name}
+            connectedAt={fathom.connected_at}
+            onConnect={() => {}}
+            onDisconnect={handleDisconnectFathom}
+            connectForm={<FathomConnect onConnected={fetchStatuses} />}
+          />
 
-        <IntegrationCard
-          name="Fathom"
-          icon={<FathomLogo width={20} height={20} />}
-          status={fathom.status}
-          externalName={fathom.external_name}
-          connectedAt={fathom.connected_at}
-          onConnect={() => {}}
-          onDisconnect={handleDisconnectFathom}
-          connectForm={<FathomConnect onConnected={fetchStatuses} />}
-        />
-
-        <IntegrationCard
-          name="GitHub"
-          icon={<GitHubLogo width={20} height={20} className="text-foreground" />}
-          status={github.status}
-          externalName={github.external_name}
-          connectedAt={github.connected_at}
-          onConnect={handleConnectGithub}
-          onDisconnect={handleDisconnectGithub}
-        >
-          <GithubRepos onSaved={fetchStatuses} />
-        </IntegrationCard>
-
-        <IntegrationCard
-          name="Notion"
-          icon={<NotionLogo width={20} height={20} className="text-foreground" />}
-          status={notion.status}
-          externalName={notionDisplayName}
-          connectedAt={notion.connected_at}
-          onConnect={handleConnectNotion}
-          onDisconnect={handleDisconnectNotion}
-        >
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                Re-import all pages from Notion
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleResyncNotion}
-                className="text-[13px]"
+          <IntegrationCard
+            name="Notion"
+            icon={<NotionLogo width={20} height={20} className="text-foreground" />}
+            status={notion.status}
+            externalName={notionDisplayName}
+            connectedAt={notion.connected_at}
+            onConnect={handleConnectNotion}
+            onDisconnect={handleDisconnectNotion}
+          >
+            <div className="flex flex-col gap-3">
+              <NotionPages />
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Re-import all pages from Notion
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResyncNotion}
+                  className="text-[13px]"
+                >
+                  Re-sync
+                </Button>
+              </div>
+              <a
+                href="https://www.notion.so/my-integrations"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
-                Re-sync
-              </Button>
+                Manage access in Notion settings
+              </a>
             </div>
-            <a
-              href="https://www.notion.so/my-integrations"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Manage access in Notion settings
-            </a>
-          </div>
-        </IntegrationCard>
+          </IntegrationCard>
+        </div>
+
+        {/* Right column */}
+        <div className="flex flex-col gap-3 stagger-children">
+          <IntegrationCard
+            name="Slack"
+            icon={<SlackLogo width={20} height={20} />}
+            status={slack.status}
+            externalName={slack.external_name}
+            connectedAt={slack.connected_at}
+            onConnect={handleConnectSlack}
+            onDisconnect={handleDisconnectSlack}
+          >
+            <SlackChannels onSaved={fetchStatuses} />
+          </IntegrationCard>
+
+          <IntegrationCard
+            name="GitHub"
+            icon={<GitHubLogo width={20} height={20} className="text-foreground" />}
+            status={github.status}
+            externalName={github.external_name}
+            connectedAt={github.connected_at}
+            onConnect={handleConnectGithub}
+            onDisconnect={handleDisconnectGithub}
+          >
+            <GithubRepos onSaved={fetchStatuses} />
+          </IntegrationCard>
+        </div>
       </div>
     </div>
   )

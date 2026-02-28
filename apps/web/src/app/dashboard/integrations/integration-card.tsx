@@ -80,7 +80,7 @@ export function IntegrationCard({
   const displayedName = displayName(externalName)
 
   return (
-    <Card className="gap-0 py-0 overflow-hidden transition-all duration-200 hover:shadow-lg hover:shadow-black/[0.03] dark:hover:shadow-black/20 group">
+    <Card className="gap-0 py-0 overflow-hidden transition-shadow duration-200 hover:shadow-lg hover:shadow-black/[0.03] dark:hover:shadow-black/20 group">
       <div className="flex flex-row items-center justify-between gap-3 px-5 pt-5 pb-2">
         <div className="flex items-center gap-3 min-w-0">
           <div className="shrink-0">
@@ -110,7 +110,7 @@ export function IntegrationCard({
 
       <CardContent className="px-5 pb-4 pt-0">
         {/* Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 h-8">
           {status === 'connected' ? (
             <>
               {children && (

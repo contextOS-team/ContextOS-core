@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel as PydanticBaseModel
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import func, select
@@ -229,6 +230,85 @@ async def resync(
     return {"status": "sync_started"}
 
 
+PAGE_SIZE_DEFAULT = 10
+PAGE_SIZE_MAX = 100
+
+
+class NotionPageItem(PydanticBaseModel):
+    id: str
+    notion_id: str
+    title: str
+    page_type: str | None
+    url: str | None
+
+
+class NotionPagesResponse(PydanticBaseModel):
+    pages: list[NotionPageItem]
+    total: int
+    page: int
+    page_size: int
+
+
+@router.get("/pages", response_model=NotionPagesResponse)
+async def list_pages(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(PAGE_SIZE_DEFAULT, ge=1, le=PAGE_SIZE_MAX),
+) -> NotionPagesResponse:
+    """List synced Notion pages for the current workspace.
+
+    Returns paginated lightweight page metadata (no content or raw_data)
+    for display in the integration card UI.
+    """
+    where_clause = (
+        NotionPage.workspace_id == user.workspace_id,
+        NotionPage.deleted_at.is_(None),
+    )
+
+    # Total count
+    count_stmt = select(func.count()).select_from(NotionPage).where(*where_clause)
+    total = (await session.execute(count_stmt)).scalar_one()
+
+    # Clamp page to valid range
+    max_page = max(1, -(-total // page_size))  # ceil division
+    page = min(page, max_page)
+
+    offset = (page - 1) * page_size
+    stmt = (
+        select(
+            NotionPage.id,
+            NotionPage.notion_id,
+            NotionPage.title,
+            NotionPage.page_type,
+            NotionPage.url,
+        )
+        .where(*where_clause)
+        .order_by(NotionPage.title.asc())
+        .limit(page_size)
+        .offset(offset)
+    )
+    rows = (await session.execute(stmt)).all()
+
+    pages = [
+        NotionPageItem(
+            id=str(row.id),
+            notion_id=row.notion_id,
+            title=row.title,
+            page_type=row.page_type,
+            url=row.url,
+        )
+        for row in rows
+    ]
+
+    return NotionPagesResponse(
+        pages=pages,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
 async def _run_sync(
     workspace_id: UUID, user_id: UUID, settings: Settings
 ) -> None:
@@ -268,8 +348,8 @@ async def _run_sync(
                 page_url = page_data.get("url", "")
                 last_edited_by_data = page_data.get("last_edited_by", {})
                 last_edited_by = last_edited_by_data.get("id", "") if last_edited_by_data else ""
-                notion_created = page_data.get("created_time")
-                notion_updated = page_data.get("last_edited_time")
+                notion_created = _parse_notion_datetime(page_data.get("created_time"))
+                notion_updated = _parse_notion_datetime(page_data.get("last_edited_time"))
 
                 # Determine page type
                 parent = page_data.get("parent", {})
@@ -349,6 +429,23 @@ async def _run_sync(
                 await session.commit()
             except Exception:
                 logger.exception("Failed to update sync error status")
+
+
+def _parse_notion_datetime(value: str | None) -> datetime | None:
+    """Parse an ISO 8601 datetime string from the Notion API.
+
+    Notion returns timestamps like '2025-06-03T05:29:00.000Z'.
+    asyncpg requires actual datetime objects, not raw strings.
+
+    Returns:
+        Parsed naive datetime (UTC), or None if value is falsy.
+    """
+    if not value:
+        return None
+    # Replace only trailing 'Z' (Zulu time) with an explicit UTC offset
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    return datetime.fromisoformat(value).replace(tzinfo=None)
 
 
 def _extract_title(page_data: dict) -> str:
