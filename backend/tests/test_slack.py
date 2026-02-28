@@ -137,7 +137,7 @@ class TestSlackConnect:
         assert "slack.com/oauth/v2/authorize" in url
         assert f"client_id={SLACK_CLIENT_ID}" in url
         assert "state=" in url
-        assert "channels:read" in url
+        assert "channels%3Aread" in url
 
 
 class TestSlackCallback:

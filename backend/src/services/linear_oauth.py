@@ -8,6 +8,7 @@ Uses raw httpx + GraphQL per project decision (no Linear SDK).
 """
 
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 from uuid import UUID
 
 import httpx
@@ -53,7 +54,7 @@ def build_auth_url(state: str, settings: Settings) -> str:
         "scope": "read,write",
         "state": state,
     }
-    query = "&".join(f"{k}={v}" for k, v in params.items())
+    query = urlencode(params)
     return f"{LINEAR_AUTHORIZE_URL}?{query}"
 
 

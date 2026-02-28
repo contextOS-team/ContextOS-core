@@ -100,7 +100,7 @@ class TestConnect:
         assert "linear.app/oauth/authorize" in url
         assert f"client_id={LINEAR_CLIENT_ID}" in url
         assert "state=" in url
-        assert "scope=read,write" in url
+        assert "scope=read%2Cwrite" in url
 
     def test_connect_requires_auth(self, linear_client):
         """GET /api/linear/connect without token returns 401/403."""

@@ -11,6 +11,7 @@ Slack's OAuth V2 flow:
 - Team info (id, name) comes from the token exchange response.
 """
 
+from urllib.parse import urlencode
 from uuid import UUID
 
 import httpx
@@ -55,7 +56,7 @@ def build_auth_url(state: str, settings: Settings) -> str:
         "user_scope": "",
         "state": state,
     }
-    query = "&".join(f"{k}={v}" for k, v in params.items())
+    query = urlencode(params)
     return f"{SLACK_AUTHORIZE_URL}?{query}"
 
 

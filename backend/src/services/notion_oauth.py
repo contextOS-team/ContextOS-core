@@ -13,6 +13,7 @@ Notion OAuth differences from other providers:
 
 import base64
 import logging
+from urllib.parse import urlencode
 from uuid import UUID
 
 import httpx
@@ -65,7 +66,7 @@ def build_auth_url(state: str, settings) -> str:
         "owner": "user",
         "state": state,
     }
-    query = "&".join(f"{k}={v}" for k, v in params.items())
+    query = urlencode(params)
     return f"{NOTION_AUTHORIZE_URL}?{query}"
 
 
