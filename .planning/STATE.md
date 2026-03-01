@@ -160,6 +160,7 @@ None yet.
 - Phase 07.1 inserted after Phase 7: tech debt cleanup (URGENT)
 - Phase 07.2 inserted after Phase 07.1: Integration bug fixes & hardening from brutal codebase audit (URGENT)
 - Phase 08.1.1 inserted after Phase 08.1: Notion Integration (URGENT)
+- Phase 9 added: Notion Integration UI Polish
 
 ### Blockers/Concerns
 
