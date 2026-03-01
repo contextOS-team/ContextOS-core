@@ -151,7 +151,7 @@ class Settings(BaseSettings):
             "Notion": self.NOTION_CLIENT_ID,
         }
         configured = [name for name, val in oauth_providers.items() if val]
-        if configured and not self.NGROK_DOMAIN:
+        if configured and not self.NGROK_DOMAIN and self.ENVIRONMENT == Environment.DEV:
             logger.warning(
                 "OAuth credentials set for %s but NGROK_DOMAIN is empty. "
                 "Redirect URIs will point to localhost and OAuth flows will fail. "

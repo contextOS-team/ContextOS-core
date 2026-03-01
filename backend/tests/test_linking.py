@@ -2,8 +2,7 @@
 
 Covers:
 - Explicit reference finding (PRs, comments, Slack messages)
-- Semantic similarity matching
-- Keyword/trigram matching
+- Hybrid search (vector + full-text) matching
 - Combined multi-signal scoring and ranking
 """
 
@@ -119,16 +118,16 @@ async def test_find_explicit_refs_slack_mentions() -> None:
 
 
 @pytest.mark.asyncio
-async def test_find_semantic_matches() -> None:
-    """Should find semantically similar content via embeddings."""
+async def test_find_hybrid_matches() -> None:
+    """Should find related content via hybrid vector + full-text search."""
     mock_session = AsyncMock()
     ticket = _make_ticket()
 
-    # Mock match_embeddings result
+    # Mock hybrid_search result (7 columns)
     other_id = uuid4()
     mock_match_result = MagicMock()
     mock_match_result.fetchall.return_value = [
-        (uuid4(), "slack_message", other_id, 0.82, {}),
+        (uuid4(), "slack_message", other_id, 0.82, 0.15, 0.619, {}),
     ]
 
     # Mock source lookup for the matched item
@@ -151,28 +150,28 @@ async def test_find_semantic_matches() -> None:
         new_callable=AsyncMock,
         return_value=mock_embedding,
     ):
-        from src.services.linking import _find_semantic_matches
+        from src.services.linking import _find_hybrid_matches
 
-        items = await _find_semantic_matches(mock_session, WORKSPACE_ID, ticket)
+        items = await _find_hybrid_matches(mock_session, WORKSPACE_ID, ticket)
 
     assert len(items) == 1
     key = list(items.keys())[0]
     assert key[0] == "slack_message"
-    assert "semantic_similarity" in items[key].signals
-    # Score should be similarity * WEIGHT_SEMANTIC = 0.82 * 0.7
-    assert abs(items[key].relevance_score - 0.82 * 0.7) < 0.01
+    assert "hybrid_search" in items[key].signals
+    # Score should be combined_score * WEIGHT_HYBRID = 0.619 * 0.8
+    assert abs(items[key].relevance_score - 0.619 * 0.8) < 0.01
 
 
 @pytest.mark.asyncio
-async def test_find_semantic_matches_skips_self() -> None:
-    """Should skip the ticket's own embedding in semantic matches."""
+async def test_find_hybrid_matches_skips_self() -> None:
+    """Should skip the ticket's own embedding in hybrid matches."""
     mock_session = AsyncMock()
     ticket = _make_ticket()
 
-    # Match result includes the ticket itself
+    # Match result includes the ticket itself (7 columns)
     mock_match_result = MagicMock()
     mock_match_result.fetchall.return_value = [
-        (uuid4(), "linear_ticket", ticket.id, 1.0, {}),  # self-match
+        (uuid4(), "linear_ticket", ticket.id, 1.0, 0.5, 0.85, {}),  # self-match
     ]
 
     mock_session.execute.side_effect = [mock_match_result]
@@ -184,9 +183,9 @@ async def test_find_semantic_matches_skips_self() -> None:
         new_callable=AsyncMock,
         return_value=mock_embedding,
     ):
-        from src.services.linking import _find_semantic_matches
+        from src.services.linking import _find_hybrid_matches
 
-        items = await _find_semantic_matches(mock_session, WORKSPACE_ID, ticket)
+        items = await _find_hybrid_matches(mock_session, WORKSPACE_ID, ticket)
 
     assert len(items) == 0
 
@@ -215,31 +214,22 @@ async def test_combined_scoring_multi_signal() -> None:
     mock_slack_result = MagicMock()
     mock_slack_result.scalars.return_value.all.return_value = [mock_msg]
 
-    # --- Mock semantic matches ---
+    # --- Mock hybrid matches (7-column result) ---
     mock_match_result = MagicMock()
     mock_match_result.fetchall.return_value = [
-        (uuid4(), "slack_message", shared_id, 0.85, {}),
+        (uuid4(), "slack_message", shared_id, 0.85, 0.2, 0.655, {}),
     ]
     mock_source_result = MagicMock()
     mock_source_result.scalar_one_or_none.return_value = mock_msg
-
-    # --- Mock keyword matches ---
-    mock_keyword_slack_result = MagicMock()
-    mock_keyword_slack_result.fetchall.return_value = []
-    mock_keyword_meeting_result = MagicMock()
-    mock_keyword_meeting_result.fetchall.return_value = []
 
     mock_session.execute.side_effect = [
         # Explicit refs
         mock_pr_result,       # PRs
         mock_comment_result,  # Comments
         mock_slack_result,    # Slack mentions
-        # Semantic matches
-        mock_match_result,    # match_embeddings
+        # Hybrid matches
+        mock_match_result,    # hybrid_search
         mock_source_result,   # source lookup
-        # Keyword matches
-        mock_keyword_slack_result,    # trigram on slack
-        mock_keyword_meeting_result,  # trigram on meetings
     ]
 
     mock_embedding = [0.1] * 768
@@ -254,9 +244,9 @@ async def test_combined_scoring_multi_signal() -> None:
         result = await find_related_content(mock_session, WORKSPACE_ID, ticket)
 
     assert len(result.items) >= 1
-    # The slack message found by both explicit + semantic should have combined score
+    # The slack message found by both explicit + hybrid should have combined score
     top_item = result.items[0]
     assert top_item.source_id == shared_id
     assert len(top_item.signals) >= 2
-    # Score should be explicit (1.0) + semantic (0.85 * 0.7) > 1.0
+    # Score should be explicit (1.0) + hybrid (0.655 * 0.8) > 1.0
     assert top_item.relevance_score > 1.0
