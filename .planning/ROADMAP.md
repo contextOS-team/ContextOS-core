@@ -229,6 +229,16 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 | 7.1 Tech Debt Cleanup | 2/2 | Complete | 2026-02-26 |
 | 7.2 Integration Bug Fixes & Hardening | 0/3 | Planned | - |
 
+### Phase 9: Notion Integration UI Polish
+
+**Goal:** Polish the Notion integration card UX -- replace the flat paginated page list with a summary stats line (page count + last sync time) on the card face, remove the NotionPages component from the UI, fix the header to show only workspace name (no page count suffix), and ensure the card matches the visual weight of peer integration cards
+**Requirements**: N/A (design critique improvements for Notion integration card)
+**Depends on:** Phase 08.1.1
+**Plans:** 1 plan
+
+Plans:
+- [ ] 09-01-PLAN.md -- Add last_sync_at to status endpoint, remove NotionPages, simplify card to summary stats + re-sync button
+
 ---
 *Roadmap created: 2026-02-24*
 *Milestone: v1.0 Dogfood*
