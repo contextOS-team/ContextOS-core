@@ -13,7 +13,7 @@ dependencies = [
     "redis",
     "pydantic>=2.0",
     "pydantic-settings",
-    "httpx",
+    "httpx[http2]",
     "lmnr",
     "sentry-sdk[fastapi]",
     "structlog",

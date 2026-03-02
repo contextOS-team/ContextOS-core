@@ -36,6 +36,8 @@ class Embedding(SQLModel, table=True):
         default_factory=dict,
         sa_column=Column("metadata", JSONB, nullable=True, server_default=sa_text("'{}'")),
     )
+    model_name: str = Field(default="text-embedding-3-small", nullable=False)
+    model_version: str = Field(default="v1", nullable=False)
     deleted_at: datetime | None = Field(default=None)
     created_at: datetime | None = Field(
         default=None,

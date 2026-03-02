@@ -8,6 +8,7 @@ and bulk backfill for pending embeddings.
 
 import hashlib
 import logging
+import re
 from uuid import UUID
 
 from lmnr import observe
@@ -21,6 +22,7 @@ from src.models.context_page import ContextPage
 from src.models.embedding import Embedding
 from src.models.github import GithubPullRequest, GithubReview
 from src.models.meeting import MeetingSegment, MeetingTranscript
+from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
 from src.models.ticket import LinearComment, LinearTicket
 
@@ -28,6 +30,13 @@ logger = logging.getLogger(__name__)
 
 # Maximum input length for text-embedding-3-small (8191 tokens ≈ ~30K chars)
 MAX_INPUT_CHARS = 30_000
+
+# Current model constants
+EMBEDDING_MODEL_NAME = "text-embedding-3-small"
+EMBEDDING_MODEL_VERSION = "v1"
+
+# Batch size for embedding API calls (20-50 per CONTEXT.md; 25 is a safe middle ground)
+BATCH_SIZE = 25
 
 # Map source_type strings to (model class, text extraction function)
 SOURCE_TYPE_MAP: dict[str, tuple[type, callable]] = {
@@ -63,6 +72,10 @@ SOURCE_TYPE_MAP: dict[str, tuple[type, callable]] = {
         ContextPage,
         lambda r: f"{r.title}\n\n{r.content}".strip(),
     ),
+    "notion_page": (
+        NotionPage,
+        lambda r: f"{r.title}\n\n{r.content or ''}".strip(),
+    ),
 }
 
 # Lazy singleton for the OpenAI async client
@@ -79,9 +92,30 @@ def _get_openai_client() -> AsyncOpenAI:
     return _openai_client
 
 
+def _normalize_for_hash(text_content: str) -> str:
+    """Normalize text for content hash comparison.
+
+    Collapses all whitespace sequences (spaces, tabs, newlines) into
+    single spaces and strips leading/trailing whitespace. This prevents
+    trivial formatting changes from triggering re-embedding.
+
+    Args:
+        text_content: Raw text content.
+
+    Returns:
+        Normalized text string.
+    """
+    return re.sub(r'\s+', ' ', text_content).strip()
+
+
 def _compute_content_hash(text_content: str) -> str:
-    """Compute SHA-256 hash of content for change detection."""
-    return hashlib.sha256(text_content.encode("utf-8")).hexdigest()
+    """Compute SHA-256 hash of normalized content for change detection.
+
+    Normalizes whitespace before hashing so trivial formatting edits
+    (spacing, line breaks) do not trigger re-embedding.
+    """
+    normalized = _normalize_for_hash(text_content)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 @observe(name="generate_embedding")
@@ -110,6 +144,34 @@ async def generate_embedding(text_content: str) -> list[float]:
     return list(response.data[0].embedding)
 
 
+@observe(name="generate_embeddings_batch")
+async def generate_embeddings_batch(texts: list[str]) -> list[list[float]]:
+    """Generate 768-dimensional embeddings for multiple texts in one API call.
+
+    OpenAI text-embedding-3-small supports list inputs natively.
+    Results are returned in the same order as the input texts.
+
+    Args:
+        texts: List of text strings to embed.
+
+    Returns:
+        List of 768-dimensional embedding vectors (same order as input).
+    """
+    if not texts:
+        return []
+
+    truncated = [t[:MAX_INPUT_CHARS] if t.strip() else "" for t in texts]
+    client = _get_openai_client()
+    response = await client.embeddings.create(
+        model="text-embedding-3-small",
+        input=truncated,
+        dimensions=768,
+    )
+    # OpenAI returns data sorted by index
+    sorted_data = sorted(response.data, key=lambda d: d.index)
+    return [list(d.embedding) for d in sorted_data]
+
+
 async def queue_embedding_generation(
     session: AsyncSession,
     workspace_id: UUID,
@@ -118,13 +180,8 @@ async def queue_embedding_generation(
 ) -> None:
     """Generate and store embeddings for the given source records.
 
-    Called after ticket/comment/PR sync. For each source record:
-    1. Looks up the record by ID
-    2. Extracts text content
-    3. Computes content hash (SHA-256)
-    4. Skips if existing embedding has same hash (content unchanged)
-    5. Generates embedding via text-embedding-004
-    6. Upserts into embeddings table
+    Now processes records in batches of BATCH_SIZE for efficiency.
+    Called after ticket/comment/PR sync or by the embedding worker.
 
     Args:
         session: Async database session.
@@ -138,28 +195,24 @@ async def queue_embedding_generation(
 
     model_cls, extract_text = SOURCE_TYPE_MAP[source_type]
 
+    # Collect records that need embedding
+    pending: list[tuple[UUID, str, str]] = []  # (source_id, text, content_hash)
+
     for source_id in source_ids:
         try:
-            # Look up source record
             stmt = select(model_cls).where(model_cls.id == source_id)
             result = await session.execute(stmt)
             record = result.scalar_one_or_none()
             if record is None:
-                logger.warning(
-                    "Source record not found: type=%s id=%s", source_type, source_id
-                )
                 continue
 
-            # Extract text content
             text_content = extract_text(record)
             if not text_content or not text_content.strip():
-                logger.debug("Empty content for %s %s, skipping", source_type, source_id)
                 continue
 
-            # Compute content hash
             content_hash = _compute_content_hash(text_content)
 
-            # Check if existing embedding has same hash
+            # Check existing hash
             existing_stmt = select(Embedding.content_hash).where(
                 Embedding.source_type == source_type,
                 Embedding.source_id == source_id,
@@ -168,49 +221,65 @@ async def queue_embedding_generation(
             existing_hash = existing_result.scalar_one_or_none()
 
             if existing_hash == content_hash:
-                logger.debug(
-                    "Content unchanged for %s %s, skipping embedding",
-                    source_type,
-                    source_id,
-                )
                 continue
 
-            # Generate embedding
-            embedding_vector = await generate_embedding(text_content)
-
-            # Upsert into embeddings table
-            upsert_stmt = (
-                insert(Embedding)
-                .values(
-                    workspace_id=workspace_id,
-                    source_type=source_type,
-                    source_id=source_id,
-                    content_hash=content_hash,
-                    embedding=embedding_vector,
-                )
-                .on_conflict_do_update(
-                    constraint="embeddings_source_type_source_id_key",
-                    set_={
-                        "content_hash": content_hash,
-                        "embedding": embedding_vector,
-                        "deleted_at": None,
-                    },
-                )
-            )
-            await session.execute(upsert_stmt)
-
-            logger.info(
-                "Generated embedding for %s %s (hash=%s…)",
-                source_type,
-                source_id,
-                content_hash[:12],
-            )
+            pending.append((source_id, text_content, content_hash))
         except Exception:
             logger.exception(
-                "Failed to generate embedding for %s %s",
-                source_type,
-                source_id,
+                "Failed to prepare embedding for %s %s", source_type, source_id
             )
+
+    if not pending:
+        return
+
+    # Process in batches
+    for i in range(0, len(pending), BATCH_SIZE):
+        batch = pending[i:i + BATCH_SIZE]
+        texts = [item[1] for item in batch]
+
+        try:
+            embeddings = await generate_embeddings_batch(texts)
+        except Exception:
+            logger.exception(
+                "Batch embedding generation failed for %s (batch %d)",
+                source_type, i // BATCH_SIZE,
+            )
+            continue
+
+        for (source_id, _, content_hash), embedding_vector in zip(batch, embeddings):
+            try:
+                upsert_stmt = (
+                    insert(Embedding)
+                    .values(
+                        workspace_id=workspace_id,
+                        source_type=source_type,
+                        source_id=source_id,
+                        content_hash=content_hash,
+                        embedding=embedding_vector,
+                        model_name=EMBEDDING_MODEL_NAME,
+                        model_version=EMBEDDING_MODEL_VERSION,
+                    )
+                    .on_conflict_do_update(
+                        constraint="embeddings_source_type_source_id_key",
+                        set_={
+                            "content_hash": content_hash,
+                            "embedding": embedding_vector,
+                            "model_name": EMBEDDING_MODEL_NAME,
+                            "model_version": EMBEDDING_MODEL_VERSION,
+                            "deleted_at": None,
+                        },
+                    )
+                )
+                await session.execute(upsert_stmt)
+                logger.info(
+                    "Generated embedding for %s %s (hash=%s...)",
+                    source_type, source_id, content_hash[:12],
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to upsert embedding for %s %s",
+                    source_type, source_id,
+                )
 
 
 async def process_pending_embeddings(
