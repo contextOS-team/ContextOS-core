@@ -515,7 +515,7 @@ async def _run_sync(
             try:
                 async with async_session() as session:
                     await _update_sync_config(
-                        session, workspace_id, {"sync_status": "error"}
+                        session, workspace_id, {"sync_status": "idle"}
                     )
                     await update_cursor_status(
                         session, workspace_id, "notion", "default",

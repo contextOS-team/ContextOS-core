@@ -615,13 +615,13 @@ class TestRunSync:
         ):
             await _run_sync(workspace_id, user_id, settings)
 
-        # Should have been called with sync_status=error
-        error_calls = [
+        # Should have been called with sync_status=idle (reset on failure so retries work)
+        idle_calls = [
             c
             for c in mock_update_config.call_args_list
-            if c[0][2].get("sync_status") == "error"
+            if c[0][2].get("sync_status") == "idle"
         ]
-        assert len(error_calls) == 1
+        assert len(idle_calls) == 1
 
     @pytest.mark.asyncio
     async def test_sync_handles_content_fetch_failure_gracefully(self):
