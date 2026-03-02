@@ -6,6 +6,7 @@ Uses raw httpx per project decision (no Linear SDK).
 
 import asyncio
 import logging
+import random
 from typing import Any
 
 import httpx
@@ -17,6 +18,10 @@ LINEAR_GRAPHQL_URL = "https://api.linear.app/graphql"
 # Rate limit / retry configuration
 MAX_RETRIES = 3
 INITIAL_BACKOFF_SECONDS = 1.0
+
+
+# Module-level semaphore for Linear API concurrency (5 concurrent requests)
+_linear_semaphore = asyncio.Semaphore(5)
 
 
 class LinearAPIError(Exception):
@@ -42,6 +47,12 @@ class LinearGraphQLClient:
         self._client = httpx.AsyncClient(
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=30.0,
+            http2=True,
+            limits=httpx.Limits(
+                max_keepalive_connections=10,
+                max_connections=20,
+                keepalive_expiry=30,
+            ),
         )
 
     async def query(
@@ -70,7 +81,8 @@ class LinearGraphQLClient:
         last_error: LinearAPIError | None = None
 
         for attempt in range(MAX_RETRIES + 1):
-            response = await self._client.post(LINEAR_GRAPHQL_URL, json=payload)
+            async with _linear_semaphore:
+                response = await self._client.post(LINEAR_GRAPHQL_URL, json=payload)
 
             if response.status_code == 429:
                 if attempt == MAX_RETRIES:
@@ -81,9 +93,12 @@ class LinearGraphQLClient:
                 # Read Retry-After header or use exponential backoff
                 retry_after = response.headers.get("Retry-After")
                 if retry_after:
-                    wait_seconds = float(retry_after)
+                    base_wait = float(retry_after)
                 else:
-                    wait_seconds = INITIAL_BACKOFF_SECONDS * (2**attempt)
+                    base_wait = INITIAL_BACKOFF_SECONDS * (2**attempt)
+
+                # Add jitter: 50-150% of base delay
+                wait_seconds = base_wait * (0.5 + random.random())
 
                 logger.warning(
                     "Linear API rate limited (429), retrying in %.1fs (attempt %d/%d)",

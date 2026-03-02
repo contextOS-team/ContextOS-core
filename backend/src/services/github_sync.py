@@ -28,7 +28,9 @@ from src.models.integration import Provider, WorkspaceIntegration
 from src.services import embedding
 from src.services.github_common import (
     GITHUB_API_BASE,
+    _github_semaphore,
     check_rate_limit,
+    create_github_client,
     github_headers,
     is_bot_author,
     map_pr_state,
@@ -162,9 +164,10 @@ async def sync_single_repo(
         f"?state=all&sort=updated&direction=desc&per_page=100"
     )
 
-    async with httpx.AsyncClient() as client:
+    async with create_github_client() as client:
         while url:
-            response = await client.get(url, headers=github_headers(token))
+            async with _github_semaphore:
+                response = await client.get(url, headers=github_headers(token))
 
             if response.status_code != 200:
                 raise GitHubOAuthError(
@@ -320,7 +323,8 @@ async def _fetch_reviews(
 ) -> list[dict]:
     """Fetch reviews for a specific PR."""
     url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/reviews"
-    response = await client.get(url, headers=github_headers(token))
+    async with _github_semaphore:
+        response = await client.get(url, headers=github_headers(token))
 
     if response.status_code != 200:
         logger.warning(

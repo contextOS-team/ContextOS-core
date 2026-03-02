@@ -7,6 +7,7 @@ all GitHub integration code paths.
 
 import asyncio
 import logging
+import random
 import re
 import time
 from datetime import datetime
@@ -30,6 +31,25 @@ BOT_ACCOUNTS: frozenset[str] = frozenset({
 
 # Rate limit threshold: pause when remaining < this value
 RATE_LIMIT_THRESHOLD = 100
+
+# Module-level semaphore for GitHub API concurrency (10 concurrent requests)
+_github_semaphore = asyncio.Semaphore(10)
+
+# GitHub-optimized connection pool limits
+GITHUB_POOL_LIMITS = httpx.Limits(
+    max_keepalive_connections=20,
+    max_connections=30,
+    keepalive_expiry=30,
+)
+
+
+def create_github_client(**kwargs) -> httpx.AsyncClient:
+    """Create an httpx client with GitHub-optimized pool and HTTP/2."""
+    return httpx.AsyncClient(
+        http2=True,
+        limits=GITHUB_POOL_LIMITS,
+        **kwargs,
+    )
 
 
 def github_headers(token: str) -> dict[str, str]:
@@ -147,9 +167,11 @@ async def check_rate_limit(response: httpx.Response) -> None:
     if remaining is not None and int(remaining) < RATE_LIMIT_THRESHOLD:
         if reset_at:
             reset_timestamp = int(reset_at)
-            wait_seconds = max(reset_timestamp - int(time.time()), 1)
+            base_wait = max(reset_timestamp - int(time.time()), 1)
+            # Add jitter: 50-150% of base delay
+            wait_seconds = base_wait * (0.5 + random.random())
             logger.warning(
-                "GitHub rate limit low (%s remaining), sleeping %d seconds",
+                "GitHub rate limit low (%s remaining), sleeping %.1f seconds",
                 remaining,
                 wait_seconds,
             )

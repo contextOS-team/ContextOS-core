@@ -11,6 +11,7 @@ Rate limit handling: exponential backoff on 429 (same pattern as Linear GraphQL 
 
 import asyncio
 import logging
+import random
 
 import httpx
 
@@ -23,12 +24,16 @@ MAX_RETRIES = 3
 MAX_BLOCK_DEPTH = 5
 
 
+# Module-level semaphore for Notion API concurrency (3 concurrent requests)
+_notion_semaphore = asyncio.Semaphore(3)
+
+
 class NotionClientError(Exception):
     """Raised when a Notion API request fails."""
 
 
 class NotionClient:
-    """Async Notion API client with retry and pagination support."""
+    """Async Notion API client with retry, pagination, and connection pooling."""
 
     def __init__(self, access_token: str) -> None:
         """Initialize the Notion client with an access token.
@@ -42,6 +47,26 @@ class NotionClient:
             "Notion-Version": NOTION_VERSION,
             "Content-Type": "application/json",
         }
+        self._client = httpx.AsyncClient(
+            headers=self.headers,
+            timeout=30.0,
+            http2=True,
+            limits=httpx.Limits(
+                max_keepalive_connections=5,
+                max_connections=10,
+                keepalive_expiry=30,
+            ),
+        )
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+        await self._client.aclose()
+
+    async def __aenter__(self) -> "NotionClient":
+        return self
+
+    async def __aexit__(self, *args) -> None:
+        await self.close()
 
     async def _request(self, method: str, path: str, **kwargs) -> dict:
         """Make an API request with retry on 429 (rate limit).
@@ -63,15 +88,15 @@ class NotionClient:
         delay = 1.0
 
         for attempt in range(MAX_RETRIES + 1):
-            async with httpx.AsyncClient() as client:
-                response = await client.request(
-                    method, url, headers=self.headers, timeout=30.0, **kwargs
-                )
+            async with _notion_semaphore:
+                response = await self._client.request(method, url, **kwargs)
 
             if response.status_code == 429:
                 if attempt < MAX_RETRIES:
                     retry_after = response.headers.get("Retry-After")
-                    wait = float(retry_after) if retry_after else delay
+                    base_wait = float(retry_after) if retry_after else delay
+                    # Add jitter: 50-150% of base delay
+                    wait = base_wait * (0.5 + random.random())
                     logger.warning(
                         "Notion rate limited (429), retrying in %.1fs (attempt %d/%d)",
                         wait,
