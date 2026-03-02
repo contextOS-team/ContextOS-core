@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 10 (Sync Engine Improvements)
-Plan: 1 of 3 in current phase (plan 01 complete)
-Status: Plan 10-01 complete
-Last activity: 2026-03-02 -- Completed sync state management, SyncAdapter protocol, and structured logging (plan 01)
+Plan: 3 of 3 in current phase (all plans complete)
+Status: Phase 10 complete
+Last activity: 2026-03-02 -- Completed concurrency controls, HTTP/2, incremental sync, polling fallback, embedding decoupling (plan 03)
 
-Progress: [===       ] 33% (10: 1/3 plans)
+Progress: [==========] 100% (10: 3/3 plans)
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [===       ] 33% (10: 1/3 plans)
 | Phase 08.1.1 P03 | 3min | 2 tasks | 5 files |
 | Phase 10 P01 | 6min | 3 tasks | 9 files |
 | Phase 10 P02 | 5min | 2 tasks | 6 files |
+| Phase 10 P03 | 7min | 4 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,11 @@ Recent decisions affecting current work:
 - [10-01]: Module-level assert isinstance() for fail-fast protocol conformance verification
 - [10-01]: SyncRunLogger uses contextvars for sync_run_id correlation across async operations
 - [10-01]: Reconcile methods stubbed with not_implemented status for Plan 10-03
+- [10-03]: Semaphore wraps individual HTTP calls for fine-grained concurrency control (Notion=3, GitHub=10, Linear=5)
+- [10-03]: Jitter formula 0.5 + random.random() for 50-150% of base delay per CONTEXT.md spec
+- [10-03]: Incremental sync compares last_edited_time before content refetch to skip unchanged Notion pages
+- [10-03]: Polling fallback fetches first 100 pages per workspace (single search API call)
+- [10-03]: Background workers use asyncio.create_task in FastAPI lifespan with CancelledError for graceful shutdown
 
 ### Pending Todos
 
@@ -185,5 +191,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 10-01-PLAN.md
-Resume file: .planning/phases/10-sync-engine-improvements/10-01-SUMMARY.md
+Stopped at: Completed 10-03-PLAN.md (Phase 10 complete)
+Resume file: .planning/phases/10-sync-engine-improvements/10-03-SUMMARY.md
