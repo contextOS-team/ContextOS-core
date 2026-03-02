@@ -25,6 +25,8 @@ _RATE_LIMITED_PREFIXES: list[tuple[str, int]] = [
     ("/api/webhooks/", 120),  # Higher limit for legitimate webhook bursts
     ("/api/linear/callback", 60),
     ("/api/slack/callback", 60),
+    ("/api/github/callback", 60),
+    ("/api/notion/callback", 60),
     ("/api/fathom/", 60),
 ]
 

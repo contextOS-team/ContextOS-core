@@ -27,8 +27,11 @@ from src.routers.context import router as context_router
 from src.routers.webhooks import router as webhooks_router
 from src.routers.workspaces import router as workspaces_router
 
-# Initialize Sentry BEFORE app creation (must init early to capture all errors)
+# Initialize settings and validate for production (fail fast if secrets missing)
 settings = get_settings()
+settings.validate_for_production()
+
+# Initialize Sentry BEFORE app creation (must init early to capture all errors)
 init_sentry(settings)
 
 # Initialize Laminar for LLM observability (no-ops safely without API key)

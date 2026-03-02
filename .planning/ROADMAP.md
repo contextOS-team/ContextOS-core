@@ -251,6 +251,16 @@ Plans:
 - [ ] 10-02-PLAN.md -- Embedding pipeline: Redis Streams decoupling, batch OpenAI API calls (25 texts/request), content hash normalization, model version tracking
 - [ ] 10-03-PLAN.md -- Concurrency controls (Semaphore per provider), HTTP/2, jittered retry, connection pool tuning, Notion incremental sync, 15-min polling fallback
 
+### Phase 11: Production infrastructure
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 10
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 11 to break down)
+
 ---
 *Roadmap created: 2026-02-24*
 *Milestone: v1.0 Dogfood*

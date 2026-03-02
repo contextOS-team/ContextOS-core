@@ -159,6 +159,29 @@ class Settings(BaseSettings):
                 ", ".join(configured),
             )
 
+    def validate_for_production(self) -> None:
+        """Fail fast if critical secrets are missing in production."""
+        if self.ENVIRONMENT != Environment.PROD:
+            return
+
+        missing: list[str] = []
+        if not self.DATABASE_URL:
+            missing.append("DATABASE_URL")
+        if not self.SUPABASE_JWT_SECRET:
+            missing.append("SUPABASE_JWT_SECRET")
+        if not self.SENTRY_DSN:
+            missing.append("SENTRY_DSN")
+
+        # Check each individual origin, not a substring of the whole string
+        origins = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        if any("localhost" in origin for origin in origins):
+            missing.append("CORS_ORIGINS (contains localhost)")
+
+        if missing:
+            raise RuntimeError(
+                f"Production config validation failed. Missing or invalid: {', '.join(missing)}"
+            )
+
 
 _settings: Settings | None = None
 
