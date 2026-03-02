@@ -239,6 +239,18 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 Plans:
 - [ ] 09-01-PLAN.md -- Add last_sync_at to status endpoint, remove NotionPages, simplify card to summary stats + re-sync button
 
+### Phase 10: Sync Engine Improvements
+
+**Goal:** Improve the speed, reliability, and architecture of the existing sync pipeline -- dedicated sync state table, SyncAdapter protocol with structured logging, Redis Streams for async embedding generation, batch embedding API calls, incremental sync with metadata-only checks, per-provider concurrency controls with HTTP/2 and jittered retry, and 15-minute polling fallback
+**Requirements**: N/A (infrastructure improvements, no formal requirement IDs)
+**Depends on:** Phase 9
+**Plans:** 1/3 plans executed
+
+Plans:
+- [ ] 10-01-PLAN.md -- Sync state management (sync_cursors table), SyncAdapter protocol, structured logging with sync_run_id correlation
+- [ ] 10-02-PLAN.md -- Embedding pipeline: Redis Streams decoupling, batch OpenAI API calls (25 texts/request), content hash normalization, model version tracking
+- [ ] 10-03-PLAN.md -- Concurrency controls (Semaphore per provider), HTTP/2, jittered retry, connection pool tuning, Notion incremental sync, 15-min polling fallback
+
 ---
 *Roadmap created: 2026-02-24*
 *Milestone: v1.0 Dogfood*
