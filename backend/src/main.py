@@ -40,11 +40,42 @@ configure_logging(settings.ENVIRONMENT)
 logger = logging.getLogger(__name__)
 
 
+async def _reset_stale_sync_locks() -> None:
+    """Reset any sync_status stuck at 'syncing' from a previous server crash."""
+    from sqlalchemy import text
+    from src.db import async_session
+
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                text("""
+                    UPDATE workspace_integrations
+                    SET config = jsonb_set(config, '{sync_status}', '"idle"')
+                    WHERE config->>'sync_status' = 'syncing'
+                """)
+            )
+            await session.execute(
+                text("""
+                    UPDATE sync_cursors
+                    SET sync_status = 'idle'
+                    WHERE sync_status = 'syncing'
+                """)
+            )
+            await session.commit()
+            if result.rowcount:
+                logger.info("Reset %d stale sync lock(s) to idle", result.rowcount)
+    except Exception:
+        logger.exception("Failed to reset stale sync locks")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler for startup/shutdown."""
     from src.services.embedding_worker import run_embedding_worker
     from src.services.sync_scheduler import run_polling_fallback
+
+    # Startup: clear any stale sync locks left from previous crashes
+    await _reset_stale_sync_locks()
 
     # Startup: launch background workers
     embedding_task = asyncio.create_task(run_embedding_worker())

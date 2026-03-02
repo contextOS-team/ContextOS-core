@@ -32,6 +32,7 @@ class Embedding(SQLModel, table=True):
     embedding: list[float] = Field(
         sa_column=Column(Vector(768), nullable=False),
     )
+    search_content: str | None = Field(default=None)
     metadata_: dict = Field(
         default_factory=dict,
         sa_column=Column("metadata", JSONB, nullable=True, server_default=sa_text("'{}'")),

@@ -246,8 +246,9 @@ async def queue_embedding_generation(
             )
             continue
 
-        for (source_id, _, content_hash), embedding_vector in zip(batch, embeddings):
+        for (source_id, text_content, content_hash), embedding_vector in zip(batch, embeddings):
             try:
+                search_content = text_content[:MAX_INPUT_CHARS]
                 upsert_stmt = (
                     insert(Embedding)
                     .values(
@@ -256,6 +257,7 @@ async def queue_embedding_generation(
                         source_id=source_id,
                         content_hash=content_hash,
                         embedding=embedding_vector,
+                        search_content=search_content,
                         model_name=EMBEDDING_MODEL_NAME,
                         model_version=EMBEDDING_MODEL_VERSION,
                     )
@@ -264,6 +266,7 @@ async def queue_embedding_generation(
                         set_={
                             "content_hash": content_hash,
                             "embedding": embedding_vector,
+                            "search_content": search_content,
                             "model_name": EMBEDDING_MODEL_NAME,
                             "model_version": EMBEDDING_MODEL_VERSION,
                             "deleted_at": None,

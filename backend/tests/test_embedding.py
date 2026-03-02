@@ -170,6 +170,52 @@ async def test_queue_embedding_unknown_source_type() -> None:
 
 
 @pytest.mark.asyncio
+async def test_queue_embedding_stores_search_content() -> None:
+    """queue_embedding_generation should include search_content in upsert values."""
+    mock_session = AsyncMock()
+    source_id = uuid4()
+
+    # Mock: source record lookup
+    mock_ticket = MagicMock()
+    mock_ticket.id = source_id
+    mock_ticket.title = "Test ticket"
+    mock_ticket.description = "Test description"
+    mock_record_result = MagicMock()
+    mock_record_result.scalar_one_or_none.return_value = mock_ticket
+
+    # Mock: existing embedding hash lookup (none exists)
+    mock_hash_result = MagicMock()
+    mock_hash_result.scalar_one_or_none.return_value = None
+
+    mock_session.execute.side_effect = [
+        mock_record_result,  # source record lookup
+        mock_hash_result,    # existing hash lookup
+        MagicMock(),         # upsert result
+    ]
+
+    mock_response = _mock_openai_response()
+    mock_client = MagicMock()
+    mock_client.embeddings.create = AsyncMock(return_value=mock_response)
+
+    with patch("src.services.embedding._get_openai_client", return_value=mock_client):
+        from src.services.embedding import queue_embedding_generation
+
+        await queue_embedding_generation(
+            mock_session, WORKSPACE_ID, "linear_ticket", [source_id]
+        )
+
+    # The third execute call is the upsert — inspect the statement
+    upsert_call = mock_session.execute.call_args_list[2]
+    upsert_stmt = upsert_call[0][0]
+    # Check that the compiled parameters include search_content
+    compiled = upsert_stmt.compile()
+    param_keys = list(compiled.params.keys())
+    assert any("search_content" in k for k in param_keys), (
+        f"search_content not found in upsert params: {param_keys}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_content_hash_deterministic() -> None:
     """_compute_content_hash should be deterministic for same input."""
     from src.services.embedding import _compute_content_hash

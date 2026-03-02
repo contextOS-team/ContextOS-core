@@ -170,6 +170,8 @@ async def get_status(
         "status": integration.status,
         "sync_status": config.get("sync_status"),
         "pages_count": pages_count,
+        "sync_progress": config.get("sync_progress"),
+        "sync_total": config.get("sync_total"),
         "last_sync_at": config.get("last_sync_at"),
     }
 
@@ -334,6 +336,7 @@ async def list_pages(
 
 
 CONTENT_BATCH_SIZE = 10
+PAGE_FETCH_TIMEOUT_SECONDS = 15
 
 
 async def _run_sync(
@@ -403,7 +406,7 @@ async def _run_sync(
                     await _update_sync_config(
                         session,
                         workspace_id,
-                        {"sync_status": "syncing", "pages_synced": len(page_ids)},
+                        {"sync_status": "syncing", "pages_synced": len(page_ids), "sync_progress": 0, "sync_total": len(page_ids)},
                     )
                     await session.commit()
 
@@ -447,7 +450,14 @@ async def _run_sync(
 
                     if should_refetch_content:
                         try:
-                            content_md = await client.get_page_markdown(notion_id)
+                            content_md = await asyncio.wait_for(
+                                client.get_page_markdown(notion_id), timeout=PAGE_FETCH_TIMEOUT_SECONDS
+                            )
+                        except asyncio.TimeoutError:
+                            srl.warning(
+                                "Timeout fetching content for page %s" % notion_id,
+                            )
+                            content_md = None
                         except Exception:
                             srl.warning(
                                 "Failed to fetch content for page %s" % notion_id,
@@ -482,6 +492,9 @@ async def _run_sync(
                                     "notion_page",
                                     batch_db_ids,
                                 )
+                            await _update_sync_config(
+                                session, workspace_id, {"sync_progress": i + 1},
+                            )
                             await session.commit()
 
                         srl.info(
@@ -492,7 +505,7 @@ async def _run_sync(
 
             # ── Phase 3: mark complete (both JSONB and sync_cursors) ──
             async with async_session() as session:
-                now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+                now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                 await _update_sync_config(
                     session,
                     workspace_id,

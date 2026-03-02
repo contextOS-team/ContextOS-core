@@ -105,10 +105,11 @@ async def search_context(
     source_type: str | None = None,
     limit: int = Query(default=10, ge=1, le=50),
 ) -> dict:
-    """Semantic search across all embedded content.
+    """Hybrid search across all embedded content.
 
-    Generates an embedding for the query text, then calls match_embeddings()
-    to find the most similar content in the workspace.
+    Generates an embedding for the query text, then calls hybrid_search()
+    to find the most relevant content using both vector similarity and
+    full-text search.
     """
     from src.services.embedding import generate_embedding
 
@@ -122,11 +123,14 @@ async def search_context(
         )
 
     match_stmt = text("""
-        SELECT id, source_type, source_id, similarity, metadata
-        FROM match_embeddings(
+        SELECT id, source_type, source_id, similarity, keyword_rank, combined_score, metadata
+        FROM hybrid_search(
             CAST(:query_embedding AS vector),
+            :query_text,
             CAST(:workspace_id AS uuid),
             :source_type,
+            0.7,
+            0.3,
             0.5,
             :limit
         )
@@ -136,6 +140,7 @@ async def search_context(
         match_stmt,
         {
             "query_embedding": str(query_embedding),
+            "query_text": q,
             "workspace_id": str(user.workspace_id),
             "source_type": source_type,
             "limit": limit,
@@ -149,7 +154,9 @@ async def search_context(
             "source_type": row[1],
             "source_id": str(row[2]),
             "similarity": round(float(row[3]), 4),
-            "metadata": row[4],
+            "keyword_rank": round(float(row[4]), 4),
+            "combined_score": round(float(row[5]), 4),
+            "metadata": row[6],
         })
 
     return {

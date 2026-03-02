@@ -155,12 +155,12 @@ def test_search_context_success(
     mock_membership = MagicMock()
     mock_membership.scalar_one_or_none.return_value = TEST_WORKSPACE_ID
 
-    # Mock match_embeddings results
+    # Mock hybrid_search results (7 columns)
     result_id = uuid4()
     source_id = uuid4()
     mock_search_result = MagicMock()
     mock_search_result.fetchall.return_value = [
-        (result_id, "linear_ticket", source_id, 0.87, {}),
+        (result_id, "linear_ticket", source_id, 0.87, 0.12, 0.645, {}),
     ]
 
     mock_session.execute.side_effect = [

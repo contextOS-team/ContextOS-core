@@ -1,22 +1,23 @@
 """Linking engine for finding content related to a Linear ticket.
 
-Combines three signals with weighted scores to find and rank related content:
+Combines two signals with weighted scores to find and rank related content:
 - Explicit references (weight 1.0): PRs linked via FK, Slack messages containing
   ticket identifier, comments via ticket_id FK
-- Semantic similarity (weight 0.7): Embedding cosine similarity via match_embeddings()
-- Keyword/trigram (weight 0.4): pg_trgm similarity() on text fields
+- Hybrid search (weight 0.8): Combined vector similarity + full-text search
+  via hybrid_search() SQL function
 """
 
 import logging
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from sqlalchemy import func, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.models.github import GithubPullRequest, GithubReview
-from src.models.meeting import MeetingTranscript
+from src.models.meeting import MeetingSegment, MeetingTranscript
+from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
 from src.models.ticket import LinearComment, LinearTicket
 from src.services.embedding import generate_embedding
@@ -25,11 +26,10 @@ logger = logging.getLogger(__name__)
 
 # Signal weights for combined scoring
 WEIGHT_EXPLICIT = 1.0
-WEIGHT_SEMANTIC = 0.7
-WEIGHT_KEYWORD = 0.4
+WEIGHT_HYBRID = 0.8
 
-# Semantic similarity threshold
-SEMANTIC_THRESHOLD = 0.65
+# Semantic similarity threshold (used by hybrid_search match_threshold)
+SEMANTIC_THRESHOLD = 0.5
 
 
 @dataclass
@@ -135,12 +135,12 @@ async def _find_explicit_refs(
     return items
 
 
-async def _find_semantic_matches(
+async def _find_hybrid_matches(
     session: AsyncSession,
     workspace_id: UUID,
     ticket: LinearTicket,
 ) -> dict[tuple[str, UUID], LinkedItem]:
-    """Find semantically similar content via embedding cosine similarity."""
+    """Find related content via hybrid vector + full-text search."""
     items: dict[tuple[str, UUID], LinkedItem] = {}
 
     query_text = f"{ticket.title}\n\n{ticket.description or ''}"
@@ -153,14 +153,16 @@ async def _find_semantic_matches(
     if not query_embedding or all(v == 0.0 for v in query_embedding):
         return items
 
-    # Call match_embeddings() SQL function
-    # Use CAST instead of :: to avoid asyncpg parameter conflicts
+    # Call hybrid_search() SQL function
     match_stmt = text("""
-        SELECT id, source_type, source_id, similarity, metadata
-        FROM match_embeddings(
+        SELECT id, source_type, source_id, similarity, keyword_rank, combined_score, metadata
+        FROM hybrid_search(
             CAST(:query_embedding AS vector),
+            :query_text,
             CAST(:workspace_id AS uuid),
             NULL,
+            0.7,
+            0.3,
             :threshold,
             20
         )
@@ -170,6 +172,7 @@ async def _find_semantic_matches(
         match_stmt,
         {
             "query_embedding": str(query_embedding),
+            "query_text": ticket.title,
             "workspace_id": str(workspace_id),
             "threshold": SEMANTIC_THRESHOLD,
         },
@@ -178,14 +181,14 @@ async def _find_semantic_matches(
     for row in result.fetchall():
         source_type = row[1]
         source_id = row[2]
-        similarity = row[3]
+        combined_score = row[5]
 
         # Skip self-matches (the ticket's own embedding)
         if source_type == "linear_ticket" and source_id == ticket.id:
             continue
 
         key = (source_type, source_id)
-        score = similarity * WEIGHT_SEMANTIC
+        score = combined_score * WEIGHT_HYBRID
 
         # Look up a title/snippet for the match
         title, snippet = await _lookup_source_summary(
@@ -198,86 +201,8 @@ async def _find_semantic_matches(
             title=title,
             snippet=snippet,
             relevance_score=score,
-            signals=["semantic_similarity"],
+            signals=["hybrid_search"],
         )
-
-    return items
-
-
-async def _find_keyword_matches(
-    session: AsyncSession,
-    workspace_id: UUID,
-    ticket: LinearTicket,
-) -> dict[tuple[str, UUID], LinkedItem]:
-    """Find content with keyword/trigram similarity to ticket title."""
-    items: dict[tuple[str, UUID], LinkedItem] = {}
-
-    # Extract key terms from title (skip very short words)
-    terms = [w for w in ticket.title.split() if len(w) > 3]
-    if not terms:
-        return items
-
-    search_phrase = " ".join(terms[:8])  # Limit to first 8 meaningful words
-
-    # Trigram similarity on slack_messages.text
-    slack_stmt = text("""
-        SELECT id, text, user_name, channel_name,
-               similarity(text, :phrase) AS sim
-        FROM slack_messages
-        WHERE workspace_id = :workspace_id
-          AND deleted_at IS NULL
-          AND similarity(text, :phrase) > 0.15
-        ORDER BY sim DESC
-        LIMIT 10
-    """)
-
-    try:
-        slack_result = await session.execute(
-            slack_stmt,
-            {"phrase": search_phrase, "workspace_id": str(workspace_id)},
-        )
-        for row in slack_result.fetchall():
-            key = ("slack_message", row[0])
-            items[key] = LinkedItem(
-                source_type="slack_message",
-                source_id=row[0],
-                title=f"Slack message by {row[2] or 'Unknown'} in #{row[3] or 'unknown'}",
-                snippet=str(row[1])[:200],
-                relevance_score=float(row[4]) * WEIGHT_KEYWORD,
-                signals=["keyword_match"],
-            )
-    except Exception:
-        logger.debug("Trigram search on slack_messages failed (pg_trgm may not be enabled)")
-
-    # Trigram similarity on meeting_transcripts.title
-    meeting_stmt = text("""
-        SELECT id, title, transcript,
-               similarity(COALESCE(title, ''), :phrase) AS sim
-        FROM meeting_transcripts
-        WHERE workspace_id = :workspace_id
-          AND deleted_at IS NULL
-          AND similarity(COALESCE(title, ''), :phrase) > 0.15
-        ORDER BY sim DESC
-        LIMIT 5
-    """)
-
-    try:
-        meeting_result = await session.execute(
-            meeting_stmt,
-            {"phrase": search_phrase, "workspace_id": str(workspace_id)},
-        )
-        for row in meeting_result.fetchall():
-            key = ("meeting_transcript", row[0])
-            items[key] = LinkedItem(
-                source_type="meeting_transcript",
-                source_id=row[0],
-                title=f"Meeting: {row[1] or 'Untitled'}",
-                snippet=str(row[2])[:200],
-                relevance_score=float(row[3]) * WEIGHT_KEYWORD,
-                signals=["keyword_match"],
-            )
-    except Exception:
-        logger.debug("Trigram search on meeting_transcripts failed")
 
     return items
 
@@ -305,6 +230,13 @@ async def _lookup_source_summary(
             MeetingTranscript,
             lambda r: (f"Meeting: {r.title or 'Untitled'}", r.transcript[:200]),
         ),
+        "meeting_segment": (
+            MeetingSegment,
+            lambda r: (
+                f"Segment by {r.speaker_name or 'Unknown'}",
+                r.text[:200],
+            ),
+        ),
         "github_pull_request": (
             GithubPullRequest,
             lambda r: (f"PR #{r.number}: {r.title}", (r.description or "")[:200]),
@@ -315,6 +247,10 @@ async def _lookup_source_summary(
                 f"Review by {r.author} ({r.state})",
                 (r.body or "")[:200],
             ),
+        ),
+        "notion_page": (
+            NotionPage,
+            lambda r: (r.title, (r.content or "")[:200]),
         ),
     }
 
@@ -337,8 +273,8 @@ async def find_related_content(
 ) -> LinkingResult:
     """Find all content related to a Linear ticket using multi-signal search.
 
-    Combines explicit references, semantic similarity, and keyword/trigram
-    matching with weighted scores to produce a ranked list of related items.
+    Combines explicit references and hybrid search (vector + full-text)
+    with weighted scores to produce a ranked list of related items.
 
     Args:
         session: Async database session.
@@ -348,18 +284,16 @@ async def find_related_content(
     Returns:
         LinkingResult with ranked list of LinkedItem objects.
     """
-    # Gather signals from all three sources
+    # Gather signals from both sources
     explicit = await _find_explicit_refs(session, workspace_id, ticket)
-    semantic = await _find_semantic_matches(session, workspace_id, ticket)
-    keyword = await _find_keyword_matches(session, workspace_id, ticket)
+    hybrid = await _find_hybrid_matches(session, workspace_id, ticket)
 
     # Merge results: combine scores for items found by multiple signals
     merged: dict[tuple[str, UUID], LinkedItem] = {}
 
     for source, signal_items in [
         ("explicit", explicit),
-        ("semantic", semantic),
-        ("keyword", keyword),
+        ("hybrid", hybrid),
     ]:
         for key, item in signal_items.items():
             if key in merged:

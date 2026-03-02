@@ -1,7 +1,7 @@
 """Sync cursor model for tracking sync state per provider."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlmodel import Field, SQLModel
 
@@ -25,5 +25,9 @@ class SyncCursor(SQLModel, table=True):
     sync_status: str = Field(default="idle", nullable=False)
     last_sync_at: datetime | None = Field(default=None)
     error_message: str | None = Field(default=None)
-    created_at: datetime | None = Field(default=None)
-    updated_at: datetime | None = Field(default=None)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )

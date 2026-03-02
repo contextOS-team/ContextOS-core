@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -115,11 +115,16 @@ export default function IntegrationsPage() {
   const [isResyncing, setIsResyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<number | null>(null)
   const [syncTotal, setSyncTotal] = useState<number | null>(null)
+  const cancelledRef = useRef(false)
 
   const pollSyncProgress = useCallback(async () => {
+    cancelledRef.current = false
     for (let i = 0; i < 180; i++) {
+      if (cancelledRef.current) return
       await new Promise((r) => setTimeout(r, 2000))
+      if (cancelledRef.current) return
       const s = await getNotionSyncStatus()
+      if (cancelledRef.current) return
       setSyncProgress(s.sync_progress ?? s.pages_count)
       setSyncTotal(s.sync_total ?? null)
       if (s.sync_status === 'error') {
@@ -128,6 +133,7 @@ export default function IntegrationsPage() {
       }
       if (s.sync_status !== 'syncing') break
     }
+    if (cancelledRef.current) return
     await fetchStatuses()
     setIsResyncing(false)
     setSyncProgress(null)
@@ -147,7 +153,10 @@ export default function IntegrationsPage() {
         pollSyncProgress()
       }
     }).catch(() => {})
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      cancelledRef.current = true
+    }
   }, [isLoading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleResyncNotion = async () => {
@@ -259,7 +268,7 @@ export default function IntegrationsPage() {
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
                 {isResyncing && syncProgress !== null
-                  ? `Syncing\u2026 ${syncProgress} pages imported`
+                  ? `Syncing\u2026 ${syncProgress}${syncTotal ? `/${syncTotal}` : ''} pages processed`
                   : notion.pages_synced != null && notion.pages_synced > 0
                     ? `${notion.pages_synced} pages synced${notion.last_sync_at ? ` \u00b7 ${formatRelativeTime(notion.last_sync_at)}` : ''}`
                     : 'No pages synced yet'}
