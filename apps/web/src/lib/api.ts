@@ -56,6 +56,7 @@ export interface ProviderStatus {
   selected_channels_count?: number
   selected_repos_count?: number
   pages_synced?: number
+  last_sync_at?: string | null
 }
 
 export interface IntegrationStatusResponse {
@@ -217,6 +218,21 @@ export function resyncNotion(): Promise<{ status: string }> {
   return apiFetch<{ status: string }>('/api/notion/resync', {
     method: 'POST',
   })
+}
+
+export interface NotionSyncStatus {
+  connected: boolean
+  status: string
+  sync_status: string | null
+  workspace_name: string | null
+  pages_count: number
+  sync_progress: number | null
+  sync_total: number | null
+  last_sync_at: string | null
+}
+
+export function getNotionSyncStatus(): Promise<NotionSyncStatus> {
+  return apiFetch<NotionSyncStatus>('/api/notion/status')
 }
 
 export interface NotionPageInfo {
