@@ -1,5 +1,7 @@
 """FastAPI application entrypoint for ContextOS."""
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
@@ -35,13 +37,36 @@ init_laminar(settings)
 # Configure structured logging
 configure_logging(settings.ENVIRONMENT)
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler for startup/shutdown."""
-    # Startup
+    from src.services.embedding_worker import run_embedding_worker
+    from src.services.sync_scheduler import run_polling_fallback
+
+    # Startup: launch background workers
+    embedding_task = asyncio.create_task(run_embedding_worker())
+    polling_task = asyncio.create_task(run_polling_fallback())
+
+    logger.info("Background workers started: embedding_worker, polling_fallback")
+
     yield
-    # Shutdown: dispose the engine to close all connections
+
+    # Shutdown: cancel background workers gracefully
+    embedding_task.cancel()
+    polling_task.cancel()
+
+    for task in [embedding_task, polling_task]:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    logger.info("Background workers stopped")
+
+    # Dispose the engine to close all connections
     from src.db import engine
 
     await engine.dispose()
