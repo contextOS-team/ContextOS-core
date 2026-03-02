@@ -566,17 +566,17 @@ def _parse_notion_datetime(value: str | None) -> datetime | None:
     """Parse an ISO 8601 datetime string from the Notion API.
 
     Notion returns timestamps like '2025-06-03T05:29:00.000Z'.
-    asyncpg requires actual datetime objects, not raw strings.
+    The DB column is timestamptz, so we keep UTC timezone info.
 
     Returns:
-        Parsed naive datetime (UTC), or None if value is falsy.
+        Parsed timezone-aware datetime (UTC), or None if value is falsy.
     """
     if not value:
         return None
     # Replace only trailing 'Z' (Zulu time) with an explicit UTC offset
     if value.endswith("Z"):
         value = value[:-1] + "+00:00"
-    return datetime.fromisoformat(value).replace(tzinfo=None)
+    return datetime.fromisoformat(value)
 
 
 def _extract_title(page_data: dict) -> str:
