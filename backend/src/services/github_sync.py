@@ -25,7 +25,7 @@ from sqlmodel import select
 from src.config import Settings
 from src.models.github import GithubPullRequest, GithubReview
 from src.models.integration import Provider, WorkspaceIntegration
-from src.services import embedding
+from src.services.embedding_worker import enqueue_embedding_job
 from src.services.github_common import (
     GITHUB_API_BASE,
     _github_semaphore,
@@ -235,8 +235,8 @@ async def sync_single_repo(
         result = await session.execute(stmt)
         pr_ids = [row[0] for row in result.fetchall()]
         if pr_ids:
-            await embedding.queue_embedding_generation(
-                session, workspace_id, "github_pr", pr_ids
+            await enqueue_embedding_job(
+                workspace_id, "github_pull_request", pr_ids
             )
 
     return pr_count, review_count

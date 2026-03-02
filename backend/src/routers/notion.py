@@ -20,7 +20,7 @@ from src.db import async_session, get_session
 from src.dependencies import UserContext, get_current_user
 from src.models.integration import Provider, WorkspaceIntegration
 from src.models.notion import NotionPage
-from src.services import embedding
+from src.services.embedding_worker import enqueue_embedding_job
 from src.services.notion_client import NotionClient
 from src.services.notion_oauth import (
     NotionOAuthError,
@@ -474,8 +474,7 @@ async def _run_sync(
                                         row.content = content
 
                             if batch_db_ids:
-                                await embedding.queue_embedding_generation(
-                                    session,
+                                await enqueue_embedding_job(
                                     workspace_id,
                                     "notion_page",
                                     batch_db_ids,

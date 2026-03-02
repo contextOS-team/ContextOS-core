@@ -16,7 +16,7 @@ from sqlmodel import select
 from src.db import async_session
 from src.models.integration import Provider, WorkspaceIntegration
 from src.models.notion import NotionPage
-from src.services import embedding
+from src.services.embedding_worker import enqueue_embedding_job
 from src.services.notion_client import NotionClient
 from src.services.notion_oauth import get_valid_access_token
 from src.services.sync_adapter import (
@@ -209,8 +209,8 @@ async def run_full_sync(workspace_id: UUID, user_id: UUID) -> None:
 
                 # Queue embedding generation for all synced pages
                 if page_ids:
-                    await embedding.queue_embedding_generation(
-                        session, workspace_id, "notion_page", page_ids
+                    await enqueue_embedding_job(
+                        workspace_id, "notion_page", page_ids
                     )
 
                 # Update sync status to complete (both JSONB and sync_cursors)
@@ -294,8 +294,8 @@ async def sync_page_by_id(
             )
 
             # Queue embedding regeneration for this page
-            await embedding.queue_embedding_generation(
-                session, workspace_id, "notion_page", [page_record.id]
+            await enqueue_embedding_job(
+                workspace_id, "notion_page", [page_record.id]
             )
 
             await session.commit()

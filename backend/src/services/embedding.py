@@ -68,13 +68,13 @@ SOURCE_TYPE_MAP: dict[str, tuple[type, callable]] = {
         GithubReview,
         lambda r: r.body or "",
     ),
-    "context_page": (
-        ContextPage,
-        lambda r: f"{r.title}\n\n{r.content}".strip(),
-    ),
     "notion_page": (
         NotionPage,
         lambda r: f"{r.title}\n\n{r.content or ''}".strip(),
+    ),
+    "context_page": (
+        ContextPage,
+        lambda r: f"{r.title}\n\n{r.content}".strip(),
     ),
 }
 
@@ -349,3 +349,62 @@ async def process_pending_embeddings(
         workspace_id,
     )
     return count
+
+
+async def backfill_search_content(
+    session: AsyncSession,
+    workspace_id: UUID,
+    batch_size: int = 100,
+) -> int:
+    """Backfill search_content for embeddings that have NULL search_content.
+
+    Looks up the original source record for each embedding, extracts the
+    text content, and updates the search_content column.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to backfill.
+        batch_size: Number of embeddings to process per batch.
+
+    Returns:
+        Number of embeddings updated.
+    """
+    stmt = (
+        select(Embedding)
+        .where(
+            Embedding.workspace_id == workspace_id,
+            Embedding.search_content.is_(None),  # type: ignore[union-attr]
+            Embedding.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        .limit(batch_size)
+    )
+    result = await session.execute(stmt)
+    embeddings = result.scalars().all()
+
+    updated = 0
+    for emb in embeddings:
+        if emb.source_type not in SOURCE_TYPE_MAP:
+            continue
+
+        model_cls, extract_text = SOURCE_TYPE_MAP[emb.source_type]
+        source_stmt = select(model_cls).where(model_cls.id == emb.source_id)
+        source_result = await session.execute(source_stmt)
+        record = source_result.scalar_one_or_none()
+
+        if record is None:
+            continue
+
+        text_content = extract_text(record)
+        if not text_content or not text_content.strip():
+            continue
+
+        emb.search_content = text_content[:MAX_INPUT_CHARS]
+        session.add(emb)
+        updated += 1
+
+    logger.info(
+        "Backfilled search_content for %d embeddings in workspace %s",
+        updated,
+        workspace_id,
+    )
+    return updated

@@ -33,7 +33,7 @@ from sqlmodel import func, select
 from src.config import Settings
 from src.models.integration import Provider, WorkspaceIntegration
 from src.models.ticket import LinearComment, LinearTicket
-from src.services import embedding
+from src.services.embedding_worker import enqueue_embedding_job
 from src.services.linear_graphql import LinearGraphQLClient
 from src.services.linear_oauth import get_valid_access_token
 from src.services.sync_adapter import (
@@ -183,8 +183,8 @@ async def sync_tickets_for_teams(
 
             # Queue embedding generation for synced tickets
             if ticket_ids_list := list(ticket_ids.values()):
-                await embedding.queue_embedding_generation(
-                    session, workspace_id, "linear_ticket", ticket_ids_list
+                await enqueue_embedding_job(
+                    workspace_id, "linear_ticket", ticket_ids_list
                 )
 
             # Update sync status to complete (both JSONB and sync_cursors)
