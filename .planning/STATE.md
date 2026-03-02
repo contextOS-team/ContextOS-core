@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-last_updated: "2026-03-02T05:28:32.371Z"
+status: active
+last_updated: "2026-03-02T06:32:44Z"
 progress:
   total_phases: 12
-  completed_phases: 10
+  completed_phases: 11
   total_plans: 30
-  completed_plans: 29
+  completed_plans: 30
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 10 - Sync Engine Improvements
+**Current focus:** Phase 09 - Notion Integration UI Polish (complete)
 
 ## Current Position
 
-Phase: 10 (Sync Engine Improvements)
-Plan: 3 of 3 in current phase (all plans complete)
-Status: Phase 10 complete
-Last activity: 2026-03-02 -- Completed concurrency controls, HTTP/2, incremental sync, polling fallback, embedding decoupling (plan 03)
+Phase: 09 (Notion Integration UI Polish)
+Plan: 1 of 1 in current phase (all plans complete)
+Status: Phase 09 complete
+Last activity: 2026-03-02 -- Simplified Notion card: removed page list, added summary stats line, clean workspace header
 
-Progress: [==========] 100% (10: 3/3 plans)
+Progress: [==========] 100% (09: 1/1 plans)
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [==========] 100% (10: 3/3 plans)
 | Phase 10 P01 | 6min | 3 tasks | 9 files |
 | Phase 10 P02 | 5min | 2 tasks | 6 files |
 | Phase 10 P03 | 7min | 4 tasks | 12 files |
+| Phase 09 P01 | 2min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -166,6 +167,10 @@ Recent decisions affecting current work:
 - [10-03]: Incremental sync compares last_edited_time before content refetch to skip unchanged Notion pages
 - [10-03]: Polling fallback fetches first 100 pages per workspace (single search API call)
 - [10-03]: Background workers use asyncio.create_task in FastAPI lifespan with CancelledError for graceful shutdown
+- [09-01]: NotionPages component removed from UI; card shows summary stats line instead of paginated page list
+- [09-01]: Re-sync button inline with stats line (no separate settings section); "Manage access" link removed
+- [09-01]: Middle dot separator for stats: "{count} pages synced . {time ago}"
+- [09-01]: notionDisplayName shows workspace name only (page count suffix removed from header)
 
 ### Pending Todos
 
@@ -191,5 +196,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 10-03-PLAN.md (Phase 10 complete)
-Resume file: .planning/phases/10-sync-engine-improvements/10-03-SUMMARY.md
+Stopped at: Completed 09-01-PLAN.md (Phase 09 complete)
+Resume file: .planning/phases/09-notion-integration-ui-polish/09-01-SUMMARY.md
