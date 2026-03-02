@@ -131,8 +131,9 @@ class TestGraphQLClient:
             assert result == {"data": {"ok": True}}
             # Verify sleep was called for backoff
             mock_sleep.assert_called_once()
-            # First retry: 1.0 * 2^0 = 1.0 seconds
-            assert mock_sleep.call_args[0][0] == 1.0
+            # First retry: 1.0 * 2^0 = 1.0 base, with jitter (0.5-1.5x)
+            sleep_val = mock_sleep.call_args[0][0]
+            assert 0.5 <= sleep_val <= 1.5
 
     @pytest.mark.asyncio
     async def test_graphql_client_raises_on_error(self):

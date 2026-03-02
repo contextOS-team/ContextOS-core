@@ -162,7 +162,7 @@ class TestSyncSingleRepo:
                 new_callable=AsyncMock,
             ) as mock_link,
             patch(
-                "src.services.github_sync.embedding.queue_embedding_generation",
+                "src.services.github_sync.enqueue_embedding_job",
                 new_callable=AsyncMock,
             ),
         ):
@@ -259,7 +259,7 @@ class TestSyncSingleRepo:
                 new_callable=AsyncMock,
             ),
             patch(
-                "src.services.github_sync.embedding.queue_embedding_generation",
+                "src.services.github_sync.enqueue_embedding_job",
                 new_callable=AsyncMock,
             ),
         ):
@@ -339,7 +339,7 @@ class TestSyncSingleRepo:
                 new_callable=AsyncMock,
             ),
             patch(
-                "src.services.github_sync.embedding.queue_embedding_generation",
+                "src.services.github_sync.enqueue_embedding_job",
                 new_callable=AsyncMock,
             ),
         ):
@@ -443,7 +443,7 @@ class TestSyncSingleRepo:
                 new_callable=AsyncMock,
             ),
             patch(
-                "src.services.github_sync.embedding.queue_embedding_generation",
+                "src.services.github_sync.enqueue_embedding_job",
                 new_callable=AsyncMock,
             ),
         ):
