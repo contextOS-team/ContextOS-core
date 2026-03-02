@@ -98,7 +98,11 @@ async def reconcile_notion(workspace_id: UUID) -> None:
                             from src.routers.notion import _parse_notion_datetime
 
                             new_updated = _parse_notion_datetime(notion_last_edited)
-                            if new_updated and stored_updated >= new_updated:
+                            # Normalize to naive UTC for comparison
+                            cmp_stored = stored_updated
+                            if cmp_stored.tzinfo is not None:
+                                cmp_stored = cmp_stored.replace(tzinfo=None)
+                            if new_updated and cmp_stored >= new_updated:
                                 continue  # Up to date
 
                         # Page needs re-sync

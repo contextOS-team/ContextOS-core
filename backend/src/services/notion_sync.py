@@ -80,8 +80,10 @@ async def sync_single_page(
     page_url = page_data.get("url", "")
     last_edited_by_data = page_data.get("last_edited_by", {})
     last_edited_by = last_edited_by_data.get("id", "") if last_edited_by_data else ""
-    notion_created = page_data.get("created_time")
-    notion_updated = page_data.get("last_edited_time")
+    from src.routers.notion import _parse_notion_datetime
+
+    notion_created = _parse_notion_datetime(page_data.get("created_time"))
+    notion_updated = _parse_notion_datetime(page_data.get("last_edited_time"))
 
     # Determine page type from parent
     parent = page_data.get("parent", {})
