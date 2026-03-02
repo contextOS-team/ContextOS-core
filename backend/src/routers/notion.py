@@ -418,13 +418,40 @@ async def _run_sync(
 
                 for i, page_data in enumerate(all_pages):
                     notion_id = page_data.get("id", "")
-                    try:
-                        content_md = await client.get_page_markdown(notion_id)
-                    except Exception:
-                        srl.warning(
-                            "Failed to fetch content for page %s" % notion_id,
-                        )
-                        content_md = None
+                    notion_last_edited = page_data.get("last_edited_time")
+
+                    # Check if content needs refetching by comparing last_edited_time
+                    should_refetch_content = True
+                    if notion_last_edited:
+                        async with async_session() as check_session:
+                            check_stmt = select(
+                                NotionPage.notion_updated_at, NotionPage.content
+                            ).where(
+                                NotionPage.workspace_id == workspace_id,
+                                NotionPage.notion_id == notion_id,
+                            )
+                            check_result = await check_session.execute(check_stmt)
+                            row = check_result.one_or_none()
+                            if row and row.content is not None:
+                                stored_updated = row.notion_updated_at
+                                new_updated = _parse_notion_datetime(notion_last_edited)
+                                if stored_updated and new_updated and stored_updated >= new_updated:
+                                    should_refetch_content = False
+                                    srl.info(
+                                        "Skipping content refetch for page %s (unchanged since %s)"
+                                        % (notion_id, stored_updated),
+                                    )
+
+                    if should_refetch_content:
+                        try:
+                            content_md = await client.get_page_markdown(notion_id)
+                        except Exception:
+                            srl.warning(
+                                "Failed to fetch content for page %s" % notion_id,
+                            )
+                            content_md = None
+                    else:
+                        content_md = None  # Keep existing content
 
                     batch_contents.append((notion_id, content_md))
                     batch_db_ids.append(page_ids[i])
