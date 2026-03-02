@@ -23,13 +23,14 @@ import {
   connectNotion,
   disconnectNotion,
   resyncNotion,
+  getNotionSyncStatus,
   type IntegrationStatusResponse,
 } from '@/lib/api'
+import { formatRelativeTime } from '@/lib/utils'
 import { IntegrationCard } from './integration-card'
 import { SlackChannels } from './slack-channels'
 import { FathomConnect } from './fathom-connect'
 import { GithubRepos } from './github-repos'
-import { NotionPages } from './notion-pages'
 
 export default function IntegrationsPage() {
   const [statuses, setStatuses] = useState<IntegrationStatusResponse | null>(null)
@@ -111,15 +112,55 @@ export default function IntegrationsPage() {
   const handleConnectNotion = makeConnectHandler(connectNotion, 'authorization_url')
   const handleDisconnectNotion = makeDisconnectHandler(disconnectNotion, 'Notion')
 
+  const [isResyncing, setIsResyncing] = useState(false)
+  const [syncProgress, setSyncProgress] = useState<number | null>(null)
+  const [syncTotal, setSyncTotal] = useState<number | null>(null)
+
+  const pollSyncProgress = useCallback(async () => {
+    for (let i = 0; i < 180; i++) {
+      await new Promise((r) => setTimeout(r, 2000))
+      const s = await getNotionSyncStatus()
+      setSyncProgress(s.sync_progress ?? s.pages_count)
+      setSyncTotal(s.sync_total ?? null)
+      if (s.sync_status === 'error') {
+        setError('Notion re-sync failed. Please try again.')
+        break
+      }
+      if (s.sync_status !== 'syncing') break
+    }
+    await fetchStatuses()
+    setIsResyncing(false)
+    setSyncProgress(null)
+    setSyncTotal(null)
+  }, [fetchStatuses])
+
+  // Resume sync progress display if a sync is already running on page load
+  useEffect(() => {
+    if (isLoading || isResyncing) return
+    let cancelled = false
+    getNotionSyncStatus().then((s) => {
+      if (cancelled) return
+      if (s.sync_status === 'syncing') {
+        setIsResyncing(true)
+        setSyncProgress(s.sync_progress ?? 0)
+        setSyncTotal(s.sync_total ?? null)
+        pollSyncProgress()
+      }
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [isLoading]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleResyncNotion = async () => {
+    setIsResyncing(true)
+    setSyncProgress(0)
     try {
       await resyncNotion()
-      // Sync runs in background. Refresh statuses so the card header
-      // updates when the sync completes. The page list re-fetches on
-      // next card expand (component mounts fresh).
-      await fetchStatuses()
+      await pollSyncProgress()
     } catch {
       setError('Failed to start Notion re-sync. Please try again.')
+      setIsResyncing(false)
+      setSyncProgress(null)
+      setSyncTotal(null)
     }
   }
 
@@ -152,9 +193,7 @@ export default function IntegrationsPage() {
   const github = statuses?.github ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const notion = statuses?.notion ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
 
-  const notionDisplayName = notion.external_name
-    ? `${notion.external_name}${notion.pages_synced ? ` - ${notion.pages_synced} pages` : ''}`
-    : null
+  const notionDisplayName = notion.external_name ?? null
 
   const connectedCount = [linear, slack, fathom, github, notion].filter((s) => s.status === 'connected').length
 
@@ -217,29 +256,24 @@ export default function IntegrationsPage() {
             onConnect={handleConnectNotion}
             onDisconnect={handleDisconnectNotion}
           >
-            <div className="flex flex-col gap-3">
-              <NotionPages />
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Re-import all pages from Notion
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleResyncNotion}
-                  className="text-[13px]"
-                >
-                  Re-sync
-                </Button>
-              </div>
-              <a
-                href="https://www.notion.so/my-integrations"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                {isResyncing && syncProgress !== null
+                  ? `Syncing\u2026 ${syncProgress} pages imported`
+                  : notion.pages_synced != null && notion.pages_synced > 0
+                    ? `${notion.pages_synced} pages synced${notion.last_sync_at ? ` \u00b7 ${formatRelativeTime(notion.last_sync_at)}` : ''}`
+                    : 'No pages synced yet'}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleResyncNotion}
+                disabled={isResyncing}
+                className="text-[13px]"
               >
-                Manage access in Notion settings
-              </a>
+                {isResyncing && <RefreshCw className="mr-1.5 h-3 w-3 animate-spin" />}
+                {isResyncing ? 'Syncing\u2026' : 'Re-sync'}
+              </Button>
             </div>
           </IntegrationCard>
         </div>
