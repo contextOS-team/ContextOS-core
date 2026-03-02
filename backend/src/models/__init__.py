@@ -7,6 +7,7 @@ from src.models.github import GithubPullRequest, GithubReview
 from src.models.integration import OAuthToken, WebhookDelivery, WorkspaceIntegration
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.slack import SlackMessage
+from src.models.sync import SyncCursor
 from src.models.ticket import LinearComment, LinearTicket
 from src.models.user import Profile, WorkspaceMember
 from src.models.workspace import Workspace
@@ -23,6 +24,7 @@ __all__ = [
     "MeetingTranscript",
     "OAuthToken",
     "SlackMessage",
+    "SyncCursor",
     "TimestampMixin",
     "Profile",
     "WebhookDelivery",
