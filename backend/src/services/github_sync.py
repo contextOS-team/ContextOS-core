@@ -38,6 +38,11 @@ from src.services.github_common import (
 )
 from src.services.github_linking import link_pr_to_ticket
 from src.services.github_oauth import GitHubOAuthError, get_installation_token
+from src.services.sync_adapter import (
+    SyncAdapter,
+    SyncRunLogger,
+    update_cursor_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +60,7 @@ async def sync_repos(
 
     Processes repos sequentially per user decision (rate limit awareness).
     Tracks per-repo sync status in workspace_integrations.config JSONB.
+    Also writes to sync_cursors per repo for structured state tracking.
 
     Args:
         workspace_id: Workspace to sync PRs for.
@@ -69,30 +75,51 @@ async def sync_repos(
     total_reviews = 0
     results = {}
 
-    for repo in selected_repos:
-        try:
-            await _update_repo_sync_status(
-                session, workspace_id, repo, "syncing", 0, 0
-            )
+    async with SyncRunLogger("github", workspace_id) as srl:
+        for repo in selected_repos:
+            try:
+                # Update both JSONB and sync_cursors
+                await _update_repo_sync_status(
+                    session, workspace_id, repo, "syncing", 0, 0
+                )
+                await update_cursor_status(
+                    session, workspace_id, "github", repo,
+                    sync_status="syncing",
+                )
 
-            pr_count, review_count = await sync_single_repo(
-                workspace_id, repo, session, settings
-            )
+                pr_count, review_count = await sync_single_repo(
+                    workspace_id, repo, session, settings
+                )
 
-            await _update_repo_sync_status(
-                session, workspace_id, repo, "synced", pr_count, pr_count
-            )
+                # Update both JSONB and sync_cursors
+                await _update_repo_sync_status(
+                    session, workspace_id, repo, "synced", pr_count, pr_count
+                )
+                await update_cursor_status(
+                    session, workspace_id, "github", repo,
+                    sync_status="complete",
+                    records_synced=pr_count,
+                )
 
-            total_prs += pr_count
-            total_reviews += review_count
-            results[repo] = {"status": "synced", "prs": pr_count, "reviews": review_count}
+                total_prs += pr_count
+                total_reviews += review_count
+                results[repo] = {"status": "synced", "prs": pr_count, "reviews": review_count}
 
-        except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError) as e:
-            logger.error("Sync failed for repo %s: %s", repo, e)
-            await _update_repo_sync_status(
-                session, workspace_id, repo, "error", 0, 0
-            )
-            results[repo] = {"status": "error", "error": str(e)}
+                srl.info("Synced repo %s: %d PRs" % (repo, pr_count))
+
+            except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError) as e:
+                srl.error("Sync failed for repo %s: %s" % (repo, e))
+                await _update_repo_sync_status(
+                    session, workspace_id, repo, "error", 0, 0
+                )
+                await update_cursor_status(
+                    session, workspace_id, "github", repo,
+                    sync_status="error",
+                    error_message=str(e),
+                )
+                results[repo] = {"status": "error", "error": str(e)}
+
+        srl.info("GitHub sync complete: %d PRs across %d repos" % (total_prs, len(selected_repos)))
 
     return {
         "total_prs": total_prs,
@@ -374,3 +401,34 @@ async def _update_repo_sync_status(
         config["repo_sync_status"] = repo_sync
         integration.config = config
         await session.flush()
+
+
+class GitHubSyncService:
+    """GitHub sync service conforming to the SyncAdapter protocol."""
+
+    provider: str = "github"
+
+    async def full_sync(
+        self, session: AsyncSession, workspace_id: UUID, **kwargs
+    ) -> dict:
+        """Run a full GitHub sync. Delegates to sync_repos."""
+        selected_repos = kwargs.get("selected_repos", [])
+        settings = kwargs.get("settings")
+        if settings is None:
+            raise ValueError("settings is required for GitHub full_sync")
+        return await sync_repos(workspace_id, selected_repos, session, settings)
+
+    async def handle_webhook(
+        self, session: AsyncSession, workspace_id: UUID, payload: dict
+    ) -> None:
+        """Process a GitHub webhook event (stub for future implementation)."""
+        return None
+
+    async def reconcile(
+        self, session: AsyncSession, workspace_id: UUID
+    ) -> dict:
+        """Reconcile local state with GitHub API (stub for Plan 10-03)."""
+        return {"status": "not_implemented"}
+
+
+assert isinstance(GitHubSyncService(), SyncAdapter)

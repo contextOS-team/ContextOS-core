@@ -19,6 +19,11 @@ from src.models.notion import NotionPage
 from src.services import embedding
 from src.services.notion_client import NotionClient
 from src.services.notion_oauth import get_valid_access_token
+from src.services.sync_adapter import (
+    SyncAdapter,
+    SyncRunLogger,
+    update_cursor_status,
+)
 
 import src.config as config_module
 
@@ -155,86 +160,100 @@ async def run_full_sync(workspace_id: UUID, user_id: UUID) -> None:
     and queues embedding generation for all synced pages.
 
     Updates integration config with sync progress and status.
+    Also writes to sync_cursors for structured state tracking.
 
     Args:
         workspace_id: Workspace to sync pages for.
         user_id: User who initiated the sync.
     """
     settings = config_module.get_settings()
-    logger.info("Starting Notion full sync for workspace %s", workspace_id)
 
-    async with async_session() as session:
-        try:
-            # Update sync status
-            await _update_sync_config(
-                session, workspace_id, {"sync_status": "syncing"}
-            )
-
-            # Get access token
-            access_token = await get_valid_access_token(
-                session, workspace_id, user_id, settings
-            )
-
-            # Fetch all pages
-            client = NotionClient(access_token)
-            pages = await client.get_all_pages()
-
-            await _update_sync_config(
-                session,
-                workspace_id,
-                {"sync_status": "syncing", "pages_total": len(pages)},
-            )
-
-            page_ids: list[UUID] = []
-            synced_count = 0
-
-            for page_data in pages:
-                page_record = await sync_single_page(
-                    session, client, workspace_id, page_data
-                )
-                page_ids.append(page_record.id)
-                synced_count += 1
-
-            await session.flush()
-
-            # Queue embedding generation for all synced pages
-            if page_ids:
-                await embedding.queue_embedding_generation(
-                    session, workspace_id, "notion_page", page_ids
-                )
-
-            # Update sync status to complete
-            now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
-            await _update_sync_config(
-                session,
-                workspace_id,
-                {
-                    "sync_status": "complete",
-                    "last_sync_at": now,
-                    "pages_synced": synced_count,
-                },
-            )
-
-            await session.commit()
-            logger.info(
-                "Notion full sync complete for workspace %s: %d pages synced",
-                workspace_id,
-                synced_count,
-            )
-
-        except Exception:
-            logger.exception(
-                "Notion full sync failed for workspace %s", workspace_id
-            )
+    async with SyncRunLogger("notion", workspace_id) as srl:
+        async with async_session() as session:
             try:
+                # Update sync status (both JSONB and sync_cursors)
+                await _update_sync_config(
+                    session, workspace_id, {"sync_status": "syncing"}
+                )
+                await update_cursor_status(
+                    session, workspace_id, "notion", "default",
+                    sync_status="syncing",
+                )
+
+                # Get access token
+                access_token = await get_valid_access_token(
+                    session, workspace_id, user_id, settings
+                )
+
+                # Fetch all pages
+                client = NotionClient(access_token)
+                pages = await client.get_all_pages()
+
                 await _update_sync_config(
                     session,
                     workspace_id,
-                    {"sync_status": "error", "sync_error": "sync failed"},
+                    {"sync_status": "syncing", "pages_total": len(pages)},
                 )
+
+                page_ids: list[UUID] = []
+                synced_count = 0
+
+                for page_data in pages:
+                    page_record = await sync_single_page(
+                        session, client, workspace_id, page_data
+                    )
+                    page_ids.append(page_record.id)
+                    synced_count += 1
+
+                await session.flush()
+
+                # Queue embedding generation for all synced pages
+                if page_ids:
+                    await embedding.queue_embedding_generation(
+                        session, workspace_id, "notion_page", page_ids
+                    )
+
+                # Update sync status to complete (both JSONB and sync_cursors)
+                now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+                await _update_sync_config(
+                    session,
+                    workspace_id,
+                    {
+                        "sync_status": "complete",
+                        "last_sync_at": now,
+                        "pages_synced": synced_count,
+                    },
+                )
+                await update_cursor_status(
+                    session, workspace_id, "notion", "default",
+                    sync_status="complete",
+                    records_synced=synced_count,
+                )
+
                 await session.commit()
+                srl.info(
+                    "Notion full sync complete: %d pages synced",
+                    synced_count=synced_count,
+                )
+
             except Exception:
-                logger.exception("Failed to update sync error status")
+                srl.exception(
+                    "Notion full sync failed for workspace %s" % workspace_id
+                )
+                try:
+                    await _update_sync_config(
+                        session,
+                        workspace_id,
+                        {"sync_status": "error", "sync_error": "sync failed"},
+                    )
+                    await update_cursor_status(
+                        session, workspace_id, "notion", "default",
+                        sync_status="error",
+                        error_message="sync failed",
+                    )
+                    await session.commit()
+                except Exception:
+                    srl.exception("Failed to update sync error status")
 
 
 async def sync_page_by_id(
@@ -253,10 +272,9 @@ async def sync_page_by_id(
         notion_page_id: Notion page UUID to re-sync.
     """
     settings = config_module.get_settings()
-    logger.info(
-        "Re-syncing Notion page %s for workspace %s",
-        notion_page_id,
-        workspace_id,
+    srl = SyncRunLogger("notion", workspace_id)
+    srl.info(
+        "Re-syncing Notion page %s" % notion_page_id,
     )
 
     async with async_session() as session:
@@ -281,17 +299,14 @@ async def sync_page_by_id(
             )
 
             await session.commit()
-            logger.info(
-                "Re-sync complete for Notion page %s (db id=%s)",
-                notion_page_id,
-                page_record.id,
+            srl.info(
+                "Re-sync complete for Notion page %s (db id=%s)"
+                % (notion_page_id, page_record.id),
             )
 
         except Exception:
-            logger.exception(
-                "Failed to re-sync Notion page %s for workspace %s",
-                notion_page_id,
-                workspace_id,
+            srl.exception(
+                "Failed to re-sync Notion page %s" % notion_page_id,
             )
 
 
@@ -321,3 +336,37 @@ async def _update_sync_config(
         config.update(config_update)
         integration.config = config
         await session.flush()
+
+
+class NotionSyncService:
+    """Notion sync service conforming to the SyncAdapter protocol."""
+
+    provider: str = "notion"
+
+    async def full_sync(
+        self, session: AsyncSession, workspace_id: UUID, **kwargs
+    ) -> dict:
+        """Run a full Notion sync. Delegates to run_full_sync."""
+        user_id = kwargs.get("user_id")
+        if user_id is None:
+            raise ValueError("user_id is required for Notion full_sync")
+        await run_full_sync(workspace_id, user_id)
+        return {"provider": "notion", "status": "complete"}
+
+    async def handle_webhook(
+        self, session: AsyncSession, workspace_id: UUID, payload: dict
+    ) -> None:
+        """Process a Notion webhook event. Delegates to sync_page_by_id."""
+        page_id = payload.get("page_id", "")
+        user_id = payload.get("user_id")
+        if user_id and page_id:
+            await sync_page_by_id(workspace_id, user_id, page_id)
+
+    async def reconcile(
+        self, session: AsyncSession, workspace_id: UUID
+    ) -> dict:
+        """Reconcile local state with Notion API (stub for Plan 10-03)."""
+        return {"status": "not_implemented"}
+
+
+assert isinstance(NotionSyncService(), SyncAdapter)

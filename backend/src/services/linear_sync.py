@@ -36,6 +36,11 @@ from src.models.ticket import LinearComment, LinearTicket
 from src.services import embedding
 from src.services.linear_graphql import LinearGraphQLClient
 from src.services.linear_oauth import get_valid_access_token
+from src.services.sync_adapter import (
+    SyncAdapter,
+    SyncRunLogger,
+    update_cursor_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +131,7 @@ async def sync_tickets_for_teams(
     4. Queues embedding generation for synced tickets
 
     Also persists selected team_ids and sync metadata in workspace_integrations.config.
+    Writes to sync_cursors for structured state tracking.
 
     Args:
         session: Async database session.
@@ -139,53 +145,73 @@ async def sync_tickets_for_teams(
     """
     access_token = await get_valid_access_token(session, workspace_id, user_id, settings)
 
-    # Update sync status to in_progress
+    # Update sync status to in_progress (both JSONB and sync_cursors)
     await _update_sync_status(session, workspace_id, "in_progress", 0)
+    await update_cursor_status(
+        session, workspace_id, "linear", "default",
+        sync_status="syncing",
+    )
 
     client = LinearGraphQLClient(access_token)
     total_tickets = 0
     total_comments = 0
     synced_team_names: list[str] = []
 
-    try:
-        for team_id in team_ids:
-            # Fetch all issues for this team with pagination
-            issues = await client.fetch_all_pages(
-                ISSUES_QUERY,
-                {"teamId": team_id},
-                ["team", "issues"],
+    async with SyncRunLogger("linear", workspace_id) as srl:
+        try:
+            for team_id in team_ids:
+                # Fetch all issues for this team with pagination
+                issues = await client.fetch_all_pages(
+                    ISSUES_QUERY,
+                    {"teamId": team_id},
+                    ["team", "issues"],
+                )
+
+                team_name = issues[0]["team"]["name"] if issues else None
+                if team_name:
+                    synced_team_names.append(team_name)
+
+                # Upsert tickets and comments
+                ticket_ids = await _upsert_tickets(session, workspace_id, issues)
+                comment_count = await _upsert_comments(session, workspace_id, issues, ticket_ids)
+
+                total_tickets += len(ticket_ids)
+                total_comments += comment_count
+
+                # Update progress after each team
+                await _update_sync_status(session, workspace_id, "in_progress", total_tickets)
+
+            # Queue embedding generation for synced tickets
+            if ticket_ids_list := list(ticket_ids.values()):
+                await embedding.queue_embedding_generation(
+                    session, workspace_id, "linear_ticket", ticket_ids_list
+                )
+
+            # Update sync status to complete (both JSONB and sync_cursors)
+            await _update_sync_status(
+                session, workspace_id, "complete", total_tickets, team_ids
+            )
+            await update_cursor_status(
+                session, workspace_id, "linear", "default",
+                sync_status="complete",
+                records_synced=total_tickets,
             )
 
-            team_name = issues[0]["team"]["name"] if issues else None
-            if team_name:
-                synced_team_names.append(team_name)
-
-            # Upsert tickets and comments
-            ticket_ids = await _upsert_tickets(session, workspace_id, issues)
-            comment_count = await _upsert_comments(session, workspace_id, issues, ticket_ids)
-
-            total_tickets += len(ticket_ids)
-            total_comments += comment_count
-
-            # Update progress after each team
-            await _update_sync_status(session, workspace_id, "in_progress", total_tickets)
-
-        # Queue embedding generation for synced tickets
-        if ticket_ids_list := list(ticket_ids.values()):
-            await embedding.queue_embedding_generation(
-                session, workspace_id, "linear_ticket", ticket_ids_list
+            srl.info(
+                "Linear sync complete: %d tickets synced" % total_tickets,
             )
 
-        # Update sync status to complete
-        await _update_sync_status(
-            session, workspace_id, "complete", total_tickets, team_ids
-        )
-
-    except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError):
-        await _update_sync_status(session, workspace_id, "error", total_tickets)
-        raise
-    finally:
-        await client.close()
+        except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError):
+            await _update_sync_status(session, workspace_id, "error", total_tickets)
+            await update_cursor_status(
+                session, workspace_id, "linear", "default",
+                sync_status="error",
+                error_message="sync failed",
+            )
+            srl.exception("Linear sync failed")
+            raise
+        finally:
+            await client.close()
 
     return {
         "tickets_synced": total_tickets,
@@ -390,3 +416,37 @@ async def _update_sync_status(
             config["synced_teams"] = team_ids
         integration.config = config
         await session.flush()
+
+
+class LinearSyncService:
+    """Linear sync service conforming to the SyncAdapter protocol."""
+
+    provider: str = "linear"
+
+    async def full_sync(
+        self, session: AsyncSession, workspace_id: UUID, **kwargs
+    ) -> dict:
+        """Run a full Linear sync. Delegates to sync_tickets_for_teams."""
+        user_id = kwargs.get("user_id")
+        team_ids = kwargs.get("team_ids", [])
+        settings = kwargs.get("settings")
+        if user_id is None or settings is None:
+            raise ValueError("user_id and settings are required for Linear full_sync")
+        return await sync_tickets_for_teams(
+            session, workspace_id, user_id, team_ids, settings
+        )
+
+    async def handle_webhook(
+        self, session: AsyncSession, workspace_id: UUID, payload: dict
+    ) -> None:
+        """Process a Linear webhook event (stub for future implementation)."""
+        return None
+
+    async def reconcile(
+        self, session: AsyncSession, workspace_id: UUID
+    ) -> dict:
+        """Reconcile local state with Linear API (stub for Plan 10-03)."""
+        return {"status": "not_implemented"}
+
+
+assert isinstance(LinearSyncService(), SyncAdapter)
