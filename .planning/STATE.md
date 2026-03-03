@@ -209,6 +209,8 @@ None yet.
 - Phase 11 added: Production infrastructure
 - Phase 12 added: Org-wide code intelligence for context
 - Phase 13 added: Adopt Orchids Landing Page into apps/web
+- Phase 14 added: PostHog Analytics + Live Waitlist (merged phases 14+15)
+- Phase 15 removed: merged into Phase 14
 
 ### Blockers/Concerns
 
