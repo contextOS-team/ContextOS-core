@@ -30,6 +30,7 @@ from src.services.github_common import (
     map_review_state,
     parse_github_timestamp,
 )
+from src.services.code_index_worker import enqueue_code_index_job
 from src.services.embedding import queue_embedding_generation
 from src.services.github_linking import link_pr_to_ticket
 from src.services.github_repos import is_repo_monitored
@@ -105,6 +106,8 @@ async def process_github_event(
                 await handle_review_event(action, payload, workspace_id, session)
             elif event_type == "pull_request_review_comment":
                 await handle_review_comment_event(action, payload, workspace_id, session)
+            elif event_type == "push":
+                await handle_push_event(payload, workspace_id, session)
             else:
                 logger.info("Ignoring unhandled GitHub event type: %s", event_type)
 
@@ -434,3 +437,63 @@ async def handle_review_comment_event(
         line_range,
         pr_record.number,
     )
+
+
+async def handle_push_event(
+    payload: dict,
+    workspace_id: UUID,
+    session: AsyncSession,
+) -> None:
+    """Handle a push webhook event by enqueuing incremental code re-indexing.
+
+    Checks if the pushed repo is monitored, and if so, enqueues a code
+    index job for async processing by the code index worker.
+
+    Args:
+        payload: The full GitHub push event payload.
+        workspace_id: Resolved workspace ID.
+        session: Async database session.
+    """
+    repo_full_name = payload.get("repository", {}).get("full_name", "")
+    if not repo_full_name:
+        logger.warning("Push event missing repository.full_name")
+        return
+
+    if not await is_repo_monitored(workspace_id, repo_full_name, session):
+        logger.debug("Repo %s not monitored, skipping push event", repo_full_name)
+        return
+
+    await enqueue_code_index_job(workspace_id, repo_full_name)
+    logger.info(
+        "Push event received for %s, enqueued code re-index",
+        repo_full_name,
+    )
+
+
+async def process_push_event(payload: dict) -> None:
+    """Standalone push event processor (creates its own session).
+
+    Can be called directly from tests or webhook handlers that don't
+    have an existing session context.
+
+    Args:
+        payload: The full GitHub push event payload.
+    """
+    installation = payload.get("installation", {})
+    installation_id = installation.get("id") if isinstance(installation, dict) else None
+    if installation_id is None:
+        logger.warning("Push event missing installation.id, skipping")
+        return
+
+    async with async_session() as session:
+        workspace_id = await _lookup_workspace_from_installation(
+            installation_id, session
+        )
+        if workspace_id is None:
+            logger.warning(
+                "No workspace found for GitHub installation %s",
+                installation_id,
+            )
+            return
+
+        await handle_push_event(payload, workspace_id, session)
