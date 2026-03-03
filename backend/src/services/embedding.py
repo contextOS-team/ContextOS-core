@@ -6,9 +6,7 @@ Provides content-hash-based deduplication to skip unchanged records,
 and bulk backfill for pending embeddings.
 """
 
-import hashlib
 import logging
-import re
 from uuid import UUID
 
 from lmnr import observe
@@ -26,6 +24,7 @@ from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
 from src.models.ticket import LinearComment, LinearTicket
+from src.utils.hashing import compute_content_hash
 
 logger = logging.getLogger(__name__)
 
@@ -95,32 +94,6 @@ def _get_openai_client() -> AsyncOpenAI:
         settings = get_settings()
         _openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
     return _openai_client
-
-
-def _normalize_for_hash(text_content: str) -> str:
-    """Normalize text for content hash comparison.
-
-    Collapses all whitespace sequences (spaces, tabs, newlines) into
-    single spaces and strips leading/trailing whitespace. This prevents
-    trivial formatting changes from triggering re-embedding.
-
-    Args:
-        text_content: Raw text content.
-
-    Returns:
-        Normalized text string.
-    """
-    return re.sub(r'\s+', ' ', text_content).strip()
-
-
-def _compute_content_hash(text_content: str) -> str:
-    """Compute SHA-256 hash of normalized content for change detection.
-
-    Normalizes whitespace before hashing so trivial formatting edits
-    (spacing, line breaks) do not trigger re-embedding.
-    """
-    normalized = _normalize_for_hash(text_content)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 @observe(name="generate_embedding")
@@ -200,14 +173,25 @@ async def queue_embedding_generation(
 
     model_cls, extract_text = SOURCE_TYPE_MAP[source_type]
 
-    # Collect records that need embedding
+    # --- Bulk-load source records (1 query instead of N) ---
+    source_stmt = select(model_cls).where(model_cls.id.in_(source_ids))  # type: ignore[union-attr]
+    source_result = await session.execute(source_stmt)
+    records_by_id = {r.id: r for r in source_result.scalars().all()}
+
+    # --- Bulk-load existing embedding hashes (1 query instead of N) ---
+    existing_hash_stmt = select(Embedding.source_id, Embedding.content_hash).where(
+        Embedding.source_type == source_type,
+        Embedding.source_id.in_(source_ids),  # type: ignore[union-attr]
+    )
+    existing_result = await session.execute(existing_hash_stmt)
+    existing_hashes = {row[0]: row[1] for row in existing_result.fetchall()}
+
+    # --- Diff in-memory ---
     pending: list[tuple[UUID, str, str]] = []  # (source_id, text, content_hash)
 
     for source_id in source_ids:
         try:
-            stmt = select(model_cls).where(model_cls.id == source_id)
-            result = await session.execute(stmt)
-            record = result.scalar_one_or_none()
+            record = records_by_id.get(source_id)
             if record is None:
                 continue
 
@@ -215,17 +199,9 @@ async def queue_embedding_generation(
             if not text_content or not text_content.strip():
                 continue
 
-            content_hash = _compute_content_hash(text_content)
+            content_hash = compute_content_hash(text_content)
 
-            # Check existing hash
-            existing_stmt = select(Embedding.content_hash).where(
-                Embedding.source_type == source_type,
-                Embedding.source_id == source_id,
-            )
-            existing_result = await session.execute(existing_stmt)
-            existing_hash = existing_result.scalar_one_or_none()
-
-            if existing_hash == content_hash:
+            if existing_hashes.get(source_id) == content_hash:
                 continue
 
             pending.append((source_id, text_content, content_hash))

@@ -6,10 +6,8 @@ with content-hash deduplication. Handles ephemeral clone cleanup.
 """
 
 import asyncio
-import hashlib
 import logging
 import os
-import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -25,6 +23,7 @@ from src.models.integration import WorkspaceIntegration
 from src.services.code_parser import CodeChunkData, detect_language, parse_file
 from src.services.github_oauth import get_installation_token
 from src.services.github_repos import get_cached_repos, is_repo_monitored
+from src.utils.hashing import compute_content_hash
 
 logger = logging.getLogger(__name__)
 
@@ -43,21 +42,6 @@ SKIP_FILES = frozenset({
 
 # Max file size to parse (500KB)
 MAX_FILE_SIZE = 500 * 1024
-
-
-def _normalize_for_hash(text_content: str) -> str:
-    """Normalize text for content hash comparison.
-
-    Collapses all whitespace into single spaces and strips.
-    Same algorithm as embedding service for consistency.
-    """
-    return re.sub(r'\s+', ' ', text_content).strip()
-
-
-def _compute_content_hash(text_content: str) -> str:
-    """Compute SHA-256 hash of normalized content for change detection."""
-    normalized = _normalize_for_hash(text_content)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _should_skip_path(path: str) -> bool:
@@ -107,6 +91,9 @@ def _is_binary_file(file_path: Path) -> bool:
         return True
 
 
+CLONE_TIMEOUT_SECONDS = 300  # 5 minutes
+
+
 async def index_repo(
     workspace_id: UUID,
     repo_full_name: str,
@@ -127,15 +114,26 @@ async def index_repo(
 
     Returns:
         Summary dict with repo, files_scanned, chunks_created,
-        chunks_updated, chunks_deleted counts.
+        chunks_updated, chunks_deleted counts, and changed_chunk_ids
+        (list of UUIDs for created/updated chunks).
     """
+    from datetime import datetime, timezone
+
     tmp_dir = tempfile.mkdtemp(prefix="contextos_clone_")
+    _empty_result = {
+        "repo": repo_full_name,
+        "files_scanned": 0,
+        "chunks_created": 0,
+        "chunks_updated": 0,
+        "chunks_deleted": 0,
+        "changed_chunk_ids": [],
+    }
 
     try:
         # Get installation token for authenticated clone
         token = await get_installation_token(workspace_id, session, settings)
 
-        # Shallow clone the repo
+        # Shallow clone the repo (with timeout)
         clone_url = f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
         clone_dir = os.path.join(tmp_dir, repo_full_name.replace("/", "_"))
 
@@ -146,31 +144,29 @@ async def index_repo(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=CLONE_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            logger.error("Clone timed out after %ds for %s", CLONE_TIMEOUT_SECONDS, repo_full_name)
+            return {**_empty_result, "error": f"Clone timed out after {CLONE_TIMEOUT_SECONDS}s"}
 
         if process.returncode != 0:
-            logger.warning(
-                "Failed to clone %s: %s",
-                repo_full_name, stderr.decode("utf-8", errors="replace"),
-            )
-            return {
-                "repo": repo_full_name,
-                "files_scanned": 0,
-                "chunks_created": 0,
-                "chunks_updated": 0,
-                "chunks_deleted": 0,
-                "error": stderr.decode("utf-8", errors="replace"),
-            }
+            error_msg = stderr.decode("utf-8", errors="replace")
+            logger.warning("Failed to clone %s: %s", repo_full_name, error_msg)
+            return {**_empty_result, "error": error_msg}
 
         logger.info("Cloned %s successfully", repo_full_name)
 
         # Walk the cloned directory and parse source files
         files_scanned = 0
-        all_chunks: list[tuple[str, CodeChunkData]] = []  # (file_path, chunk)
+        all_chunks: list[tuple[str, CodeChunkData]] = []
 
         clone_path = Path(clone_dir)
         for root_dir, dirs, files in os.walk(clone_path):
-            # Filter out skipped directories in-place
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
 
             for filename in files:
@@ -180,24 +176,19 @@ async def index_repo(
                 if _should_skip_path(rel_path):
                     continue
 
-                # Check file size
                 try:
                     if abs_path.stat().st_size > MAX_FILE_SIZE:
-                        logger.debug("Skipping large file: %s (%d bytes)", rel_path, abs_path.stat().st_size)
                         continue
                 except OSError:
                     continue
 
-                # Detect language
                 language = detect_language(filename)
                 if language is None:
                     continue
 
-                # Check if binary
                 if _is_binary_file(abs_path):
                     continue
 
-                # Read and parse file
                 try:
                     content = abs_path.read_text(encoding="utf-8", errors="replace")
                 except (OSError, PermissionError):
@@ -208,38 +199,46 @@ async def index_repo(
                 for chunk in chunks:
                     all_chunks.append((rel_path, chunk))
 
-                logger.debug("Parsed %s: %d chunks", rel_path, len(chunks))
-
         logger.info(
             "Scanned %d files in %s, found %d chunks",
             files_scanned, repo_full_name, len(all_chunks),
         )
 
-        # Upsert chunks with content-hash deduplication
+        # --- Bulk prefetch existing chunk hashes (1 query instead of N) ---
+        existing_stmt = select(
+            CodeChunk.id,
+            CodeChunk.repo_full_name,
+            CodeChunk.file_path,
+            CodeChunk.symbol_name,
+            CodeChunk.symbol_type,
+            CodeChunk.content_hash,
+        ).where(
+            CodeChunk.workspace_id == workspace_id,
+            CodeChunk.repo_full_name == repo_full_name,
+            CodeChunk.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        result = await session.execute(existing_stmt)
+        # Map (repo, file, name, type) -> (id, hash)
+        existing_map: dict[tuple[str, str, str, str], tuple[UUID, str]] = {}
+        for row in result.fetchall():
+            key = (row[1], row[2], row[3], row[4])
+            existing_map[key] = (row[0], row[5])
+
+        # --- Diff and batch upsert ---
         chunks_created = 0
         chunks_updated = 0
+        changed_chunk_ids: list[UUID] = []
         seen_keys: set[tuple[str, str, str, str]] = set()
 
         for file_path, chunk_data in all_chunks:
-            content_hash = _compute_content_hash(chunk_data.content)
+            content_hash = compute_content_hash(chunk_data.content)
             dedup_key = (repo_full_name, file_path, chunk_data.symbol_name, chunk_data.symbol_type)
             seen_keys.add(dedup_key)
 
-            # Check if chunk already exists with same hash
-            existing_stmt = select(CodeChunk.id, CodeChunk.content_hash).where(
-                CodeChunk.repo_full_name == repo_full_name,
-                CodeChunk.file_path == file_path,
-                CodeChunk.symbol_name == chunk_data.symbol_name,
-                CodeChunk.symbol_type == chunk_data.symbol_type,
-            )
-            result = await session.execute(existing_stmt)
-            existing = result.first()
+            existing = existing_map.get(dedup_key)
+            if existing and existing[1] == content_hash:
+                continue  # Unchanged
 
-            if existing and existing.content_hash == content_hash:
-                # Unchanged -- skip
-                continue
-
-            # Upsert
             values = {
                 "workspace_id": workspace_id,
                 "repo_full_name": repo_full_name,
@@ -260,10 +259,9 @@ async def index_repo(
                 .values(**values)
                 .on_conflict_do_update(
                     index_elements=[
-                        "repo_full_name", "file_path", "symbol_name", "symbol_type",
+                        "workspace_id", "repo_full_name", "file_path", "symbol_name", "symbol_type",
                     ],
                     set_={
-                        "workspace_id": values["workspace_id"],
                         "language": values["language"],
                         "content": values["content"],
                         "content_hash": values["content_hash"],
@@ -273,8 +271,12 @@ async def index_repo(
                         "deleted_at": None,
                     },
                 )
+                .returning(CodeChunk.id)
             )
-            await session.execute(upsert_stmt)
+            upsert_result = await session.execute(upsert_stmt)
+            row = upsert_result.first()
+            if row:
+                changed_chunk_ids.append(row[0])
 
             if existing:
                 chunks_updated += 1
@@ -283,27 +285,16 @@ async def index_repo(
 
         # Soft-delete chunks that no longer exist in the repo
         chunks_deleted = 0
-        all_existing_stmt = select(CodeChunk).where(
-            CodeChunk.repo_full_name == repo_full_name,
-            CodeChunk.workspace_id == workspace_id,
-            CodeChunk.deleted_at.is_(None),  # type: ignore[union-attr]
-        )
-        result = await session.execute(all_existing_stmt)
-        existing_chunks = result.scalars().all()
-
-        from datetime import datetime, timezone
-
         now = datetime.now(timezone.utc).replace(tzinfo=None)
-        for existing_chunk in existing_chunks:
-            key = (
-                existing_chunk.repo_full_name,
-                existing_chunk.file_path,
-                existing_chunk.symbol_name,
-                existing_chunk.symbol_type,
-            )
+        for key, (chunk_id, _hash) in existing_map.items():
             if key not in seen_keys:
-                existing_chunk.deleted_at = now
-                session.add(existing_chunk)
+                # Use UPDATE instead of loading the ORM object
+                from sqlalchemy import update
+                await session.execute(
+                    update(CodeChunk)
+                    .where(CodeChunk.id == chunk_id)
+                    .values(deleted_at=now)
+                )
                 chunks_deleted += 1
 
         await session.flush()
@@ -314,6 +305,7 @@ async def index_repo(
             "chunks_created": chunks_created,
             "chunks_updated": chunks_updated,
             "chunks_deleted": chunks_deleted,
+            "changed_chunk_ids": changed_chunk_ids,
         }
 
         logger.info(
@@ -324,9 +316,7 @@ async def index_repo(
         return summary
 
     finally:
-        # Always clean up temp directory
         shutil.rmtree(tmp_dir, ignore_errors=True)
-        logger.debug("Cleaned up temp directory: %s", tmp_dir)
 
 
 async def _update_index_status(

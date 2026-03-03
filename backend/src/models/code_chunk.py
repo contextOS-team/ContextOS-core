@@ -29,6 +29,7 @@ class CodeChunk(BaseModel, table=True):
     __tablename__ = "code_chunks"
     __table_args__ = (
         UniqueConstraint(
+            "workspace_id",
             "repo_full_name",
             "file_path",
             "symbol_name",

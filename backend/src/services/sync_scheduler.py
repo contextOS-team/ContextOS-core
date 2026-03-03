@@ -148,6 +148,14 @@ async def _check_code_index_freshness(workspace_id: UUID) -> None:
             return
 
         config = integration.config
+
+        # Skip if already indexing to prevent duplicate queue storms
+        if config.get("code_index_status") == "indexing":
+            logger.debug(
+                "Skipping code index for workspace %s: already indexing", workspace_id
+            )
+            return
+
         code_index_last = config.get("code_index_last_at")
         now = datetime.now(timezone.utc)
 

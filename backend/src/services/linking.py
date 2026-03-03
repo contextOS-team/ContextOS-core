@@ -179,22 +179,27 @@ async def _find_hybrid_matches(
         },
     )
 
+    # Collect all hybrid hits first (skip self-matches)
+    hits: list[tuple[str, UUID, float]] = []
     for row in result.fetchall():
         source_type = row[1]
         source_id = row[2]
         combined_score = row[5]
 
-        # Skip self-matches (the ticket's own embedding)
         if source_type == "linear_ticket" and source_id == ticket.id:
             continue
 
+        hits.append((source_type, source_id, combined_score))
+
+    # Bulk-fetch summaries for all hits
+    summaries = await _bulk_lookup_source_summaries(
+        session, [(st, sid) for st, sid, _ in hits]
+    )
+
+    for source_type, source_id, combined_score in hits:
         key = (source_type, source_id)
         score = combined_score * WEIGHT_HYBRID
-
-        # Look up a title/snippet for the match
-        title, snippet = await _lookup_source_summary(
-            session, source_type, source_id
-        )
+        title, snippet = summaries.get(key, (source_type, ""))
 
         items[key] = LinkedItem(
             source_type=source_type,
@@ -208,64 +213,111 @@ async def _find_hybrid_matches(
     return items
 
 
+# Map source_type -> (model class, title+snippet extractor)
+_SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
+    "linear_ticket": (LinearTicket, lambda r: (r.title, (r.description or "")[:200])),
+    "linear_comment": (
+        LinearComment,
+        lambda r: (f"Comment by {r.author_name or 'Unknown'}", r.body[:200]),
+    ),
+    "slack_message": (
+        SlackMessage,
+        lambda r: (
+            f"Slack by {r.user_name or 'Unknown'} in #{r.channel_name or 'unknown'}",
+            r.text[:200],
+        ),
+    ),
+    "meeting_transcript": (
+        MeetingTranscript,
+        lambda r: (f"Meeting: {r.title or 'Untitled'}", r.transcript[:200]),
+    ),
+    "meeting_segment": (
+        MeetingSegment,
+        lambda r: (
+            f"Segment by {r.speaker_name or 'Unknown'}",
+            r.text[:200],
+        ),
+    ),
+    "github_pull_request": (
+        GithubPullRequest,
+        lambda r: (f"PR #{r.number}: {r.title}", (r.description or "")[:200]),
+    ),
+    "github_review": (
+        GithubReview,
+        lambda r: (
+            f"Review by {r.author} ({r.state})",
+            (r.body or "")[:200],
+        ),
+    ),
+    "notion_page": (
+        NotionPage,
+        lambda r: (r.title, (r.content or "")[:200]),
+    ),
+    "code_chunk": (
+        CodeChunk,
+        lambda r: (
+            f"{r.symbol_type}: {r.symbol_name} ({r.repo_full_name}:{r.file_path})",
+            r.content[:200],
+        ),
+    ),
+}
+
+
+async def _bulk_lookup_source_summaries(
+    session: AsyncSession,
+    keys: list[tuple[str, UUID]],
+) -> dict[tuple[str, UUID], tuple[str, str]]:
+    """Bulk-fetch title/snippet for multiple source records.
+
+    Groups IDs by source_type, performs one query per type, then
+    maps results in-memory. Eliminates the N+1 from per-result lookups.
+    """
+    result_map: dict[tuple[str, UUID], tuple[str, str]] = {}
+    if not keys:
+        return result_map
+
+    # Group IDs by source_type
+    grouped: dict[str, list[UUID]] = {}
+    for source_type, source_id in keys:
+        grouped.setdefault(source_type, []).append(source_id)
+
+    for source_type, ids in grouped.items():
+        if source_type not in _SOURCE_SUMMARY_MAP:
+            for sid in ids:
+                result_map[(source_type, sid)] = (source_type, "")
+            continue
+
+        model_cls, extract = _SOURCE_SUMMARY_MAP[source_type]
+        stmt = select(model_cls).where(model_cls.id.in_(ids))  # type: ignore[union-attr]
+        db_result = await session.execute(stmt)
+        records = db_result.scalars().all()
+
+        for record in records:
+            result_map[(source_type, record.id)] = extract(record)
+
+        # Fill missing IDs
+        fetched_ids = {r.id for r in records}
+        for sid in ids:
+            if sid not in fetched_ids:
+                result_map[(source_type, sid)] = (source_type, "")
+
+    return result_map
+
+
 async def _lookup_source_summary(
     session: AsyncSession,
     source_type: str,
     source_id: UUID,
 ) -> tuple[str, str]:
-    """Look up a human-readable title and snippet for a source record."""
-    model_map = {
-        "linear_ticket": (LinearTicket, lambda r: (r.title, (r.description or "")[:200])),
-        "linear_comment": (
-            LinearComment,
-            lambda r: (f"Comment by {r.author_name or 'Unknown'}", r.body[:200]),
-        ),
-        "slack_message": (
-            SlackMessage,
-            lambda r: (
-                f"Slack by {r.user_name or 'Unknown'} in #{r.channel_name or 'unknown'}",
-                r.text[:200],
-            ),
-        ),
-        "meeting_transcript": (
-            MeetingTranscript,
-            lambda r: (f"Meeting: {r.title or 'Untitled'}", r.transcript[:200]),
-        ),
-        "meeting_segment": (
-            MeetingSegment,
-            lambda r: (
-                f"Segment by {r.speaker_name or 'Unknown'}",
-                r.text[:200],
-            ),
-        ),
-        "github_pull_request": (
-            GithubPullRequest,
-            lambda r: (f"PR #{r.number}: {r.title}", (r.description or "")[:200]),
-        ),
-        "github_review": (
-            GithubReview,
-            lambda r: (
-                f"Review by {r.author} ({r.state})",
-                (r.body or "")[:200],
-            ),
-        ),
-        "notion_page": (
-            NotionPage,
-            lambda r: (r.title, (r.content or "")[:200]),
-        ),
-        "code_chunk": (
-            CodeChunk,
-            lambda r: (
-                f"{r.symbol_type}: {r.symbol_name} ({r.repo_full_name}:{r.file_path})",
-                r.content[:200],
-            ),
-        ),
-    }
+    """Look up a human-readable title and snippet for a single source record.
 
-    if source_type not in model_map:
+    Uses the shared _SOURCE_SUMMARY_MAP. Prefer _bulk_lookup_source_summaries
+    when fetching multiple records to avoid N+1 queries.
+    """
+    if source_type not in _SOURCE_SUMMARY_MAP:
         return (source_type, "")
 
-    model_cls, extract = model_map[source_type]
+    model_cls, extract = _SOURCE_SUMMARY_MAP[source_type]
     stmt = select(model_cls).where(model_cls.id == source_id)
     result = await session.execute(stmt)
     record = result.scalar_one_or_none()

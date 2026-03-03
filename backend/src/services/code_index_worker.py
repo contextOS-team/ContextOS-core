@@ -123,10 +123,14 @@ async def _process_index_message(message_data: dict) -> None:
     repo_full_name = job["repo_full_name"]
     settings = get_settings()
 
+    changed_chunk_ids: list = []
+
     async with async_session() as session:
         if repo_full_name == "__all__":
             results = await index_workspace_repos(workspace_id, session, settings)
-            # Collect all chunk IDs that were created/updated for embedding
+            # Collect changed IDs from all repo results
+            for r in results:
+                changed_chunk_ids.extend(r.get("changed_chunk_ids", []))
             total_created = sum(r.get("chunks_created", 0) for r in results)
             total_updated = sum(r.get("chunks_updated", 0) for r in results)
             logger.info(
@@ -135,6 +139,7 @@ async def _process_index_message(message_data: dict) -> None:
             )
         else:
             result = await index_repo(workspace_id, repo_full_name, session, settings)
+            changed_chunk_ids = result.get("changed_chunk_ids", [])
             logger.info(
                 "Repo index complete: repo=%s created=%d updated=%d deleted=%d",
                 repo_full_name,
@@ -145,29 +150,13 @@ async def _process_index_message(message_data: dict) -> None:
 
         await session.commit()
 
-    # Enqueue embedding jobs for code chunks (after session commit)
-    # Query for all non-deleted chunks in the workspace to embed
-    async with async_session() as session:
-        from sqlmodel import select
-        from src.models.code_chunk import CodeChunk
-
-        if repo_full_name == "__all__":
-            stmt = select(CodeChunk.id).where(
-                CodeChunk.workspace_id == workspace_id,
-                CodeChunk.deleted_at.is_(None),  # type: ignore[union-attr]
-            )
-        else:
-            stmt = select(CodeChunk.id).where(
-                CodeChunk.workspace_id == workspace_id,
-                CodeChunk.repo_full_name == repo_full_name,
-                CodeChunk.deleted_at.is_(None),  # type: ignore[union-attr]
-            )
-
-        result = await session.execute(stmt)
-        chunk_ids = [row[0] for row in result.fetchall()]
-
-        if chunk_ids:
-            await enqueue_embedding_job(workspace_id, "code_chunk", chunk_ids)
+    # Enqueue embedding jobs only for created/updated chunks (delta-only)
+    if changed_chunk_ids:
+        await enqueue_embedding_job(workspace_id, "code_chunk", changed_chunk_ids)
+        logger.info(
+            "Enqueued %d changed chunk embeddings for workspace=%s",
+            len(changed_chunk_ids), workspace_id,
+        )
 
 
 async def run_code_index_worker() -> None:
