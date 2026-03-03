@@ -21,6 +21,7 @@ from sqlmodel import select
 
 from src.config import Settings
 from src.models.code_chunk import CodeChunk
+from src.models.integration import WorkspaceIntegration
 from src.services.code_parser import CodeChunkData, detect_language, parse_file
 from src.services.github_oauth import get_installation_token
 from src.services.github_repos import get_cached_repos, is_repo_monitored
@@ -328,6 +329,40 @@ async def index_repo(
         logger.debug("Cleaned up temp directory: %s", tmp_dir)
 
 
+async def _update_index_status(
+    workspace_id: UUID,
+    session: AsyncSession,
+    index_status: str,
+    last_at: str | None = None,
+) -> None:
+    """Write code indexing status to workspace_integrations.config JSONB.
+
+    Follows the same pattern used by sync_status in the sync pipeline.
+
+    Args:
+        workspace_id: Workspace to update.
+        session: Async database session.
+        index_status: Status string ("indexing" or "idle").
+        last_at: ISO timestamp of last indexing completion (only set on idle).
+    """
+    stmt = select(WorkspaceIntegration).where(
+        WorkspaceIntegration.workspace_id == workspace_id,
+        WorkspaceIntegration.provider == "github",
+    )
+    result = await session.execute(stmt)
+    integration = result.scalar_one_or_none()
+
+    if not integration:
+        return
+
+    config = dict(integration.config) if integration.config else {}
+    config["code_index_status"] = index_status
+    if last_at is not None:
+        config["code_index_last_at"] = last_at
+    integration.config = config
+    await session.flush()
+
+
 async def index_workspace_repos(
     workspace_id: UUID,
     session: AsyncSession,
@@ -337,7 +372,8 @@ async def index_workspace_repos(
 
     Retrieves the cached repo list, filters to monitored repos,
     and indexes them sequentially to avoid rate limit exhaustion
-    (per Phase 7 decision).
+    (per Phase 7 decision). Tracks indexing status in
+    workspace_integrations.config JSONB.
 
     Args:
         workspace_id: Workspace to index repos for.
@@ -347,6 +383,11 @@ async def index_workspace_repos(
     Returns:
         List of per-repo summary dicts.
     """
+    from datetime import datetime, timezone
+
+    # Set status to "indexing" at start
+    await _update_index_status(workspace_id, session, "indexing")
+
     repos = await get_cached_repos(workspace_id, session)
     results: list[dict] = []
 
@@ -374,5 +415,11 @@ async def index_workspace_repos(
                 "chunks_deleted": 0,
                 "error": "Indexing failed",
             })
+
+    # Set status to "idle" with last_at timestamp on completion
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    await _update_index_status(
+        workspace_id, session, "idle", last_at=now.isoformat()
+    )
 
     return results

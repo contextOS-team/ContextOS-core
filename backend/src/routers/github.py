@@ -1,7 +1,8 @@
 """GitHub App integration endpoints.
 
 Provides OAuth connect/callback/disconnect/status endpoints, repo listing/
-selection endpoints, and PR sync trigger/status endpoints.
+selection endpoints, PR sync trigger/status endpoints, and code index
+trigger/status endpoints.
 
 The callback endpoint is NOT JWT-protected because GitHub redirects here
 directly. The state parameter provides CSRF protection via HMAC-SHA256.
@@ -29,8 +30,10 @@ from src.services.github_oauth import (
     handle_callback,
 )
 from src.services.oauth_common import sign_oauth_state
+from src.services.code_index_worker import enqueue_code_index_job, enqueue_workspace_index_job
 from src.services.github_repos import (
     get_cached_repos,
+    is_repo_monitored,
     refresh_repos,
     save_selected_repos,
 )
@@ -276,4 +279,97 @@ async def get_sync_status(
 
     return {
         "repo_sync_status": integration.config.get("repo_sync_status", {})
+    }
+
+
+# ---------- Code indexing ----------
+
+
+@router.post("/index", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_index(
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Trigger code indexing for all selected repos in the workspace.
+
+    Enqueues a workspace-wide code index job for async processing.
+    Returns 202 immediately. Check GET /index/status for progress.
+    """
+    await enqueue_workspace_index_job(user.workspace_id)
+    return {
+        "status": "accepted",
+        "message": "Code indexing started for all selected repos",
+    }
+
+
+@router.post("/index/{repo_full_name:path}", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_repo_index(
+    repo_full_name: str,
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Trigger code indexing for a specific repo.
+
+    Validates the repo is monitored, then enqueues a single-repo
+    code index job. Returns 202 immediately.
+    """
+    monitored = await is_repo_monitored(user.workspace_id, repo_full_name, session)
+    if not monitored:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repo {repo_full_name} is not monitored",
+        )
+
+    await enqueue_code_index_job(user.workspace_id, repo_full_name)
+    return {"status": "accepted", "repo": repo_full_name}
+
+
+@router.get("/index/status")
+async def get_index_status(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get code indexing status for the workspace.
+
+    Returns the current indexing state, last indexed timestamp,
+    and per-repo chunk counts from the code_chunks table.
+    """
+    from sqlalchemy import func, text as sa_text
+    from sqlmodel import select as sm_select
+
+    from src.models.code_chunk import CodeChunk
+
+    # Get indexing status from workspace_integrations config
+    stmt = sm_select(WorkspaceIntegration).where(
+        WorkspaceIntegration.workspace_id == user.workspace_id,
+        WorkspaceIntegration.provider == Provider.GITHUB,
+    )
+    result = await session.execute(stmt)
+    integration = result.scalar_one_or_none()
+
+    config = integration.config if integration and integration.config else {}
+    index_status = config.get("code_index_status", "idle")
+    last_indexed_at = config.get("code_index_last_at")
+
+    # Get per-repo chunk counts
+    chunk_stmt = (
+        sm_select(
+            CodeChunk.repo_full_name,
+            func.count(CodeChunk.id).label("chunk_count"),
+        )
+        .where(
+            CodeChunk.workspace_id == user.workspace_id,
+            CodeChunk.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        .group_by(CodeChunk.repo_full_name)
+    )
+    chunk_result = await session.execute(chunk_stmt)
+    repos = [
+        {"repo": row.repo_full_name, "chunks": row.chunk_count}
+        for row in chunk_result.fetchall()
+    ]
+
+    return {
+        "status": index_status,
+        "last_indexed_at": last_indexed_at,
+        "repos": repos,
     }

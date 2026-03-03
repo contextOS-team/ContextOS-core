@@ -1,7 +1,8 @@
 """Polling fallback scheduler for catching missed webhook events.
 
 Runs reconciliation checks every 15 minutes for all connected providers
-to catch webhook deliveries that were lost or failed.
+to catch webhook deliveries that were lost or failed. Also runs periodic
+code re-indexing every 60 minutes as a freshness fallback.
 
 Per CONTEXT.md: Webhook-first with polling fallback for all providers
 that support webhooks (Notion, GitHub, Linear).
@@ -9,6 +10,7 @@ that support webhooks (Notion, GitHub, Linear).
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlmodel import select
@@ -20,6 +22,7 @@ from src.services.sync_adapter import SyncRunLogger
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 15 * 60  # 15 minutes per CONTEXT.md decision
+CODE_INDEX_INTERVAL_SECONDS = 60 * 60  # 60 minutes for code re-indexing
 
 
 async def _get_connected_workspaces(provider: Provider) -> list[UUID]:
@@ -124,6 +127,48 @@ async def reconcile_notion(workspace_id: UUID) -> None:
             srl.exception("Notion reconciliation failed")
 
 
+async def _check_code_index_freshness(workspace_id: UUID) -> None:
+    """Check if code index needs re-indexing based on last indexed timestamp.
+
+    If the last code index was more than CODE_INDEX_INTERVAL_SECONDS ago
+    (or never indexed), enqueue a full workspace code index job.
+    """
+    from src.services.code_index_worker import enqueue_workspace_index_job
+
+    async with async_session() as session:
+        stmt = select(WorkspaceIntegration).where(
+            WorkspaceIntegration.workspace_id == workspace_id,
+            WorkspaceIntegration.provider == Provider.GITHUB,
+            WorkspaceIntegration.status == "connected",
+        )
+        result = await session.execute(stmt)
+        integration = result.scalar_one_or_none()
+
+        if not integration or not integration.config:
+            return
+
+        config = integration.config
+        code_index_last = config.get("code_index_last_at")
+        now = datetime.now(timezone.utc)
+
+        if code_index_last:
+            try:
+                last_dt = datetime.fromisoformat(code_index_last)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                elapsed = (now - last_dt).total_seconds()
+                if elapsed < CODE_INDEX_INTERVAL_SECONDS:
+                    return  # Still fresh
+            except (ValueError, TypeError):
+                pass  # Invalid timestamp, re-index
+
+        await enqueue_workspace_index_job(workspace_id)
+        logger.info(
+            "Polling fallback: enqueued code re-index for workspace %s",
+            workspace_id,
+        )
+
+
 async def run_polling_fallback() -> None:
     """Run the polling fallback loop indefinitely.
 
@@ -144,9 +189,19 @@ async def run_polling_fallback() -> None:
                         "Notion reconciliation failed for workspace %s", ws_id
                     )
 
-            # Linear and GitHub reconciliation stubs
-            # (can be implemented when those providers have
-            # incremental sync support via updatedAt filters)
+            # GitHub code index freshness check (every 60 min)
+            github_workspaces = await _get_connected_workspaces(Provider.GITHUB)
+            for ws_id in github_workspaces:
+                try:
+                    await _check_code_index_freshness(ws_id)
+                except Exception:
+                    logger.exception(
+                        "Code index freshness check failed for workspace %s", ws_id
+                    )
+
+            # Linear reconciliation stub
+            # (can be implemented when Linear has incremental sync
+            # support via updatedAt filters)
 
         except Exception:
             logger.exception("Polling fallback scheduler error")

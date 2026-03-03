@@ -74,6 +74,7 @@ async def _reset_stale_sync_locks() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler for startup/shutdown."""
+    from src.services.code_index_worker import run_code_index_worker
     from src.services.embedding_worker import run_embedding_worker
     from src.services.sync_scheduler import run_polling_fallback
 
@@ -83,16 +84,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup: launch background workers
     embedding_task = asyncio.create_task(run_embedding_worker())
     polling_task = asyncio.create_task(run_polling_fallback())
+    code_index_task = asyncio.create_task(run_code_index_worker())
 
-    logger.info("Background workers started: embedding_worker, polling_fallback")
+    logger.info("Background workers started: embedding_worker, polling_fallback, code_index_worker")
 
     yield
 
     # Shutdown: cancel background workers gracefully
     embedding_task.cancel()
     polling_task.cancel()
+    code_index_task.cancel()
 
-    for task in [embedding_task, polling_task]:
+    for task in [embedding_task, polling_task, code_index_task]:
         try:
             await task
         except asyncio.CancelledError:
