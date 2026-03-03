@@ -290,7 +290,7 @@ Plans:
 **Goal:** Add PostHog SDK to the landing page for analytics (page views, feature interactions) and wire the waitlist form to capture signups as PostHog events -- viewable and exportable from the PostHog dashboard
 **Requirements**: N/A (growth/analytics -- no formal requirement IDs)
 **Depends on:** Phase 13
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 14-01-PLAN.md -- PostHog SDK setup (landing-scoped provider), waitlist form wired to `waitlist_signup` event, Hero CTA click tracking

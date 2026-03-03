@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: in-progress
-stopped_at: Completed 13-01-PLAN.md
-last_updated: "2026-03-03T19:22:41.000Z"
+status: executing
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-03-03T23:31:54.098Z"
 last_activity: "2026-03-03 -- Landing page components: 10 section components, scoped CSS, useInView hook migrated from Orchids"
 progress:
-  total_phases: 17
-  completed_phases: 12
-  total_plans: 35
-  completed_plans: 34
+  total_phases: 18
+  completed_phases: 14
+  total_plans: 36
+  completed_plans: 36
   percent: 97
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 13 - Adopt Orchids Landing Page into apps/web
+**Current focus:** Phase 14 - PostHog Analytics + Live Waitlist
 
 ## Current Position
 
-Phase: 13 (Adopt Orchids Landing Page into apps/web)
-Plan: 1 of 2 in current phase (1 complete)
-Status: Phase 13 in progress
-Last activity: 2026-03-03 -- Landing page components: 10 section components, scoped CSS, useInView hook migrated from Orchids
+Phase: 14 (PostHog Analytics + Live Waitlist)
+Plan: 1 of 1 in current phase (1 complete)
+Status: Phase 14 complete
+Last activity: 2026-03-04 -- PostHog SDK installed on landing pages with waitlist_signup event capture and Hero CTA click tracking
 
-Progress: [=========.] 97% (13: 1/2 plans)
+Progress: [==========] 100% (14: 1/1 plans)
 
 ## Performance Metrics
 
@@ -70,6 +70,7 @@ Progress: [=========.] 97% (13: 1/2 plans)
 | Phase 12 P02 | 2min | 2 tasks | 4 files |
 | Phase 12 P03 | 6min | 2 tasks | 7 files |
 | Phase 13 P01 | 7min | 2 tasks | 13 files |
+| Phase 14 P01 | 2min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -193,6 +194,9 @@ Recent decisions affecting current work:
 - [Phase 13]: [13-01]: Grain overlay converted from body::before to .landing-grain class for layout composability
 - [Phase 13]: [13-01]: TrustBar rewritten with real brand logo imports from brand-logos.tsx instead of inline SVGs
 - [Phase 13]: [13-01]: Footer/Nav links trimmed to only existing pages (no Pricing, Docs, Blog, About)
+- [Phase 14]: PostHog scoped to landing layout only -- dashboard pages never load the SDK
+- [Phase 14]: capture_pageview: false with manual PostHogPageView for correct SPA navigation tracking
+- [Phase 14]: autocapture: false -- explicit event tracking only; all PostHog calls use try/catch + optional chaining for silent failure
 
 ### Pending Todos
 
@@ -222,6 +226,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-03T19:22:41Z
-Stopped at: Completed 13-01-PLAN.md
-Resume file: .planning/phases/13-adopt-orchids-landing-page-into-apps-web/13-02-PLAN.md
+Last session: 2026-03-03T23:31:54.095Z
+Stopped at: Completed 14-01-PLAN.md
+Resume file: None
