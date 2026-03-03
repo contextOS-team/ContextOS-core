@@ -1,4 +1,6 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
+import { PostHogProvider, PostHogPageView } from '@/lib/posthog'
 import '../landing.css'
 
 export const metadata: Metadata = {
@@ -13,8 +15,16 @@ export default function LandingLayout({
   children: React.ReactNode
 }) {
   return (
-    <div className="landing-theme landing-grain">
-      {children}
-    </div>
+    <>
+      <style>{`html, body { background-color: #0A0A0F !important; }`}</style>
+      <PostHogProvider>
+        <Suspense fallback={null}>
+          <PostHogPageView />
+        </Suspense>
+        <div className="landing-theme landing-grain">
+          {children}
+        </div>
+      </PostHogProvider>
+    </>
   )
 }
