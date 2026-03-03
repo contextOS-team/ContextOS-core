@@ -261,6 +261,18 @@ Plans:
 Plans:
 - [ ] TBD (run /gsd:plan-phase 11 to break down)
 
+### Phase 12: Org-wide code intelligence for context
+
+**Goal:** Build a code indexing pipeline that makes org-wide code searchable for context generation -- clone selected repos, parse code with tree-sitter, extract function/class definitions, embed in pgvector, and query during context page generation so engineers get relevant code from ANY repo surfaced in their ticket context
+**Requirements**: N/A (infrastructure improvement -- cross-repo code intelligence for context synthesis)
+**Depends on:** Phase 11
+**Plans:** 3 plans
+
+Plans:
+- [ ] 12-01-PLAN.md -- DB schema (code_chunks table), CodeChunk model, tree-sitter parsing service, repo clone + index orchestrator
+- [ ] 12-02-PLAN.md -- Wire code chunks into embedding service, linking engine, and synthesis template (Relevant Code section)
+- [ ] 12-03-PLAN.md -- Push webhook handler for incremental re-indexing, Redis Streams code index worker, API endpoints, polling fallback
+
 ---
 *Roadmap created: 2026-02-24*
 *Milestone: v1.0 Dogfood*
