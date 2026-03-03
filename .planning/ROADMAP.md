@@ -285,6 +285,16 @@ Plans:
 - [x] 13-01-PLAN.md -- Landing CSS (dark teal theme, scoped), useInView hook, 9 section components (Nav, Hero, TrustBar, ProblemSection, HowItWorks, Features, ProductDemo, Integrations, CTASection, Footer)
 - [ ] 13-02-PLAN.md -- Landing route group, layout with theme isolation, page composition, middleware update for public access, visual checkpoint
 
+### Phase 14: PostHog Analytics + Live Waitlist
+
+**Goal:** Add PostHog SDK to the landing page for analytics (page views, feature interactions) and wire the waitlist form to capture signups as PostHog events -- viewable and exportable from the PostHog dashboard
+**Requirements**: N/A (growth/analytics -- no formal requirement IDs)
+**Depends on:** Phase 13
+**Plans:** 1 plan
+
+Plans:
+- [ ] 14-01-PLAN.md -- PostHog SDK setup (landing-scoped provider), waitlist form wired to `waitlist_signup` event, Hero CTA click tracking
+
 ---
 *Roadmap created: 2026-02-24*
 *Milestone: v1.0 Dogfood*
