@@ -48,8 +48,9 @@ Based on the ticket and all related content above, produce a context page with t
 2. **Background & Decisions** — Key decisions, discussions, and context from Slack, meetings, and comments
 3. **Requirements** — What needs to be built or fixed, extracted from the ticket and discussions
 4. **Related Work** — PRs, linked tickets, and other relevant engineering artifacts
-5. **Open Questions** — Unresolved questions or ambiguities that need clarification
-6. **Key People** — Who is involved and their roles (assignee, reviewers, participants in discussions)"""
+5. **Relevant Code** — Code snippets from across the codebase that are relevant to this ticket. Include function signatures, class definitions, and route handlers with file paths and repo names. This helps engineers understand existing implementations even from repos they have never worked in.
+6. **Open Questions** — Unresolved questions or ambiguities that need clarification
+7. **Key People** — Who is involved and their roles (assignee, reviewers, participants in discussions)"""
 
 
 def _format_related_content(items: list) -> str:
@@ -59,11 +60,18 @@ def _format_related_content(items: list) -> str:
 
     sections = []
     for item in items:
-        section = (
-            f"#### [{item.source_type}] {item.title}\n"
-            f"**Relevance:** {item.relevance_score:.2f} | **Signals:** {', '.join(item.signals)}\n\n"
-            f"{item.snippet}"
-        )
+        if item.source_type == "code_chunk":
+            section = (
+                f"#### [{item.source_type}] {item.title}\n"
+                f"**Relevance:** {item.relevance_score:.2f} | **Signals:** {', '.join(item.signals)}\n\n"
+                f"```\n{item.snippet}\n```"
+            )
+        else:
+            section = (
+                f"#### [{item.source_type}] {item.title}\n"
+                f"**Relevance:** {item.relevance_score:.2f} | **Signals:** {', '.join(item.signals)}\n\n"
+                f"{item.snippet}"
+            )
         sections.append(section)
 
     return "\n\n---\n\n".join(sections)
@@ -85,7 +93,7 @@ async def generate_context_page(
     Flow:
     1. Look up LinearTicket by identifier
     2. Call find_related_content() to get all linked content
-    3. Build structured prompt with 6-section template
+    3. Build structured prompt with 7-section template
     4. Call LLMClient.generate() (Gemini, Laminar-traced)
     5. Upsert into context_pages table
 
