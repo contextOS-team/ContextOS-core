@@ -24,6 +24,7 @@ dependencies = [
     "asyncpg",
     "sqlalchemy[asyncio]>=2.0",
     "PyJWT[crypto]>=2.8",
+    "tree-sitter-language-pack",
 ]
 
 [project.optional-dependencies]
