@@ -284,8 +284,8 @@ class TestSoftDeleteBulk:
 
         source = inspect.getsource(code_indexer.index_repo)
 
-        # Should contain bulk IN clause pattern
-        assert "id.in_(stale_ids)" in source, (
+        # Should contain bulk IN clause pattern (chunked batches)
+        assert "id.in_(batch)" in source, (
             "Soft-delete should use bulk WHERE id IN (...), not per-row UPDATE"
         )
         # Should NOT contain the old N+1 pattern

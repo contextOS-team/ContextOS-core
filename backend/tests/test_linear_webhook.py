@@ -30,6 +30,12 @@ from tests.conftest import TEST_WORKSPACE_ID, _make_test_settings
 TEST_WEBHOOK_SECRET = "test-webhook-secret"
 
 
+@pytest.fixture(autouse=True)
+def _patch_queue_embedding():
+    with patch("src.services.embedding.queue_embedding_generation", new_callable=AsyncMock):
+        yield
+
+
 @pytest.fixture()
 def webhook_settings() -> Settings:
     """Create test settings with LINEAR_WEBHOOK_SECRET configured."""

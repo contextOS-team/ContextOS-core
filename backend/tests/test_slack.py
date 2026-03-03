@@ -44,6 +44,12 @@ SLACK_CLIENT_SECRET = "test-slack-client-secret"
 SLACK_SIGNING_SECRET = "test-slack-signing-secret"
 
 
+@pytest.fixture(autouse=True)
+def _patch_queue_embedding():
+    with patch("src.services.embedding.queue_embedding_generation", new_callable=AsyncMock):
+        yield
+
+
 @pytest.fixture()
 def slack_settings() -> Settings:
     """Create test settings with Slack OAuth config."""

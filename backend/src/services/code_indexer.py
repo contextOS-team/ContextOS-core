@@ -296,11 +296,14 @@ async def index_repo(
         chunks_deleted = len(stale_ids)
         if stale_ids:
             now = datetime.now(timezone.utc).replace(tzinfo=None)
-            await session.execute(
-                update(CodeChunk)
-                .where(CodeChunk.id.in_(stale_ids))  # type: ignore[union-attr]
-                .values(deleted_at=now)
-            )
+            # Chunk the IN clause to avoid oversized queries
+            for i in range(0, len(stale_ids), 500):
+                batch = stale_ids[i:i + 500]
+                await session.execute(
+                    update(CodeChunk)
+                    .where(CodeChunk.id.in_(batch))  # type: ignore[union-attr]
+                    .values(deleted_at=now)
+                )
 
         await session.flush()
 

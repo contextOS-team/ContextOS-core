@@ -38,6 +38,9 @@ EMBEDDING_MODEL_VERSION = "v1"
 # Batch size for embedding API calls (20-50 per CONTEXT.md; 25 is a safe middle ground)
 BATCH_SIZE = 25
 
+# Maximum IDs per IN clause to avoid oversized SQL queries
+IN_CLAUSE_LIMIT = 500
+
 # Map source_type strings to (model class, text extraction function)
 SOURCE_TYPE_MAP: dict[str, tuple[type, callable]] = {
     "linear_ticket": (
@@ -174,7 +177,6 @@ async def queue_embedding_generation(
     model_cls, extract_text = SOURCE_TYPE_MAP[source_type]
 
     # --- Bulk-load source records (chunked to avoid oversized IN clauses) ---
-    IN_CLAUSE_LIMIT = 500
     records_by_id: dict[UUID, object] = {}
     for i in range(0, len(source_ids), IN_CLAUSE_LIMIT):
         batch_ids = source_ids[i:i + IN_CLAUSE_LIMIT]
