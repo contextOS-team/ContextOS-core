@@ -155,6 +155,51 @@
   box-shadow: 0 8px 32px rgba(0, 212, 170, 0.1);
 }
 
+/* ===== Button variants (unified hover) ===== */
+.btn-primary {
+  background: #00D4AA;
+  color: #0A0A0F;
+  box-shadow: 0 0 0 rgba(0, 212, 170, 0);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+.btn-primary:hover {
+  background: #33DCBB;
+  box-shadow: 0 0 25px rgba(0, 212, 170, 0.5);
+}
+
+.btn-ghost {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #D0D0D8;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+.btn-ghost:hover {
+  border-color: rgba(0, 212, 170, 0.3);
+  color: #00D4AA;
+}
+
+.btn-play {
+  background: rgba(0, 212, 170, 0.15);
+  border: 1px solid rgba(0, 212, 170, 0.3);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+.btn-play:hover {
+  background: rgba(0, 212, 170, 0.25);
+  box-shadow: 0 0 30px rgba(0, 212, 170, 0.3);
+}
+
+/* ===== Input focus (unified) ===== */
+.input-landing {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.input-landing:focus {
+  border-color: rgba(0, 212, 170, 0.4);
+  box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.08);
+  outline: none;
+}
+
 /* ===== Animation keyframes ===== */
 @keyframes fadeInUp {
   from {

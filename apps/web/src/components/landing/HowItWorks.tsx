@@ -25,7 +25,7 @@ const steps = [
       </svg>
     ),
     visual: (
-      <div className="mt-5 grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         {[
           { name: "Linear", icon: "Li", color: "#5E6AD2" },
           { name: "Slack", icon: "S", color: "#4A154B" },
@@ -73,7 +73,7 @@ const steps = [
       </svg>
     ),
     visual: (
-      <div className="mt-5 space-y-2">
+      <div className="space-y-2">
         {[
           { src: "Slack", text: "We decided to use WebSockets...", ts: "2d ago" },
           { src: "Notion", text: "Architecture decision record", ts: "1w ago" },
@@ -85,7 +85,6 @@ const steps = [
             style={{
               background: "rgba(255,255,255,0.02)",
               border: "1px solid rgba(255,255,255,0.05)",
-              animationDelay: `${i * 200}ms`,
             }}
           >
             <div
@@ -133,7 +132,7 @@ const steps = [
     ),
     visual: (
       <div
-        className="mt-5 rounded-lg p-3 font-mono text-[11px]"
+        className="rounded-lg p-3 font-mono text-[11px]"
         style={{
           background: "#0A0A0F",
           border: "1px solid rgba(255,255,255,0.06)",
@@ -186,84 +185,113 @@ export default function HowItWorks() {
         }}
       />
 
-      <div className="max-w-6xl mx-auto relative z-10">
-        {/* Label */}
-        <div
-          className={`flex justify-center mb-4 transition-all duration-600 ${
-            inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-          }`}
-        >
-          <span className="section-label">How It Works</span>
+      <div className="max-w-5xl mx-auto relative z-10">
+        {/* Header — left-aligned on desktop */}
+        <div className="max-w-lg mb-16">
+          <div
+            className={`mb-4 transition-all duration-600 ${
+              inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+            }`}
+          >
+            <span className="section-label">How It Works</span>
+          </div>
+
+          <h2
+            className={`text-4xl md:text-5xl font-bold text-white tracking-tight transition-all duration-600 ${
+              inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+            }`}
+            style={{ transitionDelay: "100ms" }}
+          >
+            From ticket to context in seconds
+          </h2>
         </div>
 
-        {/* Headline */}
-        <h2
-          className={`text-4xl md:text-5xl font-bold text-center text-white mb-16 tracking-tight transition-all duration-600 ${
-            inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
-          }`}
-          style={{ transitionDelay: "100ms" }}
-        >
-          From ticket to context{" "}
-          <span className="teal-gradient-text">in seconds</span>
-        </h2>
-
-        {/* Steps */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
-          {/* Connector line (desktop only) */}
+        {/* Steps — alternating layout */}
+        <div className="space-y-12 md:space-y-0 relative">
+          {/* Vertical connector line (desktop only) */}
           <div
-            className="hidden md:block absolute top-8 left-[calc(33%+24px)] right-[calc(33%+24px)] h-px"
+            className="hidden md:block absolute left-1/2 top-8 bottom-8 w-px -translate-x-1/2"
             style={{
               background:
-                "linear-gradient(90deg, rgba(0,212,170,0.3), rgba(0,212,170,0.1), rgba(0,212,170,0.3))",
+                "linear-gradient(180deg, rgba(0,212,170,0.3), rgba(0,212,170,0.08), rgba(0,212,170,0.3))",
             }}
           />
 
-          {steps.map((step, i) => (
-            <div
-              key={step.number}
-              className={`rounded-2xl p-6 card-hover relative transition-all duration-700 ${
-                inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-              }`}
-              style={{
-                transitionDelay: `${200 + i * 120}ms`,
-                background: "#0F0F18",
-                border: "1px solid rgba(255,255,255,0.07)",
-              }}
-            >
-              {/* Teal top accent line */}
+          {steps.map((step, i) => {
+            const isEven = i % 2 === 0;
+            return (
               <div
-                className="absolute top-0 left-6 right-6 h-px"
-                style={{
-                  background:
-                    "linear-gradient(90deg, transparent, rgba(0,212,170,0.4), transparent)",
-                }}
-              />
-
-              {/* Number + icon */}
-              <div className="flex items-start justify-between mb-4">
+                key={step.number}
+                className={`md:grid md:grid-cols-2 md:gap-12 items-center md:py-8 transition-all duration-700 ${
+                  inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+                }`}
+                style={{ transitionDelay: `${200 + i * 150}ms` }}
+              >
+                {/* Text side */}
                 <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  className={`mb-6 md:mb-0 ${
+                    isEven ? "md:order-1 md:text-right md:pr-12" : "md:order-2 md:pl-12"
+                  }`}
+                >
+                  {/* Step number */}
+                  <div className={`flex items-center gap-3 mb-3 ${isEven ? "md:justify-end" : ""}`}>
+                    <div
+                      className="w-10 h-10 rounded-xl flex items-center justify-center"
+                      style={{
+                        background: "rgba(0,212,170,0.08)",
+                        border: "1px solid rgba(0,212,170,0.15)",
+                      }}
+                    >
+                      {step.icon}
+                    </div>
+                    <span
+                      className="text-2xl font-bold tracking-tighter font-mono"
+                      style={{ color: "rgba(0,212,170,0.15)" }}
+                    >
+                      {step.number}
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-semibold text-white mb-2">{step.title}</h3>
+                  <p className="text-sm text-[#6B7280] leading-relaxed">{step.description}</p>
+                </div>
+
+                {/* Visual side */}
+                <div
+                  className={`rounded-2xl p-5 card-hover relative ${
+                    isEven ? "md:order-2 md:ml-12" : "md:order-1 md:mr-12"
+                  }`}
                   style={{
-                    background: "rgba(0,212,170,0.08)",
-                    border: "1px solid rgba(0,212,170,0.15)",
+                    background: "#0F0F18",
+                    border: "1px solid rgba(255,255,255,0.07)",
                   }}
                 >
-                  {step.icon}
+                  {/* Teal accent line */}
+                  <div
+                    className="absolute top-0 left-6 right-6 h-px"
+                    style={{
+                      background:
+                        "linear-gradient(90deg, transparent, rgba(0,212,170,0.4), transparent)",
+                    }}
+                  />
+                  {step.visual}
                 </div>
-                <span
-                  className="text-3xl font-bold tracking-tighter"
-                  style={{ color: "rgba(0,212,170,0.12)", fontFamily: "monospace" }}
+
+                {/* Center dot on timeline (desktop only) */}
+                <div
+                  className="hidden md:flex absolute left-1/2 -translate-x-1/2 items-center justify-center"
+                  style={{ top: `${8 + i * 33.33}rem` }}
                 >
-                  {step.number}
-                </span>
+                  <div
+                    className="w-3 h-3 rounded-full"
+                    style={{
+                      background: "#00D4AA",
+                      boxShadow: "0 0 8px rgba(0,212,170,0.4)",
+                    }}
+                  />
+                </div>
               </div>
-
-              <h3 className="text-base font-semibold text-white mb-2">{step.title}</h3>
-              <p className="text-sm text-[#6B7280] leading-relaxed">{step.description}</p>
-
-              {step.visual}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>

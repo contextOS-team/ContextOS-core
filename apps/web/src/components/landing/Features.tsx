@@ -270,7 +270,7 @@ export default function Features() {
         >
           Everything an engineer needs to know,
           <br />
-          <span className="teal-gradient-text">in one place</span>
+          in one place
         </h2>
 
         <p

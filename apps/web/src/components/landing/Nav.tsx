@@ -79,20 +79,7 @@ export default function Nav() {
           <div className="hidden md:flex items-center gap-3">
             <a
               href="#waitlist"
-              className="text-sm font-medium px-4 py-2 rounded-lg transition-all duration-200"
-              style={{
-                background: "#00D4AA",
-                color: "#0A0A0F",
-                boxShadow: "0 0 0 rgba(0,212,170,0)",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.boxShadow =
-                  "0 0 20px rgba(0,212,170,0.4)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.boxShadow =
-                  "0 0 0 rgba(0,212,170,0)";
-              }}
+              className="btn-primary text-sm font-medium px-4 py-2 rounded-lg"
             >
               Get Early Access
             </a>

@@ -37,8 +37,7 @@ export default function ProductDemo() {
           }`}
           style={{ transitionDelay: "100ms" }}
         >
-          Watch a context page{" "}
-          <span className="teal-gradient-text">build itself</span>
+          Watch a context page build itself
         </h2>
 
         <p
@@ -115,22 +114,7 @@ export default function ProductDemo() {
               {/* Play button */}
               <div className="relative flex flex-col items-center gap-4 z-10">
                 <button
-                  className="w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200"
-                  style={{
-                    background: "rgba(0,212,170,0.15)",
-                    border: "1px solid rgba(0,212,170,0.3)",
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.background =
-                      "rgba(0,212,170,0.25)";
-                    (e.currentTarget as HTMLElement).style.boxShadow =
-                      "0 0 30px rgba(0,212,170,0.3)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.background =
-                      "rgba(0,212,170,0.15)";
-                    (e.currentTarget as HTMLElement).style.boxShadow = "none";
-                  }}
+                  className="btn-play w-16 h-16 rounded-full flex items-center justify-center"
                 >
                   <svg
                     width="20"

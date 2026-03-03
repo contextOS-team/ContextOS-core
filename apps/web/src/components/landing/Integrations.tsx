@@ -68,8 +68,7 @@ export default function Integrations() {
           }`}
           style={{ transitionDelay: "100ms" }}
         >
-          Works with your{" "}
-          <span className="teal-gradient-text">existing stack</span>
+          Works with your existing stack
         </h2>
 
         <p
