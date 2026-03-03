@@ -41,6 +41,7 @@ export async function updateSession(request: NextRequest) {
 
   // Public paths that don't require authentication
   const isPublicPath =
+    pathname === '/' ||
     pathname === '/login' ||
     pathname === '/signup' ||
     pathname.startsWith('/auth/callback')
