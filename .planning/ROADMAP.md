@@ -269,7 +269,7 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 12-01-PLAN.md -- DB schema (code_chunks table), CodeChunk model, tree-sitter parsing service, repo clone + index orchestrator
+- [x] 12-01-PLAN.md -- DB schema (code_chunks table), CodeChunk model, tree-sitter parsing service, repo clone + index orchestrator
 - [ ] 12-02-PLAN.md -- Wire code chunks into embedding service, linking engine, and synthesis template (Relevant Code section)
 - [ ] 12-03-PLAN.md -- Push webhook handler for incremental re-indexing, Redis Streams code index worker, API endpoints, polling fallback
 

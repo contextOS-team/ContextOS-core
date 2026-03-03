@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-last_updated: "2026-03-02T06:36:59.899Z"
+status: in_progress
+last_updated: "2026-03-03T09:42:59Z"
 progress:
   total_phases: 12
   completed_phases: 11
-  total_plans: 30
-  completed_plans: 30
+  total_plans: 33
+  completed_plans: 31
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 09 - Notion Integration UI Polish (complete)
+**Current focus:** Phase 12 - Org-wide Code Intelligence for Context
 
 ## Current Position
 
-Phase: 09 (Notion Integration UI Polish)
-Plan: 1 of 1 in current phase (all plans complete)
-Status: Phase 09 complete
-Last activity: 2026-03-02 -- Simplified Notion card: removed page list, added summary stats line, clean workspace header
+Phase: 12 (Org-wide Code Intelligence for Context)
+Plan: 1 of 3 in current phase (1 complete)
+Status: Phase 12 in progress
+Last activity: 2026-03-03 -- Code indexing foundation: code_chunks table, tree-sitter parsing, repo clone+index orchestrator
 
-Progress: [==========] 100% (09: 1/1 plans)
+Progress: [===-------] 33% (12: 1/3 plans)
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Progress: [==========] 100% (09: 1/1 plans)
 | Phase 10 P02 | 5min | 2 tasks | 6 files |
 | Phase 10 P03 | 7min | 4 tasks | 12 files |
 | Phase 09 P01 | 2min | 2 tasks | 3 files |
+| Phase 12 P01 | 7min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -171,6 +172,11 @@ Recent decisions affecting current work:
 - [09-01]: Re-sync button inline with stats line (no separate settings section); "Manage access" link removed
 - [09-01]: Middle dot separator for stats: "{count} pages synced . {time ago}"
 - [09-01]: notionDisplayName shows workspace name only (page count suffix removed from header)
+- [12-01]: tree-sitter-language-pack for 165+ language support with zero GPL deps (single wheel)
+- [12-01]: Dedicated code_chunks table (not reusing embeddings) for typed columns and proper indexing
+- [12-01]: Ephemeral clone strategy: clone to tmpdir, parse, delete (no persistent storage)
+- [12-01]: Sequential repo indexing per Phase 7 decision to avoid rate limit exhaustion
+- [12-01]: Content-hash dedup using same SHA-256 normalization pattern as embedding service
 
 ### Pending Todos
 
@@ -197,6 +203,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-02
-Stopped at: Completed 09-01-PLAN.md (Phase 09 complete)
-Resume file: .planning/phases/09-notion-integration-ui-polish/09-01-SUMMARY.md
+Last session: 2026-03-03
+Stopped at: Completed 12-01-PLAN.md
+Resume file: .planning/phases/12-org-wide-code-intelligence-for-context/12-01-SUMMARY.md
