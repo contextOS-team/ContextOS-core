@@ -273,6 +273,17 @@ Plans:
 - [ ] 12-02-PLAN.md -- Wire code chunks into embedding service, linking engine, and synthesis template (Relevant Code section)
 - [ ] 12-03-PLAN.md -- Push webhook handler for incremental re-indexing, Redis Streams code index worker, API endpoints, polling fallback
 
+### Phase 13: Adopt Orchids Landing Page into apps/web
+
+**Goal:** Bring the standalone Orchids landing page (10-section dark-themed marketing page) into the existing apps/web Next.js app as the public-facing marketing page at `/`, with dark teal theme isolation from the dashboard, real integration logos, waitlist-only CTA, and no auth links
+**Requirements**: N/A (marketing/landing page -- no formal requirement IDs)
+**Depends on:** Phase 12
+**Plans:** 2 plans
+
+Plans:
+- [ ] 13-01-PLAN.md -- Landing CSS (dark teal theme, scoped), useInView hook, 9 section components (Nav, Hero, TrustBar, ProblemSection, HowItWorks, Features, ProductDemo, Integrations, CTASection, Footer)
+- [ ] 13-02-PLAN.md -- Landing route group, layout with theme isolation, page composition, middleware update for public access, visual checkpoint
+
 ---
 *Roadmap created: 2026-02-24*
 *Milestone: v1.0 Dogfood*
