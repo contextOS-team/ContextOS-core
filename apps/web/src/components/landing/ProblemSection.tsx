@@ -1,6 +1,66 @@
 "use client";
 
 import { useInView } from "@/hooks/useInView";
+import {
+  LinearLogo,
+  SlackLogo,
+  GitHubLogo,
+  NotionLogo,
+} from "@/components/icons/brand-logos";
+
+/* Small inline icons for tools without brand logos */
+function MeetingIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <rect x="2" y="3" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="9" cy="9" r="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M13 6L16 4V14L13 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function EmailIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <rect x="2" y="4" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M2 6L9 11L16 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function GoogleDocIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <path d="M5 2H11L14 5V15C14 15.5523 13.5523 16 13 16H5C4.44772 16 4 15.5523 4 15V3C4 2.44772 4.44772 2 5 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M11 2V5H14" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M7 9H11M7 12H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function Pill({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <div
+      className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-[#9CA3AF]"
+      style={{
+        border: "1px solid rgba(255,255,255,0.1)",
+        background: "rgba(255,255,255,0.03)",
+      }}
+    >
+      <span className="text-[#9CA3AF]">{icon}</span>
+      {label}
+    </div>
+  );
+}
+
+const toolPills = [
+  { label: "Slack", icon: <SlackLogo width={18} height={18} color="currentColor" />, top: "0%", left: "8%" },
+  { label: "Notion", icon: <NotionLogo width={18} height={18} />, top: "0%", left: "52%" },
+  { label: "Linear", icon: <LinearLogo width={18} height={18} />, top: "35%", left: "5%" },
+  { label: "Meeting", icon: <MeetingIcon />, top: "35%", left: "55%" },
+  { label: "Google Doc", icon: <GoogleDocIcon />, top: "68%", left: "3%" },
+  { label: "Email", icon: <EmailIcon />, top: "68%", left: "48%" },
+];
 
 export default function ProblemSection() {
   const { ref, inView } = useInView();
@@ -52,233 +112,203 @@ export default function ProblemSection() {
           together what this ticket is actually about.
         </p>
 
-        {/* Comparison */}
+        {/* Comparison cards with arrow */}
         <div
-          className={`grid grid-cols-1 md:grid-cols-2 gap-6 transition-all duration-700 ${
+          className={`flex flex-col md:flex-row items-stretch gap-4 md:gap-0 transition-all duration-700 ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
           style={{ transitionDelay: "250ms" }}
         >
-          {/* Before */}
+          {/* Before card */}
           <div
-            className="rounded-2xl p-6 relative overflow-hidden"
+            className="flex-1 rounded-2xl p-8 relative overflow-hidden"
             style={{
-              background: "#0F0F18",
-              border: "1px solid rgba(255,80,80,0.15)",
+              border: "1px dashed rgba(255,255,255,0.15)",
+              background: "rgba(255,255,255,0.02)",
+              boxShadow: "inset 0 0 80px rgba(255,80,80,0.06), 0 0 60px rgba(255,80,80,0.04)",
             }}
           >
+            {/* Red ambient glow */}
             <div
-              className="absolute top-0 left-0 right-0 h-px"
+              className="absolute inset-0 pointer-events-none"
               style={{
-                background:
-                  "linear-gradient(90deg, transparent, rgba(255,80,80,0.3), transparent)",
+                background: "radial-gradient(ellipse 70% 60% at 50% 50%, rgba(255,80,80,0.06) 0%, transparent 70%)",
               }}
             />
-            <div className="flex items-center gap-2 mb-6">
-              <div
-                className="w-6 h-6 rounded-full flex items-center justify-center"
-                style={{ background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)" }}
-              >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="#FF5050">
-                  <path d="M6 1L6 11M1 6L11 6" stroke="#FF5050" strokeWidth="1.5" strokeLinecap="round" style={{ transform: "rotate(45deg)", transformOrigin: "center" }} />
-                  <path d="M2 2L10 10M10 2L2 10" stroke="#FF5050" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-              </div>
-              <span className="text-sm font-semibold text-[#FF8080]">Before ContextOS</span>
-            </div>
+            <h3 className="text-xl font-bold text-white mb-10">
+              Before ContextOS
+            </h3>
 
-            {/* Chaos visual */}
-            <div className="relative mb-6">
-              {/* Scattered tabs */}
-              {[
-                { label: "#eng-sprint-12", icon: "S", color: "#4A154B", top: 0, left: 0, rotate: -3 },
-                { label: "Notion: Architecture v2", icon: "N", color: "#1e1e1e", top: 8, left: "30%", rotate: 2 },
-                { label: "Loom recording 32min", icon: "L", color: "#625DF5", top: 0, right: 0, rotate: 4 },
-                { label: "Linear: ENG-421", icon: "Li", color: "#5E6AD2", top: 52, left: "10%", rotate: -1 },
-                { label: "Confluence doc...", icon: "C", color: "#0052CC", top: 52, left: "40%", rotate: 3 },
-              ].map((tab, i) => (
-                <div
-                  key={i}
-                  className="absolute flex items-center gap-1.5 px-2 py-1 rounded-md text-xs text-white"
-                  style={{
-                    background: "#141420",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    top: tab.top,
-                    left: tab.left,
-                    right: (tab as {right?: string | number}).right,
-                    transform: `rotate(${tab.rotate}deg)`,
-                    whiteSpace: "nowrap",
-                    fontSize: "10px",
-                  }}
-                >
-                  <div
-                    className="w-3.5 h-3.5 rounded flex items-center justify-center text-white font-bold"
-                    style={{ background: tab.color, fontSize: "7px" }}
-                  >
-                    {tab.icon}
-                  </div>
-                  {tab.label}
-                </div>
-              ))}
-              <div className="h-28" />
-            </div>
+            {/* Tool pills scattered around sad face */}
+            <div className="relative h-56 mb-6">
+              {/* Left column pills */}
+              <div className="absolute" style={{ top: "4%", left: "18%" }}>
+                <Pill icon={toolPills[0].icon} label={toolPills[0].label} />
+              </div>
+              <div className="absolute" style={{ top: "36%", left: "14%" }}>
+                <Pill icon={toolPills[2].icon} label={toolPills[2].label} />
+              </div>
+              <div className="absolute" style={{ top: "68%", left: "16%" }}>
+                <Pill icon={toolPills[4].icon} label={toolPills[4].label} />
+              </div>
 
-            {/* Developer frustrated */}
-            <div className="flex items-center gap-4 mt-2">
-              <div
-                className="w-12 h-12 rounded-full flex items-center justify-center text-2xl"
-                style={{ background: "rgba(255,80,80,0.08)", border: "1px solid rgba(255,80,80,0.15)" }}
-              >
-                {":("}
+              {/* Right column pills - offset vertically */}
+              <div className="absolute" style={{ top: "8%", right: "16%" }}>
+                <Pill icon={toolPills[1].icon} label={toolPills[1].label} />
               </div>
-              <div>
-                <div className="text-white font-semibold text-sm">Developer</div>
-                <div className="text-[#9CA3AF] text-xs">Hunting through 7+ sources</div>
+              <div className="absolute" style={{ top: "40%", right: "14%" }}>
+                <Pill icon={toolPills[3].icon} label={toolPills[3].label} />
               </div>
-              <div className="ml-auto">
+              <div className="absolute" style={{ top: "72%", right: "18%" }}>
+                <Pill icon={toolPills[5].icon} label={toolPills[5].label} />
+              </div>
+
+              {/* Sad face - dead center */}
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
                 <div
-                  className="px-3 py-1.5 rounded-lg text-sm font-bold"
+                  className="w-12 h-12 rounded-full flex items-center justify-center"
                   style={{
-                    background: "rgba(255,80,80,0.1)",
+                    background: "rgba(255,80,80,0.08)",
                     border: "1px solid rgba(255,80,80,0.2)",
-                    color: "#FF8080",
                   }}
                 >
-                  2-6 hours
+                  <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                    <circle cx="11" cy="11" r="10" stroke="#FF6B6B" strokeWidth="1.5" />
+                    <circle cx="8" cy="9" r="1.2" fill="#FF6B6B" />
+                    <circle cx="14" cy="9" r="1.2" fill="#FF6B6B" />
+                    <path d="M8 15C8 15 9.5 13 11 13C12.5 13 14 15 14 15" stroke="#FF6B6B" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
                 </div>
               </div>
             </div>
 
-            <ul className="mt-5 space-y-2">
-              {[
-                "Searching Slack for the right thread",
-                "Reading through long Notion pages",
-                "Watching meeting recordings for context",
-                "Asking teammates what was decided",
-              ].map((item) => (
-                <li key={item} className="flex items-center gap-2 text-xs text-[#6B7280]">
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    <path d="M2 2L8 8M8 2L2 8" stroke="#FF5050" strokeWidth="1.5" strokeLinecap="round" />
-                  </svg>
-                  {item}
-                </li>
-              ))}
-            </ul>
+            {/* Time stat */}
+            <div className="text-center">
+              <div
+                className="text-2xl md:text-3xl font-bold font-mono mb-2"
+                style={{ color: "#FF6B6B" }}
+              >
+                2-6 hours
+              </div>
+              <p className="text-sm text-[#6B7280]">
+                Spent gathering context before coding
+              </p>
+            </div>
           </div>
 
-          {/* After */}
+          {/* Arrow between cards */}
+          <div className="flex items-center justify-center px-4 py-4 md:py-0">
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.1)",
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                className="md:rotate-0 rotate-90"
+              >
+                <path
+                  d="M3 8H13M13 8L9 4M13 8L9 12"
+                  stroke="#6B7280"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+          </div>
+
+          {/* After card */}
           <div
-            className="rounded-2xl p-6 relative overflow-hidden"
+            className="flex-1 rounded-2xl p-8 relative overflow-hidden"
             style={{
-              background: "#0F0F18",
-              border: "1px solid rgba(0,212,170,0.15)",
+              border: "1px dashed rgba(255,255,255,0.15)",
+              background: "rgba(255,255,255,0.02)",
+              boxShadow: "inset 0 0 80px rgba(0,212,170,0.06), 0 0 60px rgba(0,212,170,0.04)",
             }}
           >
+            {/* Green ambient glow */}
             <div
-              className="absolute top-0 left-0 right-0 h-px"
+              className="absolute inset-0 pointer-events-none"
               style={{
-                background:
-                  "linear-gradient(90deg, transparent, rgba(0,212,170,0.4), transparent)",
+                background: "radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,212,170,0.06) 0%, transparent 70%)",
               }}
             />
-            <div className="flex items-center gap-2 mb-6">
+            <h3 className="text-xl font-bold text-white mb-10">
+              With ContextOS
+            </h3>
+
+            {/* Context ready card */}
+            <div className="flex justify-center mb-8">
               <div
-                className="w-6 h-6 rounded-full flex items-center justify-center"
+                className="rounded-xl p-5 w-64 relative"
                 style={{
-                  background: "rgba(0,212,170,0.1)",
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                }}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                    <rect x="1" y="1" width="16" height="16" rx="3" stroke="#00D4AA" strokeWidth="1.5" />
+                    <path d="M5 9L8 12L13 6" stroke="#00D4AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span className="text-white font-mono text-sm font-medium">
+                    Context ready
+                  </span>
+                </div>
+                {/* Placeholder lines */}
+                <div className="space-y-2.5">
+                  <div
+                    className="h-2 rounded-full"
+                    style={{ background: "rgba(255,255,255,0.08)", width: "90%" }}
+                  />
+                  <div
+                    className="h-2 rounded-full"
+                    style={{ background: "rgba(255,255,255,0.06)", width: "75%" }}
+                  />
+                  <div
+                    className="h-2 rounded-full"
+                    style={{ background: "rgba(255,255,255,0.04)", width: "60%" }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Happy face - centered with green glow */}
+            <div className="flex justify-center mb-6">
+              <div
+                className="w-12 h-12 rounded-full flex items-center justify-center"
+                style={{
+                  background: "rgba(0,212,170,0.08)",
                   border: "1px solid rgba(0,212,170,0.2)",
                 }}
               >
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                  <path d="M2 6L5 9L10 3" stroke="#00D4AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                  <circle cx="11" cy="11" r="10" stroke="#00D4AA" strokeWidth="1.5" />
+                  <circle cx="8" cy="9" r="1.2" fill="#00D4AA" />
+                  <circle cx="14" cy="9" r="1.2" fill="#00D4AA" />
+                  <path d="M8 13C8 13 9.5 15 11 15C12.5 15 14 13 14 13" stroke="#00D4AA" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               </div>
-              <span className="text-sm font-semibold text-[#00D4AA]">With ContextOS</span>
             </div>
 
-            {/* Single clean page visual */}
-            <div
-              className="rounded-xl p-4 mb-6 relative overflow-hidden"
-              style={{
-                background: "#141420",
-                border: "1px solid rgba(0,212,170,0.1)",
-              }}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-mono text-[#00D4AA] uppercase tracking-wider">Context Page</span>
-                <span
-                  className="text-xs px-2 py-0.5 rounded-full"
-                  style={{
-                    background: "rgba(0,212,170,0.1)",
-                    color: "#00D4AA",
-                  }}
-                >
-                  Generated
-                </span>
-              </div>
-              <div className="space-y-2">
-                {["Background & decisions", "Relevant Slack threads", "Meeting moments", "Related docs"].map(
-                  (item, i) => (
-                    <div key={item} className="flex items-center gap-2">
-                      <div
-                        className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                        style={{ background: "#00D4AA", opacity: 1 - i * 0.15 }}
-                      />
-                      <span className="text-xs text-[#9CA3AF]">{item}</span>
-                      <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.04)" }} />
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                        <path d="M2 5L4 7L8 3" stroke="#00D4AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </div>
-                  )
-                )}
-              </div>
-            </div>
-
-            {/* Developer happy */}
-            <div className="flex items-center gap-4 mt-2">
+            {/* Time stat */}
+            <div className="text-center">
               <div
-                className="w-12 h-12 rounded-full flex items-center justify-center text-2xl"
-                style={{
-                  background: "rgba(0,212,170,0.08)",
-                  border: "1px solid rgba(0,212,170,0.15)",
-                }}
+                className="text-2xl md:text-3xl font-bold font-mono mb-2"
+                style={{ color: "#00D4AA" }}
               >
-                {":)"}
+                2 minutes
               </div>
-              <div>
-                <div className="text-white font-semibold text-sm">Developer</div>
-                <div className="text-[#9CA3AF] text-xs">Opens ticket, context is ready</div>
-              </div>
-              <div className="ml-auto">
-                <div
-                  className="px-3 py-1.5 rounded-lg text-sm font-bold"
-                  style={{
-                    background: "rgba(0,212,170,0.1)",
-                    border: "1px solid rgba(0,212,170,0.2)",
-                    color: "#00D4AA",
-                  }}
-                >
-                  2 minutes
-                </div>
-              </div>
+              <p className="text-sm text-[#6B7280]">
+                Everything organized. Ready to code.
+              </p>
             </div>
-
-            <ul className="mt-5 space-y-2">
-              {[
-                "One auto-generated context page",
-                "All sources unified in one view",
-                "Key decisions highlighted",
-                "Ready before you even open the ticket",
-              ].map((item) => (
-                <li key={item} className="flex items-center gap-2 text-xs text-[#6B7280]">
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    <path d="M2 5L4 7L8 3" stroke="#00D4AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  {item}
-                </li>
-              ))}
-            </ul>
           </div>
         </div>
       </div>
