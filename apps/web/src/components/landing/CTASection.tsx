@@ -1,16 +1,23 @@
 "use client";
 
 import { useState } from "react";
+import { usePostHog } from "posthog-js/react";
 import { useInView } from "@/hooks/useInView";
 
 export default function CTASection() {
   const { ref, inView } = useInView();
+  const posthog = usePostHog();
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (email) {
+      try {
+        posthog?.capture("waitlist_signup", { email });
+      } catch {
+        // Silent fail -- analytics should never block UX
+      }
       setSubmitted(true);
     }
   };
@@ -89,39 +96,11 @@ export default function CTASection() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="flex-1 px-4 py-3 rounded-xl text-sm text-white placeholder:text-[#4B5563] outline-none transition-all duration-200"
-                    style={{
-                      background: "rgba(255,255,255,0.05)",
-                      border: "1px solid rgba(255,255,255,0.1)",
-                    }}
-                    onFocus={(e) => {
-                      (e.currentTarget as HTMLElement).style.borderColor =
-                        "rgba(0,212,170,0.4)";
-                      (e.currentTarget as HTMLElement).style.boxShadow =
-                        "0 0 0 3px rgba(0,212,170,0.08)";
-                    }}
-                    onBlur={(e) => {
-                      (e.currentTarget as HTMLElement).style.borderColor =
-                        "rgba(255,255,255,0.1)";
-                      (e.currentTarget as HTMLElement).style.boxShadow = "none";
-                    }}
+                    className="input-landing flex-1 px-4 py-3 rounded-xl text-sm text-white placeholder:text-[#4B5563]"
                   />
                   <button
                     type="submit"
-                    className="px-5 py-3 rounded-xl text-sm font-semibold transition-all duration-200 whitespace-nowrap"
-                    style={{
-                      background: "#00D4AA",
-                      color: "#0A0A0F",
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.boxShadow =
-                        "0 0 25px rgba(0,212,170,0.5)";
-                      (e.currentTarget as HTMLElement).style.background = "#33DCBB";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.boxShadow = "none";
-                      (e.currentTarget as HTMLElement).style.background = "#00D4AA";
-                    }}
+                    className="btn-primary px-5 py-3 rounded-xl text-sm font-semibold whitespace-nowrap"
                   >
                     Get Early Access
                   </button>

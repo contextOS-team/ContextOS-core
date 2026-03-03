@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePostHog } from "posthog-js/react";
 
 function MockContextPage() {
   return (
@@ -143,6 +144,7 @@ function MockContextPage() {
 }
 
 export default function Hero() {
+  const posthog = usePostHog();
   const [visible, setVisible] = useState(false);
   const [scrollY, setScrollY] = useState(0);
   const heroRef = useRef<HTMLDivElement>(null);
@@ -242,39 +244,26 @@ export default function Hero() {
         >
           <a
             href="#waitlist"
-            className="px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-200"
-            style={{
-              background: "#00D4AA",
-              color: "#0A0A0F",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.boxShadow =
-                "0 0 30px rgba(0,212,170,0.5)";
-              (e.currentTarget as HTMLElement).style.background = "#33DCBB";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.boxShadow = "none";
-              (e.currentTarget as HTMLElement).style.background = "#00D4AA";
+            className="btn-primary px-6 py-3 rounded-lg text-sm font-semibold"
+            onClick={() => {
+              try {
+                posthog?.capture("cta_hero_click");
+              } catch {
+                /* silent */
+              }
             }}
           >
             Get Early Access
           </a>
           <a
             href="#how-it-works"
-            className="px-6 py-3 rounded-lg text-sm font-medium transition-all duration-200 text-[#D0D0D8]"
-            style={{
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.04)",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.borderColor =
-                "rgba(0,212,170,0.3)";
-              (e.currentTarget as HTMLElement).style.color = "#00D4AA";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.borderColor =
-                "rgba(255,255,255,0.12)";
-              (e.currentTarget as HTMLElement).style.color = "#D0D0D8";
+            className="btn-ghost px-6 py-3 rounded-lg text-sm font-medium"
+            onClick={() => {
+              try {
+                posthog?.capture("cta_how_it_works_click");
+              } catch {
+                /* silent */
+              }
             }}
           >
             See How It Works
