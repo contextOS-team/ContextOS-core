@@ -228,6 +228,7 @@ Phase 6 plans run in parallel: Bekbol (extension) + Daulet (security/observabili
 | 7. GitHub Integration | 3/3 | Complete    | 2026-02-25 |
 | 7.1 Tech Debt Cleanup | 2/2 | Complete | 2026-02-26 |
 | 7.2 Integration Bug Fixes & Hardening | 0/3 | Planned | - |
+| 13. Adopt Orchids Landing Page | 1/2 | In Progress | - |
 
 ### Phase 9: Notion Integration UI Polish
 
@@ -278,10 +279,10 @@ Plans:
 **Goal:** Bring the standalone Orchids landing page (10-section dark-themed marketing page) into the existing apps/web Next.js app as the public-facing marketing page at `/`, with dark teal theme isolation from the dashboard, real integration logos, waitlist-only CTA, and no auth links
 **Requirements**: N/A (marketing/landing page -- no formal requirement IDs)
 **Depends on:** Phase 12
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
-- [ ] 13-01-PLAN.md -- Landing CSS (dark teal theme, scoped), useInView hook, 9 section components (Nav, Hero, TrustBar, ProblemSection, HowItWorks, Features, ProductDemo, Integrations, CTASection, Footer)
+- [x] 13-01-PLAN.md -- Landing CSS (dark teal theme, scoped), useInView hook, 9 section components (Nav, Hero, TrustBar, ProblemSection, HowItWorks, Features, ProductDemo, Integrations, CTASection, Footer)
 - [ ] 13-02-PLAN.md -- Landing route group, layout with theme isolation, page composition, middleware update for public access, visual checkpoint
 
 ---

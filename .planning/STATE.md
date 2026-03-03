@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Phase 13 context gathered
-last_updated: "2026-03-03T18:58:29.334Z"
-last_activity: "2026-03-03 -- Freshness pipeline: Redis Streams code index worker, push webhook handler, API endpoints, polling fallback"
+status: in-progress
+stopped_at: Completed 13-01-PLAN.md
+last_updated: "2026-03-03T19:22:41.000Z"
+last_activity: "2026-03-03 -- Landing page components: 10 section components, scoped CSS, useInView hook migrated from Orchids"
 progress:
   total_phases: 17
   completed_phases: 12
-  total_plans: 33
-  completed_plans: 33
-  percent: 100
+  total_plans: 35
+  completed_plans: 34
+  percent: 97
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 12 - Org-wide Code Intelligence for Context
+**Current focus:** Phase 13 - Adopt Orchids Landing Page into apps/web
 
 ## Current Position
 
-Phase: 12 (Org-wide Code Intelligence for Context)
-Plan: 3 of 3 in current phase (3 complete)
-Status: Phase 12 complete
-Last activity: 2026-03-03 -- Freshness pipeline: Redis Streams code index worker, push webhook handler, API endpoints, polling fallback
+Phase: 13 (Adopt Orchids Landing Page into apps/web)
+Plan: 1 of 2 in current phase (1 complete)
+Status: Phase 13 in progress
+Last activity: 2026-03-03 -- Landing page components: 10 section components, scoped CSS, useInView hook migrated from Orchids
 
-Progress: [==========] 100% (12: 3/3 plans)
+Progress: [=========.] 97% (13: 1/2 plans)
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Progress: [==========] 100% (12: 3/3 plans)
 | Phase 12 P01 | 7min | 2 tasks | 7 files |
 | Phase 12 P02 | 2min | 2 tasks | 4 files |
 | Phase 12 P03 | 6min | 2 tasks | 7 files |
+| Phase 13 P01 | 7min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -188,6 +189,10 @@ Recent decisions affecting current work:
 - [Phase 12]: [12-03]: Redis Streams code index worker follows exact embedding_worker.py pattern (STREAM_KEY, GROUP_NAME, xreadgroup loop)
 - [Phase 12]: [12-03]: Indexing status tracked in workspace_integrations.config JSONB (code_index_status, code_index_last_at)
 - [Phase 12]: [12-03]: Polling fallback checks code_index_last_at; re-indexes if >60 minutes stale
+- [Phase 13]: [13-01]: CSS variables scoped under .landing-theme class to avoid dashboard CSS pollution
+- [Phase 13]: [13-01]: Grain overlay converted from body::before to .landing-grain class for layout composability
+- [Phase 13]: [13-01]: TrustBar rewritten with real brand logo imports from brand-logos.tsx instead of inline SVGs
+- [Phase 13]: [13-01]: Footer/Nav links trimmed to only existing pages (no Pricing, Docs, Blog, About)
 
 ### Pending Todos
 
@@ -215,6 +220,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-03T18:58:29.322Z
-Stopped at: Phase 13 context gathered
-Resume file: .planning/phases/13-adopt-orchids-landing-page-into-apps-web/13-CONTEXT.md
+Last session: 2026-03-03T19:22:41Z
+Stopped at: Completed 13-01-PLAN.md
+Resume file: .planning/phases/13-adopt-orchids-landing-page-into-apps-web/13-02-PLAN.md
