@@ -7,6 +7,10 @@ import {
   GitHubLogo,
   NotionLogo,
   FathomLogo,
+  ConfluenceLogo,
+  GoogleDocsLogo,
+  FigmaLogo,
+  LoomLogo,
 } from "@/components/icons/brand-logos";
 import type { ComponentType, SVGProps } from "react";
 
@@ -14,21 +18,20 @@ type Integration = {
   name: string;
   description: string;
   status: "live" | "soon";
-  icon: string | null;
   color: string;
-  Logo?: ComponentType<SVGProps<SVGSVGElement>>;
+  Logo: ComponentType<SVGProps<SVGSVGElement>>;
 };
 
 const integrations: Integration[] = [
-  { name: "Linear", description: "Issue tracking", status: "live", icon: null, color: "#5E6AD2", Logo: LinearLogo },
-  { name: "Slack", description: "Team messaging", status: "live", icon: null, color: "#4A154B", Logo: SlackLogo },
-  { name: "GitHub", description: "Code & PRs", status: "live", icon: null, color: "#1e1e1e", Logo: GitHubLogo },
-  { name: "Notion", description: "Docs & wikis", status: "live", icon: null, color: "#2a2a2a", Logo: NotionLogo },
-  { name: "Fathom", description: "Transcripts & clips", status: "live", icon: null, color: "#00BEFF", Logo: FathomLogo },
-  { name: "Confluence", description: "Documentation", status: "soon", icon: "C", color: "#0052CC" },
-  { name: "Google Docs", description: "Documents", status: "soon", icon: "G", color: "#4285F4" },
-  { name: "Figma", description: "Design files", status: "soon", icon: "F", color: "#1C1C1E" },
-  { name: "Loom", description: "Video messages", status: "soon", icon: "L", color: "#625DF5" },
+  { name: "Linear", description: "Issue tracking", status: "live", color: "#5E6AD2", Logo: LinearLogo },
+  { name: "Slack", description: "Team messaging", status: "live", color: "#4A154B", Logo: SlackLogo },
+  { name: "GitHub", description: "Code & PRs", status: "live", color: "#1e1e1e", Logo: GitHubLogo },
+  { name: "Notion", description: "Docs & wikis", status: "live", color: "#2a2a2a", Logo: NotionLogo },
+  { name: "Fathom", description: "Transcripts & clips", status: "live", color: "#1a3a4a", Logo: FathomLogo },
+  { name: "Confluence", description: "Documentation", status: "soon", color: "#1a2744", Logo: ConfluenceLogo },
+  { name: "Google Docs", description: "Documents", status: "soon", color: "#1a2a3a", Logo: GoogleDocsLogo },
+  { name: "Figma", description: "Design files", status: "soon", color: "#1C1C1E", Logo: FigmaLogo },
+  { name: "Loom", description: "Video messages", status: "soon", color: "#1e1a30", Logo: LoomLogo },
 ];
 
 export default function Integrations() {
@@ -111,11 +114,7 @@ export default function Integrations() {
                   className="w-9 h-9 rounded-lg flex items-center justify-center text-white"
                   style={{ background: integration.color }}
                 >
-                  {integration.Logo ? (
-                    <integration.Logo width={16} height={16} fill="currentColor" />
-                  ) : (
-                    <span className="font-bold text-xs">{integration.icon}</span>
-                  )}
+                  <integration.Logo width={16} height={16} fill="currentColor" />
                 </div>
                 {integration.status === "soon" ? (
                   <span

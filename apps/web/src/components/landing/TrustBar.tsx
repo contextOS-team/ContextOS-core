@@ -31,7 +31,11 @@ export default function TrustBar() {
                 key={logo.name}
                 className="flex items-center gap-2 text-[#3D4450] hover:text-[#6B7280] transition-colors duration-200 cursor-default"
               >
-                <logo.Logo width={20} height={20} />
+                {logo.name === "Slack" ? (
+                  <logo.Logo width={20} height={20} color="currentColor" />
+                ) : (
+                  <logo.Logo width={20} height={20} />
+                )}
                 <span className="text-sm font-medium">{logo.name}</span>
               </div>
             ))}
