@@ -1,0 +1,205 @@
+/*
+ * Landing page CSS - ContextOS dark marketing theme
+ * Scoped under .landing-theme to avoid leaking into dashboard CSS.
+ * Imported by the landing layout AFTER globals.css.
+ * DO NOT add @import "tailwindcss" here -- already in globals.css.
+ */
+
+/* ===== Brand color variables (scoped to landing context) ===== */
+.landing-theme {
+  /* ContextOS brand colors */
+  --color-teal: #00D4AA;
+  --color-teal-dark: #00A882;
+  --color-teal-light: #33DCBB;
+  --color-navy: #0A0A0F;
+  --color-surface: #0F0F18;
+  --color-surface-2: #141420;
+  --color-surface-3: #1C1C2E;
+  --color-border-subtle: rgba(255, 255, 255, 0.07);
+  --color-border-medium: rgba(255, 255, 255, 0.12);
+  --color-text-muted: #6B7280;
+  --color-text-secondary: #9CA3AF;
+
+  /* shadcn variable overrides for landing dark theme */
+  --radius: 0.625rem;
+  --background: #0A0A0F;
+  --foreground: #F0F0F5;
+  --card: #0F0F18;
+  --card-foreground: #F0F0F5;
+  --popover: #141420;
+  --popover-foreground: #F0F0F5;
+  --primary: #00D4AA;
+  --primary-foreground: #0A0A0F;
+  --secondary: #141420;
+  --secondary-foreground: #F0F0F5;
+  --muted: #1C1C2E;
+  --muted-foreground: #6B7280;
+  --accent: #1C1C2E;
+  --accent-foreground: #F0F0F5;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: rgba(255, 255, 255, 0.07);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: #00D4AA;
+}
+
+/* ===== Landing base styles (scoped) ===== */
+.landing-theme {
+  background-color: #0A0A0F;
+  color: #F0F0F5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* Subtle grain texture */
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  scroll-behavior: smooth;
+}
+
+/* ===== Grain overlay (class-based, not body::before) ===== */
+.landing-grain::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1000;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23grain)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px 200px;
+}
+
+/* ===== Custom scrollbar (scoped) ===== */
+.landing-theme ::-webkit-scrollbar {
+  width: 6px;
+}
+.landing-theme ::-webkit-scrollbar-track {
+  background: #0A0A0F;
+}
+.landing-theme ::-webkit-scrollbar-thumb {
+  background: #1C1C2E;
+  border-radius: 3px;
+}
+.landing-theme ::-webkit-scrollbar-thumb:hover {
+  background: #00D4AA33;
+}
+
+/* ===== Teal glow utilities ===== */
+.teal-glow {
+  box-shadow: 0 0 40px rgba(0, 212, 170, 0.15), 0 0 80px rgba(0, 212, 170, 0.05);
+}
+
+.teal-glow-sm {
+  box-shadow: 0 0 20px rgba(0, 212, 170, 0.12);
+}
+
+.teal-glow-text {
+  text-shadow: 0 0 30px rgba(0, 212, 170, 0.4);
+}
+
+/* ===== Radial glow behind elements ===== */
+.radial-glow {
+  position: relative;
+}
+.radial-glow::before {
+  content: '';
+  position: absolute;
+  inset: -60px;
+  background: radial-gradient(ellipse at center, rgba(0, 212, 170, 0.08) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ===== Section label style ===== */
+.section-label {
+  font-family: var(--font-mono), 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #00D4AA;
+}
+
+/* ===== Subtle dot grid background pattern ===== */
+.dot-grid {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* ===== Gradient border ===== */
+.gradient-border {
+  position: relative;
+  background: #0F0F18;
+  border-radius: 12px;
+}
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(0, 212, 170, 0.4), rgba(0, 212, 170, 0.1), rgba(0, 212, 170, 0.05));
+  z-index: -1;
+}
+
+/* ===== Teal gradient text ===== */
+.teal-gradient-text {
+  background: linear-gradient(135deg, #00D4AA, #33DCBB, #00A882);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ===== Card hover lift ===== */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 212, 170, 0.1);
+}
+
+/* ===== Animation keyframes ===== */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 212, 170, 0.15); }
+  50% { box-shadow: 0 0 40px rgba(0, 212, 170, 0.3); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease forwards;
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
