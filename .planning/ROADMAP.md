@@ -266,7 +266,7 @@ Plans:
 **Goal:** Build a code indexing pipeline that makes org-wide code searchable for context generation -- clone selected repos, parse code with tree-sitter, extract function/class definitions, embed in pgvector, and query during context page generation so engineers get relevant code from ANY repo surfaced in their ticket context
 **Requirements**: N/A (infrastructure improvement -- cross-repo code intelligence for context synthesis)
 **Depends on:** Phase 11
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 12-01-PLAN.md -- DB schema (code_chunks table), CodeChunk model, tree-sitter parsing service, repo clone + index orchestrator

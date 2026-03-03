@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-last_updated: "2026-03-03T09:50:12.146Z"
+status: in_progress
+last_updated: "2026-03-03T09:53:18Z"
 progress:
-  total_phases: 14
-  completed_phases: 11
+  total_phases: 12
+  completed_phases: 12
   total_plans: 33
-  completed_plans: 32
+  completed_plans: 33
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 12 (Org-wide Code Intelligence for Context)
-Plan: 2 of 3 in current phase (2 complete)
-Status: Phase 12 in progress
-Last activity: 2026-03-03 -- Context pipeline integration: code_chunk embeddings, linking, synthesis template
+Plan: 3 of 3 in current phase (3 complete)
+Status: Phase 12 complete
+Last activity: 2026-03-03 -- Freshness pipeline: Redis Streams code index worker, push webhook handler, API endpoints, polling fallback
 
-Progress: [======----] 67% (12: 2/3 plans)
+Progress: [==========] 100% (12: 3/3 plans)
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [======----] 67% (12: 2/3 plans)
 | Phase 09 P01 | 2min | 2 tasks | 3 files |
 | Phase 12 P01 | 7min | 2 tasks | 7 files |
 | Phase 12 P02 | 2min | 2 tasks | 4 files |
+| Phase 12 P03 | 6min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -181,6 +182,9 @@ Recent decisions affecting current work:
 - [Phase 12]: [12-02]: Metadata header format '# {symbol_type} {symbol_name} in {file_path}' prepended to code content for embeddings
 - [Phase 12]: [12-02]: Relevant Code section inserted at position 5 of 7 in synthesis template
 - [Phase 12]: [12-02]: Code chunks discovered via semantic search only (no explicit FK links to tickets)
+- [Phase 12]: [12-03]: Redis Streams code index worker follows exact embedding_worker.py pattern (STREAM_KEY, GROUP_NAME, xreadgroup loop)
+- [Phase 12]: [12-03]: Indexing status tracked in workspace_integrations.config JSONB (code_index_status, code_index_last_at)
+- [Phase 12]: [12-03]: Polling fallback checks code_index_last_at; re-indexes if >60 minutes stale
 
 ### Pending Todos
 
@@ -208,5 +212,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 12-02-PLAN.md
-Resume file: .planning/phases/12-org-wide-code-intelligence-for-context/12-02-SUMMARY.md
+Stopped at: Completed 12-03-PLAN.md
+Resume file: .planning/phases/12-org-wide-code-intelligence-for-context/12-03-SUMMARY.md
