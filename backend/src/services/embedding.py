@@ -18,6 +18,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from src.models.code_chunk import CodeChunk
 from src.models.context_page import ContextPage
 from src.models.embedding import Embedding
 from src.models.github import GithubPullRequest, GithubReview
@@ -75,6 +76,10 @@ SOURCE_TYPE_MAP: dict[str, tuple[type, callable]] = {
     "context_page": (
         ContextPage,
         lambda r: f"{r.title}\n\n{r.content}".strip(),
+    ),
+    "code_chunk": (
+        CodeChunk,
+        lambda r: f"# {r.symbol_type} {r.symbol_name} in {r.file_path}\n\n{r.content}".strip(),
     ),
 }
 

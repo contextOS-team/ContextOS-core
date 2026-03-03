@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from src.models.code_chunk import CodeChunk
 from src.models.github import GithubPullRequest, GithubReview
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.notion import NotionPage
@@ -251,6 +252,13 @@ async def _lookup_source_summary(
         "notion_page": (
             NotionPage,
             lambda r: (r.title, (r.content or "")[:200]),
+        ),
+        "code_chunk": (
+            CodeChunk,
+            lambda r: (
+                f"{r.symbol_type}: {r.symbol_name} ({r.repo_full_name}:{r.file_path})",
+                r.content[:200],
+            ),
         ),
     }
 
