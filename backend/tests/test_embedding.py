@@ -21,6 +21,7 @@ def _mock_openai_response(dims: int = 768) -> MagicMock:
     """Create a mock OpenAI embeddings response."""
     mock_embedding = MagicMock()
     mock_embedding.embedding = [0.1] * dims
+    mock_embedding.index = 0
 
     mock_response = MagicMock()
     mock_response.data = [mock_embedding]
@@ -83,22 +84,22 @@ async def test_queue_embedding_generation_creates_embedding() -> None:
     mock_session = AsyncMock()
     source_id = uuid4()
 
-    # Mock: source record lookup
+    # Mock: bulk source record lookup (scalars().all())
     mock_ticket = MagicMock()
     mock_ticket.id = source_id
     mock_ticket.title = "Test ticket"
     mock_ticket.description = "Test description"
     mock_record_result = MagicMock()
-    mock_record_result.scalar_one_or_none.return_value = mock_ticket
+    mock_record_result.scalars.return_value.all.return_value = [mock_ticket]
 
-    # Mock: existing embedding hash lookup (none exists)
+    # Mock: bulk existing embedding hash lookup (fetchall() returns empty)
     mock_hash_result = MagicMock()
-    mock_hash_result.scalar_one_or_none.return_value = None
+    mock_hash_result.fetchall.return_value = []
 
     mock_session.execute.side_effect = [
-        mock_record_result,  # source record lookup
-        mock_hash_result,  # existing hash lookup
-        MagicMock(),  # upsert result
+        mock_record_result,  # bulk source record lookup
+        mock_hash_result,    # bulk existing hash lookup
+        MagicMock(),         # upsert result
     ]
 
     mock_response = _mock_openai_response()
@@ -112,33 +113,32 @@ async def test_queue_embedding_generation_creates_embedding() -> None:
             mock_session, WORKSPACE_ID, "linear_ticket", [source_id]
         )
 
-    # Should have been called 3 times: record lookup, hash check, upsert
+    # Should have been called 3 times: bulk record lookup, bulk hash check, upsert
     assert mock_session.execute.call_count == 3
 
 
 @pytest.mark.asyncio
 async def test_queue_embedding_skips_unchanged_content() -> None:
     """queue_embedding_generation should skip when content hash matches."""
-    import hashlib
-
     mock_session = AsyncMock()
     source_id = uuid4()
 
-    # Source record
+    # Source record (bulk lookup)
     mock_ticket = MagicMock()
     mock_ticket.id = source_id
     mock_ticket.title = "Test ticket"
     mock_ticket.description = "Same description"
     mock_record_result = MagicMock()
-    mock_record_result.scalar_one_or_none.return_value = mock_ticket
+    mock_record_result.scalars.return_value.all.return_value = [mock_ticket]
 
-    # Compute expected hash
+    # Compute expected hash using shared utility
+    from src.utils.hashing import compute_content_hash
     content = "Test ticket\n\nSame description"
-    expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    expected_hash = compute_content_hash(content)
 
-    # Existing embedding has same hash
+    # Existing embedding has same hash (bulk fetchall)
     mock_hash_result = MagicMock()
-    mock_hash_result.scalar_one_or_none.return_value = expected_hash
+    mock_hash_result.fetchall.return_value = [(source_id, expected_hash)]
 
     mock_session.execute.side_effect = [
         mock_record_result,
@@ -151,7 +151,7 @@ async def test_queue_embedding_skips_unchanged_content() -> None:
         mock_session, WORKSPACE_ID, "linear_ticket", [source_id]
     )
 
-    # Should only call execute twice: record lookup + hash check (no upsert)
+    # Should only call execute twice: bulk record lookup + bulk hash check (no upsert)
     assert mock_session.execute.call_count == 2
 
 
@@ -175,21 +175,21 @@ async def test_queue_embedding_stores_search_content() -> None:
     mock_session = AsyncMock()
     source_id = uuid4()
 
-    # Mock: source record lookup
+    # Mock: bulk source record lookup
     mock_ticket = MagicMock()
     mock_ticket.id = source_id
     mock_ticket.title = "Test ticket"
     mock_ticket.description = "Test description"
     mock_record_result = MagicMock()
-    mock_record_result.scalar_one_or_none.return_value = mock_ticket
+    mock_record_result.scalars.return_value.all.return_value = [mock_ticket]
 
-    # Mock: existing embedding hash lookup (none exists)
+    # Mock: bulk existing embedding hash lookup (none exists)
     mock_hash_result = MagicMock()
-    mock_hash_result.scalar_one_or_none.return_value = None
+    mock_hash_result.fetchall.return_value = []
 
     mock_session.execute.side_effect = [
-        mock_record_result,  # source record lookup
-        mock_hash_result,    # existing hash lookup
+        mock_record_result,  # bulk source record lookup
+        mock_hash_result,    # bulk existing hash lookup
         MagicMock(),         # upsert result
     ]
 
@@ -217,12 +217,12 @@ async def test_queue_embedding_stores_search_content() -> None:
 
 @pytest.mark.asyncio
 async def test_content_hash_deterministic() -> None:
-    """_compute_content_hash should be deterministic for same input."""
-    from src.services.embedding import _compute_content_hash
+    """compute_content_hash should be deterministic for same input."""
+    from src.utils.hashing import compute_content_hash
 
-    hash1 = _compute_content_hash("test content")
-    hash2 = _compute_content_hash("test content")
-    hash3 = _compute_content_hash("different content")
+    hash1 = compute_content_hash("test content")
+    hash2 = compute_content_hash("test content")
+    hash3 = compute_content_hash("different content")
 
     assert hash1 == hash2
     assert hash1 != hash3

@@ -8,10 +8,9 @@ import pytest
 
 from src.services.embedding import (
     BATCH_SIZE,
-    _compute_content_hash,
-    _normalize_for_hash,
     generate_embeddings_batch,
 )
+from src.utils.hashing import compute_content_hash, normalize_for_hash
 from src.services.embedding_worker import (
     STREAM_KEY,
     enqueue_embedding_job,
@@ -21,28 +20,28 @@ from src.services.embedding_worker import (
 # --- Content hash normalization tests ---
 
 
-def test_normalize_for_hash_collapses_whitespace():
+def testnormalize_for_hash_collapses_whitespace():
     """Whitespace sequences (spaces, tabs, newlines) collapse to single space."""
-    assert _normalize_for_hash("hello  \n\t  world") == "hello world"
+    assert normalize_for_hash("hello  \n\t  world") == "hello world"
 
 
-def test_normalize_for_hash_strips():
+def testnormalize_for_hash_strips():
     """Leading and trailing whitespace is stripped."""
-    assert _normalize_for_hash("  hello  ") == "hello"
+    assert normalize_for_hash("  hello  ") == "hello"
 
 
-def test_compute_content_hash_ignores_whitespace_changes():
+def testcompute_content_hash_ignores_whitespace_changes():
     """Same hash for text differing only in whitespace."""
-    hash_a = _compute_content_hash("a b")
-    hash_b = _compute_content_hash("a  b")
-    hash_c = _compute_content_hash("a\n\tb")
+    hash_a = compute_content_hash("a b")
+    hash_b = compute_content_hash("a  b")
+    hash_c = compute_content_hash("a\n\tb")
     assert hash_a == hash_b == hash_c
 
 
-def test_compute_content_hash_different_for_real_changes():
+def testcompute_content_hash_different_for_real_changes():
     """Different hash for text with actual content differences."""
-    hash_a = _compute_content_hash("a b")
-    hash_b = _compute_content_hash("a c")
+    hash_a = compute_content_hash("a b")
+    hash_b = compute_content_hash("a c")
     assert hash_a != hash_b
 
 

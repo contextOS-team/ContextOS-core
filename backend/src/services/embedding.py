@@ -173,18 +173,27 @@ async def queue_embedding_generation(
 
     model_cls, extract_text = SOURCE_TYPE_MAP[source_type]
 
-    # --- Bulk-load source records (1 query instead of N) ---
-    source_stmt = select(model_cls).where(model_cls.id.in_(source_ids))  # type: ignore[union-attr]
-    source_result = await session.execute(source_stmt)
-    records_by_id = {r.id: r for r in source_result.scalars().all()}
+    # --- Bulk-load source records (chunked to avoid oversized IN clauses) ---
+    IN_CLAUSE_LIMIT = 500
+    records_by_id: dict[UUID, object] = {}
+    for i in range(0, len(source_ids), IN_CLAUSE_LIMIT):
+        batch_ids = source_ids[i:i + IN_CLAUSE_LIMIT]
+        source_stmt = select(model_cls).where(model_cls.id.in_(batch_ids))  # type: ignore[union-attr]
+        source_result = await session.execute(source_stmt)
+        for r in source_result.scalars().all():
+            records_by_id[r.id] = r
 
-    # --- Bulk-load existing embedding hashes (1 query instead of N) ---
-    existing_hash_stmt = select(Embedding.source_id, Embedding.content_hash).where(
-        Embedding.source_type == source_type,
-        Embedding.source_id.in_(source_ids),  # type: ignore[union-attr]
-    )
-    existing_result = await session.execute(existing_hash_stmt)
-    existing_hashes = {row[0]: row[1] for row in existing_result.fetchall()}
+    # --- Bulk-load existing embedding hashes (chunked) ---
+    existing_hashes: dict[UUID, str] = {}
+    for i in range(0, len(source_ids), IN_CLAUSE_LIMIT):
+        batch_ids = source_ids[i:i + IN_CLAUSE_LIMIT]
+        existing_hash_stmt = select(Embedding.source_id, Embedding.content_hash).where(
+            Embedding.source_type == source_type,
+            Embedding.source_id.in_(batch_ids),  # type: ignore[union-attr]
+        )
+        existing_result = await session.execute(existing_hash_stmt)
+        for row in existing_result.fetchall():
+            existing_hashes[row[0]] = row[1]
 
     # --- Diff in-memory ---
     pending: list[tuple[UUID, str, str]] = []  # (source_id, text, content_hash)

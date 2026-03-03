@@ -98,13 +98,13 @@ async def test_find_hybrid_matches_includes_code_chunks() -> None:
         (uuid4(), "code_chunk", chunk_id, 0.78, 0.12, 0.55, {}),
     ]
 
-    # Mock source lookup for code_chunk
-    mock_source_result = MagicMock()
-    mock_source_result.scalar_one_or_none.return_value = chunk
+    # Mock bulk source lookup for code_chunk
+    mock_bulk_result = MagicMock()
+    mock_bulk_result.scalars.return_value.all.return_value = [chunk]
 
     mock_session.execute.side_effect = [
         mock_match_result,
-        mock_source_result,
+        mock_bulk_result,
     ]
 
     mock_embedding = [0.1] * 768
@@ -168,12 +168,12 @@ async def test_find_related_content_merges_code_chunks() -> None:
         (uuid4(), "slack_message", slack_id, 0.70, 0.15, 0.50, {}),
     ]
 
-    # Source lookups for both hybrid matches
-    mock_chunk_source = MagicMock()
-    mock_chunk_source.scalar_one_or_none.return_value = chunk
+    # Bulk source lookups for hybrid matches (grouped by source_type)
+    mock_chunk_bulk = MagicMock()
+    mock_chunk_bulk.scalars.return_value.all.return_value = [chunk]
 
-    mock_slack_source = MagicMock()
-    mock_slack_source.scalar_one_or_none.return_value = mock_msg
+    mock_slack_bulk = MagicMock()
+    mock_slack_bulk.scalars.return_value.all.return_value = [mock_msg]
 
     mock_session.execute.side_effect = [
         # Explicit refs
@@ -182,8 +182,8 @@ async def test_find_related_content_merges_code_chunks() -> None:
         mock_slack_result,    # Slack mentions
         # Hybrid matches
         mock_match_result,    # hybrid_search
-        mock_chunk_source,    # code_chunk source lookup
-        mock_slack_source,    # slack source lookup
+        mock_chunk_bulk,      # bulk code_chunk lookup
+        mock_slack_bulk,      # bulk slack_message lookup
     ]
 
     mock_embedding = [0.1] * 768

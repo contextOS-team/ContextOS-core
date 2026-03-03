@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 from uuid import UUID
 
+from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -239,6 +240,9 @@ async def index_repo(
             if existing and existing[1] == content_hash:
                 continue  # Unchanged
 
+            # Use table-level insert (not ORM insert) to avoid SQLAlchemy
+            # confusing the "metadata" column name with table MetaData object.
+            table = CodeChunk.__table__
             values = {
                 "workspace_id": workspace_id,
                 "repo_full_name": repo_full_name,
@@ -255,7 +259,7 @@ async def index_repo(
             }
 
             upsert_stmt = (
-                insert(CodeChunk)
+                insert(table)
                 .values(**values)
                 .on_conflict_do_update(
                     index_elements=[
@@ -271,7 +275,7 @@ async def index_repo(
                         "deleted_at": None,
                     },
                 )
-                .returning(CodeChunk.id)
+                .returning(table.c.id)
             )
             upsert_result = await session.execute(upsert_stmt)
             row = upsert_result.first()
@@ -283,19 +287,20 @@ async def index_repo(
             else:
                 chunks_created += 1
 
-        # Soft-delete chunks that no longer exist in the repo
-        chunks_deleted = 0
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
-        for key, (chunk_id, _hash) in existing_map.items():
-            if key not in seen_keys:
-                # Use UPDATE instead of loading the ORM object
-                from sqlalchemy import update
-                await session.execute(
-                    update(CodeChunk)
-                    .where(CodeChunk.id == chunk_id)
-                    .values(deleted_at=now)
-                )
-                chunks_deleted += 1
+        # Soft-delete chunks that no longer exist in the repo (bulk)
+        stale_ids = [
+            chunk_id
+            for key, (chunk_id, _hash) in existing_map.items()
+            if key not in seen_keys
+        ]
+        chunks_deleted = len(stale_ids)
+        if stale_ids:
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            await session.execute(
+                update(CodeChunk)
+                .where(CodeChunk.id.in_(stale_ids))  # type: ignore[union-attr]
+                .values(deleted_at=now)
+            )
 
         await session.flush()
 
@@ -403,6 +408,7 @@ async def index_workspace_repos(
                 "chunks_created": 0,
                 "chunks_updated": 0,
                 "chunks_deleted": 0,
+                "changed_chunk_ids": [],
                 "error": "Indexing failed",
             })
 

@@ -21,6 +21,18 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+
+@pytest.fixture(autouse=True)
+def _patch_queue_embedding():
+    """Patch queue_embedding_generation for all webhook tests.
+
+    Webhook handler tests should not need to mock embedding internals.
+    The bulk-load pattern in embedding.py requires specific mock shapes
+    that are unrelated to webhook behavior under test.
+    """
+    with patch("src.services.github_webhook.queue_embedding_generation", new_callable=AsyncMock):
+        yield
+
 import src.config
 from src.config import Settings
 from tests.conftest import TEST_WORKSPACE_ID, _make_test_settings

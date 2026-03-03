@@ -130,17 +130,18 @@ async def test_find_hybrid_matches() -> None:
         (uuid4(), "slack_message", other_id, 0.82, 0.15, 0.619, {}),
     ]
 
-    # Mock source lookup for the matched item
+    # Mock bulk source lookup for the matched item
     mock_msg = MagicMock()
+    mock_msg.id = other_id
     mock_msg.text = "We discussed the context page approach"
     mock_msg.user_name = "bob"
     mock_msg.channel_name = "dev"
-    mock_source_result = MagicMock()
-    mock_source_result.scalar_one_or_none.return_value = mock_msg
+    mock_bulk_result = MagicMock()
+    mock_bulk_result.scalars.return_value.all.return_value = [mock_msg]
 
     mock_session.execute.side_effect = [
         mock_match_result,
-        mock_source_result,
+        mock_bulk_result,
     ]
 
     mock_embedding = [0.1] * 768
@@ -219,8 +220,8 @@ async def test_combined_scoring_multi_signal() -> None:
     mock_match_result.fetchall.return_value = [
         (uuid4(), "slack_message", shared_id, 0.85, 0.2, 0.655, {}),
     ]
-    mock_source_result = MagicMock()
-    mock_source_result.scalar_one_or_none.return_value = mock_msg
+    mock_bulk_result = MagicMock()
+    mock_bulk_result.scalars.return_value.all.return_value = [mock_msg]
 
     mock_session.execute.side_effect = [
         # Explicit refs
@@ -229,7 +230,7 @@ async def test_combined_scoring_multi_signal() -> None:
         mock_slack_result,    # Slack mentions
         # Hybrid matches
         mock_match_result,    # hybrid_search
-        mock_source_result,   # source lookup
+        mock_bulk_result,     # bulk source lookup
     ]
 
     mock_embedding = [0.1] * 768
