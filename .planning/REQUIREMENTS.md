@@ -21,7 +21,7 @@ Requirements for the dashboard redesign and onboarding milestone. Each maps to r
 
 ### Navigation
 
-- [ ] **NAV-01**: Dashboard navigation restructured to hold all sections (context feed, activity, integrations, settings) with clear active state indicators
+- [x] **NAV-01**: Dashboard navigation restructured to hold all sections (context feed, activity, integrations, settings) with clear active state indicators
 
 ### Onboarding
 
@@ -119,7 +119,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DS-07 | Phase 15 | Pending |
 | DS-08 | Phase 15 | Pending |
 | DS-09 | Phase 15 | Pending |
-| NAV-01 | Phase 15 | Pending |
+| NAV-01 | Phase 15 | Complete |
 | AUTH-01 | Phase 16 | Pending |
 | AUTH-02 | Phase 16 | Pending |
 | ACT-04 | Phase 16 | Pending |
