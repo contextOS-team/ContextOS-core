@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
-status: executing
-stopped_at: Completed 15-01-PLAN.md
-last_updated: "2026-03-04T08:23:14.829Z"
-last_activity: 2026-03-04 -- Completed 15-02 nav restructure (4-link nav, avatar dropdown, teal underline)
+status: completed
+stopped_at: Completed 15-03-PLAN.md -- Phase 15 fully complete
+last_updated: "2026-03-04T08:33:07.226Z"
+last_activity: "2026-03-04 -- Completed Phase 15 (all 3 plans: tokens, nav, skeleton/typography)"
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 33
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 15 -- Dark Theme Token Foundation
+**Current focus:** Phase 15 complete -- Ready for Phase 16 (Auth Redesign + Schema Foundation)
 
 ## Current Position
 
-Phase: 15 of 20 (Dark Theme Token Foundation) -- first phase of v1.1 milestone
-Plan: 2 of 3
-Status: Executing
-Last activity: 2026-03-04 -- Completed 15-02 nav restructure (4-link nav, avatar dropdown, teal underline)
+Phase: 15 of 20 (Dark Theme Token Foundation) -- COMPLETE
+Plan: 3 of 3 (all complete)
+Status: Phase Complete
+Last activity: 2026-03-04 -- Completed Phase 15 (all 3 plans: tokens, nav, skeleton/typography)
 
-Progress: [███░░░░░░░] 33%
+Progress: [██████████] 100% (Phase 15)
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [███░░░░░░░] 33%
 - Trend: Stable (3-7min per plan)
 | Phase 15 P02 | 2min | 2 tasks | 2 files |
 | Phase 15 P01 | 3min | 2 tasks | 4 files |
+| Phase 15 P03 | 3min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,8 @@ Recent decisions affecting current work:
 - [Phase 15]: Used :where(.dark, .dark *) for @custom-variant dark mode -- zero specificity targeting
 - [Phase 15]: CSS-only spring curve (cubic-bezier 0.34, 1.56, 0.64, 1) over Framer Motion -- zero bundle cost
 - [Phase 15]: Dashboard grain at 0.008 opacity (vs landing 0.025) for daily-use eye comfort
+- [Phase 15]: Skeleton component uses skeleton-shimmer CSS class (not animate-pulse) for premium shimmer-sweep
+- [Phase 15]: Activity placeholder is static server component -- Phase 18 replaces with dynamic client component
 
 ### Pending Todos
 
@@ -93,6 +96,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-04T08:23:14.826Z
-Stopped at: Completed 15-01-PLAN.md
+Last session: 2026-03-04T08:33:07.224Z
+Stopped at: Completed 15-03-PLAN.md -- Phase 15 fully complete
 Resume file: None

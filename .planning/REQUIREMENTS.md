@@ -11,13 +11,13 @@ Requirements for the dashboard redesign and onboarding milestone. Each maps to r
 
 - [x] **DS-01**: Dashboard renders in dark mode by default with brand-tinted OKLCH tokens (not neutral gray shadcn defaults)
 - [x] **DS-02**: Teal (#00D4AA) used only on actionable/status elements — never as decoration
-- [ ] **DS-03**: JetBrains Mono applied to all data identifiers (ticket IDs, timestamps, counts, API keys)
+- [x] **DS-03**: JetBrains Mono applied to all data identifiers (ticket IDs, timestamps, counts, API keys)
 - [x] **DS-04**: 4-level surface hierarchy (background → card → elevated → overlay) with consistent token usage
 - [x] **DS-05**: Radix UI portals (Dialog, Dropdown, Sheet) render correctly in dark mode via DarkModeApplier
 - [x] **DS-06**: Spring-curve microinteractions on list item appearance (stagger), status changes, and completion states
 - [x] **DS-07**: Subtle grain texture on dashboard surfaces matching the landing page aesthetic
-- [ ] **DS-08**: Section labels use monospace uppercase tracking pattern from landing page
-- [ ] **DS-09**: All dashboard pages render structured skeleton loading states matching the populated layout
+- [x] **DS-08**: Section labels use monospace uppercase tracking pattern from landing page
+- [x] **DS-09**: All dashboard pages render structured skeleton loading states matching the populated layout
 
 ### Navigation
 
@@ -112,13 +112,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | DS-01 | Phase 15 | Complete |
 | DS-02 | Phase 15 | Complete |
-| DS-03 | Phase 15 | Pending |
+| DS-03 | Phase 15 | Complete |
 | DS-04 | Phase 15 | Complete |
 | DS-05 | Phase 15 | Complete |
 | DS-06 | Phase 15 | Complete |
 | DS-07 | Phase 15 | Complete |
-| DS-08 | Phase 15 | Pending |
-| DS-09 | Phase 15 | Pending |
+| DS-08 | Phase 15 | Complete |
+| DS-09 | Phase 15 | Complete |
 | NAV-01 | Phase 15 | Complete |
 | AUTH-01 | Phase 16 | Pending |
 | AUTH-02 | Phase 16 | Pending |
