@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
 import { SentryInit } from '@/lib/sentry-init'
 import { DarkModeApplier } from '@/components/dashboard/dark-mode-applier'
+import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
 
 const inter = Inter({
@@ -37,6 +38,7 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <SentryInit />
         <DarkModeApplier />
+        <Toaster />
         {children}
       </body>
     </html>
