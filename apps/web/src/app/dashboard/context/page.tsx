@@ -234,17 +234,17 @@ export default function ContextPage() {
                 {contextPage.generated_at && (
                   <span className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    {new Date(contextPage.generated_at).toLocaleString()}
+                    <span className="font-mono">{new Date(contextPage.generated_at).toLocaleString()}</span>
                   </span>
                 )}
                 {contextPage.generation_model && (
                   <span className="flex items-center gap-1">
                     <Zap className="h-3 w-3" />
-                    {contextPage.generation_model}
+                    <span className="font-mono">{contextPage.generation_model}</span>
                   </span>
                 )}
                 {contextPage.generation_tokens_used && (
-                  <span>{contextPage.generation_tokens_used.toLocaleString()} tokens</span>
+                  <span className="font-mono tabular-nums">{contextPage.generation_tokens_used.toLocaleString()} tokens</span>
                 )}
               </div>
 
@@ -252,7 +252,7 @@ export default function ContextPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>{contextPage.title}</CardTitle>
-                  <CardDescription>{contextPage.ticket_identifier}</CardDescription>
+                  <CardDescription className="font-mono">{contextPage.ticket_identifier}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap">
@@ -285,7 +285,7 @@ export default function ContextPage() {
                             </span>
                             <span className="text-foreground">{source.title}</span>
                           </div>
-                          <span className="text-muted-foreground">
+                          <span className="text-muted-foreground font-mono tabular-nums">
                             {(source.relevance_score * 100).toFixed(0)}% relevant
                           </span>
                         </div>

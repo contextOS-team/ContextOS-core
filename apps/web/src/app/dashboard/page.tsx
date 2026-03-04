@@ -21,6 +21,7 @@ import {
   connectNotion,
   type IntegrationStatusResponse,
 } from '@/lib/api'
+import { Skeleton } from '@/components/ui/skeleton'
 
 const INTEGRATIONS = [
   {
@@ -143,10 +144,22 @@ export default function DashboardPage() {
   if (isLoading) {
     return (
       <div className="space-y-6 animate-fade-in-up">
-        <div className="h-4 w-48 animate-pulse rounded bg-muted" />
-        <div className="rounded-xl border bg-card p-1">
+        {/* Header skeleton: greeting + count */}
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-4 w-48" />
+          <Skeleton className="h-4 w-20" />
+        </div>
+        {/* Section label skeleton */}
+        <Skeleton className="h-3 w-24" />
+        {/* Integration list skeleton */}
+        <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-[52px] animate-pulse rounded-lg bg-muted/50 mb-1 last:mb-0" />
+            <div key={i} className="flex items-center gap-4 px-4 py-3">
+              <Skeleton className="h-[18px] w-[18px] rounded shrink-0" />
+              <Skeleton className="h-4 w-24 flex-1" />
+              <Skeleton className="h-1.5 w-1.5 rounded-full shrink-0" />
+              <Skeleton className="h-4 w-16 shrink-0" />
+            </div>
           ))}
         </div>
       </div>
@@ -179,7 +192,7 @@ export default function DashboardPage() {
 
       {/* Integration status -- the hero section */}
       <div>
-        <h3 className="text-[13px] font-medium text-muted-foreground uppercase tracking-[0.08em] mb-3">
+        <h3 className="section-label mb-3">
           Integrations
         </h3>
 

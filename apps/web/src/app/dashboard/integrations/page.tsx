@@ -27,6 +27,7 @@ import {
   type IntegrationStatusResponse,
 } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/skeleton'
 import { IntegrationCard } from './integration-card'
 import { SlackChannels } from './slack-channels'
 import { FathomConnect } from './fathom-connect'
@@ -176,19 +177,37 @@ export default function IntegrationsPage() {
   if (isLoading) {
     return (
       <div className="space-y-6 animate-fade-in-up">
+        {/* Header skeleton */}
         <div>
-          <div className="h-8 w-48 animate-pulse rounded-lg bg-muted" />
-          <div className="h-4 w-32 animate-pulse rounded-lg bg-muted mt-2" />
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-4 w-32 mt-2" />
         </div>
+        {/* Grid skeleton */}
         <div className="grid gap-3 md:grid-cols-2 items-start">
           <div className="flex flex-col gap-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-24 animate-pulse rounded-2xl bg-muted" />
+              <div key={i} className="rounded-2xl border border-border p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-5 w-5 rounded shrink-0" />
+                  <Skeleton className="h-5 w-24" />
+                  <Skeleton className="h-1.5 w-1.5 rounded-full ml-auto" />
+                </div>
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-8 w-20" />
+              </div>
             ))}
           </div>
           <div className="flex flex-col gap-3">
             {[4, 5].map((i) => (
-              <div key={i} className="h-24 animate-pulse rounded-2xl bg-muted" />
+              <div key={i} className="rounded-2xl border border-border p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-5 w-5 rounded shrink-0" />
+                  <Skeleton className="h-5 w-24" />
+                  <Skeleton className="h-1.5 w-1.5 rounded-full ml-auto" />
+                </div>
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-8 w-20" />
+              </div>
             ))}
           </div>
         </div>
