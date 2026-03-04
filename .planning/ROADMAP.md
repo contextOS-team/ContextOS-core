@@ -93,11 +93,11 @@ Plans:
   3. OAuth redirects (Linear, Slack, etc.) return the user to the correct wizard step without losing progress
   4. Closing the browser and returning resumes the wizard at the last completed step (database-backed persistence)
   5. Successful integration connection shows an animated checkmark confirmation
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 17-01: TBD
-- [ ] 17-02: TBD
+- [ ] 17-01-PLAN.md — Wizard shell with dot stepper, steps 1-3 (workspace naming, Linear connection, optional sources grid), success checkmark, CSS crossfade
+- [ ] 17-02-PLAN.md — Step 4 context page generation with mock fallback, completion flow, end-to-end visual verification
 
 ### Phase 18: Activity Timeline
 **Goal**: Users see a live chronological feed of workspace events (syncs, context generated, integrations connected) that proves the system is working
@@ -174,7 +174,7 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 |-------|-----------|----------------|--------|-----------|
 | 15. Dark Theme Token Foundation | 3/3 | Complete    | 2026-03-04 | - |
 | 16. Auth Redesign + Schema Foundation | 3/3 | Complete    | 2026-03-04 | - |
-| 17. Onboarding Wizard | v1.1 | 0/TBD | Not started | - |
+| 17. Onboarding Wizard | v1.1 | 0/2 | Planned | - |
 | 18. Activity Timeline | v1.1 | 0/2 | Planned | - |
 | 19. Context Feed + Dashboard Home | v1.1 | 0/3 | Planned | - |
 | 20. Settings Page | v1.1 | 0/TBD | Not started | - |
