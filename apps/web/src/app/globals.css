@@ -1,7 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "tailwindcss/typography";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -265,6 +264,48 @@
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-repeat: repeat;
   background-size: 256px 256px;
+}
+
+/* Pure opacity crossfade for wizard step transitions */
+@keyframes step-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-step-enter {
+  animation: step-enter 200ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Activity timeline: new event entry animation */
+@keyframes event-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-event-enter {
+  animation: event-enter 350ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Activity timeline: banner slide-in */
+@keyframes banner-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-banner-slide-in {
+  animation: banner-slide-in 200ms ease-out both;
 }
 
 /* Section label utility (monospace uppercase tracking) */
