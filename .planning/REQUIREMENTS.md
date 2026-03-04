@@ -31,7 +31,7 @@ Requirements for the dashboard redesign and onboarding milestone. Each maps to r
 - [ ] **ONB-04**: Step 3: user optionally connects additional sources (Slack, GitHub, Notion, Fathom) from a grid
 - [ ] **ONB-05**: Step 4: user sees their first generated context page with realistic mock fallback if pipeline unavailable
 - [ ] **ONB-06**: OAuth redirect preserves wizard state via cookie (user returns to correct step after OAuth callback)
-- [ ] **ONB-07**: Onboarding progress persists across browser refreshes (database-backed state)
+- [x] **ONB-07**: Onboarding progress persists across browser refreshes (database-backed state)
 - [ ] **ONB-08**: Animated checkmark confirmation when integration connects successfully
 - [ ] **ONB-09**: Server-side onboarding gate prevents dashboard access until onboarding complete
 
@@ -53,7 +53,7 @@ Requirements for the dashboard redesign and onboarding milestone. Each maps to r
 - [ ] **ACT-01**: User sees a chronological feed of workspace events (syncs, context generated, integrations connected)
 - [ ] **ACT-02**: Events display with type-specific icons, relative timestamps, and day-group dividers
 - [ ] **ACT-03**: Activity timeline updates in real-time via Supabase Realtime
-- [ ] **ACT-04**: Activity events table exists with 30-day retention policy
+- [x] **ACT-04**: Activity events table exists with 30-day retention policy
 
 ### Settings & Team
 
@@ -122,8 +122,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | NAV-01 | Phase 15 | Complete |
 | AUTH-01 | Phase 16 | Pending |
 | AUTH-02 | Phase 16 | Pending |
-| ACT-04 | Phase 16 | Pending |
-| ONB-07 | Phase 16 | Pending |
+| ACT-04 | Phase 16 | Complete |
+| ONB-07 | Phase 16 | Complete |
 | ONB-09 | Phase 16 | Pending |
 | ONB-01 | Phase 17 | Pending |
 | ONB-02 | Phase 17 | Pending |

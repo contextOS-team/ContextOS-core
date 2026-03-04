@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
-status: completed
-stopped_at: Phase 16 context gathered
-last_updated: "2026-03-04T09:08:36.014Z"
-last_activity: "2026-03-04 -- Completed Phase 15 (all 3 plans: tokens, nav, skeleton/typography)"
+status: executing
+stopped_at: Completed 16-01-PLAN.md
+last_updated: "2026-03-04T11:09:14.906Z"
+last_activity: 2026-03-04 -- Completed Phase 16 Plan 01 (onboarding + activity schema)
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_plans: 6
+  completed_plans: 4
+  percent: 33
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 15 complete -- Ready for Phase 16 (Auth Redesign + Schema Foundation)
+**Current focus:** Phase 16 in progress -- Auth Redesign + Schema Foundation (Plan 01 complete)
 
 ## Current Position
 
-Phase: 15 of 20 (Dark Theme Token Foundation) -- COMPLETE
-Plan: 3 of 3 (all complete)
-Status: Phase Complete
-Last activity: 2026-03-04 -- Completed Phase 15 (all 3 plans: tokens, nav, skeleton/typography)
+Phase: 16 of 20 (Auth Redesign + Schema Foundation) -- IN PROGRESS
+Plan: 1 of 3 (16-01 complete)
+Status: In Progress
+Last activity: 2026-03-04 -- Completed Phase 16 Plan 01 (onboarding + activity schema)
 
-Progress: [██████████] 100% (Phase 15)
+Progress: [███-------] 33% (Phase 16)
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [██████████] 100% (Phase 15)
 | Phase 15 P02 | 2min | 2 tasks | 2 files |
 | Phase 15 P01 | 3min | 2 tasks | 4 files |
 | Phase 15 P03 | 3min | 3 tasks | 5 files |
+| Phase 16 P01 | 1min | 1 task | 1 file |
 
 ## Accumulated Context
 
@@ -83,6 +84,9 @@ Recent decisions affecting current work:
 - [Phase 15]: Dashboard grain at 0.008 opacity (vs landing 0.025) for daily-use eye comfort
 - [Phase 15]: Skeleton component uses skeleton-shimmer CSS class (not animate-pulse) for premium shimmer-sweep
 - [Phase 15]: Activity placeholder is static server component -- Phase 18 replaces with dynamic client component
+- [Phase 16]: Extended handle_new_user trigger (CREATE OR REPLACE) rather than separate trigger -- keeps signup logic atomic
+- [Phase 16]: NULL onboarding row = legacy user (treated as completed) -- no backfill needed
+- [Phase 16]: pg_cron wrapped in exception handler for local dev compatibility
 
 ### Pending Todos
 
@@ -96,6 +100,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-04T09:08:36.006Z
-Stopped at: Phase 16 context gathered
-Resume file: .planning/phases/16-auth-redesign-schema-foundation/16-CONTEXT.md
+Last session: 2026-03-04T11:09:14.030Z
+Stopped at: Completed 16-01-PLAN.md
+Resume file: None
