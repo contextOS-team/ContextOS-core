@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 
 ## Current Position
 
-Phase: 16 of 20 (Auth Redesign + Schema Foundation) -- COMPLETE
-Plan: 3 of 3 (16-03 complete)
-Status: Phase Complete
-Last activity: 2026-03-04 -- Completed Phase 16 Plan 03 (onboarding gate + route)
+Phase: 18 of 20 (Activity Timeline) -- IN PROGRESS
+Plan: 1 of 2 (18-01 complete)
+Status: Executing Wave 2
+Last activity: 2026-03-04 -- Completed Phase 18 Plan 01 (Realtime migration + TypeScript contracts)
 
 Progress: [██████████] 100% (Phase 16)
 
