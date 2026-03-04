@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getIntegrationStatus, type IntegrationStatusResponse } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -8,11 +9,13 @@ import { StepIndicator } from './step-indicator'
 import { StepWorkspace } from './step-workspace'
 import { StepLinear } from './step-linear'
 import { StepSources } from './step-sources'
+import { StepContext } from './step-context'
 
 type WizardStep = 1 | 2 | 3 | 4
 type WizardState = 'loading' | 'active' | 'completing'
 
 export function OnboardingWizard() {
+  const router = useRouter()
   const [step, setStep] = useState<WizardStep>(1)
   const [wizardState, setWizardState] = useState<WizardState>('loading')
   const [integrations, setIntegrations] = useState<IntegrationStatusResponse | null>(null)
@@ -97,6 +100,24 @@ export function OnboardingWizard() {
       setAdvancing(false)
     }
   }, [advancing])
+
+  const handleComplete = useCallback(async () => {
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      await supabase
+        .from('user_onboarding_state')
+        .update({ completed_at: new Date().toISOString() })
+        .eq('user_id', user.id)
+
+      router.push('/dashboard')
+    } catch {
+      // If DB update fails, still redirect -- dashboard gate will handle
+      router.push('/dashboard')
+    }
+  }, [router])
 
   const refreshIntegrations = useCallback(async () => {
     try {
@@ -185,14 +206,7 @@ export function OnboardingWizard() {
             )}
 
             {step === 4 && (
-              <div className="space-y-4 py-8 text-center">
-                <p className="text-sm text-muted-foreground">
-                  Generating your first context page...
-                </p>
-                <div className="mx-auto h-2 w-32 overflow-hidden rounded-full bg-muted">
-                  <div className="skeleton-shimmer h-full w-full" />
-                </div>
-              </div>
+              <StepContext onComplete={handleComplete} />
             )}
           </div>
 
