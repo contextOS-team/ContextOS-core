@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: executing
-stopped_at: Completed 15-02-PLAN.md
-last_updated: "2026-03-04T08:22:36.026Z"
+stopped_at: Completed 15-01-PLAN.md
+last_updated: "2026-03-04T08:23:14.829Z"
 last_activity: 2026-03-04 -- Completed 15-02 nav restructure (4-link nav, avatar dropdown, teal underline)
 progress:
   total_phases: 6
@@ -60,6 +60,7 @@ Progress: [███░░░░░░░] 33%
 - Last 5 plans: 12-03 (6min), 13-01 (7min), 14-01 (2min)
 - Trend: Stable (3-7min per plan)
 | Phase 15 P02 | 2min | 2 tasks | 2 files |
+| Phase 15 P01 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,9 @@ Recent decisions affecting current work:
 - [Phase 13]: CSS scoped under .landing-theme to avoid dashboard pollution -- v1.1 must scope dashboard under .dark without collision
 - [Phase 15]: Teal underline only for active nav state (no bg-muted) -- clean Vercel-style nav
 - [Phase 15]: Settings and Sign out in avatar dropdown to declutter nav bar
+- [Phase 15]: Used :where(.dark, .dark *) for @custom-variant dark mode -- zero specificity targeting
+- [Phase 15]: CSS-only spring curve (cubic-bezier 0.34, 1.56, 0.64, 1) over Framer Motion -- zero bundle cost
+- [Phase 15]: Dashboard grain at 0.008 opacity (vs landing 0.025) for daily-use eye comfort
 
 ### Pending Todos
 
@@ -89,6 +93,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-04T08:22:27.069Z
-Stopped at: Completed 15-02-PLAN.md
+Last session: 2026-03-04T08:23:14.826Z
+Stopped at: Completed 15-01-PLAN.md
 Resume file: None
