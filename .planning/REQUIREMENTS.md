@@ -37,7 +37,7 @@ Requirements for the dashboard redesign and onboarding milestone. Each maps to r
 
 ### Dashboard Home
 
-- [ ] **HOME-01**: Dashboard home page shows a summary view with recent context pages, integration health, and activity preview
+- [x] **HOME-01**: Dashboard home page shows a summary view with recent context pages, integration health, and activity preview
 
 ### Context Feed
 
@@ -45,14 +45,14 @@ Requirements for the dashboard redesign and onboarding milestone. Each maps to r
 - [x] **FEED-02**: User can filter context pages by status (All/Ready/Generating/Stale/Error)
 - [x] **FEED-03**: User can search context pages by free text (title, ticket ID)
 - [x] **FEED-04**: Context feed shows real-time status updates via Supabase Realtime
-- [ ] **FEED-05**: Context page detail is a route-based view (/dashboard/context/[id]) with copy-prompt and regenerate actions
+- [x] **FEED-05**: Context page detail is a route-based view (/dashboard/context/[id]) with copy-prompt and regenerate actions
 - [x] **FEED-06**: Empty states show what a populated feed looks like with one clear CTA
 
 ### Activity Timeline
 
-- [ ] **ACT-01**: User sees a chronological feed of workspace events (syncs, context generated, integrations connected)
-- [ ] **ACT-02**: Events display with type-specific icons, relative timestamps, and day-group dividers
-- [ ] **ACT-03**: Activity timeline updates in real-time via Supabase Realtime
+- [x] **ACT-01**: User sees a chronological feed of workspace events (syncs, context generated, integrations connected)
+- [x] **ACT-02**: Events display with type-specific icons, relative timestamps, and day-group dividers
+- [x] **ACT-03**: Activity timeline updates in real-time via Supabase Realtime
 - [x] **ACT-04**: Activity events table exists with 30-day retention policy
 
 ### Settings & Team
@@ -139,9 +139,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FEED-02 | Phase 19 | Complete |
 | FEED-03 | Phase 19 | Complete |
 | FEED-04 | Phase 19 | Complete |
-| FEED-05 | Phase 19 | Pending |
+| FEED-05 | Phase 19 | Complete |
 | FEED-06 | Phase 19 | Complete |
-| HOME-01 | Phase 19 | Pending |
+| HOME-01 | Phase 19 | Complete |
 | SET-01 | Phase 20 | Pending |
 | SET-02 | Phase 20 | Pending |
 | SET-03 | Phase 20 | Pending |
