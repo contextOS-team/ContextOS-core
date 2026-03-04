@@ -7,14 +7,6 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 
 export default function SignupPage() {
   const router = useRouter()
@@ -68,88 +60,88 @@ export default function SignupPage() {
 
   if (success) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xl">Check your email</CardTitle>
-          <CardDescription>
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Check your email</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
             We sent a confirmation link to <strong>{email}</strong>. Click the link
             to activate your account.
-          </CardDescription>
-        </CardHeader>
-        <CardFooter className="justify-center">
+          </p>
+        </div>
+        <div className="text-center">
           <p className="text-sm text-muted-foreground">
             Already confirmed?{' '}
             <Link href="/login" className="text-primary underline underline-offset-4 hover:text-primary/80">
               Sign in
             </Link>
           </p>
-        </CardFooter>
-      </Card>
+        </div>
+      </div>
     )
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">Create Account</CardTitle>
-        <CardDescription>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Create Account</h1>
+        <p className="text-sm text-muted-foreground">
           Sign up for ContextOS to get started
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {error && (
-          <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-            {error}
-          </div>
-        )}
+        </p>
+      </div>
 
-        <form onSubmit={handleSignUp} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="full-name">Full name</Label>
-            <Input
-              id="full-name"
-              type="text"
-              placeholder="Your name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="Min 6 characters"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={6}
-            />
-          </div>
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Creating account...' : 'Sign Up'}
-          </Button>
-        </form>
-      </CardContent>
-      <CardFooter className="justify-center">
+      {error && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      <form onSubmit={handleSignUp} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="full-name">Full name</Label>
+          <Input
+            id="full-name"
+            type="text"
+            placeholder="Your name"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            type="password"
+            placeholder="Min 6 characters"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            minLength={6}
+          />
+        </div>
+        <Button type="submit" className="w-full" disabled={loading}>
+          {loading ? 'Creating account...' : 'Sign Up'}
+        </Button>
+      </form>
+
+      <div className="text-center">
         <p className="text-sm text-muted-foreground">
           Already have an account?{' '}
           <Link href="/login" className="text-primary underline underline-offset-4 hover:text-primary/80">
             Sign in
           </Link>
         </p>
-      </CardFooter>
-    </Card>
+      </div>
+    </div>
   )
 }
