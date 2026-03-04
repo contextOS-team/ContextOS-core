@@ -60,11 +60,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. All Radix UI portals (Dialog, Dropdown, Sheet) render correctly in dark mode without light-theme flash
   4. Dashboard navigation holds all sections (context feed, activity, integrations, settings) with clear active state indicators
   5. Every dashboard page shows a structured skeleton loading state that matches the populated layout shape
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 15-01: TBD
-- [ ] 15-02: TBD
+- [ ] 15-01-PLAN.md — OKLCH token system, DarkModeApplier, FOUC prevention, spring animations, grain texture, shimmer keyframe
+- [ ] 15-02-PLAN.md — Navigation restructure with Activity link, avatar dropdown, teal underline active state, wordmark gradient
+- [ ] 15-03-PLAN.md — Skeleton component, structured loading states, font-mono typography, section-label utility, Activity placeholder
 
 ### Phase 16: Auth Redesign + Schema Foundation
 **Goal**: Auth pages match the dark brand identity and the database tables required for onboarding and activity tracking exist with proper RLS, indexes, and triggers
@@ -168,7 +169,7 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 15. Dark Theme Token Foundation | v1.1 | 0/TBD | Not started | - |
+| 15. Dark Theme Token Foundation | v1.1 | 0/3 | Planning complete | - |
 | 16. Auth Redesign + Schema Foundation | v1.1 | 0/TBD | Not started | - |
 | 17. Onboarding Wizard | v1.1 | 0/TBD | Not started | - |
 | 18. Activity Timeline | v1.1 | 0/TBD | Not started | - |
