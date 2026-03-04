@@ -29,7 +29,7 @@ Requirements for the dashboard redesign and onboarding milestone. Each maps to r
 - [x] **ONB-02**: Step 1: user names their workspace (single text input)
 - [x] **ONB-03**: Step 2: user connects Linear (required, cannot proceed without)
 - [x] **ONB-04**: Step 3: user optionally connects additional sources (Slack, GitHub, Notion, Fathom) from a grid
-- [ ] **ONB-05**: Step 4: user sees their first generated context page with realistic mock fallback if pipeline unavailable
+- [x] **ONB-05**: Step 4: user sees their first generated context page with realistic mock fallback if pipeline unavailable
 - [x] **ONB-06**: OAuth redirect preserves wizard state via cookie (user returns to correct step after OAuth callback)
 - [x] **ONB-07**: Onboarding progress persists across browser refreshes (database-backed state)
 - [x] **ONB-08**: Animated checkmark confirmation when integration connects successfully
@@ -129,7 +129,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ONB-02 | Phase 17 | Complete |
 | ONB-03 | Phase 17 | Complete |
 | ONB-04 | Phase 17 | Complete |
-| ONB-05 | Phase 17 | Pending |
+| ONB-05 | Phase 17 | Complete |
 | ONB-06 | Phase 17 | Complete |
 | ONB-08 | Phase 17 | Complete |
 | ACT-01 | Phase 18 | Complete |

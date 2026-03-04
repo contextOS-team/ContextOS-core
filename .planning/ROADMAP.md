@@ -43,7 +43,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 15: Dark Theme Token Foundation** - Brand-tinted OKLCH tokens, DarkModeApplier, JetBrains Mono, navigation restructure, skeleton states (completed 2026-03-04)
 - [x] **Phase 16: Auth Redesign + Schema Foundation** - Dark-themed auth pages, user_onboarding_state and activity_events tables, onboarding gate (completed 2026-03-04)
-- [ ] **Phase 17: Onboarding Wizard** - 4-step guided wizard with OAuth state preservation and animated transitions
+- [x] **Phase 17: Onboarding Wizard** - 4-step guided wizard with OAuth state preservation and animated transitions (completed 2026-03-04)
 - [x] **Phase 18: Activity Timeline** - Chronological event feed with real-time updates and day-group dividers (completed 2026-03-04)
 - [x] **Phase 19: Context Feed + Dashboard Home** - Browsable context feed with filtering, search, detail view, and dashboard summary (completed 2026-03-04)
 - [ ] **Phase 20: Settings Page** - API key management, workspace editing, team member view
@@ -174,7 +174,7 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 |-------|-----------|----------------|--------|-----------|
 | 15. Dark Theme Token Foundation | 3/3 | Complete    | 2026-03-04 | - |
 | 16. Auth Redesign + Schema Foundation | 3/3 | Complete    | 2026-03-04 | - |
-| 17. Onboarding Wizard | 1/2 | In Progress|  | - |
+| 17. Onboarding Wizard | 2/2 | Complete   | 2026-03-04 | - |
 | 18. Activity Timeline | 2/2 | Complete    | 2026-03-04 | - |
 | 19. Context Feed + Dashboard Home | 3/3 | Complete    | 2026-03-04 | - |
 | 20. Settings Page | v1.1 | 0/TBD | Not started | - |
