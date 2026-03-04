@@ -14,20 +14,18 @@ First users are the founding team (dogfooding). The product must be reliable eno
 | **Dulat** | AI/ML & Synthesis | Embedding model selection, context generation pipeline (LangGraph + Gemini Flash), synthesis prompt engineering, Slack-to-ticket linking logic, quality evaluation |
 | **Bekbol** | Frontend & Extensions | Next.js web dashboard (feed, detail, settings, integration setup), Chrome extension, frontend auth flows, UI/UX |
 
-## Current Milestone: v1.0 Dogfood
+## Current Milestone: v1.1 Dashboard & Onboarding
 
-**Goal:** Ship a daily-driver quality product where engineers get full AI-generated context on any ticket — pulling from Linear, Slack, and meeting transcripts — delivered as Linear comments, a web dashboard, and MCP tools in IDEs.
+**Goal:** Transform the generic dashboard into a polished, brand-consistent product experience with guided onboarding, full context feed, activity timeline, and team settings — dark theme that mirrors the landing page's teal identity but stays muted for daily use.
 
 **Target features:**
-- Foundation: DB schema, auth (backend + frontend), workspace tenancy
-- Linear integration: OAuth, ticket sync, webhooks, token refresh
-- Slack integration: OAuth, event ingestion, channel selection, message filtering
-- Meeting transcripts: Fathom API ingestion, transcript-to-ticket linking
-- Context generation: LangGraph pipeline, Gemini Flash synthesis, 5-section pages
-- Delivery: Linear comment bot, web dashboard, MCP server for IDEs
-- Dashboard: auth pages, context feed, detail view, settings, integration setup
-- Chrome extension: quick context access
-- Security/observability: Vault token storage, Sentry, Laminar
+- Guided onboarding: step-by-step integration setup + workspace config + first context generation (user sees the product work before hitting the dashboard)
+- Dashboard redesign: dark theme with teal accents (muted/professional, not flashy like landing), consistent typography and spacing
+- Context feed: browsable feed of all generated context pages with filtering, search, and rich detail views
+- Activity timeline: real-time feed of syncs, new context generated, integration activity
+- Team & settings: workspace settings, API key management, notification preferences, team management
+- Auth page redesign: login/signup styled to match the dark brand identity
+- Design system: unified tokens, components, and patterns shared between landing and dashboard
 
 ## Core Value
 
@@ -138,4 +136,4 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 | Bekbol builds auth UI | Login/signup/magic-link pages in Next.js, connecting to Supabase Auth backend | -- Pending |
 
 ---
-*Last updated: 2026-02-24 -- v1.0 milestone started, shared team scope*
+*Last updated: 2026-03-04 -- v1.1 milestone started, dashboard & onboarding focus*

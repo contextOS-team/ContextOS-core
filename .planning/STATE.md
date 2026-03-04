@@ -1,36 +1,34 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: completed
-stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-03-03T23:35:20.804Z"
-last_activity: 2026-03-04 -- PostHog SDK installed on landing pages with waitlist_signup event capture and Hero CTA click tracking
+milestone: v1.1
+milestone_name: Dashboard & Onboarding
+status: active
+stopped_at: ""
+last_updated: "2026-03-04T00:03:00.000Z"
+last_activity: 2026-03-04 -- Milestone v1.1 started
 progress:
-  total_phases: 18
-  completed_phases: 14
-  total_plans: 36
-  completed_plans: 36
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-24)
+See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 14 - PostHog Analytics + Live Waitlist
+**Current focus:** v1.1 — Dashboard & Onboarding
 
 ## Current Position
 
-Phase: 14 (PostHog Analytics + Live Waitlist)
-Plan: 1 of 1 in current phase (1 complete)
-Status: Phase 14 complete
-Last activity: 2026-03-04 -- PostHog SDK installed on landing pages with waitlist_signup event capture and Hero CTA click tracking
-
-Progress: [==========] 100% (14: 1/1 plans)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-04 — Milestone v1.1 started
 
 ## Performance Metrics
 
