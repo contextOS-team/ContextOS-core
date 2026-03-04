@@ -171,7 +171,7 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 15. Dark Theme Token Foundation | 3/3 | Complete    | 2026-03-04 | - |
-| 16. Auth Redesign + Schema Foundation | 3/3 | Complete   | 2026-03-04 | - |
+| 16. Auth Redesign + Schema Foundation | 3/3 | Complete    | 2026-03-04 | - |
 | 17. Onboarding Wizard | v1.1 | 0/TBD | Not started | - |
 | 18. Activity Timeline | v1.1 | 0/TBD | Not started | - |
 | 19. Context Feed + Dashboard Home | v1.1 | 0/TBD | Not started | - |
