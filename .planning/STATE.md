@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: executing
-stopped_at: Completed 16-01-PLAN.md
-last_updated: "2026-03-04T11:09:14.906Z"
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-03-04T11:10:10.802Z"
 last_activity: 2026-03-04 -- Completed Phase 16 Plan 01 (onboarding + activity schema)
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 33
 ---
 
@@ -63,6 +63,7 @@ Progress: [███-------] 33% (Phase 16)
 | Phase 15 P01 | 3min | 2 tasks | 4 files |
 | Phase 15 P03 | 3min | 3 tasks | 5 files |
 | Phase 16 P01 | 1min | 1 task | 1 file |
+| Phase 16 P02 | 2min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,8 @@ Recent decisions affecting current work:
 - [Phase 16]: Extended handle_new_user trigger (CREATE OR REPLACE) rather than separate trigger -- keeps signup logic atomic
 - [Phase 16]: NULL onboarding row = legacy user (treated as completed) -- no backfill needed
 - [Phase 16]: pg_cron wrapped in exception handler for local dev compatibility
+- [Phase 16]: Split auth layout: bg-background (L1) brand panel + bg-elevated (L3) form panel for visual depth
+- [Phase 16]: Card wrappers removed from auth forms -- forms render directly on elevated panel surface
 
 ### Pending Todos
 
@@ -100,6 +103,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-04T11:09:14.030Z
-Stopped at: Completed 16-01-PLAN.md
+Last session: 2026-03-04T11:10:10.800Z
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None

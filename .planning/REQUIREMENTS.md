@@ -64,8 +64,8 @@ Requirements for the dashboard redesign and onboarding milestone. Each maps to r
 
 ### Auth Redesign
 
-- [ ] **AUTH-01**: Login and signup pages use dark theme matching the dashboard brand identity
-- [ ] **AUTH-02**: Auth pages use the same teal accent, typography, and surface tokens as dashboard
+- [x] **AUTH-01**: Login and signup pages use dark theme matching the dashboard brand identity
+- [x] **AUTH-02**: Auth pages use the same teal accent, typography, and surface tokens as dashboard
 
 ## v2 Requirements
 
@@ -120,8 +120,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DS-08 | Phase 15 | Complete |
 | DS-09 | Phase 15 | Complete |
 | NAV-01 | Phase 15 | Complete |
-| AUTH-01 | Phase 16 | Pending |
-| AUTH-02 | Phase 16 | Pending |
+| AUTH-01 | Phase 16 | Complete |
+| AUTH-02 | Phase 16 | Complete |
 | ACT-04 | Phase 16 | Complete |
 | ONB-07 | Phase 16 | Complete |
 | ONB-09 | Phase 16 | Pending |
