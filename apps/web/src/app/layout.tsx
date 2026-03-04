@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
 import { SentryInit } from '@/lib/sentry-init'
+import { DarkModeApplier } from '@/components/dashboard/dark-mode-applier'
 import './globals.css'
 
 const inter = Inter({
@@ -28,8 +29,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+      <head>
+        <script dangerouslySetInnerHTML={{
+          __html: `document.documentElement.classList.add('dark')`
+        }} />
+      </head>
       <body className="font-sans antialiased">
         <SentryInit />
+        <DarkModeApplier />
         {children}
       </body>
     </html>

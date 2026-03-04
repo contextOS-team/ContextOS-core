@@ -15,7 +15,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-background">
+    <div className="relative flex flex-col min-h-screen bg-background dashboard-grain">
       <Sidebar
         userEmail={user.email ?? ''}
         userFullName={user.user_metadata?.full_name}
