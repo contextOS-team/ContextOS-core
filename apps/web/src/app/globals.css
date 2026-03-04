@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --color-background: #ffffff;
@@ -79,6 +79,10 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-elevated: var(--elevated);
+  --color-elevated-foreground: var(--card-foreground);
+  --color-overlay: var(--overlay);
+  --color-overlay-foreground: var(--card-foreground);
 }
 
 :root {
@@ -106,6 +110,8 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
+  --elevated: oklch(0.98 0.002 260);
+  --overlay: oklch(0.96 0.005 260);
   --sidebar: oklch(0.17 0.025 250);
   --sidebar-foreground: oklch(0.92 0.01 260);
   --sidebar-primary: oklch(0.60 0.18 250);
@@ -117,48 +123,68 @@
 }
 
 .dark {
-  --background: oklch(0.12 0.015 270);
+  /* L1: Page background (darkest) */
+  --background: oklch(0.13 0.015 270);
+  /* L2: Cards */
+  --card: oklch(0.16 0.02 270);
+  /* L3: Elevated panels */
+  --elevated: oklch(0.19 0.02 270);
+  /* L4: Modals/overlays (lightest) */
+  --overlay: oklch(0.22 0.025 270);
+
+  /* Text hierarchy */
   --foreground: oklch(0.93 0.005 260);
-  --card: oklch(0.17 0.02 270);
   --card-foreground: oklch(0.93 0.005 260);
-  --popover: oklch(0.17 0.02 270);
   --popover-foreground: oklch(0.93 0.005 260);
-  --primary: oklch(0.60 0.18 250);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.22 0.02 270);
+  --muted-foreground: oklch(0.55 0.02 260);
+
+  /* Teal primary (hue 170 — brand #00D4AA) */
+  --primary: oklch(0.75 0.18 170);
+  --primary-foreground: oklch(0.15 0.015 270);
+  --ring: oklch(0.75 0.18 170);
+
+  /* Surfaces wired to hierarchy levels */
+  --popover: var(--elevated);
+  --secondary: var(--elevated);
   --secondary-foreground: oklch(0.93 0.005 260);
-  --muted: oklch(0.22 0.02 270);
-  --muted-foreground: oklch(0.6 0.02 260);
-  --accent: oklch(0.22 0.025 250);
+  --muted: var(--elevated);
+  --accent: oklch(0.20 0.025 270);
   --accent-foreground: oklch(0.93 0.005 260);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(0.28 0.015 270);
-  --input: oklch(0.25 0.02 270);
-  --ring: oklch(0.60 0.18 250);
+
+  /* Destructive */
+  --destructive: oklch(0.65 0.2 25);
+
+  /* Borders */
+  --border: oklch(0.26 0.015 270);
+  --input: oklch(0.22 0.02 270);
+
+  /* Charts */
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.12 0.02 250);
-  --sidebar-foreground: oklch(0.92 0.01 260);
-  --sidebar-primary: oklch(0.60 0.18 250);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.2 0.025 250);
-  --sidebar-accent-foreground: oklch(0.95 0.005 260);
-  --sidebar-border: oklch(0.24 0.015 250);
-  --sidebar-ring: oklch(0.60 0.18 250);
+
+  /* Sidebar (teal primary, hue 270 surfaces) */
+  --sidebar: oklch(0.13 0.015 270);
+  --sidebar-foreground: oklch(0.93 0.005 260);
+  --sidebar-primary: oklch(0.75 0.18 170);
+  --sidebar-primary-foreground: oklch(0.15 0.015 270);
+  --sidebar-accent: oklch(0.19 0.02 270);
+  --sidebar-accent-foreground: oklch(0.93 0.005 260);
+  --sidebar-border: oklch(0.26 0.015 270);
+  --sidebar-ring: oklch(0.75 0.18 170);
 }
 
-/* Smooth page transitions */
+/* Spring-curve page transitions */
 @keyframes fade-in-up {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(8px) scale(0.96);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -174,16 +200,21 @@
 }
 
 .animate-fade-in-up {
-  animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: fade-in-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
 .animate-scale-in {
-  animation: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: scale-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
-/* Stagger children */
+/* Spring-in utility */
+.spring-in {
+  animation: fade-in-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Stagger children with spring curve */
 .stagger-children > * {
-  animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: fade-in-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
 .stagger-children > *:nth-child(2) { animation-delay: 50ms; }
@@ -191,6 +222,23 @@
 .stagger-children > *:nth-child(4) { animation-delay: 150ms; }
 .stagger-children > *:nth-child(5) { animation-delay: 200ms; }
 .stagger-children > *:nth-child(6) { animation-delay: 250ms; }
+
+/* Shimmer sweep for skeleton loading */
+@keyframes shimmer-sweep {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    oklch(0.19 0.02 270) 0%,
+    oklch(0.24 0.02 270) 50%,
+    oklch(0.19 0.02 270) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-sweep 1.5s ease-in-out infinite;
+}
 
 /* Subtle noise texture for depth */
 .noise-bg::before {
@@ -203,4 +251,26 @@
   background-size: 256px 256px;
   pointer-events: none;
   border-radius: inherit;
+}
+
+/* Dashboard grain texture (barely perceptible, background only) */
+.dashboard-grain::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.008;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* Section label utility (monospace uppercase tracking) */
+.section-label {
+  font-family: var(--font-mono), 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
 }
