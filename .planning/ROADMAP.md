@@ -76,11 +76,12 @@ Plans:
   2. user_onboarding_state table exists with RLS, auto-created on first sign-in, queryable for onboarding completion status
   3. activity_events table exists with workspace-scoped RLS, (workspace_id, created_at DESC) index, and 30-day retention policy
   4. Users who have not completed onboarding are redirected away from the dashboard to the onboarding flow
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 16-01: TBD
-- [ ] 16-02: TBD
+- [ ] 16-01-PLAN.md — Database migration: user_onboarding_state + activity_events tables, trigger extension, pg_cron retention
+- [ ] 16-02-PLAN.md — Auth UI redesign: split layout with brand panel, dark-themed login/signup pages with teal CTAs
+- [ ] 16-03-PLAN.md — Onboarding gate in dashboard layout, /onboarding route placeholder, Sonner toaster, auth callback update
 
 ### Phase 17: Onboarding Wizard
 **Goal**: New users experience a guided 4-step onboarding (workspace name, connect Linear, optional sources, first context page) that persists across refreshes and OAuth redirects before they ever see the dashboard
@@ -170,7 +171,7 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 15. Dark Theme Token Foundation | 3/3 | Complete    | 2026-03-04 | - |
-| 16. Auth Redesign + Schema Foundation | v1.1 | 0/TBD | Not started | - |
+| 16. Auth Redesign + Schema Foundation | v1.1 | 0/3 | Not started | - |
 | 17. Onboarding Wizard | v1.1 | 0/TBD | Not started | - |
 | 18. Activity Timeline | v1.1 | 0/TBD | Not started | - |
 | 19. Context Feed + Dashboard Home | v1.1 | 0/TBD | Not started | - |
