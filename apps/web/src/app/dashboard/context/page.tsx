@@ -1,381 +1,357 @@
 'use client'
 
-import { useCallback, useState } from 'react'
-import { Search, Sparkles, Loader2, FileText, Clock, Zap, ExternalLink } from 'lucide-react'
-import {
-  getContextPage,
-  generateContextPage,
-  searchContext,
-  type ContextPageResponse,
-  type SearchResponse,
-} from '@/lib/api'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { Search, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import { toast } from 'sonner'
+import { formatRelativeTime } from '@/lib/utils'
+import {
+  type ContextPageRow,
+  STATUS_COLORS,
+  FILTER_OPTIONS,
+  type StatusFilter,
+  fetchContextPages,
+} from '@/lib/context-feed'
+import { useContextPagesRealtime } from '@/hooks/use-context-pages-realtime'
+import { generateContextPage } from '@/lib/api'
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
-type Tab = 'lookup' | 'search'
+type RowPayload = RealtimePostgresChangesPayload<Record<string, unknown>>
 
-const SOURCE_TYPE_LABELS: Record<string, string> = {
-  linear_ticket: 'Ticket',
-  linear_comment: 'Comment',
-  slack_message: 'Slack',
-  meeting_transcript: 'Meeting',
-  meeting_segment: 'Meeting Segment',
-  github_pull_request: 'Pull Request',
-  github_review: 'Review',
-  context_page: 'Context Page',
+// ---------------------------------------------------------------------------
+// useDebounce hook
+// ---------------------------------------------------------------------------
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), delay)
+    return () => clearTimeout(timer)
+  }, [value, delay])
+
+  return debouncedValue
 }
 
-export default function ContextPage() {
-  const [tab, setTab] = useState<Tab>('lookup')
+// ---------------------------------------------------------------------------
+// Context Feed Page
+// ---------------------------------------------------------------------------
 
-  // Lookup state
-  const [ticketId, setTicketId] = useState('')
-  const [contextPage, setContextPage] = useState<ContextPageResponse | null>(null)
-  const [lookupLoading, setLookupLoading] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [lookupError, setLookupError] = useState<string | null>(null)
+export default function ContextFeedPage() {
+  const router = useRouter()
 
-  // Search state
+  // State management
+  const [pages, setPages] = useState<ContextPageRow[]>([])
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<SearchResponse | null>(null)
-  const [searchLoading, setSearchLoading] = useState(false)
-  const [searchError, setSearchError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [showGenerateForm, setShowGenerateForm] = useState(false)
+  const [generateTicketId, setGenerateTicketId] = useState('')
+  const [isGenerating, setIsGenerating] = useState(false)
 
-  const handleLookup = useCallback(async () => {
-    if (!ticketId.trim()) return
-    setLookupLoading(true)
-    setLookupError(null)
-    setContextPage(null)
+  const debouncedQuery = useDebounce(searchQuery, 200)
+
+  // Initial fetch
+  const loadPages = useCallback(async () => {
+    setError(null)
+    setIsLoading(true)
     try {
-      const page = await getContextPage(ticketId.trim().toUpperCase())
-      setContextPage(page)
+      const data = await fetchContextPages()
+      setPages(data)
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to load context page'
-      if (msg.includes('404')) {
-        setLookupError(`No context page found for ${ticketId.toUpperCase()}. Click "Generate" to create one.`)
-      } else {
-        setLookupError(msg)
-      }
+      setError(err instanceof Error ? err.message : 'Failed to load context pages')
     } finally {
-      setLookupLoading(false)
+      setIsLoading(false)
     }
-  }, [ticketId])
+  }, [])
 
-  const handleGenerate = useCallback(async () => {
-    if (!ticketId.trim()) return
-    setGenerating(true)
-    setLookupError(null)
-    try {
-      await generateContextPage(ticketId.trim().toUpperCase())
-      // Poll for completion
-      let attempts = 0
-      const poll = async () => {
-        attempts++
-        try {
-          const page = await getContextPage(ticketId.trim().toUpperCase())
-          if (page.status === 'ready') {
-            setContextPage(page)
-            setGenerating(false)
-            return
-          }
-        } catch {
-          // Not ready yet
-        }
-        if (attempts < 30) {
-          setTimeout(poll, 2000)
-        } else {
-          setGenerating(false)
-          setLookupError('Generation is taking longer than expected. Try refreshing in a minute.')
-        }
+  useEffect(() => {
+    loadPages()
+  }, [loadPages])
+
+  // Realtime subscription
+  useContextPagesRealtime({
+    onInsert: useCallback((payload: RowPayload) => {
+      const newRow = payload.new as ContextPageRow
+      if (newRow?.id) {
+        setPages((prev) => [newRow, ...prev])
       }
-      setTimeout(poll, 3000) // First check after 3s
-    } catch (err) {
-      setGenerating(false)
-      setLookupError(err instanceof Error ? err.message : 'Failed to start generation')
+    }, []),
+    onUpdate: useCallback((payload: RowPayload) => {
+      const updated = payload.new as ContextPageRow
+      if (updated?.id) {
+        setPages((prev) =>
+          prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+        )
+      }
+    }, []),
+  })
+
+  // Filtering logic
+  const filteredPages = useMemo(() => {
+    let result = pages
+
+    if (statusFilter !== 'all') {
+      result = result.filter((page) => page.status === statusFilter)
     }
-  }, [ticketId])
 
-  const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return
-    setSearchLoading(true)
-    setSearchError(null)
-    setSearchResults(null)
-    try {
-      const results = await searchContext(searchQuery.trim(), undefined, 20)
-      setSearchResults(results)
-    } catch (err) {
-      setSearchError(err instanceof Error ? err.message : 'Search failed')
-    } finally {
-      setSearchLoading(false)
+    const q = debouncedQuery.trim().toLowerCase()
+    if (q) {
+      result = result.filter(
+        (page) =>
+          page.title.toLowerCase().includes(q) ||
+          page.ticket_identifier?.toLowerCase().includes(q)
+      )
     }
-  }, [searchQuery])
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Context Engine</h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          AI-generated context pages and semantic search across all your data
-        </p>
-      </div>
+    return result
+  }, [pages, statusFilter, debouncedQuery])
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b pb-2">
-        <button
-          onClick={() => setTab('lookup')}
-          className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
-            tab === 'lookup'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-          }`}
-        >
-          <FileText className="h-4 w-4 inline mr-2" />
-          Ticket Context
-        </button>
-        <button
-          onClick={() => setTab('search')}
-          className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
-            tab === 'search'
-              ? 'bg-primary text-primary-foreground'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-          }`}
-        >
-          <Search className="h-4 w-4 inline mr-2" />
-          Semantic Search
-        </button>
-      </div>
+  // Whether any filter/search is active
+  const hasActiveFilters = statusFilter !== 'all' || debouncedQuery.trim().length > 0
 
-      {/* Ticket Context Tab */}
-      {tab === 'lookup' && (
-        <div className="space-y-4">
-          {/* Input */}
-          <div className="flex gap-3">
-            <Input
-              placeholder="Enter ticket identifier (e.g. CON-16)"
-              value={ticketId}
-              onChange={(e) => setTicketId(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
-              className="max-w-sm"
-            />
-            <Button onClick={handleLookup} disabled={lookupLoading || !ticketId.trim()}>
-              {lookupLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <FileText className="h-4 w-4 mr-2" />
-              )}
-              Look Up
-            </Button>
-            <Button
-              onClick={handleGenerate}
-              disabled={generating || !ticketId.trim()}
-              variant="outline"
-            >
-              {generating ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Sparkles className="h-4 w-4 mr-2" />
-              )}
-              {generating ? 'Generating...' : 'Generate'}
-            </Button>
-          </div>
+  // Generate handler
+  const handleGenerate = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault()
+      const ticketId = generateTicketId.trim()
+      if (!ticketId) return
 
-          {/* Error */}
-          {lookupError && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              {lookupError}
-            </div>
-          )}
+      setIsGenerating(true)
+      try {
+        await generateContextPage(ticketId.toUpperCase())
+        toast(`Generating ${ticketId.toUpperCase()}...`)
+        setGenerateTicketId('')
+        setShowGenerateForm(false)
+      } catch {
+        toast.error('Failed to start generation')
+      } finally {
+        setIsGenerating(false)
+      }
+    },
+    [generateTicketId]
+  )
 
-          {/* Generating indicator */}
-          {generating && (
-            <Card>
-              <CardContent className="py-8">
-                <div className="flex flex-col items-center gap-3 text-center">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  <div>
-                    <p className="font-medium">Generating context page...</p>
-                    <p className="text-sm text-muted-foreground">
-                      Finding related content, building embeddings, and synthesizing with AI.
-                      This may take 10-30 seconds.
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+  // Clear filters handler
+  const clearFilters = useCallback(() => {
+    setStatusFilter('all')
+    setSearchQuery('')
+  }, [])
 
-          {/* Context Page Result */}
-          {contextPage && !generating && (
-            <div className="space-y-4">
-              {/* Metadata bar */}
-              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <span
-                    className={`inline-block h-2 w-2 rounded-full ${
-                      contextPage.status === 'ready'
-                        ? 'bg-green-500'
-                        : contextPage.status === 'generating'
-                        ? 'bg-yellow-500'
-                        : contextPage.status === 'stale'
-                        ? 'bg-orange-500'
-                        : 'bg-gray-400'
-                    }`}
-                  />
-                  {contextPage.status}
-                </span>
-                {contextPage.generated_at && (
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    <span className="font-mono">{new Date(contextPage.generated_at).toLocaleString()}</span>
-                  </span>
-                )}
-                {contextPage.generation_model && (
-                  <span className="flex items-center gap-1">
-                    <Zap className="h-3 w-3" />
-                    <span className="font-mono">{contextPage.generation_model}</span>
-                  </span>
-                )}
-                {contextPage.generation_tokens_used && (
-                  <span className="font-mono tabular-nums">{contextPage.generation_tokens_used.toLocaleString()} tokens</span>
-                )}
-              </div>
+  // -----------------------------------------------------------------------
+  // Loading skeleton
+  // -----------------------------------------------------------------------
+  if (isLoading) {
+    return (
+      <div className="space-y-6 animate-fade-in-up">
+        {/* Section label skeleton */}
+        <Skeleton className="h-3 w-28" />
 
-              {/* Content */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>{contextPage.title}</CardTitle>
-                  <CardDescription className="font-mono">{contextPage.ticket_identifier}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap">
-                    {contextPage.content}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Sources */}
-              {contextPage.sources.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">
-                      Sources ({contextPage.sources.length})
-                    </CardTitle>
-                    <CardDescription>
-                      Content used to generate this context page
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {contextPage.sources.map((source, i) => (
-                        <div
-                          key={i}
-                          className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">
-                              {SOURCE_TYPE_LABELS[source.type] || source.type}
-                            </span>
-                            <span className="text-foreground">{source.title}</span>
-                          </div>
-                          <span className="text-muted-foreground font-mono tabular-nums">
-                            {(source.relevance_score * 100).toFixed(0)}% relevant
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
+        {/* Filter pills skeleton */}
+        <div className="flex gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-4 w-16" />
+          ))}
         </div>
-      )}
 
-      {/* Semantic Search Tab */}
-      {tab === 'search' && (
-        <div className="space-y-4">
-          {/* Search input */}
-          <div className="flex gap-3">
-            <Input
-              placeholder="Search across all your data (e.g. 'authentication flow')"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              className="max-w-lg"
-            />
-            <Button onClick={handleSearch} disabled={searchLoading || !searchQuery.trim()}>
-              {searchLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Search className="h-4 w-4 mr-2" />
-              )}
-              Search
+        {/* Search skeleton */}
+        <Skeleton className="h-9 w-full max-w-sm" />
+
+        {/* List skeleton */}
+        <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="px-4 py-3 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-1.5 w-1.5 rounded-full" />
+              </div>
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-12" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // -----------------------------------------------------------------------
+  // Error state
+  // -----------------------------------------------------------------------
+  if (error) {
+    return (
+      <div className="space-y-6 animate-fade-in-up">
+        <h3 className="section-label mb-3">Context Feed</h3>
+        <div className="flex items-center gap-3 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm animate-scale-in">
+          <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
+          <span className="flex-1 text-destructive">{error}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={loadPages}
+            className="h-7 gap-1.5 text-destructive hover:text-destructive"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Retry
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // -----------------------------------------------------------------------
+  // Main render
+  // -----------------------------------------------------------------------
+  return (
+    <div className="space-y-6 animate-fade-in-up">
+      {/* Section label */}
+      <h3 className="section-label mb-3">Context Feed</h3>
+
+      {/* Status filter pills */}
+      <div className="flex gap-4">
+        {FILTER_OPTIONS.map((option) => (
+          <button
+            key={option}
+            onClick={() => setStatusFilter(option)}
+            className={`relative pb-1.5 text-sm font-medium transition-colors duration-150 ${
+              statusFilter === option
+                ? 'text-primary'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {option.charAt(0).toUpperCase() + option.slice(1)}
+            {statusFilter === option && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Search input */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Filter by title or ticket ID..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
+      {/* Feed list / empty states */}
+      {filteredPages.length > 0 ? (
+        /* Populated feed */
+        <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border stagger-children">
+          {filteredPages.map((page) => (
+            <button
+              key={page.id}
+              onClick={() => router.push(`/dashboard/context/${page.id}`)}
+              className={`w-full text-left px-4 py-3 transition-colors duration-150 hover:bg-muted/40 border-l-2 ${
+                STATUS_COLORS[page.status]?.border ?? 'border-l-transparent'
+              }`}
+            >
+              {/* Line 1: title + status dot */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium text-foreground truncate">
+                  {page.title}
+                </span>
+                <span
+                  className={`shrink-0 h-1.5 w-1.5 rounded-full ${
+                    STATUS_COLORS[page.status]?.dot ?? 'bg-muted-foreground/30'
+                  }`}
+                />
+              </div>
+              {/* Line 2: ticket ID + relative time + source count */}
+              <div className="flex items-center gap-3 mt-0.5">
+                {page.ticket_identifier && (
+                  <span className="text-xs font-mono text-muted-foreground">
+                    {page.ticket_identifier}
+                  </span>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  {formatRelativeTime(page.updated_at)}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {page.sources?.length ?? 0} sources
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : hasActiveFilters ? (
+        /* Filtered empty state */
+        <div className="rounded-xl border bg-card overflow-hidden">
+          <div className="flex flex-col items-center gap-3 py-12 px-4 text-center">
+            <p className="text-sm text-muted-foreground">
+              No pages match your filters
+            </p>
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              Clear filters
             </Button>
           </div>
-
-          {/* Error */}
-          {searchError && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              {searchError}
+        </div>
+      ) : (
+        /* True empty state */
+        <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border">
+          {/* Skeleton preview rows */}
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="px-4 py-3 space-y-1.5 opacity-40">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-1.5 w-1.5 rounded-full" />
+              </div>
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-3 w-12" />
+                <Skeleton className="h-3 w-16" />
+              </div>
             </div>
-          )}
+          ))}
 
-          {/* Results */}
-          {searchResults && (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                {searchResults.count} result{searchResults.count !== 1 ? 's' : ''} for &ldquo;{searchResults.query}&rdquo;
-              </p>
-              {searchResults.results.length === 0 ? (
-                <Card>
-                  <CardContent className="py-8 text-center text-muted-foreground">
-                    No results found. Try a different query or make sure embeddings have been generated.
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="space-y-2">
-                  {searchResults.results.map((result, i) => (
-                    <Card key={i}>
-                      <CardContent className="py-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm font-medium text-muted-foreground w-6">
-                              {i + 1}.
-                            </span>
-                            <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium">
-                              {SOURCE_TYPE_LABELS[result.source_type] || result.source_type}
-                            </span>
-                            <span className="text-sm font-mono text-muted-foreground">
-                              {result.source_id.slice(0, 8)}...
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="h-1.5 w-24 rounded-full bg-muted overflow-hidden">
-                              <div
-                                className="h-full rounded-full bg-primary"
-                                style={{ width: `${result.similarity * 100}%` }}
-                              />
-                            </div>
-                            <span className="text-sm font-medium w-12 text-right">
-                              {(result.similarity * 100).toFixed(0)}%
-                            </span>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {/* CTA section */}
+          <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
+            <p className="text-sm font-medium text-muted-foreground">
+              No context pages yet
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Generate context for a ticket to see it here.
+            </p>
+
+            {!showGenerateForm ? (
+              <Button
+                className="mt-2"
+                onClick={() => setShowGenerateForm(true)}
+              >
+                Generate Context
+              </Button>
+            ) : (
+              <form
+                onSubmit={handleGenerate}
+                className="flex items-center gap-2 mt-2 w-full max-w-xs"
+              >
+                <Input
+                  placeholder="Enter ticket ID (e.g. CON-16)"
+                  value={generateTicketId}
+                  onChange={(e) => setGenerateTicketId(e.target.value)}
+                  disabled={isGenerating}
+                  autoFocus
+                />
+                <Button type="submit" disabled={isGenerating || !generateTicketId.trim()}>
+                  {isGenerating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    'Generate'
+                  )}
+                </Button>
+              </form>
+            )}
+          </div>
         </div>
       )}
     </div>
