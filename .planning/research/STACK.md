@@ -1,279 +1,333 @@
 # Stack Research
 
-**Domain:** AI-powered developer context synthesis platform
-**Researched:** 2026-02-24
+**Domain:** Dashboard redesign — guided onboarding, dark-theme design system, context feed, activity timeline, team settings
+**Researched:** 2026-03-04
 **Confidence:** HIGH
+
+> **Scope note:** This file covers ONLY net-new additions for the next milestone.
+> Existing validated stack (Next.js 15, React 19, TypeScript, Tailwind v4, shadcn/ui + Radix, CVA, clsx, tailwind-merge,
+> Inter + JetBrains Mono, Supabase Auth, @supabase/ssr, @supabase/supabase-js, PostHog, Sentry, FastAPI, Supabase
+> PostgreSQL, lucide-react, sonner, tw-animate-css) is NOT repeated here.
+
+---
 
 ## Recommended Stack
 
-### Core Technologies
+### Core Technologies (New)
 
 | Technology | Version | Purpose | Why Recommended |
 |------------|---------|---------|-----------------|
-| Next.js | ^15.2.0 | Web dashboard (SSR + RSC) | Already in scaffold. Server Components for Supabase reads, Turbopack for fast dev. Vercel-native deployment. |
-| FastAPI | >=0.133.0 | Backend API, webhooks, OAuth flows | Already in scaffold. Async-native, auto OpenAPI docs, excellent for webhook receivers and background task coordination. |
-| Supabase (PostgreSQL + pgvector) | Cloud | Database, auth, vector search, real-time | Already chosen. Combines auth, DB, RLS multi-tenancy, vector embeddings, and real-time subscriptions in one platform. Eliminates 4+ separate services. |
-| Gemini Flash | gemini-2.5-flash | LLM synthesis engine | Team decision (Dulat). Cheapest fast model for structured context synthesis. ~$0.15/1M input tokens makes it 10x cheaper than alternatives at comparable quality for summarization tasks. |
-| MCP TypeScript SDK | ^1.27.0 | AI coding assistant integration | Official SDK. Delivers context to Claude Code, Cursor, Windsurf. stdio transport for local MCP server calling cloud backend. |
+| react-hook-form | ^7.71.2 | Multi-step onboarding form state | Uncontrolled inputs, minimal re-renders per step — shadcn/ui's official form docs use this. Per-step Zod schema validation via `trigger()` before advancing. Zero dependencies on existing stack. |
+| @hookform/resolvers | ^5.2.2 | Zod v4 → react-hook-form bridge | Version 5.x added automatic Zod v3/v4 runtime detection. Required companion to react-hook-form for schema validation. `zodResolver` is the shadcn/ui-prescribed pattern. |
+| zod | ^4.3.6 | Per-step and final schema validation | Already used in MCP server. Add to `apps/web`. v4 is 14x faster string parsing vs v3, 1.9 KB gzipped with `zod/mini`. Use full `zod` import for compatibility — @hookform/resolvers 5.x handles both. |
+| motion | ^12.34.5 | Onboarding step transitions, timeline animations | The successor to framer-motion (same package, renamed). `tw-animate-css` already installed covers enter/exit for static elements; motion adds layout animations (step-to-step slide), height:auto transitions, and gesture-based interactions that CSS keyframes cannot do. Add ONLY because the onboarding wizard requires animated step transitions and the activity timeline needs staggered entry. Do NOT use motion for everything — keep tw-animate-css for simple fade/scale. |
+| @stepperize/react | ^6.1.0 | Onboarding wizard step state machine | Type-safe `defineStepper` + `useStepper` hook. Handles step navigation, validation gating, and progress tracking without coupling step state to form state. Composable with shadcn/ui components. Lightweight (~2 KB). Alternative: hand-rolled stepper with useState — use @stepperize/react only if onboarding has 4+ steps with conditional branching. |
 
-**Confidence:** HIGH -- all core technologies are already selected and scaffolded. Research validates the choices.
+**Confidence:** HIGH — versions verified against npm registry (2026-03-04). react-hook-form + zod + @hookform/resolvers is the prescribed shadcn/ui pattern. motion is the production-standard for complex React animation.
 
-### Backend -- Python Dependencies
+---
 
-| Library | Version | Purpose | Why Recommended |
-|---------|---------|---------|-----------------|
-| google-genai | >=1.64.0 | Gemini API client | **REPLACE `anthropic` in pyproject.toml.** New unified Google Gen AI SDK (GA). Pydantic-native types. Supports both AI Studio and Vertex AI. The old `google-generativeai` package is sunset. |
-| langgraph | >=1.0.9 | Data gathering orchestration | Stateful graph for multi-step data collection (Linear -> Slack -> Notion). Handles parallel API calls, conditional routing, error recovery. Overkill for single LLM call but perfect for gather-then-synthesize pipeline. |
-| httpx | >=0.28.1 | Async HTTP client | Linear GraphQL API calls, Slack API fallbacks, general HTTP. Already in scaffold. async/await native. |
-| slack-bolt | >=1.27.0 | Slack event handling + API | **ADD to pyproject.toml.** Official Slack framework. Handles event verification, rate limiting, token rotation automatically. Better than raw slack-sdk for webhook/event handling. |
-| slack-sdk | >=3.33.0 | Slack Web API client | Installed as dependency of slack-bolt. Use directly for conversations.history, users.info, etc. |
-| supabase | >=2.28.0 | Python Supabase client | Already in scaffold. RPC calls for Vault operations, auth admin, direct DB queries from backend. |
-| pydantic | >=2.10 | Data validation, settings | Already in scaffold. Schema validation for webhook payloads, API request/response models, config. |
-| pydantic-settings | >=2.13.0 | Environment configuration | Already in scaffold. Type-safe env var loading with .env support. |
-| sentry-sdk[fastapi] | >=2.53.0 | Error tracking | Already in scaffold. Auto-instruments FastAPI routes, captures unhandled exceptions. |
-| lmnr | >=0.7.42 | LLM observability | Already in scaffold. Install with `lmnr[all]` or specific extras. OpenTelemetry-native tracing for Gemini calls, LangGraph steps. |
-| uvicorn[standard] | >=0.28.0 | ASGI server | Already in scaffold. Production server for FastAPI. |
+### Supporting Libraries (New)
 
-**Confidence:** HIGH for all except LangGraph (MEDIUM -- see Alternatives section).
+| Library | Version | Purpose | When to Use |
+|---------|---------|---------|-------------|
+| nuqs | ^2.8.9 | URL-synced filter state for context feed | Context feed has type + status + search filters. nuqs gives `useQueryState` (identical to `useState` but stored in URL). Enables shareable filtered views, browser back/forward, and RSC re-render triggering (`shallow: false`). 6 KB gzipped. Use for every filter/search param in the dashboard — do NOT use `useState` for URL-representable state. |
+| date-fns | ^4.1.0 | Timestamp formatting in timeline + feed | Activity timelines show relative times ("2 minutes ago", "Mar 4") and absolute timestamps on hover. date-fns v4 is tree-shakable, immutable, and 22 MB unpacked but only what you import ships. Use `formatDistanceToNow`, `format`, `parseISO`. Alternative: dayjs (670 KB unpacked) — use dayjs if bundle size becomes critical. date-fns is the shadcn/ui DatePicker default so it's the consistent choice. |
 
-### Frontend -- TypeScript Dependencies
+**Confidence:** HIGH — nuqs 2.8.9 verified on npm. date-fns 4.1.0 verified on npm. Both integrate with existing Next.js 15 App Router without configuration.
 
-| Library | Version | Purpose | Why Recommended |
-|---------|---------|---------|-----------------|
-| next | ^15.2.0 | Framework | Already installed. App Router, Server Components, Server Actions. |
-| react / react-dom | ^19.0.0 | UI runtime | Already installed. Server Components support. |
-| @supabase/supabase-js | ^2.49.0 | Browser Supabase client | Already installed. Real-time subscriptions for context page updates, direct reads via RLS. |
-| @supabase/ssr | ^0.6.0 | Server-side auth | Already installed. Cookie-based auth for SSR. Creates server/browser clients correctly. |
-| shadcn/ui components | (CLI-added) | UI components | Already chosen (implied by cva, clsx, tailwind-merge). Add components on-demand via `npx shadcn@latest add`. |
-| tailwindcss | ^4.0.0 | Styling | Already installed. v4 uses CSS-first config, no tailwind.config.js needed. |
-| zod | ^3.24.0 | Schema validation | Already in MCP server. Add to web app for form validation and API response parsing. |
-| sonner | ^1.7.0 | Toast notifications | Already installed. For async operation feedback (regenerate context, connect integration). |
-| lucide-react | ^0.469.0 | Icons | Already installed. |
+---
 
-**Confidence:** HIGH -- frontend stack is solid and already scaffolded.
+### Design System Additions (Zero New Dependencies)
 
-### MCP Server -- TypeScript Dependencies
+These are CSS-only additions to the existing Tailwind v4 + `globals.css` setup. No new npm packages.
 
-| Library | Version | Purpose | Why Recommended |
-|---------|---------|---------|-----------------|
-| @modelcontextprotocol/sdk | ^1.27.0 | MCP server framework | Already installed. Latest supports Streamable HTTP, structured tool outputs, OAuth auth. |
-| zod | ^3.24.0 | Tool input schemas | Already installed. Required peer dependency of MCP SDK. |
-| tsx | ^4.19.0 | Dev runtime | Already installed. TypeScript execution without build step. |
+#### 1. Unified Dark Theme Tokens
 
-**Confidence:** HIGH -- MCP server scaffold is correct.
+**Problem:** Landing page uses hex-based dark tokens scoped under `.landing-theme`. Dashboard uses light-default oklch tokens in `:root` with a `.dark` override. The new dashboard milestone requires the app to be dark-first (matching the landing brand direction), but the two themes currently cannot share tokens without duplication.
 
-### Database & Infrastructure
+**Solution:** Extend `globals.css` with dashboard-specific dark variables in `.dark` and a semantic token layer that both landing and dashboard reference. Do NOT merge landing.css into globals.css — landing isolation is intentional.
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| PostgreSQL (Supabase) | 15+ | Primary database | Supabase-managed. Includes pgvector, pg_trgm, RLS, Vault extensions. |
-| pgvector | Built-in | Vector similarity search | Supabase includes it. Use with Gemini embeddings (768 or 1536 dimensions). No separate vector DB needed at this scale. |
-| Supabase Vault | Built-in | OAuth token encryption | Encrypts tokens at rest via Transparent Column Encryption. Access via SQL functions + RPC. Server-side only (service_role key). |
-| Supabase Auth | Built-in | User authentication | Email/password + magic links. Cookie-based SSR via @supabase/ssr. No Clerk/NextAuth. |
-| Supabase Realtime | Built-in | Live updates | Push context page status changes to dashboard without polling. |
-| Redis | 7-alpine | Cache + future queue | Already in Docker Compose. For v1: rate limit tracking, API response caching. For v2: Celery broker if needed. |
+```css
+/* In globals.css — extend the existing .dark block */
+.dark {
+  /* Existing oklch tokens stay. Add semantic brand aliases: */
+  --brand-teal: #00D4AA;          /* matches landing --color-teal */
+  --brand-teal-muted: rgba(0,212,170,0.12);
+  --brand-surface-0: #0A0A0F;    /* deepest layer = landing --color-navy */
+  --brand-surface-1: #0F0F18;    /* card surfaces = landing --color-surface */
+  --brand-surface-2: #141420;    /* elevated surfaces = landing --color-surface-2 */
+  --brand-border-subtle: rgba(255,255,255,0.07);
+}
+```
 
-**Confidence:** HIGH
+This creates a shared vocabulary between landing.css and dashboard components without requiring a CSS-in-JS library or a new design token tool. Tailwind v4 `@theme` consumes these via `var(--brand-teal)` in utility definitions.
 
-### Embedding Model
+**Confidence:** HIGH — Tailwind v4 CSS-first architecture verified. This pattern is documented in the Tailwind v4 `@theme` guide.
 
-| Technology | Model ID | Dimensions | Purpose | Why Recommended |
-|------------|----------|------------|---------|-----------------|
-| Gemini Embedding | gemini-embedding-001 | 768 (recommended) | Ticket/message embeddings | **FREE via Google AI Studio.** Supports 768/1536/3072 dims via MRL (truncate without quality loss). Use 768 dims for v1 -- faster pgvector queries, lower storage, comparable quality. Same SDK (google-genai) as synthesis model. Zero additional cost. |
+#### 2. Dashboard Force-Dark
 
-**Confidence:** MEDIUM -- Dulat owns embedding model decision. Gemini embedding is the strongest default given Gemini Flash for synthesis (one SDK, one API key, free embeddings). OpenAI text-embedding-3-small ($0.02/1M tokens, 1536 dims) is the fallback if Gemini quality is insufficient.
+The dashboard layout needs to run permanently in dark mode regardless of OS preference. In `globals.css`:
 
-### Development Tools
+```css
+/* Force dashboard into dark mode — no OS preference dependency */
+.dashboard-theme {
+  color-scheme: dark;
+}
+```
 
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| ruff | Python linting + formatting | Already configured. Fast Rust-based linter replacing flake8+black+isort. |
-| mypy | Python type checking | Already configured. Strict mode recommended for Pydantic models. |
-| ESLint 9 + eslint-config-next | TS/JS linting | Already configured. Flat config format. |
-| TypeScript 5.7+ | Type checking | Already configured. `tsc --noEmit` for CI. |
-| pytest + pytest-asyncio | Python testing | Already configured. Use `asyncio_mode = "auto"` in pytest config. |
-| Supabase CLI | Local DB + Auth | Already configured. `supabase db reset` for migrations, `supabase start` for local dev. |
-| Docker Compose | Local services | Already configured. Redis service. Keep Celery worker profile for v2. |
+Apply `className="dashboard-theme dark"` to the dashboard root layout `<div>` (already `flex flex-col min-h-screen`). This forces all Tailwind `.dark:` variants and the existing `.dark` token block without a theme toggle library.
 
-**Confidence:** HIGH
+**Why not `next-themes`?** next-themes (a common suggestion) adds a ThemeProvider, hydration flash mitigation, and localStorage for user preference. The milestone does not require a light/dark toggle — the dashboard is permanently dark. next-themes is overkill and adds 3 KB for a feature not needed.
+
+**Confidence:** HIGH — this is the zero-dependency approach for force-dark in Next.js App Router.
+
+#### 3. Shadcn/ui Components to Add
+
+The following shadcn/ui components are copy-pasted via CLI — no npm packages:
+
+```bash
+# Add these via shadcn CLI (they use already-installed Radix primitives)
+npx shadcn@latest add progress      # Onboarding step progress bar
+npx shadcn@latest add command       # Context feed search/filter (cmdk-powered)
+npx shadcn@latest add select        # Filter dropdowns in context feed
+npx shadcn@latest add badge         # Status chips in activity timeline
+npx shadcn@latest add separator     # Timeline dividers
+npx shadcn@latest add avatar        # Team settings user avatars
+npx shadcn@latest add tabs          # Settings page sections
+npx shadcn@latest add dialog        # Confirmation modals in onboarding/settings
+npx shadcn@latest add skeleton      # Loading states in feed/timeline
+npx shadcn@latest add scroll-area   # Scrollable context feed with custom scrollbar
+```
+
+`command` uses `cmdk` (version ^1.1.1, already a Radix ecosystem dependency). The Command component provides the search-as-you-type context feed filter with keyboard navigation at zero additional npm cost.
+
+**Confidence:** HIGH — all listed components are in the current shadcn/ui registry (verified 2026-03-04).
+
+---
+
+## What NOT to Add
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `next-themes` | Overkill for a force-dark dashboard with no user toggle. Adds ThemeProvider, hydration SSR complexity, localStorage wiring. | Force dark with `.dark` class on layout root. |
+| `@tanstack/react-virtual` | Context feed at MVP scale will have <500 items. Virtualization adds significant implementation complexity (fixed row heights or measured rows) for zero perceptible benefit at this data volume. | Native browser scroll + CSS `overflow-y: auto`. Revisit if feed exceeds 2000 items. |
+| `framer-motion` | Renamed to `motion`. Using both in package.json is redundant. | `motion` (^12.34.5). |
+| `@tanstack/react-query` | Supabase client already supports subscriptions and direct async calls. Adding TanStack Query before the app has caching problems is premature. The existing `useState` + `useEffect` + Supabase client pattern works and is already established in the codebase. | Supabase client + `useEffect`. Revisit when cache invalidation complexity grows. |
+| `react-spring` | Heavier spring-physics library. motion already covers all animation needs with the same capabilities. | `motion` |
+| `dayjs` | date-fns v4 already recommended. Two date libraries in the bundle is waste. | `date-fns` ^4.1.0 |
+| `react-query` (v3 alias) | Old package name. Use `@tanstack/react-query` if/when added. | N/A |
+| Full `zod` schema in `apps/web` via separate npm install if MCP already has it | pnpm workspace: `apps/web` and `packages/mcp-server` have separate `node_modules`. Add `zod` to `apps/web/package.json` explicitly. | `pnpm add zod --filter @contextos/web` |
+| Icon libraries beyond lucide-react | Mixing Heroicons, Phosphor, etc. with lucide-react creates visual inconsistency and bundle bloat. | `lucide-react` (already installed). If a specific icon is missing, add it as an inline SVG. |
+| CSS-in-JS (styled-components, emotion) | Not compatible with Next.js 15 Server Components. Already on Tailwind v4 — adding CSS-in-JS now would be a fundamental conflict. | Tailwind v4 + CSS custom properties. |
+
+---
 
 ## Installation
 
 ```bash
-# Backend -- UPDATED pyproject.toml dependencies
-# Remove: anthropic, celery[redis], llama-index, llama-index-readers-slack, llama-index-readers-notion
-# Add: google-genai, slack-bolt
-pip install "fastapi[standard]" "uvicorn[standard]" \
-    google-genai langgraph \
-    httpx slack-bolt \
-    supabase "pydantic>=2.0" pydantic-settings \
-    "sentry-sdk[fastapi]" "lmnr[all]" \
-    python-dotenv redis
+# Add to apps/web — form libraries for onboarding wizard
+pnpm add react-hook-form @hookform/resolvers zod --filter @contextos/web
 
-# Backend dev dependencies (unchanged)
-pip install -D pytest pytest-asyncio ruff mypy
+# Add for animated step transitions and timeline entrance animations
+pnpm add motion --filter @contextos/web
 
-# Frontend (already installed, verify)
-cd apps/web && pnpm install
+# Add for URL-synced context feed filters
+pnpm add nuqs --filter @contextos/web
 
-# MCP server (already installed, verify)
-cd packages/mcp-server && pnpm install
+# Add for timestamp display in timeline and feed
+pnpm add date-fns --filter @contextos/web
+
+# Add for onboarding step state machine (evaluate after scoping 4+ steps)
+pnpm add @stepperize/react --filter @contextos/web
+
+# shadcn components (run from apps/web)
+cd apps/web
+npx shadcn@latest add progress command select badge separator avatar tabs dialog skeleton scroll-area
 ```
 
-## Critical pyproject.toml Changes
+---
 
-The current `pyproject.toml` has several packages that should be removed or replaced:
+## Integration Points with Existing Stack
 
-```diff
-dependencies = [
-    "fastapi[standard]",
-    "uvicorn[standard]",
--   "anthropic",
-+   "google-genai",
-    "langgraph",
--   "llama-index",
--   "llama-index-readers-slack",
--   "llama-index-readers-notion",
-+   "slack-bolt",
-    "supabase",
--   "celery[redis]",
-    "redis",
-    "pydantic>=2.0",
-    "pydantic-settings",
-    "httpx",
--   "lmnr",
-+   "lmnr[all]",
-    "sentry-sdk[fastapi]",
-    "python-dotenv",
-]
+### Tailwind v4 + motion
+
+motion's `animate` prop is CSS-property based and works alongside Tailwind classes. Use motion for JS-driven animations (step transitions, stagger sequences), keep Tailwind utilities + `tw-animate-css` for CSS-only states.
+
+```tsx
+// Pattern: motion for step transitions, Tailwind for state styling
+import { motion, AnimatePresence } from 'motion/react'
+
+<AnimatePresence mode="wait">
+  <motion.div
+    key={currentStep}
+    initial={{ opacity: 0, x: 20 }}
+    animate={{ opacity: 1, x: 0 }}
+    exit={{ opacity: 0, x: -20 }}
+    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+    className="rounded-xl border border-border bg-card p-6"
+  >
+    {stepContent}
+  </motion.div>
+</AnimatePresence>
 ```
 
-**Rationale for each removal:**
+### react-hook-form + @stepperize/react + zod
 
-| Removed | Why |
-|---------|-----|
-| `anthropic` | Team chose Gemini Flash, not Claude. Replace with `google-genai`. |
-| `llama-index` + readers | Unnecessary abstraction layer. Linear has a simple GraphQL API (httpx POST). Slack has slack-bolt/slack-sdk. Direct API calls are simpler, more debuggable, fewer dependencies. LlamaIndex adds ~50+ transitive deps for what is essentially `httpx.post()` with pagination. |
-| `celery[redis]` | Team decided FastAPI BackgroundTasks for v1. Keep `redis` for caching. Celery is v2 when job persistence matters. |
+Decouple step navigation (stepperize) from form state (react-hook-form). Each step validates independently before advancing.
+
+```tsx
+// Pattern: validate current step before calling stepper.next()
+const form = useForm({ resolver: zodResolver(combinedSchema), mode: 'onChange' })
+const stepper = useStepper({ initialStep: 'workspace' })
+const stepSchemas = { workspace: workspaceSchema, team: teamSchema, integrations: integrationsSchema }
+
+async function handleNext() {
+  const stepFields = getFieldsForStep(stepper.current.id)
+  const valid = await form.trigger(stepFields) // validates only current step fields
+  if (valid) stepper.next()
+}
+```
+
+### nuqs + Supabase client (context feed)
+
+nuqs manages URL filter state. Supabase client fetches on filter change. No TanStack Query layer needed.
+
+```tsx
+// Pattern: URL-synced filters driving Supabase fetch
+const [type, setType] = useQueryState('type', parseAsString)
+const [status, setStatus] = useQueryState('status', parseAsString)
+const [search, setSearch] = useQueryState('q', parseAsString)
+
+useEffect(() => {
+  let query = supabase.from('context_pages').select('*').order('created_at', { ascending: false })
+  if (type) query = query.eq('type', type)
+  if (status) query = query.eq('status', status)
+  if (search) query = query.ilike('title', `%${search}%`)
+  query.then(({ data }) => setItems(data ?? []))
+}, [type, status, search])
+```
+
+### Supabase Realtime (activity timeline)
+
+No new library. Use existing `@supabase/supabase-js` channel API in a `'use client'` component with `useEffect` cleanup. The activity timeline subscribes to `postgres_changes` on `context_pages` (and `context_generation_jobs` for status updates).
+
+```tsx
+// Pattern: realtime subscription for activity timeline — uses existing installed @supabase/supabase-js
+useEffect(() => {
+  const channel = supabase
+    .channel('activity-timeline')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'context_pages' },
+      (payload) => setItems(prev => [payload.new, ...prev].slice(0, 50))
+    )
+    .subscribe()
+  return () => { supabase.removeChannel(channel) }
+}, [])
+```
+
+### Design Token Sharing (landing ↔ dashboard)
+
+Shared teal brand values are defined once in `.dark` block of `globals.css`. Landing page continues to use its scoped `.landing-theme` class with the same hex values. When the dashboard is eventually opened alongside the landing page (same browser session, same Next.js app), there is no token conflict because landing tokens are scoped under `.landing-theme` and dashboard tokens are scoped under `.dark`.
+
+---
+
+## "Not Generic AI Slop" Design Decisions
+
+These are non-code patterns that inform implementation decisions for the milestone:
+
+### 1. Information Density Over Whitespace Theater
+The existing dashboard is sparse. Developer tools (Linear, Vercel, Raycast) pack information. Target: context feed shows title + source + status + timestamp + 1-line preview in a single compact row (not a card with 80px of padding).
+
+### 2. Mono Font for Data, Sans for Prose
+Already established in design tokens. Enforce consistently: timestamps, IDs, counts, status codes → `font-mono` (JetBrains Mono). Labels, descriptions → `font-sans` (Inter). Never swap these.
+
+### 3. Teal as a Signal, Not a Theme
+Use `--brand-teal` only for actionable elements (active state indicators, primary CTA, progress fill, generation status pulse). Do not use it decoratively. Overuse is the AI slop signal.
+
+### 4. Status as Dot + Label, Not a Badge Rainbow
+Activity timeline status: `●` dot with semantic color + short label. Not pill badges with 5 different color variants. Three states: `bg-brand-teal` (ready), `bg-amber-500` (generating), `bg-red-500` (failed).
+
+### 5. No Hero Illustrations or Empty State Art
+Empty states should be functional: "No context pages yet — connect Linear to start" with a single action button. No SVG illustrations, no Lottie animations, no undraw.co artwork. These are the strongest signals of template-sourced UI.
+
+### 6. Onboarding Progress: Steps Not Percentages
+The onboarding wizard shows step numbers (1 of 3, 2 of 3) not a percentage bar. Developers understand discrete steps. The `<Progress>` component is used for context generation status (0–100% job completion), not for onboarding navigation.
+
+---
 
 ## Alternatives Considered
 
 | Recommended | Alternative | When to Use Alternative |
 |-------------|-------------|-------------------------|
-| google-genai (Gemini Flash) | anthropic (Claude) | If synthesis quality is insufficient. Claude 3.5 Sonnet is better at nuanced reasoning but 5-10x more expensive. |
-| LangGraph for gather pipeline | Plain async Python (asyncio.gather) | If the data gathering flow stays simple (3 parallel API calls, merge, synthesize). LangGraph adds value when you need retries, conditional branching, or stateful multi-step flows. Start with LangGraph but evaluate if overhead justifies the abstraction. |
-| Direct httpx + slack-bolt | LlamaIndex readers | If you need RAG-style document indexing with automatic chunking. For v1 (simple API pulls), direct calls are better. Reconsider LlamaIndex for v2 Notion integration if document processing gets complex. |
-| Gemini embedding-001 (free) | OpenAI text-embedding-3-small ($0.02/1M) | If Gemini embedding quality is measurably worse on your ticket/message data. OpenAI has more battle-tested embeddings. Run A/B test in v1 before committing. |
-| FastAPI BackgroundTasks | Celery + Redis | When tasks must survive server restarts, need retries with backoff, or take >30 seconds. Context generation is the critical path -- if Gemini calls timeout or fail silently, add Celery in v2. |
-| slack-bolt | Raw slack-sdk | If you need full control over every Slack API call and don't want Bolt's opinion on event handling. For webhook/event-driven patterns, Bolt's built-in verification and rate limiting saves significant boilerplate. |
-| pnpm | npm / yarn | Never for this project. Already using pnpm workspace, lockfile is pnpm-lock.yaml. |
-| Supabase Vault | Custom AES-256 encryption | Never for this project. Team decision. Vault handles key rotation, encryption at rest, and access control via SQL functions. |
-| shadcn/ui | Radix + custom styles, Chakra, MUI | If you need a full component library out of the box. shadcn gives you ownership of component code (copy-paste, not npm install), perfect for an internal tool where you'll customize heavily. |
+| motion ^12.34.5 | tw-animate-css only | If wizard transitions are simple enter/fade with no layout animation. The existing tw-animate-css is sufficient for static page elements. Add motion only when you need AnimatePresence for unmounting or height:auto transitions. |
+| @stepperize/react | Custom useState stepper | For <4 step wizards with no conditional branching, a simple `const [step, setStep] = useState(0)` with an array of step components is sufficient. @stepperize adds value when steps have metadata (titles, descriptions, validation state) and when steps can branch conditionally. |
+| nuqs for URL filter state | useState (ephemeral) | If filters should NOT persist across navigation (e.g., a one-time modal filter). For the context feed, URL persistence is correct behavior. |
+| date-fns | dayjs | If total bundle size becomes critical and you need only a few date operations. dayjs is 670 KB unpacked vs 22 MB for date-fns, but date-fns tree-shakes to only what's imported. At the current scale, the difference is negligible. |
+| zod ^4.3.6 | zod ^3.x | Only if @hookform/resolvers <5.2.0 is pinned. Version 5.x automatically handles both Zod 3 and 4. Since we're installing fresh, go straight to Zod v4. |
 
-## What NOT to Use
-
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| `anthropic` Python SDK | Team chose Gemini Flash. Don't maintain two LLM SDKs. | `google-genai` |
-| `llama-index` + readers | Massive dependency tree (~50+ packages) for simple HTTP API calls. Adds abstraction over Slack/Linear APIs that makes debugging harder. The "readers" just paginate API calls you can write in 20 lines. | `httpx` for Linear GraphQL, `slack-bolt`/`slack-sdk` for Slack |
-| `celery[redis]` (v1) | Overkill for MVP. Adds broker config, worker process, monitoring. Team explicitly deferred. | `FastAPI.BackgroundTasks` |
-| `google-generativeai` (old SDK) | Deprecated/sunset. Google is consolidating to `google-genai`. | `google-genai` |
-| `python-slack-events-api` | Deprecated. Slack recommends Bolt for Python for all new apps. | `slack-bolt` |
-| NextAuth / Clerk | Team chose Supabase Auth. Adding another auth system creates token confusion and session sync issues. | `@supabase/ssr` + Supabase Auth |
-| Pinecone / Weaviate / Qdrant | Separate vector DB is unnecessary. pgvector in Supabase handles the scale (thousands of tickets, not millions). Adding a vector DB adds infrastructure, cost, and sync complexity. | pgvector (Supabase built-in) |
-| Prisma / SQLAlchemy / Drizzle ORM | Supabase client handles reads. Backend uses RPC + raw SQL for migrations. ORM adds a layer that fights with Supabase's RLS model. | Supabase Python client + SQL migrations |
-| LangChain (full framework) | Heavy, opinionated, frequent breaking changes. LangGraph (the orchestration piece) is useful standalone. Don't pull in the full LangChain framework. | `langgraph` (standalone, works without LangChain) |
-
-## Stack Patterns by Variant
-
-**If context generation takes >30 seconds consistently:**
-- Add `celery[redis]` with a dedicated worker process
-- Use Redis (already in Docker Compose) as broker
-- Keep BackgroundTasks for quick tasks (webhook acknowledgment, cache invalidation)
-
-**If embedding quality from Gemini is insufficient:**
-- Switch to OpenAI text-embedding-3-small ($0.02/1M tokens)
-- Add `openai` Python SDK
-- Update pgvector dimension from 768 to 1536
-- This is a config change, not an architecture change
-
-**If Slack event volume becomes high (>1000 events/min):**
-- Add `arq` (lightweight Redis-based task queue) as a middle ground before Celery
-- Or upgrade to Celery with dedicated workers
-- FastAPI BackgroundTasks will become a bottleneck at high volume
-
-**If MCP server needs to work offline (no cloud backend):**
-- Add SQLite/local cache to MCP server package
-- Current architecture assumes MCP -> Railway cloud is always available
-- This would be a v3 enhancement
+---
 
 ## Version Compatibility
 
 | Package A | Compatible With | Notes |
 |-----------|-----------------|-------|
-| FastAPI >=0.133.0 | Pydantic >=2.0 | FastAPI fully supports Pydantic v2. Do not use Pydantic v1 compatibility mode. |
-| langgraph >=1.0.9 | Python >=3.10 | LangGraph 1.x requires Python 3.10+. Our project uses 3.12, which is fine. |
-| google-genai >=1.64.0 | Python >=3.10 | GA SDK. Uses Pydantic internally for types. |
-| @supabase/ssr ^0.6.0 | @supabase/supabase-js ^2.49.0 | Must use together. SSR package creates cookies-aware client wrapper. |
-| @modelcontextprotocol/sdk ^1.27.0 | zod ^3.24.0 | MCP SDK requires zod as peer dependency. Uses zod for tool input validation. |
-| Next.js ^15.2.0 | React ^19.0.0 | Next 15 requires React 19. Server Components are stable. |
-| tailwindcss ^4.0.0 | PostCSS ^8.5.0 | Tailwind v4 uses CSS-first config (@import "tailwindcss"). No tailwind.config.js. |
-| slack-bolt >=1.27.0 | slack-sdk >=3.33.0 | Bolt installs slack-sdk as dependency. Don't pin slack-sdk separately. |
-| sentry-sdk[fastapi] >=2.53.0 | FastAPI >=0.79.0 | Auto-detects FastAPI in dependencies. No manual integration init needed. |
+| react-hook-form ^7.71.2 | zod ^4.3.6 via @hookform/resolvers ^5.2.2 | resolvers v5.x added Zod v4 automatic runtime detection. Do not use resolvers <5.0.0 with Zod v4. |
+| @hookform/resolvers ^5.2.2 | zod ^4.3.6 (and ^3.25.0+) | v5 uses `zod/v4/core` subpath import — requires zod >=3.25.0 for v3 OR any zod v4. |
+| motion ^12.34.5 | React ^19.0.0 | Motion 12.x explicitly supports React 19. Import from `'motion/react'` not `'framer-motion'`. |
+| nuqs ^2.8.9 | Next.js ^15.2.0 | nuqs v2 supports Next.js >=14.2.0 including 15.x App Router. Requires NuqsAdapter in layout. |
+| @stepperize/react ^6.1.0 | React ^19.0.0 | No React version pinning issues — pure hooks and TypeScript. |
+| date-fns ^4.1.0 | TypeScript ^5.7.0 | date-fns v4 ships with TypeScript types. No @types/date-fns needed. |
+| shadcn Command (cmdk ^1.1.1) | React ^19.0.0 | cmdk v1.x requires React 18+. React 19 is compatible. |
 
-## Environment Variables to Add
+---
 
-Based on stack changes, update `.env.example`:
+## Stack Patterns by Variant
 
-```bash
-# Replace ANTHROPIC_API_KEY with:
-GOOGLE_API_KEY=                     # Gemini API key (AI Studio)
-# OR for Vertex AI:
-# GOOGLE_CLOUD_PROJECT=
-# GOOGLE_CLOUD_LOCATION=
+**If onboarding wizard has 3 steps or fewer with no conditional branching:**
+- Skip `@stepperize/react`
+- Use `const [step, setStep] = useState<'workspace' | 'team' | 'done'>('workspace')`
+- Save the dependency
 
-# Add for Slack (if using Bolt):
-SLACK_BOT_TOKEN=                    # xoxb-... Bot User OAuth Token
-SLACK_SIGNING_SECRET=               # For webhook verification
-SLACK_CLIENT_ID=                    # For OAuth flow
-SLACK_CLIENT_SECRET=                # For OAuth flow
+**If context feed needs real-time updates (items appearing as context generates):**
+- No new library needed
+- Use existing `@supabase/supabase-js` Realtime with `postgres_changes` on `context_pages` table
+- Combine with nuqs filter state: filter stays in URL, new items pushed via WebSocket
 
-# Add for Linear:
-LINEAR_CLIENT_ID=                   # OAuth app client ID
-LINEAR_CLIENT_SECRET=               # OAuth app client secret
-LINEAR_WEBHOOK_SECRET=              # HMAC-SHA256 webhook signing
+**If team settings page requires complex multi-field updates:**
+- Use react-hook-form already installed for onboarding — same instance pattern
+- No additional state management library
 
-# Keep existing:
-SUPABASE_URL=
-SUPABASE_KEY=                       # anon key for standard operations
-SUPABASE_SERVICE_ROLE_KEY=          # for Vault operations, auth admin
-REDIS_URL=redis://localhost:6379/0
-LAMINAR_API_KEY=
-SENTRY_DSN=
-```
+**If auth page redesign requires animated transitions between login/magic-link modes:**
+- Use motion's `AnimatePresence` (already added for onboarding)
+- Single install, multiple use points across dashboard
+
+**If context feed grows beyond 500 items:**
+- Add `@tanstack/react-virtual` at that point
+- Current MVP scope does not justify it
+
+---
 
 ## Sources
 
-- [Google Gemini API Models](https://ai.google.dev/gemini-api/docs/models) -- Model naming, pricing, capabilities (HIGH confidence)
-- [Google Gen AI Python SDK](https://googleapis.github.io/python-genai/) -- SDK docs, GA status (HIGH confidence)
-- [PyPI: google-genai 1.64.0](https://pypi.org/project/google-genai/) -- Version verified (HIGH confidence)
-- [PyPI: langgraph 1.0.9](https://pypi.org/project/langgraph/) -- Version verified (HIGH confidence)
-- [PyPI: supabase 2.28.0](https://pypi.org/project/supabase/) -- Version verified (HIGH confidence)
-- [PyPI: slack-bolt 1.27.0](https://pypi.org/project/slack-bolt/) -- Version verified (HIGH confidence)
-- [PyPI: sentry-sdk 2.53.0](https://pypi.org/project/sentry-sdk/) -- Version verified (HIGH confidence)
-- [PyPI: lmnr 0.7.42](https://pypi.org/project/lmnr/) -- Version verified (HIGH confidence)
-- [PyPI: httpx 0.28.1](https://pypi.org/project/httpx/) -- Version verified (HIGH confidence)
-- [PyPI: FastAPI 0.133.0](https://pypi.org/project/fastapi/) -- Version verified (HIGH confidence)
-- [npm: @modelcontextprotocol/sdk 1.27.0](https://www.npmjs.com/package/@modelcontextprotocol/sdk) -- Version from search (HIGH confidence)
-- [Gemini Embedding Docs](https://ai.google.dev/gemini-api/docs/embeddings) -- gemini-embedding-001, MRL, dimensions (HIGH confidence)
-- [Supabase SSR Auth for Next.js](https://supabase.com/docs/guides/auth/server-side/nextjs) -- Cookie-based auth pattern (HIGH confidence)
-- [Supabase Vault](https://supabase.com/docs/guides/database/extensions/pgvector) -- Token encryption at rest (MEDIUM confidence, verify Vault SQL function patterns)
-- [Linear OAuth 2.0](https://linear.app/developers/oauth-2-0-authentication) -- Refresh tokens, PKCE flow (HIGH confidence)
-- [Linear Webhooks](https://linear.app/developers/webhooks) -- HMAC-SHA256 verification, retry policy (HIGH confidence)
-- [Slack Bolt for Python](https://tools.slack.dev/bolt-python/) -- Event handling, rate limiting (HIGH confidence)
-- [FastAPI Background Tasks](https://fastapi.tiangolo.com/tutorial/background-tasks/) -- Limitations for production (HIGH confidence)
-- [FastAPI + LLM best practices](https://agentsarcade.com/blog/building-llm-apps-with-fastapi-best-practices) -- BackgroundTasks caveats (MEDIUM confidence)
+- [npm registry: react-hook-form 7.71.2](https://www.npmjs.com/package/react-hook-form) — version verified 2026-03-04 (HIGH confidence)
+- [npm registry: @hookform/resolvers 5.2.2](https://www.npmjs.com/package/@hookform/resolvers) — version verified 2026-03-04 (HIGH confidence)
+- [npm registry: zod 4.3.6](https://www.npmjs.com/package/zod) — version verified 2026-03-04 (HIGH confidence)
+- [npm registry: motion 12.34.5](https://www.npmjs.com/package/motion) — version verified 2026-03-04 (HIGH confidence)
+- [npm registry: nuqs 2.8.9](https://www.npmjs.com/package/nuqs) — version verified 2026-03-04 (HIGH confidence)
+- [npm registry: @stepperize/react 6.1.0](https://www.npmjs.com/package/@stepperize/react) — version verified 2026-03-04 (HIGH confidence)
+- [npm registry: date-fns 4.1.0](https://www.npmjs.com/package/date-fns) — version verified 2026-03-04 (HIGH confidence)
+- [npm registry: cmdk 1.1.1](https://www.npmjs.com/package/cmdk) — version verified 2026-03-04 (HIGH confidence)
+- [shadcn/ui: React Hook Form docs](https://ui.shadcn.com/docs/forms/react-hook-form) — prescribed zodResolver pattern (HIGH confidence)
+- [shadcn/ui: Command component](https://ui.shadcn.com/docs/components/radix/command) — cmdk-based search (HIGH confidence)
+- [Zod v4 release notes](https://zod.dev/v4) — performance benchmarks, @zod/mini, versioning (HIGH confidence)
+- [motion/react installation](https://motion.dev/docs/react-installation) — React 19 compatibility, AnimatePresence (HIGH confidence)
+- [nuqs: Type-safe search params](https://nuqs.dev) — Next.js 15 App Router adapter (HIGH confidence)
+- [Stepperize GitHub](https://github.com/damianricobelli/stepperize) — composable step state, shadcn integration (MEDIUM confidence)
+- [Tailwind CSS v4 @theme docs](https://tailwindcss.com/docs/theme) — CSS-first design tokens, dark mode (HIGH confidence)
+- [Supabase Realtime: Subscribing to DB changes](https://supabase.com/docs/guides/realtime/subscribing-to-database-changes) — postgres_changes pattern (HIGH confidence)
+- [LogRocket: Best React animation libraries 2026](https://blog.logrocket.com/best-react-animation-libraries/) — motion recommendation, bundle comparison (MEDIUM confidence)
+- [@hookform/resolvers + Zod v4 support thread](https://github.com/react-hook-form/resolvers/issues/799) — v5.x compatibility confirmation (HIGH confidence)
 
 ---
-*Stack research for: AI-powered developer context synthesis platform*
-*Researched: 2026-02-24*
+*Stack research for: ContextOS dashboard redesign milestone (onboarding, dark theme, context feed, activity timeline, team settings, auth redesign)*
+*Researched: 2026-03-04*

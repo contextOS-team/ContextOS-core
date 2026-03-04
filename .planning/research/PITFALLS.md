@@ -1,206 +1,302 @@
 # Pitfalls Research
 
-**Domain:** AI-powered developer context synthesis platform (Linear + Slack + LLM integration)
-**Researched:** 2026-02-24
-**Confidence:** HIGH (verified across official docs, multiple credible sources, and community post-mortems)
+**Domain:** Dashboard redesign, onboarding flow, dark theme design system — adding to existing ContextOS app
+**Researched:** 2026-03-04
+**Confidence:** HIGH (verified across official docs, GitHub issues, community post-mortems, direct codebase inspection)
+
+---
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites, data loss, or multi-day debugging sessions.
+Mistakes that cause rewrites, FOUC in production, or permanent "AI slop" impressions.
 
-### Pitfall 1: OAuth Token Refresh Race Conditions
-
-**What goes wrong:**
-Linear's new OAuth apps (created after Oct 1, 2025) have short-lived access tokens (24 hours) with mandatory refresh tokens. When multiple concurrent requests detect an expired token simultaneously, they all attempt to refresh it. The first refresh succeeds, but subsequent attempts use the now-invalidated refresh token, getting `invalid_grant` errors. The last write wins, potentially overwriting the valid new refresh token with a stale one. Result: the integration silently breaks and requires the user to re-authenticate.
-
-**Why it happens:**
-Developers build the "happy path" -- single-request token refresh -- and never test concurrent access patterns. With ContextOS pulling Linear data from webhook handlers, background synthesis tasks, and user-initiated refreshes simultaneously, concurrent refresh attempts are inevitable, not edge cases.
-
-**How to avoid:**
-Implement a token refresh lock per-integration using Redis `SET NX` with a 30-second TTL. When a request detects an expired token: (1) attempt to acquire the lock, (2) if acquired, refresh and store new tokens, (3) if not acquired, wait for the lock holder to complete and use the new token. Cache valid tokens for 1-2 minutes to reduce lock contention. On any 401 response, invalidate the cache and retry once with a fresh token.
-
-**Warning signs:**
-- Intermittent "invalid_grant" or "access token invalid" errors in logs
-- Users randomly getting disconnected from Linear integration
-- Errors that only appear under load, never in development
-
-**Phase to address:**
-OAuth integration phase (Linear OAuth flow). Must be designed correctly from the start -- retrofitting token locking onto a working OAuth flow is painful because the token storage layer needs to be lock-aware.
-
----
-
-### Pitfall 2: Slack Bot Token vs User Token Scope Confusion
+### Pitfall 1: White Flash on Dark Dashboard (FOUC at Route Transition)
 
 **What goes wrong:**
-Slack OAuth v2 returns TWO different tokens in a single auth response: a bot token (`xoxb-`) in the top-level `access_token` field and a user token (`xoxp-`) nested in the `authed_user` object. Developers store the bot token and ignore the user token, then discover that certain operations (reading DMs, accessing user-specific channels, impersonating users) require the user token. Or worse: they request `user_scope` parameters but store only `bot_scope` tokens, silently losing access they thought they had.
-
-Additionally, event subscriptions behave differently depending on which token type initialized the app. Using only the bot token means you miss events that require user token scopes, and vice versa.
+The dashboard layout uses `bg-background` which resolves to `oklch(0.985 0.002 260)` — a near-white. When the user navigates from the landing page (hard dark background: `#0A0A0F`) to `/dashboard`, there is a visible white flash as the new layout renders before CSS applies. This is compounded if `next-themes` or any theme toggling is introduced: Next.js SSR renders the default light `:root` variables before the client can apply a `.dark` class, causing a flash on every hard-navigation.
 
 **Why it happens:**
-Slack's dual-token model in OAuth v2 is unusual. Most OAuth providers return one token. The separate `scope` vs `user_scope` parameters in the authorization URL are easy to confuse, and the response JSON structure nests user credentials in a way that's easy to overlook.
+The root `<html>` element has no `dark` class. The landing page works around this by injecting `<style>{html, body { background-color: #0A0A0F !important; }}</style>` directly into the landing layout — a hack that only covers the landing segment. When the dashboard layout mounts with `bg-background` (which resolves to light mode white), the browser paints that background instantly before JavaScript runs. No `ThemeProvider` or `suppressHydrationWarning` is in place.
 
 **How to avoid:**
-Design the OAuth callback handler to explicitly extract and store BOTH tokens from the response. Map each token to its purpose:
-- Bot token (`xoxb-`): channel messages, posting, reactions, bot-level actions
-- User token (`xoxp-`): only if you need user-impersonation (likely not needed for ContextOS v1)
+Apply the `dark` class at the dashboard layout level, not globally. The existing `globals.css` already has a `.dark` block with correct OKLCH dark tokens — use it. In the dashboard layout wrapper, add `className="dark"` to the outer `<div>`. This forces Tailwind's `dark:` variant to activate for all descendants without touching the root `<html>` (which would break the landing page). The correct pattern:
 
-For ContextOS, the bot token is sufficient for reading `message.channels` and `message.groups` events. Only request `user_scope` if you specifically need user-level access. Document which scopes map to which token in the codebase.
-
-**Warning signs:**
-- "missing_scope" errors when calling Slack API methods
-- Events not arriving that you expect based on your scope configuration
-- OAuth flow succeeds but subsequent API calls fail with "not_authed"
-
-**Phase to address:**
-Slack OAuth integration phase. Get the scope design right in the OAuth authorization URL construction, and the callback handler's token extraction logic. Changing scopes later forces all users to re-authorize.
-
----
-
-### Pitfall 3: Webhook Signature Verification Against Parsed Body (Not Raw Bytes)
-
-**What goes wrong:**
-Both Linear (HMAC-SHA256) and Slack (signing secret) compute signatures over the raw HTTP request body bytes. If FastAPI's JSON middleware parses the body before you read it, or if you verify the signature against `json.dumps(parsed_data)` instead of the original raw bytes, the signature will NEVER match. The JSON re-serialization changes key ordering, whitespace, and unicode escaping, producing different bytes than what the sender signed.
-
-This is the #1 webhook integration bug and it's extremely frustrating to debug because everything looks correct -- you have the right secret, the right algorithm, the right header -- but verification always fails.
-
-**Why it happens:**
-FastAPI automatically parses JSON request bodies when you type-hint a parameter as a Pydantic model. By the time your handler runs, the raw bytes are gone. Developers then try to reconstruct the raw body from the parsed data, which produces different bytes.
-
-**How to avoid:**
-Read the raw request body BEFORE any JSON parsing:
-```python
-@app.post("/webhooks/linear")
-async def linear_webhook(request: Request):
-    raw_body = await request.body()  # Raw bytes - use this for HMAC
-    signature = request.headers.get("Linear-Signature")
-    if not verify_linear_signature(raw_body, signature, webhook_secret):
-        raise HTTPException(status_code=401)
-    payload = json.loads(raw_body)  # Parse AFTER verification
+```tsx
+// app/dashboard/layout.tsx
+return (
+  <div className="dark flex flex-col min-h-screen bg-background text-foreground">
+    <Sidebar ... />
+    <main ...>{children}</main>
+  </div>
+)
 ```
-Never use Pydantic model injection for webhook endpoints. Always use `Request` directly.
 
-For Slack specifically, also include the timestamp header in the signing base string: `v0:{timestamp}:{raw_body}`.
+Because `globals.css` defines `@custom-variant dark (&:is(.dark *))`, any element inside `.dark` will resolve its OKLCH variables to the dark values. No `next-themes`, no `ThemeProvider`, no `suppressHydrationWarning` needed — the dark theme is structural, not user-preference-driven.
 
 **Warning signs:**
-- Webhook signature verification fails 100% of the time (not intermittently)
-- Verification works in unit tests (where you control the raw body) but fails in production
-- Switching to "skip verification" makes everything work (DO NOT ship this)
+- White background visible for 50-200ms when clicking "Sign In" and landing on `/dashboard`
+- Browser devtools paint flashing tool shows a light frame before the dark frame
+- Users on slow connections see the white background for 1+ seconds
 
 **Phase to address:**
-Webhook listener phase (Linear webhooks, Slack events). This must be the FIRST thing implemented in every webhook endpoint. Template the pattern once and reuse it.
+Dashboard redesign phase — the very first commit that adds the dark class to the layout wrapper. Must be done before any visual polish work begins, because it changes which CSS variables all subsequent components resolve to.
 
 ---
 
-### Pitfall 4: Supabase RLS Performance Cliff with Unoptimized Policies
+### Pitfall 2: The "Dark Mode Template" Trap — Generic shadcn/Tailwind Dark
 
 **What goes wrong:**
-RLS policies execute per-row for every query. A policy like `auth.uid() IN (SELECT user_id FROM workspace_members WHERE workspace_id = table.workspace_id)` runs a subquery for every single row in the table, turning a 5ms query into an 11-second query on tables with a few thousand rows. This gets worse linearly with table size and is invisible during development with small datasets.
+The dashboard ends up looking like every other Next.js + shadcn + Tailwind dark mode app: gray-900 background, white text, blue primary accent, card borders in gray-700, skeleton loaders, and an endless grid of cards. The landing page has distinctive character (teal #00D4AA, near-black navy #0A0A0F, grain texture, glow effects). The dashboard shares none of it. Users notice the discontinuity immediately — the landing page looks like a designed product, the dashboard looks like a `npx shadcn@latest init` starting point.
+
+The specific visual fingerprints of "AI slop" dark dashboards:
+- Pure gray background (`#111827` or `oklch(0.17 0 0)`) with zero color temperature
+- Default blue primary (`#3b82f6`) with no brand connection
+- Card components with a 1px border and background 1 step lighter than the page
+- Padding and spacing from the shadcn defaults, never questioned
+- Status dots as plain colored circles with no surrounding context
+- "Connect" buttons that look like plain `<Button variant="outline">`
+- No visual hierarchy between primary actions and secondary content
+- Empty states that are just centered text with an icon
 
 **Why it happens:**
-RLS policies look like simple SQL but the Postgres optimizer treats them differently. Function calls like `auth.uid()` are re-evaluated per row unless wrapped in a `SELECT` subquery. Missing indexes on columns referenced in RLS policies (like `workspace_id`) cause full table scans inside the per-row policy evaluation.
+Developers ship the shadcn defaults and treat visual polish as something to "do later." The defaults are intentionally neutral so they work for everyone — which means they look like everyone else's app. The existing dashboard already uses `bg-card`, `border-border`, `text-muted-foreground` — all correct token names, all resolving to the same neutral gray palette that thousands of apps use.
 
 **How to avoid:**
-Three mandatory optimizations for every RLS policy:
-1. **Wrap function calls in SELECT**: `(SELECT auth.uid()) = user_id` instead of `auth.uid() = user_id` -- enables the optimizer to cache the result
-2. **Index all RLS-referenced columns**: Every column in a policy WHERE clause needs a btree index
-3. **Invert join direction**: `workspace_id IN (SELECT workspace_id FROM workspace_members WHERE user_id = (SELECT auth.uid()))` is dramatically faster than the reverse because it resolves the fixed user first, then matches
+The dashboard dark theme must be deliberately different from shadcn defaults. Three specific interventions:
 
-Always test RLS performance with `EXPLAIN ANALYZE` using realistic data volumes (1000+ rows per table).
+1. **Background color temperature**: Instead of the neutral `oklch(0.12 0.015 270)` in `.dark`, shift the dashboard background to have a subtle teal undertone: `oklch(0.10 0.012 210)` (cooler, slightly blue-teal). This one change makes the dashboard feel like it belongs to the ContextOS brand rather than being a shadcn template.
+
+2. **Surface hierarchy with teal influence**: Card backgrounds should be `oklch(0.14 0.014 220)`, borders should have a barely-perceptible teal tint: `oklch(0.25 0.018 210)`. This is imperceptible individually but creates a coherent palette when all surfaces are viewed together.
+
+3. **Accent that matches the landing**: The dashboard primary should be a muted version of the landing's `#00D4AA` — `oklch(0.55 0.12 180)` rather than a generic blue. It reads as the same product family without being as vibrant as the marketing page.
+
+These changes live in a `dashboard-theme` CSS class applied at the dashboard layout level (same scoping pattern as `landing-theme`), overriding only the specific OKLCH tokens that need adjustment.
 
 **Warning signs:**
-- Queries that are fast in the SQL Editor (which bypasses RLS) but slow from the client SDK
-- Dashboard pages that load slowly only when the database has real data
-- Supabase dashboard showing high query times on simple SELECT operations
+- Screenshot the dashboard and the landing page side by side — if they look like they're from different products, the pitfall has occurred
+- Any component using the default shadcn `primary` color that resolves to the same blue as the shadcn docs
+- The dashboard background reads as "dark gray" rather than "near-black with blue-teal undertone"
 
 **Phase to address:**
-Database schema phase. RLS policies must be written correctly from the start. Retrofitting optimized policies onto existing queries is possible but every policy needs audit. Establish the `(SELECT auth.uid())` wrapper pattern as a team convention from day one.
+Dashboard redesign — during the dark theme CSS token definition, before any components are built. Token decisions propagate everywhere; retrofitting them requires touching every component.
 
 ---
 
-### Pitfall 5: LLM Synthesis Quality Collapse from Poor Context Assembly
+### Pitfall 3: Onboarding Flow Interrupted by OAuth Redirect — Lost Progress
 
 **What goes wrong:**
-The context synthesis prompt receives a dump of all gathered data -- Linear ticket details, Slack messages, related tickets -- and the LLM produces generic, unhelpful summaries. Engineers look at the generated context page and think "I could have gotten this from reading the ticket title." The AI-generated implementation prompt is too vague to be useful in Cursor/Claude Code. Users stop trusting the product within the first week.
+The onboarding wizard guides the user through: create workspace → connect Linear → connect Slack → generate first context. The Linear and Slack connection steps redirect the user to external OAuth providers. When the OAuth provider redirects back to `/auth/callback`, the onboarding state (current step, form data, workspace ID) is gone. The user lands back on the dashboard home page instead of returning to onboarding step 3. The onboarding "just stops" mid-flow.
 
-This is the existential threat to ContextOS. The integrations are plumbing; the synthesis quality IS the product.
+This is a guarantee, not an edge case. Every OAuth connect within onboarding involves a full-page redirect away from and back to the app. The user's browser state is wiped on redirect.
 
 **Why it happens:**
-Two root causes: (1) Retrieved context is noisy -- Slack messages include greetings, off-topic tangents, bot notifications mixed with actual technical decisions. Feeding everything to the LLM dilutes the signal. (2) The synthesis prompt doesn't specify the output structure tightly enough, or doesn't give the LLM enough guidance on what "good context" looks like for an engineering ticket.
-
-Research shows that increasing retrieved passages doesn't consistently improve LLM output -- performance improves initially then DECLINES as noise increases. Hard negatives (retrieved content that looks relevant but isn't) actively degrade quality.
+The existing OAuth callback (`/auth/callback`) redirects to `/dashboard` unconditionally. There is no mechanism to preserve onboarding state across the OAuth round-trip. State stored in React `useState` or in-memory is gone when the page unloads for the OAuth redirect. The onboarding wizard has no persistent backing store.
 
 **How to avoid:**
-- **Pre-filter aggressively**: Remove bot messages, join/leave notifications, single-emoji reactions, and messages under 10 characters before sending to the LLM
-- **Structure the prompt with explicit sections**: Don't ask for "a summary" -- ask for exactly the 5 sections defined in the product spec (origin story, business requirements, technical decisions, related work, AI prompt) with specific instructions for each
-- **Include few-shot examples**: Show the LLM what a GOOD context page looks like for a sample ticket
-- **Separate data gathering from synthesis**: LangGraph for gathering (parallel API calls), single focused LLM call for synthesis. Don't let the agent decide what to retrieve -- deterministically gather everything, then synthesize
-- **Token budget awareness**: Gemini Flash context windows are generous, but cramming 100 Slack messages into one prompt wastes tokens on noise. Limit to 20-30 most relevant messages
+Before redirecting to the OAuth provider, store the onboarding resume point in a cookie or Supabase `profiles` table:
+
+```typescript
+// Before: window.location.href = authorization_url
+// After:
+document.cookie = `onboarding_return=/onboarding?step=3&status=linear_connected; path=/; max-age=600; SameSite=Lax`
+window.location.href = authorization_url
+```
+
+In the OAuth callback route (`/auth/callback`), read this cookie and redirect to the onboarding resume URL instead of `/dashboard`. Clear the cookie after redirect. The Supabase-based approach (writing `onboarding_step` to `profiles`) is more robust but adds a round-trip; the cookie approach works fine for a short-lived onboarding flow.
 
 **Warning signs:**
-- Context pages that read like generic summaries of the ticket title
-- AI prompts that don't reference specific technical decisions from Slack/Notion
-- Engineers not copying the AI prompt (the hero feature) -- track this
-- Context pages that are almost identical for different tickets
+- Manual test: start onboarding, click "Connect Linear," complete OAuth, observe where you land
+- Any OAuth connect handler that calls `window.location.href = authorization_url` without first preserving state is vulnerable
+- The existing `handleQuickConnect` in `dashboard/page.tsx` has this exact vulnerability
 
 **Phase to address:**
-Context synthesis phase. Build the prompt engineering and context assembly pipeline with quality evaluation from the start. Create 3-5 "golden" test cases with known-good Slack threads and Linear tickets, and evaluate every prompt change against them.
+Onboarding implementation phase — before any OAuth connect buttons are wired into the wizard. The resume-point preservation must be built into the OAuth initiation helpers, not bolted on afterward.
 
 ---
 
-### Pitfall 6: FastAPI Background Tasks Silently Losing Work
+### Pitfall 4: Scoped CSS Bleeding — `.landing-theme` Tokens Leaking into Dashboard
 
 **What goes wrong:**
-ContextOS uses FastAPI `BackgroundTasks` for synthesis jobs (the PROJECT.md explicitly chose this over Celery). Background tasks run in the same process as the web server. If the server restarts, crashes, or is redeployed during a synthesis job, the job is silently lost -- no error, no retry, no record that it was ever started. The webhook returns 200 (as it should for responsiveness), but the context page never gets generated.
+The landing page uses a scoped `.landing-theme` class to isolate its dark design tokens from the dashboard's light defaults. This works correctly today. When the dashboard switches to dark mode, there is a risk of CSS variable collision if the `dashboard-theme` class shares variable names with `landing-theme`, or if the `landing-theme` styles are accidentally applied to dashboard routes via an ancestor element.
 
-On Railway (the chosen deployment platform), deploys trigger process restarts. During a 2-3 week sprint with frequent deploys, this means regularly losing in-flight synthesis jobs.
+More concretely: the landing layout wraps its children in `<div class="landing-theme landing-grain">`. If any shared layout component (a modal, a portal-based dialog from Radix/shadcn) renders outside this div, it will get the wrong tokens. Radix UI portals render at the `<body>` level by default — outside `.landing-theme` scope — which means dialogs, dropdowns, and tooltips on the landing page get `:root` (light mode) tokens, not `.landing-theme` tokens.
 
 **Why it happens:**
-FastAPI BackgroundTasks has no persistence, no status tracking, and no retry mechanism. It's designed for fire-and-forget tasks like sending emails, not for business-critical jobs that must complete. Developers choose it for simplicity (the PROJECT.md explicitly acknowledges this tradeoff) but underestimate how often servers restart in production.
+The existing `globals.css` uses `@custom-variant dark (&:is(.dark *))` which expects `.dark` on an ancestor. The landing theme achieves darkness via `.landing-theme` CSS variable overrides, not via `.dark` class. This means shadcn components that use `dark:bg-*` Tailwind variants will NOT activate inside `.landing-theme` — only the CSS variable overrides work. Any shadcn component that uses both approaches (e.g., `dark:text-white bg-background`) will have mixed results.
 
 **How to avoid:**
-Accept this limitation for v1 but build a safety net:
-1. **Track job status in the database**: Before starting a background task, insert a row with status `pending`. Update to `processing` when the task starts, `completed` when done, `failed` on error
-2. **Build a sweep job**: A periodic task (even a simple cron endpoint) that finds `pending` or `processing` jobs older than 5 minutes and re-queues them
-3. **Idempotent synthesis**: Ensure re-running synthesis for the same ticket is safe (overwrite, don't duplicate)
-4. **Return the job ID**: Webhook handlers should return 200 immediately but also create a trackable job, so the dashboard can show "generation in progress" vs "generation failed"
+Establish a strict rule: the dashboard segment uses `.dark` class on the layout wrapper for dark mode. The landing segment uses `.landing-theme` for CSS variable overrides only. No route segment ever uses both mechanisms. Document which CSS variable names are "reserved" by each scope and ensure they never overlap. The `dashboard-theme` class (if created) must only override variables that `.dark` doesn't already set.
 
-This gives you 80% of Celery's reliability with 10% of the complexity. Migrate to a proper job queue (Celery or arq) in v2 if the sweep job fires frequently.
+For Radix portals in landing components: add `data-vaul-drawer-wrapper` to the `.landing-theme` div so Radix portals are rendered inside it, or add `.landing-theme` class to the portal root manually.
 
 **Warning signs:**
-- Context pages that never appear after ticket assignment
-- Dashboard showing "generating..." indefinitely
-- Users manually regenerating context that should have been auto-generated
-- Gaps in context generation that correlate with deploy times
+- A shadcn `Dialog` or `DropdownMenu` on the landing page shows with white/light background
+- Any CSS variable (`--primary`, `--border`, etc.) rendering differently inside vs. outside a portal
+- The dashboard dark theme affects elements on the landing page (or vice versa) after the route transition
 
 **Phase to address:**
-Context synthesis phase, but the job tracking table should be in the database schema phase. The schema needs a `context_generation_jobs` table from the start.
+Dashboard dark theme phase — as part of defining the scoping strategy before writing any themed components. Run a visual diff test of all landing page components with portals after the dashboard dark class is added.
 
 ---
 
-### Pitfall 7: Slack Rate Limit Cliff for Non-Marketplace Apps
+### Pitfall 5: Activity Feed Accumulating Unbounded Supabase Realtime Subscriptions
 
 **What goes wrong:**
-As of May 2025, Slack dramatically reduced rate limits for commercially distributed apps not on the Slack Marketplace. `conversations.history` and `conversations.replies` dropped from Tier 3 (50+ RPM) to Tier 1 (1 RPM) with only 15 objects per request. If ContextOS is classified as "commercially distributed" but not on the Marketplace, initial data sync or intensive Slack message retrieval becomes essentially impossible -- fetching 100 messages from a channel would take 7+ minutes.
+The activity timeline subscribes to Supabase Realtime to receive live updates (new context generated, sync completed, etc.). If the subscription is created inside a React `useEffect` without proper cleanup, every component mount creates a new channel. In development with React Strict Mode (which double-invokes effects), this immediately creates two subscriptions per mount. In production, navigating away and back to the activity feed page creates a new subscription each time without removing the old one.
 
-Even for internal apps (which retain Tier 3 limits), `chat.postMessage` is limited to 1 message per second per channel, and exceeding this causes HTTP 429 errors with potential app disconnection.
+Supabase Free plan allows 200 concurrent connections, 100 channels per connection. For a small founding team (3 users with 2-3 tabs open each), exceeding connection limits is unlikely. But leaking channels silently inflates costs and can cause unexpected "too_many_channels" errors if the browser tab is left open for hours with frequent re-renders.
 
 **Why it happens:**
-Slack made these changes to push apps toward the Marketplace and prevent bulk data exfiltration. The distinction between "internal" and "commercially distributed" apps is subtle, and developers often don't realize which category their app falls into until they hit the limits.
+Developers copy Supabase Realtime examples that show `supabase.channel('activity').on(...)` without a cleanup return. The existing codebase creates a single Supabase client per call (via `createClient()`), which is correct. But channels need explicit removal: `supabase.removeChannel(channel)` must be called in the effect cleanup.
 
 **How to avoid:**
-- **Register as an internal app** during v1 dogfooding -- this retains Tier 3 limits (50+ RPM). ContextOS is being used by the founding team, so this is accurate
-- **Design for rate limits from day one**: Implement exponential backoff with jitter on all Slack API calls, respect the `Retry-After` header
-- **Cache aggressively**: Store Slack messages in Supabase after retrieval. Never re-fetch messages you already have
-- **Prefer real-time events over polling**: The Events API delivers messages as they happen, no API calls needed. Only use `conversations.history` for backfill (which is deferred to v2 anyway)
-- **Plan Marketplace submission** before commercial distribution
+```typescript
+useEffect(() => {
+  const channel = supabase
+    .channel('activity-feed')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'context_jobs' }, handleUpdate)
+    .subscribe()
+
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}, [supabase])
+```
+
+Create one channel per logical feed, not one channel per item. Use a single subscription with a filter rather than N subscriptions for N items. For the founding team scale (3 users), polling with a 10-second interval is equally valid and simpler than Realtime — prefer simplicity and reach for Realtime only when live updates are a stated requirement.
 
 **Warning signs:**
-- HTTP 429 responses from Slack API
-- Initial sync jobs taking 10x longer than expected
-- Slack threatening to disable the app via email
+- Browser devtools WebSocket frames show duplicate identical messages arriving for one event
+- Supabase dashboard showing "Peak Connections" far higher than your user count
+- React Strict Mode (dev) causing duplicate notifications for single events
 
 **Phase to address:**
-Slack integration phase. The rate limit handling must be built into the Slack API client wrapper from the first line of code. Don't add it later.
+Activity timeline phase — the subscription pattern must be correct from the first implementation. Add a cleanup unit test: mount and unmount the timeline component and verify channel count returns to baseline.
+
+---
+
+## Moderate Pitfalls
+
+Mistakes that cause rework, visual bugs, or degraded UX.
+
+### Pitfall 6: Onboarding Step Validation Blocking on Error, Not Guiding Forward
+
+**What goes wrong:**
+The onboarding wizard shows an error state when the user skips a step or tries to proceed without completing all fields, but provides no forward path. "Connect Linear to continue" is a dead end if the Linear OAuth app registration is pending. Users who hit an error on step 2 of 5 cannot continue, cannot skip, cannot exit gracefully. They close the browser and never return.
+
+**Why it happens:**
+Developers treat onboarding as a form to be validated rather than a guided journey. The instinct is "don't let users through until they've completed this step" — but for integration setup steps that depend on external services, this creates an unresolvable dead end.
+
+**How to avoid:**
+Every onboarding step must have an explicit "I'll do this later" escape. Mark skipped steps as `pending` rather than `required`. Design the dashboard to reflect onboarding completion state (the existing "0/5 connected" pattern is exactly right) so users can return to incomplete steps naturally. Only block progression for steps that are truly a prerequisite for the next step (e.g., can't generate context without at least one integration). Linear and Slack connection steps must be skippable.
+
+**Warning signs:**
+- Any onboarding step that throws an error with no "Skip" option
+- Completion blocking on external OAuth status that the user cannot control in the moment
+- No way to exit onboarding and return to it later
+
+**Phase to address:**
+Onboarding implementation phase — bake skip logic into the wizard state machine before implementing individual steps.
+
+---
+
+### Pitfall 7: Context Feed Empty State Is a Dead End
+
+**What goes wrong:**
+The first time a user reaches the context feed page, it is empty. The empty state shows "No context pages yet" with a description and maybe an icon. The user has no actionable next step. They don't know if they need to connect Linear first, assign a ticket, or wait. They close the tab.
+
+This is the highest drop-off point for internal tools: the first time a user sees the product's core feature and it's... nothing.
+
+**Why it happens:**
+Empty states are treated as an afterthought. Developers implement the feed for the case where data exists, add a basic empty state, and ship. The empty state doesn't account for the user's onboarding status (no integrations vs. integrations connected but no tickets assigned yet vs. tickets assigned but generation pending).
+
+**How to avoid:**
+The context feed empty state must branch on user state:
+- **No integrations connected:** Show "Connect Linear to start generating context" with a direct link to integrations setup
+- **Linear connected, no tickets assigned to user:** Show "Assign a Linear ticket to yourself to generate your first context page" with a screenshot/mockup of what a context page looks like
+- **Generation in progress:** Show the skeleton loader with a "Generating your first context page..." message
+- **Generation complete, no context pages:** Should not happen — redirect bug
+
+Each branch must have a call to action, not just an explanation.
+
+**Warning signs:**
+- The empty state is a single message centered on the page with no button
+- The empty state text is the same regardless of whether integrations are connected
+- There is no loading/generating state shown while the first context page is being produced
+
+**Phase to address:**
+Context feed implementation phase — design the empty state variants before implementing the feed, not after.
+
+---
+
+### Pitfall 8: Onboarding Wizard Progress Not Persisted — Users Lose State on Refresh
+
+**What goes wrong:**
+The user completes steps 1-3 of a 5-step onboarding wizard, then refreshes the page or closes and reopens the browser. They are back at step 1. All progress is gone. If the wizard required connecting Linear (which involves an OAuth redirect), the integration IS connected, but the wizard shows it as step 2 again.
+
+**Why it happens:**
+Onboarding state is stored in React component state (`useState`) without persistence. When the component unmounts (navigation, refresh, tab close), the state is lost.
+
+**How to avoid:**
+The `profiles` table already exists (or should be created in the DB schema phase) with a `onboarding_completed_at` column. Add an `onboarding_step` integer column. After each step completion, write the current step number to the database. On page load, read the current step from the database and resume there. The onboarding wizard derives its initial step from the database, not from component state.
+
+The check for which steps are "complete" should be derived from actual data (Linear integration connected? → step 2 complete) rather than from stored step numbers. This makes the wizard resilient to partial state: if the user connected Linear outside of onboarding, the wizard should recognize it and advance past that step.
+
+**Warning signs:**
+- Step advancement is stored only in `useState` or `useRef`
+- The wizard starts at step 1 even when the user has an integration already connected
+- Completing OAuth redirect returns the user to step 1 of onboarding
+
+**Phase to address:**
+Onboarding implementation phase, but the `profiles.onboarding_step` column must be added in the DB schema phase.
+
+---
+
+### Pitfall 9: Auth Page Redesign Inherits Wrong Token Set
+
+**What goes wrong:**
+The auth pages (`/login`, `/signup`) are redesigned to match the dark brand identity. The developer adds a `dark` class to the auth layout, which activates the `.dark` OKLCH tokens in `globals.css`. Everything looks correct in development. In production, a user with an OS-level dark mode preference who visits `/login` for the first time sees the page flash white (SSR renders `:root` light tokens) before the dark class is applied client-side. Worse: if `next-themes` is ever added globally, the auth pages toggle with the user's system preference rather than being locked to the brand's dark identity.
+
+**Why it happens:**
+Auth pages that are "dark by design" (not user-preference-driven) must use the structural `.dark` class approach, not the `next-themes` ThemeProvider approach. Mixing the two causes the FOUC issue above and makes the auth page's dark theme contingent on user preference rather than brand identity.
+
+**How to avoid:**
+The auth layout wrapper must include `dark` as a static CSS class, identical to the dashboard layout approach. Do not use `ThemeProvider` or `next-themes` for the auth pages. The `<style>{html, body { background-color: ... }}` hack used by the landing layout works here too — add it to the auth layout to prevent the white flash between the `<html>` background (light) and the `.dark` div background (near-black) while the page loads.
+
+**Warning signs:**
+- The auth page background is white for 50-200ms on first load
+- The "or" divider in the login form uses `bg-card` which resolves to a light color inside a dark context
+- Input placeholders have poor contrast against the dark input background
+
+**Phase to address:**
+Auth page redesign phase — the very first step is establishing the dark wrapper with the background flash prevention, then building the styled components on top of that.
+
+---
+
+### Pitfall 10: Activity Timeline N+1 Query for Actor/Resource Details
+
+**What goes wrong:**
+The activity timeline shows events like "Linear synced 12 tickets" and "Context generated for CON-45." Each event record in the database stores a `resource_id` (ticket ID, integration ID, etc.) but not the display name. When rendering the timeline, the frontend makes one query to fetch 20 events, then 20 individual queries to fetch the display name for each event's resource. The timeline loads slowly because of 21 sequential or 21 parallel database calls.
+
+**Why it happens:**
+Activity events are a log — the schema captures the event type, actor, resource ID, and timestamp. Denormalizing the display name into the event record feels wrong ("what if the ticket title changes?"). So the display name is fetched lazily, per-event, at render time.
+
+**How to avoid:**
+Two acceptable approaches depending on how important the display name accuracy is:
+
+1. **Denormalize at write time**: When writing an activity event, also write the display name (ticket title, integration name) at that moment. Accept that historical events show the name as it was when the event occurred. This is correct behavior for an audit log — "Context generated for 'Implement rate limiting'" is more informative than "Context generated for CON-45."
+
+2. **Join at query time**: Write a single SQL query that JOINs activity events with the relevant resource tables. One database round-trip for the entire page. This requires knowing at schema design time which resource types exist and defining the JOIN structure.
+
+Option 1 is strongly preferred: simpler query, resilient to resource deletion, historically accurate.
+
+**Warning signs:**
+- The activity timeline loads the event list, then you see individual items appearing one by one as their resource details load
+- Supabase dashboard shows 15-25 queries fired in sequence when the timeline page loads
+- Any `useEffect` that iterates over events and makes a fetch call per event
+
+**Phase to address:**
+Activity timeline phase, but the schema decision (denormalize vs. join) must be made in the DB schema phase and communicated to whoever designs the activity events table.
 
 ---
 
@@ -210,71 +306,68 @@ Shortcuts that seem reasonable but create long-term problems.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Skipping webhook idempotency (no dedup by event ID) | Faster webhook handler development | Duplicate context regeneration, wasted LLM tokens, confusing Linear comments | Never -- Linear retries up to 3x, Slack retries 3x. You WILL get duplicates |
-| Storing OAuth tokens in plain columns instead of Vault | Simpler SQL queries for token access | Tokens visible in backups, logs, and Supabase dashboard to anyone with DB access | Only in local dev. Production must use Vault |
-| Hardcoding Gemini model name (`gemini-2.0-flash`) | Works today | Google renames/deprecates models without warning (Dec 2025 quota changes had no announcement). Deployment breaks | Never -- use environment variable for model name |
-| No embedding model version tracking | Simpler embedding table schema | When you switch embedding models, old and new embeddings are incompatible. Search quality degrades silently | Only if you're certain you'll never change models (you will) |
-| Using Supabase Auth external providers for OAuth | Quick setup via config.toml | Supabase Auth providers handle user-login OAuth, not service-integration OAuth. Linear/Slack OAuth for data access requires custom flows | Never for ContextOS -- the config.toml already has `[auth.external.linear]` which is WRONG for this use case |
+| Using inline `style` overrides for dark theme instead of CSS variables | Quick visual fix | Bypasses the token system; every change requires finding and updating hardcoded values scattered across files | Never — use the `.dark` class + token overrides |
+| Using `dark:bg-gray-800` Tailwind classes instead of `dark:bg-card` | Predictable color control | Creates a parallel color system that diverges from tokens; future token changes don't propagate | Never in ContextOS — shadcn components use semantic tokens, mixing in raw Tailwind color breaks the consistency |
+| Putting all onboarding steps on one page (no step persistence) | Simpler to implement | Users who get interrupted (OAuth redirect, browser close) lose all progress | Only for truly trivial onboarding (1-2 steps, no OAuth) |
+| Fetching activity events on a 5-second polling interval instead of Realtime | No WebSocket complexity | 5-second staleness on a "real-time" timeline; high read traffic on activity table at scale | Acceptable for founding team (3 users) as a starting point, replace with Realtime before external launch |
+| Hardcoding the landing page's `#00D4AA` teal as a Tailwind `text-[#00D4AA]` in dashboard components | Matches brand color exactly | Not a CSS variable; if the brand color changes, it must be updated in every component where it's used | Never — add `--color-teal` to the dashboard-theme block |
+| Using `<style>` inline hack to prevent flash (`html, body { background: #0A0A0F !important; }`) | Works immediately | The `!important` can override legitimate subsequent styles; it's a sledgehammer approach | Acceptable only as a flash-prevention shim in the layout file while a proper solution is built |
 
 ---
 
 ## Integration Gotchas
 
-Common mistakes when connecting to external services.
+Common mistakes when the new features connect to existing systems.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| Linear OAuth | Using Supabase Auth's built-in Linear provider for data-access OAuth | Supabase Auth's external providers are for user login, not API integration. Build a custom OAuth2 flow in Python that stores workspace-level tokens separately |
-| Linear Webhooks | Not validating `webhookTimestamp` (only checking HMAC) | Verify both the HMAC-SHA256 signature AND that `webhookTimestamp` is within 60 seconds of current time to prevent replay attacks |
-| Linear API | Ignoring GraphQL pagination, assuming all results fit in one response | Linear's GraphQL API paginates by default. Always check `pageInfo.hasNextPage` and use cursor-based pagination |
-| Slack OAuth | Requesting bot scopes via `user_scope` parameter (or vice versa) | Bot scopes go in `scope=`, user scopes in `user_scope=`. The parameters have different token implications |
-| Slack Events | Processing events synchronously before returning 200 | Return HTTP 200 within 3 seconds. Queue the event for background processing. Slack will retry (and you'll get duplicates) if you respond slowly |
-| Slack Events | Not handling the `url_verification` challenge event | First event Slack sends is a challenge. Handler must respond with the challenge value. Test this FIRST |
-| Gemini API | Relying on free tier for production | Google cut free tier limits by 92% in Dec 2025 with zero notice. Use paid Tier 1 (150-300 RPM) for any production workload |
-| Supabase Vault | Inserting secrets via SQL statements (logged in Supabase logs) | Use the Vault UI or disable statement logging when inserting secrets programmatically. Raw SQL INSERT of tokens gets logged unencrypted |
-| pgvector | Creating IVFFlat index before having data | IVFFlat builds clusters from existing data. An index built on 100 rows is useless for 10,000 rows. Use HNSW instead, or wait until you have representative data volume |
+| Dark dashboard + existing landing CSS | Adding `.dark` class at `<html>` level to force dark dashboard — breaks landing page which relies on `:root` light variables | Apply `.dark` only to the dashboard layout `<div>`, not `<html>`. Landing uses `.landing-theme` scoping, never `.dark` class |
+| OAuth connect inside onboarding wizard | Calling the existing `connectLinear()` / `connectSlack()` API helpers directly, which redirect immediately with no state preservation | Wrap every OAuth initiation in the wizard with a pre-redirect cookie write: `onboarding_return=/onboarding?step=N` |
+| Supabase Realtime + Next.js client components | Creating a new Supabase client instance inside every component that needs Realtime | Use the shared `createClient()` from `@/lib/supabase/client` and ensure `removeChannel()` is called in effect cleanup |
+| Activity events table + RLS | The activity events table visible to all workspace members but the current RLS pattern protects per-user — activity feed needs workspace-scoped reads | Design the `activity_events` RLS policy to filter by `workspace_id` (not `user_id`) from the start. Review existing RLS pattern before creating the table |
+| Dark auth pages + existing auth callback | Auth callback route (`/auth/callback`) redirects to `/dashboard` — once onboarding exists, this redirect must check onboarding completion status | Add an `onboarding_completed_at` check in the callback: if null, redirect to `/onboarding`; otherwise `/dashboard` |
+| shadcn `Dialog` / `Sheet` in dark dashboard | Radix portals render outside the `.dark` wrapper div, so they get `:root` light tokens | Wrap the entire `<body>` or add `dark` class at the `<html>` level only for authenticated routes — or add `className="dark"` to the portal root via `Radix.Portal` container prop |
 
 ---
 
 ## Performance Traps
 
-Patterns that work at small scale but fail as usage grows.
+Patterns that work fine for 3 users but degrade with real usage.
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| RLS without indexed policy columns | Queries slow linearly with table size, 10x slower than expected | Index every column referenced in RLS policies. Use `EXPLAIN ANALYZE` | 1,000+ rows per table |
-| Un-wrapped `auth.uid()` in RLS policies | Dashboard pages load in 5+ seconds | Wrap all function calls: `(SELECT auth.uid())` not `auth.uid()` | 500+ rows with RLS |
-| Embedding search without pre-filtering | Vector search returns irrelevant results from other workspaces, or searches entire table | Always filter by `workspace_id` BEFORE vector similarity, not after. Use pgvector's `WHERE` clause | 10,000+ embeddings |
-| Gemini Flash token-per-minute (TPM) exhaustion | 429 errors despite low request count | Large context windows (100K+ tokens per request) hit TPM limits at low RPM. Monitor token usage, not just request count | 50+ concurrent synthesis jobs, or prompts >50K tokens |
-| Unbounded Slack message fetching | Synthesis jobs that take 30+ seconds, high Gemini costs | Cap Slack messages per context page (20-30 most relevant). Don't feed the LLM everything | Channels with 500+ messages mentioning a ticket keyword |
+| Polling the activity events table without a WHERE clause timestamp filter | Full table scan every 5 seconds per open tab | Always filter: `WHERE created_at > last_fetch_timestamp`. Add a compound index on `(workspace_id, created_at DESC)` | 1,000+ activity events |
+| Rendering all activity events without virtualization | Timeline page freezes when scrolling after 200+ events are loaded | Use `@tanstack/react-virtual` or implement infinite scroll with `pageParam`. Never render unbounded lists | 200+ timeline events in DOM |
+| Supabase Realtime broadcasting activity events to all subscribers without workspace filtering | Users in workspace A receive events for workspace B; auth bypass risk | Filter Realtime channel by `workspace_id`: `.on('postgres_changes', { filter: 'workspace_id=eq.YOUR_ID' }, ...)` | Multiple workspaces |
+| Onboarding wizard fetching all integration statuses on every step render | 5 API calls per wizard step transition | Fetch integration status once on wizard mount, cache in state. Re-fetch only after an OAuth connect completes | Onboarding with slow mobile connection |
+| CSS animation `animate-fade-in-up` on every context feed card re-render | Feed flickers/re-animates when new events arrive via Realtime | Apply entry animation only on initial mount (CSS `animation-fill-mode: both`) and suppress it for items that are updated in-place | Any Realtime update to existing items |
 
 ---
 
 ## Security Mistakes
 
-Domain-specific security issues beyond general web security.
+Domain-specific issues for this milestone.
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Storing OAuth tokens outside Supabase Vault | Tokens visible in database backups, Supabase dashboard logs, and to anyone with table access | Use Vault `vault.create_secret()` function. Access via decrypted view only in backend service role |
-| Exposing Slack/Linear tokens to the frontend | Frontend JS can read tokens, enabling unauthorized API access | Tokens live ONLY in the Python backend. Frontend calls Python API, never touches integration tokens. RLS policies should block the `vault.decrypted_secrets` view from client roles |
-| Not validating webhook source before processing | Attacker can forge webhooks to trigger context regeneration, wasting LLM tokens or injecting false data | Verify HMAC signature on EVERY webhook. No exceptions, no "skip in dev" flags that ship to prod |
-| MCP API keys with no rate limiting | A misbehaving or compromised MCP client makes unlimited API calls, running up Gemini costs | Rate limit MCP API key usage (per key, per minute). Track usage in Redis |
-| Logging raw OAuth tokens or webhook payloads | Tokens and sensitive data visible in Railway logs, Sentry breadcrumbs | Sanitize logs: redact any field matching `*token*`, `*secret*`, `*key*`. Configure Sentry `before_send` to strip sensitive data |
+| Exposing onboarding step state in the URL only (`?step=3`) | User can manually jump to step 5 without completing prerequisites, claiming "onboarding complete" without connecting integrations | Validate step completion server-side when marking onboarding complete. URL step is a UI hint, not a trust boundary |
+| Activity events table without workspace isolation in RLS | User A can query user B's activity events if they craft a direct Supabase query | Mandatory RLS policy: `workspace_id = (SELECT workspace_id FROM profiles WHERE user_id = (SELECT auth.uid()))`. Never rely on the frontend to filter |
+| OAuth state cookie with long TTL | An `onboarding_return` cookie that lives for 24 hours allows replaying the OAuth flow out of context | Set TTL to 10 minutes max. Validate that the return URL matches an allowed onboarding path (whitelist, not regex) |
 
 ---
 
 ## UX Pitfalls
 
-Common user experience mistakes in this domain.
+Common user experience mistakes for these specific features.
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| No progress indicator during context generation | User assigns ticket, nothing happens for 10-30 seconds. They wonder if the integration is broken | Show "Generating context..." status in dashboard immediately. Use Supabase realtime to update when synthesis completes |
-| Context page shows stale data after ticket update | Engineer reads context, starts coding, doesn't realize the ticket was updated 5 minutes ago | Show "Last generated: X minutes ago" prominently. Auto-regenerate when ticket is updated (not just on assignment) |
-| AI prompt is too generic to be useful | Engineer copies prompt into Cursor, gets unhelpful output. Stops using the feature entirely | Include specific file paths, function names, API endpoints from technical decisions. Reference actual Slack discussion points, not summaries of summaries |
-| Slack linking misses relevant threads | Context page says "no Slack context found" when there's a whole thread discussing the feature | Start with explicit link detection (Linear ticket URLs in Slack) + keyword matching against ticket title/identifier. Show "X Slack threads found" count so users can verify |
-| OAuth disconnect with no clear re-auth path | Integration breaks silently. Dashboard shows stale data without explaining why | Show integration health status on the dashboard. If a token refresh fails, immediately show "Reconnect Linear" banner with one-click re-auth |
+| Onboarding wizard with a progress bar that fills but then jumps back | User feels they are going backward; trust in the product erodes | Progress bar must be monotonically increasing. If a step can't be completed, it shows as "pending" (grayed out check) not as negative progress |
+| Dark dashboard with insufficient contrast between surface levels | Eye fatigue in daily use; users cannot distinguish cards from the page background | Minimum 8% lightness difference between background and card in OKLCH: background `oklch(0.10)`, card `oklch(0.14)` is sufficient; background `oklch(0.12)`, card `oklch(0.13)` is not |
+| Activity timeline showing raw event types ("context_generated") instead of human-readable descriptions | Feed is unreadable without understanding the internal event schema | Define a display name mapping for every event type at the application layer before writing the feed component |
+| Onboarding showing "Connect X" buttons without explaining why | Users don't understand what they get from each integration | Each integration in onboarding shows one sentence: what data it provides and what it enables (e.g., "Linear — we pull ticket descriptions, comments, and history to generate context") |
+| Auth page redesign with dark inputs that show no focus ring | Users who tab through the form lose keyboard navigation position | Ensure `ring` CSS variable has sufficient contrast in dark mode. The existing `--ring: oklch(0.60 0.18 250)` is adequate — verify it's not overridden |
+| Activity feed with only "what happened" and no "what to do" | Engineers know 3 context pages were generated but don't know what to do with them | Each activity item should link directly to the resource it describes (context page, integration settings, etc.) |
 
 ---
 
@@ -282,32 +375,31 @@ Common user experience mistakes in this domain.
 
 Things that appear complete but are missing critical pieces.
 
-- [ ] **OAuth flow:** Token refresh works -- verify that refresh tokens are stored AND that the refresh flow handles concurrent requests safely (test with 3 simultaneous requests to an expired token)
-- [ ] **Webhook handler:** Idempotency works -- send the same webhook payload twice and verify only one synthesis job runs (check the dedup table/cache)
-- [ ] **RLS policies:** Performance is acceptable -- run `EXPLAIN ANALYZE` on key queries with 1000+ rows and RLS enabled. Query time should be under 100ms
-- [ ] **Context synthesis:** Output quality is evaluated -- don't just check that it runs. Read 5 generated context pages and rate them honestly. Would you use this AI prompt in Cursor?
-- [ ] **Slack event handling:** URL verification challenge works -- Slack sends this on first subscription setup. If it fails, no events will ever arrive
-- [ ] **Linear webhook:** Signature verification uses raw bytes -- test with a real Linear webhook, not a hand-crafted test payload
-- [ ] **Error handling:** Failed synthesis doesn't leave ghost jobs -- verify that a crashed synthesis job gets detected and retried by the sweep mechanism
-- [ ] **Supabase Vault:** Tokens are actually encrypted -- query `vault.secrets` (encrypted) vs `vault.decrypted_secrets` (decrypted view) to confirm encryption is working
-- [ ] **Gemini API:** Model name is configurable -- verify the model name comes from an environment variable, not a hardcoded string
-- [ ] **Rate limiting:** Slack API client has backoff logic -- trigger a 429 response and verify the client waits and retries (mock the response in tests)
+- [ ] **Dark dashboard theme:** Add the `.dark` class to the layout wrapper AND verify that all shadcn components (Dialog, Sheet, DropdownMenu portals) render with dark tokens. Open a Dropdown from the dashboard and check the background color in devtools.
+- [ ] **Onboarding OAuth flow:** Complete the OAuth round-trip within the wizard (not from the dashboard page) for BOTH Linear and Slack. Verify you land back on the correct onboarding step, not the dashboard home.
+- [ ] **Flash prevention:** Navigate from the landing page to `/login` to `/dashboard` and check for any white frames using browser paint timing in devtools. Background should stay dark throughout.
+- [ ] **Activity feed empty states:** Test all three empty state branches: (1) no integrations, (2) integrations connected but nothing generated, (3) generation in progress. All three must have a call-to-action.
+- [ ] **Onboarding persistence:** Start onboarding, complete step 1, close the browser entirely, reopen — verify you resume at step 2 (or wherever you left off).
+- [ ] **Supabase Realtime cleanup:** Navigate to the activity feed, then navigate away, then back. Open Supabase Realtime metrics — verify channel count is 1, not 2.
+- [ ] **Context feed with real data:** Add the `.dark` class and verify all card content (timestamps, status dots, truncated text) has sufficient contrast. Run Chrome's accessibility checker with dark mode active.
+- [ ] **Auth pages with dark class:** Test magic link flow end-to-end in dark auth. The email redirect back to `/auth/callback` must still work — the `dark` class on the auth layout does not affect the redirect URL.
+- [ ] **Design system token consistency:** Do a text search for hardcoded hex values (`#00D4AA`, `#0A0A0F`, etc.) in dashboard and auth components. Every brand color should be a CSS variable reference.
+- [ ] **Activity feed performance:** Load the timeline with 100+ seeded events. Check that only the visible events are in the DOM (windowed) or that pagination limits the DOM count. Check database query count in Supabase logs.
 
 ---
 
 ## Recovery Strategies
 
-When pitfalls occur despite prevention, how to recover.
+When pitfalls occur despite prevention.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| OAuth tokens lost/corrupted | LOW | Users re-authorize via dashboard. One-click flow if OAuth app is still registered. No data loss, just a re-auth |
-| Webhook dedup missing (duplicate context pages) | LOW | Add dedup table, run migration, deduplicate existing pages by keeping the most recent per ticket |
-| RLS performance is terrible | MEDIUM | Add indexes, wrap function calls in SELECT, re-test. Requires migration but no schema redesign |
-| Synthesis quality is poor | MEDIUM | Iterative prompt engineering. Add pre-filtering. Create golden test cases. Does NOT require architecture changes |
-| Background tasks losing jobs | MEDIUM | Add job tracking table (migration), implement sweep endpoint, backfill any missing context pages |
-| Wrong OAuth model (using Supabase Auth providers for integration OAuth) | HIGH | Requires rewriting the entire OAuth flow, new token storage, migration of existing tokens. This is a multi-day rewrite |
-| Embedding model change without versioning | HIGH | Must re-embed ALL existing data. If you have 10,000 embeddings, this takes significant time and API cost. Mark old embeddings as stale, re-process in background |
+| FOUC on dark dashboard | LOW | Add `dark` class to dashboard layout wrapper and `<style>` flash-prevention shim. One commit. |
+| Generic dark theme ("AI slop") already shipped | MEDIUM | Create `dashboard-theme` CSS class with brand-tinted token overrides. Apply at layout level. Verify in browser. Typically 1-2 days of design iteration. |
+| Onboarding OAuth redirect lost state | LOW | Add pre-redirect cookie write and callback route check. 2-3 hours. No schema changes needed. |
+| Activity feed with N+1 query already shipped | MEDIUM | Migrate activity events table to store denormalized display names. Write a backfill migration. Update the event-write code. Schema change + data migration. |
+| `.landing-theme` leaking into dashboard via shared ancestor | LOW | Inspect the DOM tree. The leakage is always an ancestor element that has both classes. Remove the `.landing-theme` class from any element outside `(landing)` route segment. |
+| Onboarding step state lost on refresh (no persistence) | MEDIUM | Add `onboarding_step` column to `profiles` table. Write step number to DB on each advance. Read on wizard mount. Requires migration + logic rewrite. |
 
 ---
 
@@ -317,37 +409,35 @@ How roadmap phases should address these pitfalls.
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| OAuth token refresh race condition | OAuth integration (Linear + Slack) | Test 3 concurrent requests with an expired token. All should succeed without `invalid_grant` |
-| Slack bot vs user token confusion | Slack OAuth integration | Verify both token types are properly extracted (or only bot token if user token not needed). Test API calls with the stored token |
-| Webhook signature on raw bytes | Webhook listeners (Linear + Slack) | Send a real webhook from Linear/Slack. Verification passes. Then tamper with one byte of the payload -- verification fails |
-| RLS performance cliff | Database schema + RLS policies | `EXPLAIN ANALYZE` on every RLS-protected table with 1000+ rows. All queries under 100ms |
-| LLM synthesis quality collapse | Context synthesis pipeline | 5 golden test cases evaluated by a human. AI prompts are specific enough to use in Cursor |
-| Background tasks losing work | Context synthesis + job tracking | Deploy during active synthesis. Verify job recovers after deploy completes (sweep job picks it up) |
-| Slack rate limit cliff | Slack API client wrapper | Run Slack API calls in a loop. Verify 429 responses trigger backoff. Verify cached messages avoid re-fetch |
-| Supabase Auth provider misuse for integration OAuth | OAuth integration | Verify Linear/Slack OAuth uses custom Python flow, NOT `[auth.external.linear]` from Supabase config |
-| Webhook idempotency missing | Webhook listeners | Send identical webhook payload 3 times. Verify only 1 synthesis job is created |
-| Gemini model hardcoding | Context synthesis | Change model name in env var. Verify synthesis uses the new model without code changes |
+| FOUC white flash on dark dashboard | Dashboard redesign — first commit | Navigate landing → login → dashboard. No white frame visible. |
+| Generic "AI slop" dark theme | Dashboard redesign — token definition step | Side-by-side screenshot test: dashboard vs. landing page. Same product family. |
+| OAuth redirect destroying onboarding state | Onboarding implementation — before OAuth buttons are wired | Complete Linear OAuth within the wizard, verify return to correct step. |
+| Landing CSS / Dashboard CSS scoping collision | Dashboard redesign — dark class strategy | Open all shadcn portals (Dialog, Dropdown) on both landing and dashboard. Correct tokens on both. |
+| Realtime subscription leak | Activity timeline implementation | Mount/unmount activity feed component 3 times. Supabase channel count stays at 1. |
+| Onboarding step not persisted | Onboarding implementation + DB schema | Refresh mid-onboarding. Resume at correct step. |
+| Context feed dead-end empty state | Context feed implementation | Test 3 empty state branches. Each has a CTA. |
+| Activity timeline N+1 query | Activity timeline + DB schema | Single query in Supabase logs per timeline page load. |
+| Auth page dark theme with FOUC | Auth page redesign — first commit | Load `/login` on cold browser. Background stays dark throughout. |
+| Hardcoded brand colors in components | Dashboard redesign — token audit | `grep -r "#00D4AA\|#0A0A0F\|#1C1C2E" apps/web/src/app/dashboard` returns zero results. |
 
 ---
 
 ## Sources
 
-- [Linear OAuth 2.0 Authentication Docs](https://linear.app/developers/oauth-2-0-authentication) -- Refresh token migration timeline, 24h token expiry (HIGH confidence)
-- [Linear Webhooks Docs](https://linear.app/developers/webhooks) -- HMAC-SHA256 signing, 5s timeout, 3 retries (HIGH confidence)
-- [Slack Rate Limits Docs](https://docs.slack.dev/apis/web-api/rate-limits/) -- Tier system, 429 handling (HIGH confidence)
-- [Slack Rate Limit Changes for Non-Marketplace Apps](https://docs.slack.dev/changelog/2025/05/29/rate-limit-changes-for-non-marketplace-apps/) -- conversations.history dropped to 1 RPM (HIGH confidence)
-- [Slack Token Types](https://docs.slack.dev/authentication/tokens/) -- Bot vs user token differences (HIGH confidence)
-- [Slack Events API: HTTP vs Socket Mode](https://docs.slack.dev/apis/events-api/comparing-http-socket-mode/) -- HTTP recommended for production (HIGH confidence)
-- [Supabase RLS Performance and Best Practices](https://supabase.com/docs/guides/troubleshooting/rls-performance-and-best-practices-Z5Jjwv) -- SELECT wrapper, index strategies (HIGH confidence)
-- [Supabase Vault Docs](https://supabase.com/docs/guides/database/vault) -- Statement logging leak, access control (HIGH confidence)
-- [Nango: Concurrency with OAuth Token Refreshes](https://nango.dev/blog/concurrency-with-oauth-token-refreshes) -- Redis lock pattern, race condition solutions (MEDIUM confidence)
-- [Nango: Why is OAuth still hard in 2026?](https://nango.dev/blog/why-is-oauth-still-hard) -- Ecosystem-wide OAuth pitfalls (MEDIUM confidence)
-- [FastAPI Background Tasks vs Celery](https://medium.com/@komalbaparmar007/fastapi-background-tasks-vs-celery-vs-arq-picking-the-right-asynchronous-workhorse-b6e0478ecf4a) -- No persistence, no retry, same-process (MEDIUM confidence)
-- [Gemini API Rate Limits 2026 Guide](https://blog.laozhang.ai/en/posts/gemini-api-rate-limits-guide) -- Free tier 92% reduction, TPM considerations (MEDIUM confidence)
-- [Six Lessons Learned Building RAG Systems in Production](https://towardsdatascience.com/six-lessons-learned-building-rag-systems-in-production/) -- Context quality > quantity, hard negatives (MEDIUM confidence)
-- [pgvector 2026 Guide](https://www.instaclustr.com/education/vector-database/pgvector-key-features-tutorial-and-pros-and-cons-2026-guide/) -- Scaling limits, index rebuild requirements (MEDIUM confidence)
-- [LangGraph Limitations 2025 Discussion](https://community.latenode.com/t/current-limitations-of-langchain-and-langgraph-frameworks-in-2025/30994) -- Production gaps, observability needs (LOW confidence -- community forum)
+- Direct inspection of `/apps/web/src/app/globals.css`, `landing.css`, dashboard layout, auth layout, and sidebar — CSS variable scoping, existing OKLCH tokens, `.dark` class absence confirmed (HIGH confidence)
+- [next-themes GitHub README](https://github.com/pacocoursey/next-themes) — FOUC cause, `suppressHydrationWarning`, `disableTransitionOnChange` (HIGH confidence)
+- [FOUC Fixing in React and Next.js — Not A Number](https://notanumber.in/blog/fixing-react-dark-mode-flickering) — Inline script in `<head>`, hydration timing details (HIGH confidence)
+- [shadcn/ui issue #5552 — ThemeProvider hydration error Next.js 15](https://github.com/shadcn-ui/ui/issues/5552) — Confirmed Next.js 15 + ThemeProvider hydration issues (HIGH confidence)
+- [shadcn/ui Tailwind v4 docs](https://ui.shadcn.com/docs/tailwind-v4) — `@custom-variant dark (&:is(.dark *))`, OKLCH migration, `tw-animate-css` (HIGH confidence)
+- [Supabase Realtime Limits](https://supabase.com/docs/guides/realtime/limits) — 200 connections free, 100 channels per connection (HIGH confidence)
+- [Supabase Realtime Best Practices Discussion #21995](https://github.com/orgs/supabase/discussions/21995) — Single client instance, channel cleanup patterns (HIGH confidence)
+- [NN/G Wizards: Definition and Design Recommendations](https://www.nngroup.com/articles/wizards/) — Step count, navigation, skip patterns (HIGH confidence)
+- [OnboardJS: Supabase Onboarding Persistence](https://onboardjs.com/blog/supabase-onboarding-persistence-onboardjs) — Persistence patterns, state loss on refresh (MEDIUM confidence)
+- [Applying Dark Mode in Next.js via CSS Variables — Codimite](https://codimite.ai/blog/applying-dark-mode-in-next-js-using-css-variables/) — Structural dark class approach (MEDIUM confidence)
+- [DEV: Understanding & Fixing FOUC in Next.js App Router 2025](https://dev.to/amritapadhy/understanding-fixing-fouc-in-nextjs-app-router-2025-guide-ojk) — Background flash prevention patterns (MEDIUM confidence)
+- [TanStack Query Infinite Queries docs](https://tanstack.com/query/latest/docs/framework/react/guides/infinite-queries) — Sequential refetch of all pages, memory management (HIGH confidence)
+- [GitHub Discussion: Handling colors light/dark mode shadcn #2151](https://github.com/shadcn-ui/ui/discussions/2151) — CSS variable alias strategy for dark mode (HIGH confidence)
 
 ---
-*Pitfalls research for: ContextOS -- AI-powered developer context synthesis platform*
-*Researched: 2026-02-24*
+*Pitfalls research for: ContextOS v1.1 — dashboard redesign, onboarding flow, dark theme design system*
+*Researched: 2026-03-04*
