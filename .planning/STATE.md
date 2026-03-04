@@ -10,8 +10,8 @@ progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 13
-  completed_plans: 12
-  percent: 96
+  completed_plans: 13
+  percent: 100
 ---
 
 # Project State
@@ -69,6 +69,7 @@ Progress: [██████████] 96%
 | Phase 18 P02 | 4min | 1 task | 3 files |
 | Phase 19 P02 | 2min | 1 tasks | 1 files |
 | Phase 19 P03 | 2min | 2 tasks | 2 files |
+| Phase 17 P01 | 6min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,9 @@ Recent decisions affecting current work:
 - [Phase 18]: CSS-only event-enter and banner-slide-in animations (no Framer Motion)
 - [Phase 19]: Inline useDebounce hook in feed page rather than separate file -- single consumer keeps it self-contained
 - [Phase 19]: Prose classes on wrapper div, not react-markdown (v10 has no className prop)
+- [Phase 17]: Wizard reads current_step from DB on mount to handle OAuth return detection
+- [Phase 17]: Fathom uses inline API key form within sources grid rather than separate dialog
+- [Phase 17]: Back button positioned below step content for minimal visual interference
 
 ### Pending Todos
 
@@ -119,6 +123,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-04T16:44:13.804Z
-Stopped at: Completed 19-03-PLAN.md
-Resume file: None
+Last session: 2026-03-04T16:43:30Z
+Stopped at: Completed 17-01-PLAN.md
+Resume file: .planning/phases/17-onboarding-wizard/17-01-SUMMARY.md

@@ -25,14 +25,14 @@ Requirements for the dashboard redesign and onboarding milestone. Each maps to r
 
 ### Onboarding
 
-- [ ] **ONB-01**: User sees a 4-step onboarding wizard after first signup before accessing dashboard
-- [ ] **ONB-02**: Step 1: user names their workspace (single text input)
-- [ ] **ONB-03**: Step 2: user connects Linear (required, cannot proceed without)
-- [ ] **ONB-04**: Step 3: user optionally connects additional sources (Slack, GitHub, Notion, Fathom) from a grid
+- [x] **ONB-01**: User sees a 4-step onboarding wizard after first signup before accessing dashboard
+- [x] **ONB-02**: Step 1: user names their workspace (single text input)
+- [x] **ONB-03**: Step 2: user connects Linear (required, cannot proceed without)
+- [x] **ONB-04**: Step 3: user optionally connects additional sources (Slack, GitHub, Notion, Fathom) from a grid
 - [ ] **ONB-05**: Step 4: user sees their first generated context page with realistic mock fallback if pipeline unavailable
-- [ ] **ONB-06**: OAuth redirect preserves wizard state via cookie (user returns to correct step after OAuth callback)
+- [x] **ONB-06**: OAuth redirect preserves wizard state via cookie (user returns to correct step after OAuth callback)
 - [x] **ONB-07**: Onboarding progress persists across browser refreshes (database-backed state)
-- [ ] **ONB-08**: Animated checkmark confirmation when integration connects successfully
+- [x] **ONB-08**: Animated checkmark confirmation when integration connects successfully
 - [x] **ONB-09**: Server-side onboarding gate prevents dashboard access until onboarding complete
 
 ### Dashboard Home
@@ -125,16 +125,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ACT-04 | Phase 16 | Complete |
 | ONB-07 | Phase 16 | Complete |
 | ONB-09 | Phase 16 | Complete |
-| ONB-01 | Phase 17 | Pending |
-| ONB-02 | Phase 17 | Pending |
-| ONB-03 | Phase 17 | Pending |
-| ONB-04 | Phase 17 | Pending |
+| ONB-01 | Phase 17 | Complete |
+| ONB-02 | Phase 17 | Complete |
+| ONB-03 | Phase 17 | Complete |
+| ONB-04 | Phase 17 | Complete |
 | ONB-05 | Phase 17 | Pending |
-| ONB-06 | Phase 17 | Pending |
-| ONB-08 | Phase 17 | Pending |
-| ACT-01 | Phase 18 | Pending |
-| ACT-02 | Phase 18 | Pending |
-| ACT-03 | Phase 18 | Pending |
+| ONB-06 | Phase 17 | Complete |
+| ONB-08 | Phase 17 | Complete |
+| ACT-01 | Phase 18 | Complete |
+| ACT-02 | Phase 18 | Complete |
+| ACT-03 | Phase 18 | Complete |
 | FEED-01 | Phase 19 | Complete |
 | FEED-02 | Phase 19 | Complete |
 | FEED-03 | Phase 19 | Complete |
