@@ -41,10 +41,10 @@ Requirements for the dashboard redesign and onboarding milestone. Each maps to r
 
 ### Context Feed
 
-- [ ] **FEED-01**: User can browse all generated context pages in a scrollable list view
+- [x] **FEED-01**: User can browse all generated context pages in a scrollable list view
 - [ ] **FEED-02**: User can filter context pages by status (All/Ready/Generating/Stale/Error)
 - [ ] **FEED-03**: User can search context pages by free text (title, ticket ID)
-- [ ] **FEED-04**: Context feed shows real-time status updates via Supabase Realtime
+- [x] **FEED-04**: Context feed shows real-time status updates via Supabase Realtime
 - [ ] **FEED-05**: Context page detail is a route-based view (/dashboard/context/[id]) with copy-prompt and regenerate actions
 - [ ] **FEED-06**: Empty states show what a populated feed looks like with one clear CTA
 
@@ -135,10 +135,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ACT-01 | Phase 18 | Pending |
 | ACT-02 | Phase 18 | Pending |
 | ACT-03 | Phase 18 | Pending |
-| FEED-01 | Phase 19 | Pending |
+| FEED-01 | Phase 19 | Complete |
 | FEED-02 | Phase 19 | Pending |
 | FEED-03 | Phase 19 | Pending |
-| FEED-04 | Phase 19 | Pending |
+| FEED-04 | Phase 19 | Complete |
 | FEED-05 | Phase 19 | Pending |
 | FEED-06 | Phase 19 | Pending |
 | HOME-01 | Phase 19 | Pending |

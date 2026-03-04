@@ -176,7 +176,7 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 | 16. Auth Redesign + Schema Foundation | 3/3 | Complete    | 2026-03-04 | - |
 | 17. Onboarding Wizard | v1.1 | 0/2 | Planned | - |
 | 18. Activity Timeline | 1/2 | In Progress|  | - |
-| 19. Context Feed + Dashboard Home | v1.1 | 0/3 | Planned | - |
+| 19. Context Feed + Dashboard Home | 1/3 | In Progress|  | - |
 | 20. Settings Page | v1.1 | 0/TBD | Not started | - |
 
 ---
