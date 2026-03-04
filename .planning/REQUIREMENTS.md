@@ -1,185 +1,157 @@
-# Requirements: ContextOS
+# Requirements: ContextOS v1.1 Dashboard & Onboarding
 
-**Defined:** 2026-02-24
+**Defined:** 2026-03-04
 **Core Value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Scope:** Shared across all team members (Daulet, Dulat, Bekbol). Owner marked per requirement.
 
-## v1 Requirements
+## v1.1 Requirements
 
-### Foundation (Daulet)
+Requirements for the dashboard redesign and onboarding milestone. Each maps to roadmap phases.
 
-- [x] **FOUND-01**: Database schema with all core tables (workspaces, users, oauth_tokens, linear_tickets, slack_messages, context_pages, meeting_transcripts, embeddings), pgvector (768 dims), RLS policies via Supabase migrations
-- [x] **FOUND-02**: User can sign up with email and password via Supabase Auth
-- [x] **FOUND-03**: User can sign in with magic link via Supabase Auth
-- [x] **FOUND-04**: User session persists across browser refresh
-- [x] **FOUND-05**: API routes are protected (unauthenticated requests return 401)
-- [x] **FOUND-06**: Workspace creation on first login with 1:1:1 tenancy model (one workspace = one Linear org + one Slack workspace)
-- [x] **FOUND-07**: Update pyproject.toml dependencies: replace anthropic with google-genai, remove llama-index packages, remove celery[redis]; add slack-bolt, keep redis for caching
+### Design System
 
-### Linear Integration (Daulet)
+- [ ] **DS-01**: Dashboard renders in dark mode by default with brand-tinted OKLCH tokens (not neutral gray shadcn defaults)
+- [ ] **DS-02**: Teal (#00D4AA) used only on actionable/status elements — never as decoration
+- [ ] **DS-03**: JetBrains Mono applied to all data identifiers (ticket IDs, timestamps, counts, API keys)
+- [ ] **DS-04**: 4-level surface hierarchy (background → card → elevated → overlay) with consistent token usage
+- [ ] **DS-05**: Radix UI portals (Dialog, Dropdown, Sheet) render correctly in dark mode via DarkModeApplier
+- [ ] **DS-06**: Spring-curve microinteractions on list item appearance (stagger), status changes, and completion states
+- [ ] **DS-07**: Subtle grain texture on dashboard surfaces matching the landing page aesthetic
+- [ ] **DS-08**: Section labels use monospace uppercase tracking pattern from landing page
+- [ ] **DS-09**: All dashboard pages render structured skeleton loading states matching the populated layout
 
-- [x] **LIN-01**: User can connect Linear workspace via OAuth2 flow handled by Python backend (redirect → callback → store tokens in Supabase Vault)
-- [x] **LIN-02**: On first connect, system pulls all active tickets for selected team(s) with identifier, title, description, state, assignee, labels, project, comments; generates embeddings
-- [x] **LIN-03**: Linear webhooks received at POST /api/webhooks/linear and verified via HMAC-SHA256 with webhook secret using raw request bytes
-- [x] **LIN-04**: Webhook events (issue create/update, comment create, assignment change) update local linear_tickets data and trigger context page regeneration via FastAPI background tasks
-- [x] **LIN-05**: OAuth token refresh handles Linear's mandatory 24-hour expiry automatically with race condition prevention
+### Navigation
 
-### Slack Integration (Daulet)
+- [ ] **NAV-01**: Dashboard navigation restructured to hold all sections (context feed, activity, integrations, settings) with clear active state indicators
 
-- [x] **SLCK-01**: User can connect Slack workspace via OAuth2 V2 flow with both bot token and user token scopes, handled by Python backend
-- [x] **SLCK-02**: System ingests real-time Slack messages from user-selected channels via Events API (slack-bolt)
-- [x] **SLCK-03**: User can select which Slack channels to monitor from their connected workspace
-- [x] **SLCK-04**: Bot messages and messages shorter than 10 characters are automatically filtered out during ingestion
-- [x] **SLCK-05**: Thread replies stored with thread_ts relationship for full conversation context
-- [x] **SLCK-06**: Slack webhook/event signature verification using signing secret on raw request bytes
+### Onboarding
 
-### Meeting Transcripts (Daulet: API, Dulat: linking)
+- [ ] **ONB-01**: User sees a 4-step onboarding wizard after first signup before accessing dashboard
+- [ ] **ONB-02**: Step 1: user names their workspace (single text input)
+- [ ] **ONB-03**: Step 2: user connects Linear (required, cannot proceed without)
+- [ ] **ONB-04**: Step 3: user optionally connects additional sources (Slack, GitHub, Notion, Fathom) from a grid
+- [ ] **ONB-05**: Step 4: user sees their first generated context page with realistic mock fallback if pipeline unavailable
+- [ ] **ONB-06**: OAuth redirect preserves wizard state via cookie (user returns to correct step after OAuth callback)
+- [ ] **ONB-07**: Onboarding progress persists across browser refreshes (database-backed state)
+- [ ] **ONB-08**: Animated checkmark confirmation when integration connects successfully
+- [ ] **ONB-09**: Server-side onboarding gate prevents dashboard access until onboarding complete
 
-- [x] **MEET-01**: System ingests meeting transcripts from Fathom API with participant info, timestamps, and full text (Daulet)
-- [ ] **MEET-02**: Meeting transcript-to-ticket linking algorithm identifies which meetings are relevant to which tickets (Dulat)
+### Dashboard Home
 
-### Context Generation (Dulat)
+- [ ] **HOME-01**: Dashboard home page shows a summary view with recent context pages, integration health, and activity preview
 
-- [ ] **CTXG-01**: LangGraph gather-then-synthesize pipeline collects Linear ticket data, related Slack threads, meeting transcripts, and embedding search results in parallel
-- [ ] **CTXG-02**: Single Gemini Flash synthesis call produces a 5-section context page (origin story, business requirements, technical decisions, related work, AI prompt) from gathered data
-- [ ] **CTXG-03**: Context page auto-generates when a ticket is assigned to an engineer
-- [ ] **CTXG-04**: On-demand regeneration produces a fresh context page reflecting latest data
-- [ ] **CTXG-05**: Slack-to-ticket linking logic connects messages to tickets via explicit URLs, keyword matching, and thread following
-- [ ] **CTXG-06**: Source attribution with links back to original Slack messages, Linear comments, and meeting transcript segments
+### Context Feed
 
-### Delivery: Linear Comment Bot (Daulet)
+- [ ] **FEED-01**: User can browse all generated context pages in a scrollable list view
+- [ ] **FEED-02**: User can filter context pages by status (All/Ready/Generating/Stale/Error)
+- [ ] **FEED-03**: User can search context pages by free text (title, ticket ID)
+- [ ] **FEED-04**: Context feed shows real-time status updates via Supabase Realtime
+- [ ] **FEED-05**: Context page detail is a route-based view (/dashboard/context/[id]) with copy-prompt and regenerate actions
+- [ ] **FEED-06**: Empty states show what a populated feed looks like with one clear CTA
 
-- [ ] **DLVR-01**: When a context page is generated, system auto-posts it as a formatted Markdown comment on the Linear ticket via Linear API
-- [ ] **DLVR-02**: On context page regeneration, system updates the existing ContextOS comment (not duplicate) with changelog footer showing what changed and when
+### Activity Timeline
 
-### Delivery: MCP Server (Daulet)
+- [ ] **ACT-01**: User sees a chronological feed of workspace events (syncs, context generated, integrations connected)
+- [ ] **ACT-02**: Events display with type-specific icons, relative timestamps, and day-group dividers
+- [ ] **ACT-03**: Activity timeline updates in real-time via Supabase Realtime
+- [ ] **ACT-04**: Activity events table exists with 30-day retention policy
 
-- [ ] **MCP-01**: MCP server exposes three tools: get_feature_context (ticket → context page), search_context (query → relevant sources), get_related_work (ticket → related tickets)
-- [ ] **MCP-02**: MCP server authenticates to cloud backend (Railway) via user-generated API key
-- [ ] **MCP-03**: MCP server works with both Cursor and Claude Code via stdio transport
+### Settings & Team
 
-### Delivery: Web Dashboard (Bekbol)
+- [ ] **SET-01**: User can create and revoke API keys (show full key once on creation, then prefix-only)
+- [ ] **SET-02**: User can edit workspace name
+- [ ] **SET-03**: User can view connected team members
+- [ ] **SET-04**: Settings page accessible from dashboard navigation
 
-- [x] **DASH-01**: Auth pages — login, signup, and magic link pages connecting to Supabase Auth
-- [x] **DASH-02**: Context pages feed with status indicators (generating, ready, stale) and real-time updates via Supabase Realtime
-- [ ] **DASH-03**: Context page detail view with formatted 5-section display and copy AI prompt button
-- [x] **DASH-04**: Integration setup page — connect/disconnect Linear, Slack, and Fathom with status display
-- [ ] **DASH-05**: Settings page with API key generation for MCP server
+### Auth Redesign
 
-### Delivery: Chrome Extension (Bekbol)
-
-- [x] **EXT-01**: Chrome extension displays context page for current Linear ticket from browser toolbar
-
-### Security & Observability (Daulet)
-
-- [x] **SEC-01**: All OAuth tokens (Linear, Slack, Fathom) stored in Supabase Vault, never in plain-text columns
-- [x] **SEC-02**: Sentry SDK integrated in FastAPI backend with error context (workspace_id, user_id, endpoint)
-- [x] **SEC-03**: Laminar SDK integrated for LLM call tracing (prompts, responses, latency, cost)
-
-### GitHub Integration (Daulet)
-
-- [x] **GH-01**: User can connect GitHub organization via OAuth from integration setup page, with GitHub App installation flow and Vault-encrypted token storage
-- [x] **GH-02**: User can select which repos to monitor; only events from selected repos are ingested
-- [x] **GH-03**: PRs automatically linked to Linear issues via branch name pattern matching (case-insensitive team key regex)
-- [x] **GH-04**: PR reviews and review comments stored with author, state, file_path, and line_range context
-- [x] **GH-05**: GitHub webhook signatures verified via HMAC-SHA256 with X-Hub-Signature-256 header
+- [ ] **AUTH-01**: Login and signup pages use dark theme matching the dashboard brand identity
+- [ ] **AUTH-02**: Auth pages use the same teal accent, typography, and surface tokens as dashboard
 
 ## v2 Requirements
 
-### Notion Integration
+Deferred to future release. Tracked but not in current roadmap.
 
-- **NOT-01**: User can connect Notion workspace via OAuth
-- **NOT-02**: System fetches and processes Notion pages shared with integration
-- **NOT-03**: Ticket-to-Notion linking via explicit links and semantic similarity
+### Theme & Customization
 
-### Slack Enhancement
+- **THEME-01**: Light/dark mode toggle for user preference
+- **THEME-02**: Custom brand color configuration per workspace
 
-- **SLCK-07**: Slack historical backfill (last 90 days)
-- **SLCK-08**: Semantic similarity for Slack-to-ticket linking via embeddings
+### Advanced Feed
 
-### Onboarding & Analytics
+- **FEED-07**: Context feed right-panel split view (inline detail alongside list)
+- **FEED-08**: Keyboard navigation for context feed (j/k/Enter/Esc/r/c)
+- **FEED-09**: Stale reason indicator on context pages
 
-- **ONB-01**: First-time user onboarding wizard
-- **ANLYT-01**: Usage analytics (PostHog integration)
-- **ANLYT-02**: Admin metrics dashboard
+### Team Management
 
-### Chrome Extension Enhancement
+- **TEAM-01**: Team member invites via email
+- **TEAM-02**: Role-based access control (admin/member)
+- **TEAM-03**: API key usage metrics per key
 
-- **EXT-02**: Quick search from extension popup
-- **EXT-03**: Notifications for new context pages
+### Auth
+
+- **AUTH-03**: Social OAuth login (Google, GitHub)
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Celery + Redis job queue | Overkill for MVP. FastAPI background tasks sufficient. |
-| Full context version history | Current + previous version only. Simpler schema. |
-| Team invites and role management | Single team dogfooding, not needed yet. |
-| Mobile app / responsive design | Desktop-first internal tool. |
-| LlamaIndex integration | Removed per research -- direct httpx/slack-bolt is simpler with fewer deps. |
-| Notion in v1 | Linear + Slack + Fathom covers 80%+ of context. Defer unless time permits. |
-| Semantic Slack linking | Start with explicit links + keywords + thread following. |
-| Rate limiting | Not needed during dogfooding with single team. |
+| Jira integration | Only Linear is supported as task tracker in v1. Add when Jira support is built |
+| Email onboarding drip | Marketing infrastructure overhead for a dogfooding team |
+| Video tutorials in onboarding | Developers skip them; goes stale on every UI change |
+| Onboarding checklist widget in dashboard | Visual noise once setup is complete |
+| next-themes ThemeProvider | Dark mode is a brand decision, not a user toggle. Unnecessary dependency |
+| @tanstack/react-query | Premature before caching problems exist |
+| Mobile responsive polish | Desktop-first internal tool |
 
 ## Traceability
 
-| Requirement | Phase | Owner | Status |
-|-------------|-------|-------|--------|
-| FOUND-01 | Phase 1 | Daulet | Done |
-| FOUND-02 | Phase 1 | Daulet | Done |
-| FOUND-03 | Phase 1 | Daulet | Done |
-| FOUND-04 | Phase 1 | Daulet | Done |
-| FOUND-05 | Phase 1 | Daulet | Done |
-| FOUND-06 | Phase 1 | Daulet | Done |
-| FOUND-07 | Phase 1 | Daulet | Done |
-| DASH-01 | Phase 1 | Bekbol | Done |
-| LIN-01 | Phase 2 | Daulet | Done |
-| LIN-02 | Phase 2 | Daulet | Done |
-| LIN-03 | Phase 2 | Daulet | Done |
-| LIN-04 | Phase 2 | Daulet | Done |
-| LIN-05 | Phase 2 | Daulet | Done |
-| SLCK-01 | Phase 3 | Daulet | Done |
-| SLCK-02 | Phase 3 | Daulet | Done |
-| SLCK-03 | Phase 3 | Daulet | Done |
-| SLCK-04 | Phase 3 | Daulet | Done |
-| SLCK-05 | Phase 3 | Daulet | Done |
-| SLCK-06 | Phase 3 | Daulet | Done |
-| MEET-01 | Phase 3 | Daulet | Done |
-| DASH-04 | Phase 3 | Bekbol | Done |
-| CTXG-01 | Phase 4 | Dulat | Pending |
-| CTXG-02 | Phase 4 | Dulat | Pending |
-| CTXG-03 | Phase 4 | Dulat | Pending |
-| CTXG-04 | Phase 4 | Dulat | Pending |
-| CTXG-05 | Phase 4 | Dulat | Pending |
-| CTXG-06 | Phase 4 | Dulat | Pending |
-| MEET-02 | Phase 4 | Dulat | Pending |
-| DASH-02 | Phase 5 | Bekbol | Pending |
-| DASH-03 | Phase 5 | Bekbol | Pending |
-| DASH-05 | Phase 5 | Bekbol | Pending |
-| DLVR-01 | Phase 5 | Daulet | Pending |
-| DLVR-02 | Phase 5 | Daulet | Pending |
-| MCP-01 | Phase 5 | Daulet | Pending |
-| MCP-02 | Phase 5 | Daulet | Pending |
-| MCP-03 | Phase 5 | Daulet | Pending |
-| EXT-01 | Phase 6 | Bekbol | Done |
-| SEC-01 | Phase 6 | Daulet | Done |
-| SEC-02 | Phase 6 | Daulet | Done |
-| SEC-03 | Phase 6 | Daulet | Done |
-| GH-01 | Phase 7 | Daulet | Done |
-| GH-02 | Phase 7 | Daulet | Done |
-| GH-03 | Phase 7 | Daulet | Done |
-| GH-04 | Phase 7 | Daulet | Done |
-| GH-05 | Phase 7 | Daulet | Done |
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| DS-01 | — | Pending |
+| DS-02 | — | Pending |
+| DS-03 | — | Pending |
+| DS-04 | — | Pending |
+| DS-05 | — | Pending |
+| DS-06 | — | Pending |
+| DS-07 | — | Pending |
+| DS-08 | — | Pending |
+| DS-09 | — | Pending |
+| NAV-01 | — | Pending |
+| ONB-01 | — | Pending |
+| ONB-02 | — | Pending |
+| ONB-03 | — | Pending |
+| ONB-04 | — | Pending |
+| ONB-05 | — | Pending |
+| ONB-06 | — | Pending |
+| ONB-07 | — | Pending |
+| ONB-08 | — | Pending |
+| ONB-09 | — | Pending |
+| HOME-01 | — | Pending |
+| FEED-01 | — | Pending |
+| FEED-02 | — | Pending |
+| FEED-03 | — | Pending |
+| FEED-04 | — | Pending |
+| FEED-05 | — | Pending |
+| FEED-06 | — | Pending |
+| ACT-01 | — | Pending |
+| ACT-02 | — | Pending |
+| ACT-03 | — | Pending |
+| ACT-04 | — | Pending |
+| SET-01 | — | Pending |
+| SET-02 | — | Pending |
+| SET-03 | — | Pending |
+| SET-04 | — | Pending |
+| AUTH-01 | — | Pending |
+| AUTH-02 | — | Pending |
 
 **Coverage:**
-- v1 requirements: 44 total (39 original + 5 GitHub)
-- Daulet: 27 requirements (Phases 1, 2, 3, 5, 6, 7)
-- Dulat: 7 requirements (Phase 4)
-- Bekbol: 7 requirements (Phases 1, 3, 5, 6)
-- Shared context: MEET-01 (Daulet, Phase 3) + MEET-02 (Dulat, Phase 4)
-- Mapped to phases: 44/44
-- Unmapped: 0
+- v1.1 requirements: 36 total
+- Mapped to phases: 0
+- Unmapped: 36
 
 ---
-*Requirements defined: 2026-02-24*
-*Last updated: 2026-02-26 -- Phase 07.1 tech debt cleanup: added GH-01..05, fixed statuses, updated counts*
+*Requirements defined: 2026-03-04*
+*Last updated: 2026-03-04 after initial definition*
