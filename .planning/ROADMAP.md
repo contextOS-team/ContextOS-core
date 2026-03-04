@@ -107,10 +107,11 @@ Plans:
   1. User sees a chronological feed of workspace events (syncs, context generated, integrations connected) on the dashboard
   2. Events display with type-specific icons, relative timestamps, and day-group dividers
   3. New events appear in real-time without page refresh via Supabase Realtime
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 18-01: TBD
+- [ ] 18-01-PLAN.md — Realtime publication migration, ActivityEvent types, formatter functions (descriptions, timestamps, day labels, metadata chips)
+- [ ] 18-02-PLAN.md — Server page with SSR data fetch, ActivityTimeline client component with Realtime subscription, day-grouped rendering, pagination, animations
 
 ### Phase 19: Context Feed + Dashboard Home
 **Goal**: Users can browse, filter, search, and inspect all their generated context pages from a dedicated feed view, and the dashboard home provides a summary overview
@@ -173,7 +174,7 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 | 15. Dark Theme Token Foundation | 3/3 | Complete    | 2026-03-04 | - |
 | 16. Auth Redesign + Schema Foundation | 3/3 | Complete    | 2026-03-04 | - |
 | 17. Onboarding Wizard | v1.1 | 0/TBD | Not started | - |
-| 18. Activity Timeline | v1.1 | 0/TBD | Not started | - |
+| 18. Activity Timeline | v1.1 | 0/2 | Planned | - |
 | 19. Context Feed + Dashboard Home | v1.1 | 0/TBD | Not started | - |
 | 20. Settings Page | v1.1 | 0/TBD | Not started | - |
 
