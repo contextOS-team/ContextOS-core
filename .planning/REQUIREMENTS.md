@@ -110,48 +110,48 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DS-01 | — | Pending |
-| DS-02 | — | Pending |
-| DS-03 | — | Pending |
-| DS-04 | — | Pending |
-| DS-05 | — | Pending |
-| DS-06 | — | Pending |
-| DS-07 | — | Pending |
-| DS-08 | — | Pending |
-| DS-09 | — | Pending |
-| NAV-01 | — | Pending |
-| ONB-01 | — | Pending |
-| ONB-02 | — | Pending |
-| ONB-03 | — | Pending |
-| ONB-04 | — | Pending |
-| ONB-05 | — | Pending |
-| ONB-06 | — | Pending |
-| ONB-07 | — | Pending |
-| ONB-08 | — | Pending |
-| ONB-09 | — | Pending |
-| HOME-01 | — | Pending |
-| FEED-01 | — | Pending |
-| FEED-02 | — | Pending |
-| FEED-03 | — | Pending |
-| FEED-04 | — | Pending |
-| FEED-05 | — | Pending |
-| FEED-06 | — | Pending |
-| ACT-01 | — | Pending |
-| ACT-02 | — | Pending |
-| ACT-03 | — | Pending |
-| ACT-04 | — | Pending |
-| SET-01 | — | Pending |
-| SET-02 | — | Pending |
-| SET-03 | — | Pending |
-| SET-04 | — | Pending |
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
+| DS-01 | Phase 15 | Pending |
+| DS-02 | Phase 15 | Pending |
+| DS-03 | Phase 15 | Pending |
+| DS-04 | Phase 15 | Pending |
+| DS-05 | Phase 15 | Pending |
+| DS-06 | Phase 15 | Pending |
+| DS-07 | Phase 15 | Pending |
+| DS-08 | Phase 15 | Pending |
+| DS-09 | Phase 15 | Pending |
+| NAV-01 | Phase 15 | Pending |
+| AUTH-01 | Phase 16 | Pending |
+| AUTH-02 | Phase 16 | Pending |
+| ACT-04 | Phase 16 | Pending |
+| ONB-07 | Phase 16 | Pending |
+| ONB-09 | Phase 16 | Pending |
+| ONB-01 | Phase 17 | Pending |
+| ONB-02 | Phase 17 | Pending |
+| ONB-03 | Phase 17 | Pending |
+| ONB-04 | Phase 17 | Pending |
+| ONB-05 | Phase 17 | Pending |
+| ONB-06 | Phase 17 | Pending |
+| ONB-08 | Phase 17 | Pending |
+| ACT-01 | Phase 18 | Pending |
+| ACT-02 | Phase 18 | Pending |
+| ACT-03 | Phase 18 | Pending |
+| FEED-01 | Phase 19 | Pending |
+| FEED-02 | Phase 19 | Pending |
+| FEED-03 | Phase 19 | Pending |
+| FEED-04 | Phase 19 | Pending |
+| FEED-05 | Phase 19 | Pending |
+| FEED-06 | Phase 19 | Pending |
+| HOME-01 | Phase 19 | Pending |
+| SET-01 | Phase 20 | Pending |
+| SET-02 | Phase 20 | Pending |
+| SET-03 | Phase 20 | Pending |
+| SET-04 | Phase 20 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 36 total
-- Mapped to phases: 0
-- Unmapped: 36
+- Mapped to phases: 36
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-04*
-*Last updated: 2026-03-04 after initial definition*
+*Last updated: 2026-03-04 after roadmap creation (phases 15-20 mapped)*
