@@ -11,15 +11,32 @@ export async function GET(request: Request) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (!error) {
+      // Check onboarding status to determine redirect destination
+      const { data: { user } } = await supabase.auth.getUser()
+      let destination = next
+
+      if (user) {
+        const { data: onboardingState } = await supabase
+          .from('user_onboarding_state')
+          .select('completed_at')
+          .eq('user_id', user.id)
+          .single()
+
+        // If onboarding row exists and not completed, redirect to onboarding
+        if (onboardingState && !onboardingState.completed_at) {
+          destination = '/onboarding'
+        }
+      }
+
       const forwardedHost = request.headers.get('x-forwarded-host')
       const isLocalEnv = process.env.NODE_ENV === 'development'
 
       if (isLocalEnv) {
-        return NextResponse.redirect(`${origin}${next}`)
+        return NextResponse.redirect(`${origin}${destination}`)
       } else if (forwardedHost) {
-        return NextResponse.redirect(`https://${forwardedHost}${next}`)
+        return NextResponse.redirect(`https://${forwardedHost}${destination}`)
       } else {
-        return NextResponse.redirect(`${origin}${next}`)
+        return NextResponse.redirect(`${origin}${destination}`)
       }
     }
   }

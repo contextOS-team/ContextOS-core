@@ -14,6 +14,20 @@ export default async function DashboardLayout({
     redirect('/login')
   }
 
+  // Onboarding gate: redirect incomplete users to /onboarding
+  const { data: onboardingState } = await supabase
+    .from('user_onboarding_state')
+    .select('completed_at')
+    .eq('user_id', user.id)
+    .single()
+
+  // NULL row (existing user before migration) = skip onboarding (backward compat)
+  // Row with completed_at = skip onboarding
+  // Row with completed_at = null = redirect to onboarding
+  if (onboardingState && !onboardingState.completed_at) {
+    redirect('/onboarding?from=dashboard')
+  }
+
   return (
     <div className="relative flex flex-col min-h-screen bg-background dashboard-grain">
       <Sidebar
