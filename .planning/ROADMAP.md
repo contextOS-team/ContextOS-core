@@ -123,11 +123,12 @@ Plans:
   3. Context feed updates in real-time as page statuses change (no manual refresh needed)
   4. User can open a context page detail view at /dashboard/context/[id] with copy-prompt and regenerate actions
   5. Empty states show what a populated feed looks like with a clear CTA, and the dashboard home shows recent pages, integration health, and activity preview
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 19-01: TBD
-- [ ] 19-02: TBD
+- [ ] 19-01-PLAN.md — DB migration (error status + Realtime publication), npm deps (react-markdown, remark-gfm, typography), shared types/hooks
+- [ ] 19-02-PLAN.md — Context feed list page with status filters, debounced search, Realtime updates, empty state with inline generate
+- [ ] 19-03-PLAN.md — Context detail view with markdown rendering, copy-prompt, regenerate; Dashboard home Recent Context section
 
 ### Phase 20: Settings Page
 **Goal**: Users can manage API keys, workspace settings, and view team members from a dedicated settings page
@@ -175,7 +176,7 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 | 16. Auth Redesign + Schema Foundation | 3/3 | Complete    | 2026-03-04 | - |
 | 17. Onboarding Wizard | v1.1 | 0/TBD | Not started | - |
 | 18. Activity Timeline | v1.1 | 0/2 | Planned | - |
-| 19. Context Feed + Dashboard Home | v1.1 | 0/TBD | Not started | - |
+| 19. Context Feed + Dashboard Home | v1.1 | 0/3 | Planned | - |
 | 20. Settings Page | v1.1 | 0/TBD | Not started | - |
 
 ---
