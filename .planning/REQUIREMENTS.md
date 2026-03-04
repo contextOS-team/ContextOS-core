@@ -33,7 +33,7 @@ Requirements for the dashboard redesign and onboarding milestone. Each maps to r
 - [ ] **ONB-06**: OAuth redirect preserves wizard state via cookie (user returns to correct step after OAuth callback)
 - [x] **ONB-07**: Onboarding progress persists across browser refreshes (database-backed state)
 - [ ] **ONB-08**: Animated checkmark confirmation when integration connects successfully
-- [ ] **ONB-09**: Server-side onboarding gate prevents dashboard access until onboarding complete
+- [x] **ONB-09**: Server-side onboarding gate prevents dashboard access until onboarding complete
 
 ### Dashboard Home
 
@@ -124,7 +124,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-02 | Phase 16 | Complete |
 | ACT-04 | Phase 16 | Complete |
 | ONB-07 | Phase 16 | Complete |
-| ONB-09 | Phase 16 | Pending |
+| ONB-09 | Phase 16 | Complete |
 | ONB-01 | Phase 17 | Pending |
 | ONB-02 | Phase 17 | Pending |
 | ONB-03 | Phase 17 | Pending |

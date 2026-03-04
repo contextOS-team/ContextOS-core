@@ -42,7 +42,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Milestone Goal:** Transform the generic dashboard into a polished, brand-consistent product experience with guided onboarding, full context feed, activity timeline, and team settings -- dark theme that mirrors the landing page's teal identity but stays muted for daily use.
 
 - [x] **Phase 15: Dark Theme Token Foundation** - Brand-tinted OKLCH tokens, DarkModeApplier, JetBrains Mono, navigation restructure, skeleton states (completed 2026-03-04)
-- [ ] **Phase 16: Auth Redesign + Schema Foundation** - Dark-themed auth pages, user_onboarding_state and activity_events tables, onboarding gate
+- [x] **Phase 16: Auth Redesign + Schema Foundation** - Dark-themed auth pages, user_onboarding_state and activity_events tables, onboarding gate (completed 2026-03-04)
 - [ ] **Phase 17: Onboarding Wizard** - 4-step guided wizard with OAuth state preservation and animated transitions
 - [ ] **Phase 18: Activity Timeline** - Chronological event feed with real-time updates and day-group dividers
 - [ ] **Phase 19: Context Feed + Dashboard Home** - Browsable context feed with filtering, search, detail view, and dashboard summary
@@ -171,7 +171,7 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 15. Dark Theme Token Foundation | 3/3 | Complete    | 2026-03-04 | - |
-| 16. Auth Redesign + Schema Foundation | 2/3 | In Progress|  | - |
+| 16. Auth Redesign + Schema Foundation | 3/3 | Complete   | 2026-03-04 | - |
 | 17. Onboarding Wizard | v1.1 | 0/TBD | Not started | - |
 | 18. Activity Timeline | v1.1 | 0/TBD | Not started | - |
 | 19. Context Feed + Dashboard Home | v1.1 | 0/TBD | Not started | - |

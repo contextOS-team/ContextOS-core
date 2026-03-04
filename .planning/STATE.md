@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
-status: executing
-stopped_at: Completed 16-02-PLAN.md
-last_updated: "2026-03-04T11:10:10.802Z"
-last_activity: 2026-03-04 -- Completed Phase 16 Plan 01 (onboarding + activity schema)
+status: completed
+stopped_at: Completed 16-03-PLAN.md (Phase 16 complete)
+last_updated: "2026-03-04T11:14:59.232Z"
+last_activity: 2026-03-04 -- Completed Phase 16 Plan 03 (onboarding gate + route)
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
-  percent: 33
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 16 in progress -- Auth Redesign + Schema Foundation (Plan 01 complete)
+**Current focus:** Phase 16 complete -- Auth Redesign + Schema Foundation (all 3 plans done)
 
 ## Current Position
 
-Phase: 16 of 20 (Auth Redesign + Schema Foundation) -- IN PROGRESS
-Plan: 1 of 3 (16-01 complete)
-Status: In Progress
-Last activity: 2026-03-04 -- Completed Phase 16 Plan 01 (onboarding + activity schema)
+Phase: 16 of 20 (Auth Redesign + Schema Foundation) -- COMPLETE
+Plan: 3 of 3 (16-03 complete)
+Status: Phase Complete
+Last activity: 2026-03-04 -- Completed Phase 16 Plan 03 (onboarding gate + route)
 
-Progress: [███-------] 33% (Phase 16)
+Progress: [██████████] 100% (Phase 16)
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [███-------] 33% (Phase 16)
 | Phase 15 P03 | 3min | 3 tasks | 5 files |
 | Phase 16 P01 | 1min | 1 task | 1 file |
 | Phase 16 P02 | 2min | 2 tasks | 3 files |
+| Phase 16 P03 | 2min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,9 @@ Recent decisions affecting current work:
 - [Phase 16]: pg_cron wrapped in exception handler for local dev compatibility
 - [Phase 16]: Split auth layout: bg-background (L1) brand panel + bg-elevated (L3) form panel for visual depth
 - [Phase 16]: Card wrappers removed from auth forms -- forms render directly on elevated panel surface
+- [Phase 16]: NULL onboarding row in dashboard gate = legacy user, passes through without redirect
+- [Phase 16]: Middleware unchanged for /onboarding -- existing path logic handles it correctly
+- [Phase 16]: Suspense boundary wraps useSearchParams in onboarding page for Next.js static rendering
 
 ### Pending Todos
 
@@ -103,6 +107,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-04T11:10:10.800Z
-Stopped at: Completed 16-02-PLAN.md
+Last session: 2026-03-04T11:14:59.230Z
+Stopped at: Completed 16-03-PLAN.md (Phase 16 complete)
 Resume file: None
