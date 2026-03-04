@@ -18,6 +18,7 @@ import {
 } from '@/lib/context-feed'
 import { useContextPagesRealtime } from '@/hooks/use-context-pages-realtime'
 import { generateContextPage } from '@/lib/api'
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
   linear_ticket: 'Ticket',
@@ -68,7 +69,7 @@ export default function ContextDetailPage() {
   // Realtime subscription -- update page when status changes (e.g. during regeneration)
   useContextPagesRealtime({
     onUpdate: useCallback(
-      (payload) => {
+      (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
         const updated = payload.new as Record<string, unknown>
         if (updated?.id === id) {
           // Refresh page data when our page is updated
