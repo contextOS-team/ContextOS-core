@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [magicLinkSent, setMagicLinkSent] = useState(false)
   const [loading, setLoading] = useState(false)
   const [magicLinkLoading, setMagicLinkLoading] = useState(false)
+  const [showMagicLink, setShowMagicLink] = useState(false)
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault()
@@ -35,7 +36,7 @@ export default function LoginPage() {
       return
     }
 
-    router.push('/dashboard')
+    router.push('/onboarding')
     router.refresh()
   }
 
@@ -63,7 +64,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 stagger-children">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Sign In</h1>
         <p className="text-sm text-muted-foreground">
@@ -91,7 +92,16 @@ export default function LoginPage() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <Link
+              href="/login"
+              className="text-xs text-muted-foreground hover:text-primary transition-colors"
+              tabIndex={-1}
+            >
+              Forgot password?
+            </Link>
+          </div>
           <Input
             id="password"
             type="password"
@@ -101,7 +111,7 @@ export default function LoginPage() {
             required
           />
         </div>
-        <Button type="submit" className="w-full" disabled={loading}>
+        <Button type="submit" size="lg" className="w-full" disabled={loading}>
           {loading ? 'Signing in...' : 'Sign In'}
         </Button>
       </form>
@@ -112,19 +122,21 @@ export default function LoginPage() {
           <span className="w-full border-t" />
         </div>
         <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-elevated px-2 text-muted-foreground">or</span>
+          <span className="bg-overlay px-2 text-muted-foreground">or</span>
         </div>
       </div>
 
-      {/* Magic Link form */}
+      {/* Magic Link toggle */}
       {magicLinkSent ? (
         <div className="rounded-md bg-primary/10 p-3 text-center text-sm">
           Check your email for the magic link!
         </div>
-      ) : (
-        <form onSubmit={handleMagicLink} className="space-y-4">
+      ) : showMagicLink ? (
+        <form onSubmit={handleMagicLink} className="space-y-3">
           <div className="space-y-2">
-            <Label htmlFor="magic-email">Email for magic link</Label>
+            <Label htmlFor="magic-email" className="text-sm text-muted-foreground">
+              Email for magic link
+            </Label>
             <Input
               id="magic-email"
               type="email"
@@ -143,6 +155,14 @@ export default function LoginPage() {
             {magicLinkLoading ? 'Sending...' : 'Send Magic Link'}
           </Button>
         </form>
+      ) : (
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => setShowMagicLink(true)}
+        >
+          Sign in with magic link
+        </Button>
       )}
 
       <div className="text-center">

@@ -48,7 +48,7 @@ export default function SignupPage() {
 
     // If email confirmation is disabled, the user is signed in immediately
     if (data.session) {
-      router.push('/dashboard')
+      router.push('/onboarding')
       router.refresh()
       return
     }
@@ -60,7 +60,7 @@ export default function SignupPage() {
 
   if (success) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 stagger-children">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Check your email</h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -81,7 +81,7 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 stagger-children">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Create Account</h1>
         <p className="text-sm text-muted-foreground">
@@ -129,7 +129,7 @@ export default function SignupPage() {
             minLength={6}
           />
         </div>
-        <Button type="submit" className="w-full" disabled={loading}>
+        <Button type="submit" size="lg" className="w-full" disabled={loading}>
           {loading ? 'Creating account...' : 'Sign Up'}
         </Button>
       </form>
