@@ -76,15 +76,17 @@ RETURNS TRIGGER AS $$
 DECLARE
   new_workspace_id uuid;
   email_prefix text;
+  display_name text;
   workspace_slug text;
 BEGIN
-  -- Extract email prefix for workspace naming
+  -- Extract email prefix and full name for workspace naming
   email_prefix := split_part(NEW.email, '@', 1);
+  display_name := COALESCE(NEW.raw_user_meta_data->>'full_name', email_prefix);
   workspace_slug := lower(regexp_replace(email_prefix, '[^a-z0-9]', '-', 'g')) || '-' || substr(gen_random_uuid()::text, 1, 8);
 
   -- Create workspace
   INSERT INTO public.workspaces (name, slug)
-  VALUES (email_prefix || '''s Workspace', workspace_slug)
+  VALUES (display_name || '''s Workspace', workspace_slug)
   RETURNING id INTO new_workspace_id;
 
   -- Create profile
