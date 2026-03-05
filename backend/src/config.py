@@ -143,20 +143,28 @@ class Settings(BaseSettings):
     }
 
     def model_post_init(self, __context) -> None:
-        """Warn when OAuth credentials are configured but NGROK_DOMAIN is empty."""
-        oauth_providers = {
-            "Linear": self.LINEAR_CLIENT_ID,
-            "Slack": self.SLACK_CLIENT_ID,
-            "GitHub": self.GITHUB_CLIENT_ID,
-            "Notion": self.NOTION_CLIENT_ID,
-        }
-        configured = [name for name, val in oauth_providers.items() if val]
-        if configured and not self.NGROK_DOMAIN and self.ENVIRONMENT == Environment.DEV:
+        """Warn about OAuth redirect URI configuration in dev."""
+        if self.ENVIRONMENT != Environment.DEV:
+            return
+
+        # Slack requires HTTPS — warn if credentials are set but no redirect override or ngrok
+        if (
+            self.SLACK_CLIENT_ID
+            and not self.SLACK_REDIRECT_URI
+            and not self.NGROK_DOMAIN
+        ):
             logger.warning(
-                "OAuth credentials set for %s but NGROK_DOMAIN is empty. "
-                "Redirect URIs will point to localhost and OAuth flows will fail. "
-                "Set NGROK_DOMAIN in .env or run `make dev-ngrok`.",
-                ", ".join(configured),
+                "Slack OAuth credentials set but neither SLACK_REDIRECT_URI nor "
+                "NGROK_DOMAIN is configured. Slack requires HTTPS redirect URIs. "
+                "Set SLACK_REDIRECT_URI to an ngrok URL or set NGROK_DOMAIN in .env."
+            )
+
+        # Other providers work with localhost — just log the redirect URIs for clarity
+        if self.NGROK_DOMAIN:
+            logger.info(
+                "NGROK_DOMAIN is set — all OAuth redirect URIs will use "
+                "https://%s unless overridden per-provider.",
+                self.NGROK_DOMAIN,
             )
 
     def validate_for_production(self) -> None:
