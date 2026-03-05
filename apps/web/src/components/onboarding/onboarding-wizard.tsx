@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { getIntegrationStatus, type IntegrationStatusResponse } from '@/lib/api'
@@ -55,8 +55,11 @@ export function OnboardingWizard() {
 
       if (membershipResult.status === 'fulfilled' && membershipResult.value.data) {
         const ws = membershipResult.value.data.workspaces as unknown as { name: string } | null
-        if (ws?.name) {
-          setWorkspaceName(ws.name)
+        // Prefer user's full name for default workspace name, fall back to DB value
+        const fullName = user.user_metadata?.full_name as string | undefined
+        const defaultName = fullName ? `${fullName}'s Workspace` : ws?.name
+        if (defaultName) {
+          setWorkspaceName(defaultName)
         }
       }
 
@@ -65,24 +68,10 @@ export function OnboardingWizard() {
     loadState()
   }, [])
 
-  // OAuth return detection: if on step 2 and Linear is connected, show success then advance
-  useEffect(() => {
-    if (wizardState !== 'active') return
-    if (step === 2 && integrations?.linear.status === 'connected' && !showSuccess && !advancing) {
-      setShowSuccess(true)
-      const timer = setTimeout(() => {
-        setShowSuccess(false)
-        advanceStep(3)
-      }, 800)
-      return () => clearTimeout(timer)
-    }
-  }, [step, integrations, wizardState, showSuccess, advancing])
-
-  // OAuth return detection for step 3: check if any source newly connected
-  // (User returns to step 3 after OAuth, sources show connected state via integrations)
-
+  const advancingRef = useRef(false)
   const advanceStep = useCallback(async (nextStep: WizardStep) => {
-    if (advancing) return
+    if (advancingRef.current) return
+    advancingRef.current = true
     setAdvancing(true)
 
     try {
@@ -97,9 +86,25 @@ export function OnboardingWizard() {
 
       setStep(nextStep)
     } finally {
+      advancingRef.current = false
       setAdvancing(false)
     }
-  }, [advancing])
+  }, [])
+
+  // OAuth return detection: if on step 2 and Linear is connected, show success then advance
+  const linearAdvanced = useRef(false)
+  useEffect(() => {
+    if (wizardState !== 'active') return
+    if (step === 2 && integrations?.linear.status === 'connected' && !linearAdvanced.current) {
+      linearAdvanced.current = true
+      setShowSuccess(true)
+      const timer = setTimeout(() => {
+        setShowSuccess(false)
+        advanceStep(3)
+      }, 800)
+      return () => clearTimeout(timer)
+    }
+  }, [step, integrations, wizardState, advanceStep])
 
   const handleComplete = useCallback(async () => {
     try {

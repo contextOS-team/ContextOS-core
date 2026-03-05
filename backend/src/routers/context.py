@@ -6,15 +6,19 @@ that synthesize information from Linear tickets, PRs, Slack, and meetings.
 
 import logging
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from src.config import Settings, get_settings
 from src.db import async_session, get_session
 from src.dependencies import UserContext, get_current_user
 from src.models.context_page import ContextPage
+from src.models.ticket import LinearTicket
 from src.services.synthesis import generate_context_page
 
 logger = logging.getLogger(__name__)
@@ -63,10 +67,47 @@ async def get_context_page(
     }
 
 
-async def _generate_in_background(workspace_id, ticket_identifier: str) -> None:
-    """Background task for context page generation with its own session."""
+async def _generate_in_background(
+    workspace_id: UUID,
+    user_id: UUID,
+    ticket_identifier: str,
+    linear_issue_id: str | None,
+    settings: Settings,
+) -> None:
+    """Background task for context page generation with its own session.
+
+    If the ticket doesn't exist locally and linear_issue_id is provided,
+    syncs the ticket from Linear first before generating the context page.
+    """
+    from src.services.linear_sync import sync_single_ticket
+    from src.services.linear_oauth import get_valid_access_token
+
     async with async_session() as session:
         try:
+            # Check if ticket exists locally
+            stmt = select(LinearTicket).where(
+                LinearTicket.workspace_id == workspace_id,
+                LinearTicket.identifier == ticket_identifier,
+                LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
+            )
+            result = await session.execute(stmt)
+            ticket = result.scalar_one_or_none()
+
+            if ticket is None and linear_issue_id:
+                # Sync the ticket from Linear first
+                logger.info(
+                    "Ticket %s not found locally, syncing from Linear (issue_id=%s)",
+                    ticket_identifier,
+                    linear_issue_id,
+                )
+                access_token = await get_valid_access_token(
+                    session, workspace_id, user_id, settings
+                )
+                await sync_single_ticket(
+                    session, workspace_id, access_token, linear_issue_id
+                )
+                await session.commit()
+
             await generate_context_page(session, workspace_id, ticket_identifier)
             await session.commit()
         except Exception:
@@ -76,18 +117,33 @@ async def _generate_in_background(workspace_id, ticket_identifier: str) -> None:
             await session.rollback()
 
 
+class GenerateRequest(PydanticBaseModel):
+    """Optional body for POST /{ticket_identifier}/generate."""
+
+    linear_issue_id: str | None = None
+
+
 @router.post("/{ticket_identifier}/generate", status_code=status.HTTP_202_ACCEPTED)
 async def trigger_context_generation(
     ticket_identifier: str,
     background_tasks: BackgroundTasks,
     user: UserContext = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+    body: GenerateRequest | None = None,
 ) -> dict:
     """Trigger context page generation for a ticket.
 
     Starts generation as a background task and returns 202 Accepted immediately.
+    If linear_issue_id is provided and the ticket doesn't exist locally,
+    it will be synced from Linear first.
     """
     background_tasks.add_task(
-        _generate_in_background, user.workspace_id, ticket_identifier
+        _generate_in_background,
+        user.workspace_id,
+        user.user_id,
+        ticket_identifier,
+        body.linear_issue_id if body else None,
+        settings,
     )
 
     return {
