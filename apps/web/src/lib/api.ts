@@ -85,6 +85,32 @@ export function disconnectLinear(): Promise<{ status: string }> {
   })
 }
 
+export interface LinearTicketSearchResult {
+  id: string
+  identifier: string
+  title: string
+  state: string | null
+  state_type: string | null
+  assignee: string | null
+  team_key: string | null
+  team_name: string | null
+  priority: number | null
+  updated_at: string | null
+}
+
+export function searchLinearTickets(
+  query?: string,
+  limit?: number
+): Promise<{ tickets: LinearTicketSearchResult[]; count: number }> {
+  const params = new URLSearchParams()
+  if (query) params.set('q', query)
+  if (limit) params.set('limit', String(limit))
+  const qs = params.toString()
+  return apiFetch<{ tickets: LinearTicketSearchResult[]; count: number }>(
+    `/api/linear/tickets/search${qs ? `?${qs}` : ''}`
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Slack
 // ---------------------------------------------------------------------------
@@ -294,7 +320,8 @@ export function getContextPage(
 }
 
 export function generateContextPage(
-  ticketIdentifier: string
+  ticketIdentifier: string,
+  linearIssueId?: string
 ): Promise<{ status: string; message: string; ticket_identifier: string }> {
   return apiFetch<{
     status: string
@@ -302,6 +329,9 @@ export function generateContextPage(
     ticket_identifier: string
   }>(`/api/context/${encodeURIComponent(ticketIdentifier)}/generate`, {
     method: 'POST',
+    body: JSON.stringify(
+      linearIssueId ? { linear_issue_id: linearIssueId } : {}
+    ),
   })
 }
 

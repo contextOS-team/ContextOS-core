@@ -25,6 +25,7 @@ from src.services.linear_oauth import (
     get_valid_access_token,
 )
 from src.services.oauth_common import sign_oauth_state, verify_state_or_raise
+from src.services.linear_graphql import LinearAPIError, LinearGraphQLClient
 from src.services.linear_sync import fetch_teams, sync_tickets_for_teams
 
 logger = logging.getLogger(__name__)
@@ -274,3 +275,120 @@ async def get_sync_status(
         "last_sync_at": config.get("last_sync_at"),
         "tickets_count": tickets_count,
     }
+
+
+# ---------- Ticket Search ----------
+
+SEARCH_ISSUES_QUERY = """
+query($query: String!, $first: Int!) {
+    issueSearch(query: $query, first: $first) {
+        nodes {
+            id
+            identifier
+            title
+            state { name type }
+            assignee { name }
+            team { key name }
+            priority
+            updatedAt
+        }
+    }
+}
+"""
+
+ASSIGNED_ISSUES_QUERY = """
+query($first: Int!) {
+    viewer {
+        assignedIssues(
+            first: $first,
+            filter: { state: { type: { nin: ["canceled", "completed"] } } },
+            orderBy: updatedAt
+        ) {
+            nodes {
+                id
+                identifier
+                title
+                state { name type }
+                assignee { name }
+                team { key name }
+                priority
+                updatedAt
+            }
+        }
+    }
+}
+"""
+
+
+@router.get("/tickets/search")
+async def search_tickets(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    q: str = Query(default="", max_length=200),
+    limit: int = Query(default=10, ge=1, le=25),
+) -> dict:
+    """Search Linear tickets via the API.
+
+    If a query is provided, uses Linear's issue search. Otherwise returns
+    the user's most recently updated assigned issues.
+    """
+    try:
+        access_token = await get_valid_access_token(
+            session, user.workspace_id, user.user_id, settings
+        )
+    except OAuthError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Linear integration not connected: {e}",
+        )
+
+    client = LinearGraphQLClient(access_token)
+    try:
+        if q.strip():
+            data = await client.query(
+                SEARCH_ISSUES_QUERY,
+                {"query": q.strip(), "first": limit},
+            )
+            nodes = (
+                data.get("data", {})
+                .get("issueSearch", {})
+                .get("nodes", [])
+            )
+        else:
+            data = await client.query(
+                ASSIGNED_ISSUES_QUERY,
+                {"first": limit},
+            )
+            nodes = (
+                data.get("data", {})
+                .get("viewer", {})
+                .get("assignedIssues", {})
+                .get("nodes", [])
+            )
+    except LinearAPIError as e:
+        logger.error("Linear API error during ticket search: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Linear API error: {e.message}",
+        )
+    finally:
+        await client.close()
+
+    tickets = [
+        {
+            "id": n["id"],
+            "identifier": n["identifier"],
+            "title": n["title"],
+            "state": n.get("state", {}).get("name"),
+            "state_type": n.get("state", {}).get("type"),
+            "assignee": n.get("assignee", {}).get("name") if n.get("assignee") else None,
+            "team_key": n.get("team", {}).get("key"),
+            "team_name": n.get("team", {}).get("name"),
+            "priority": n.get("priority"),
+            "updated_at": n.get("updatedAt"),
+        }
+        for n in nodes
+    ]
+
+    return {"tickets": tickets, "count": len(tickets)}
