@@ -18,9 +18,32 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'ContextOS',
+  title: {
+    default: 'ContextOS - AI-generated context for engineering tickets',
+    template: '%s | ContextOS',
+  },
   description:
-    'AI-generated context for every engineering ticket -- from Linear, Slack, and meetings.',
+    'AI-generated context for every engineering ticket — from Linear, Slack, GitHub, and meetings. Stop context-switching, start shipping.',
+  metadataBase: new URL('https://contextos.pro'),
+  openGraph: {
+    title: 'ContextOS - AI-generated context for engineering tickets',
+    description:
+      'AI-generated context for every engineering ticket — from Linear, Slack, GitHub, and meetings. Stop context-switching, start shipping.',
+    url: 'https://contextos.pro',
+    siteName: 'ContextOS',
+    locale: 'en_US',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'ContextOS - AI-generated context for engineering tickets',
+    description:
+      'AI-generated context for every engineering ticket — from Linear, Slack, GitHub, and meetings.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 }
 
 export default function RootLayout({
