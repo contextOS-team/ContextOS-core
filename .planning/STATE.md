@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: GraphRAG
 status: executing
-stopped_at: Completed 22-01-PLAN.md
-last_updated: "2026-03-06T19:58:20.514Z"
-last_activity: 2026-03-07 -- Completed 22-01 graph schema foundation
+stopped_at: Completed 22-02-PLAN.md
+last_updated: "2026-03-06T20:13:35.378Z"
+last_activity: 2026-03-07 -- Completed 22-02 regex extractors with registry
 progress:
   total_phases: 13
   completed_phases: 6
   total_plans: 18
-  completed_plans: 16
-  percent: 96
+  completed_plans: 17
+  percent: 98
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 22 of 27 (Graph Foundation + Rule-Based Extraction)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: Executing
-Last activity: 2026-03-07 -- Completed 22-01 graph schema foundation
+Last activity: 2026-03-07 -- Completed 22-02 regex extractors with registry
 
-Progress: [██████████] 96%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
@@ -62,6 +62,9 @@ Recent decisions affecting current work:
 - [Phase 22-01]: SHA-256 fingerprint from entity_type:external_id for deterministic graph node dedup
 - [Phase 22-01]: ON CONFLICT upsert clears deleted_at to restore soft-deleted graph records
 - [Phase 22-01]: Recursive CTE with path array cycle detection for traverse_graph() SECURITY DEFINER function
+- [Phase 22-02]: Registry pattern with auto-registration at module import for zero-config extractor loading
+- [Phase 22-02]: Ambiguous PR refs from non-GitHub sources marked with status=ambiguous in properties
+- [Phase 22-02]: URL extractor matches only 5 known integration patterns to avoid noise entities
 
 ### Pending Todos
 
@@ -76,6 +79,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-06T19:58:20.512Z
-Stopped at: Completed 22-01-PLAN.md
+Last session: 2026-03-06T20:13:35.375Z
+Stopped at: Completed 22-02-PLAN.md
 Resume file: None
