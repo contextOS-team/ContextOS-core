@@ -9,9 +9,9 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 
 ### Graph Foundation
 
-- [ ] **GRAPH-01**: Database has graph_nodes and graph_edges tables with workspace-scoped RLS, fingerprint deduplication, and JSONB properties
-- [ ] **GRAPH-02**: traverse_graph() SECURITY DEFINER function performs recursive CTE traversal with depth limiting and workspace validation
-- [ ] **GRAPH-03**: Graph tables have composite indexes on (workspace_id, entity_type), (workspace_id, relationship_type), and fingerprint uniqueness
+- [x] **GRAPH-01**: Database has graph_nodes and graph_edges tables with workspace-scoped RLS, fingerprint deduplication, and JSONB properties
+- [x] **GRAPH-02**: traverse_graph() SECURITY DEFINER function performs recursive CTE traversal with depth limiting and workspace validation
+- [x] **GRAPH-03**: Graph tables have composite indexes on (workspace_id, entity_type), (workspace_id, relationship_type), and fingerprint uniqueness
 
 ### Entity Extraction
 
@@ -171,9 +171,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GRAPH-01 | Phase 22 | Pending |
-| GRAPH-02 | Phase 22 | Pending |
-| GRAPH-03 | Phase 22 | Pending |
+| GRAPH-01 | Phase 22 | Complete |
+| GRAPH-02 | Phase 22 | Complete |
+| GRAPH-03 | Phase 22 | Complete |
 | EXTR-01 | Phase 22 | Pending |
 | EXTR-02 | Phase 22 | Pending |
 | EXTR-03 | Phase 24 | Pending |

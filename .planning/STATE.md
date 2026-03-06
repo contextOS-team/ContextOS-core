@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: GraphRAG
-status: planning
-stopped_at: Phase 22 context gathered
-last_updated: "2026-03-06T19:34:52.034Z"
-last_activity: 2026-03-07 -- Roadmap created for v1.2 GraphRAG (6 phases, 26 requirements)
+status: executing
+stopped_at: Completed 22-01-PLAN.md
+last_updated: "2026-03-06T19:58:20.514Z"
+last_activity: 2026-03-07 -- Completed 22-01 graph schema foundation
 progress:
   total_phases: 13
   completed_phases: 6
-  total_plans: 15
-  completed_plans: 15
-  percent: 0
+  total_plans: 18
+  completed_plans: 16
+  percent: 96
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 22 of 27 (Graph Foundation + Rule-Based Extraction)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-03-07 -- Roadmap created for v1.2 GraphRAG (6 phases, 26 requirements)
+Plan: 1 of 3 in current phase
+Status: Executing
+Last activity: 2026-03-07 -- Completed 22-01 graph schema foundation
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 96%
 
 ## Performance Metrics
 
@@ -59,6 +59,9 @@ Recent decisions affecting current work:
 - [v1.2 Roadmap]: 6 phases derived from 26 requirements across 8 categories, phases 22-27
 - [v1.2 Roadmap]: Phases 23 + 24 can parallelize after Phase 22 (independent code paths, same destination tables)
 - [v1.2 Roadmap]: Phases 26 + 27 can parallelize after Phase 25
+- [Phase 22-01]: SHA-256 fingerprint from entity_type:external_id for deterministic graph node dedup
+- [Phase 22-01]: ON CONFLICT upsert clears deleted_at to restore soft-deleted graph records
+- [Phase 22-01]: Recursive CTE with path array cycle detection for traverse_graph() SECURITY DEFINER function
 
 ### Pending Todos
 
@@ -73,6 +76,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-06T19:34:52.031Z
-Stopped at: Phase 22 context gathered
-Resume file: .planning/phases/22-graph-foundation-rule-based-extraction/22-CONTEXT.md
+Last session: 2026-03-06T19:58:20.512Z
+Stopped at: Completed 22-01-PLAN.md
+Resume file: None
