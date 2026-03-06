@@ -55,7 +55,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Milestone Goal:** Add a knowledge graph layer (plain PostgreSQL tables with recursive CTEs) that captures entities and relationships across all data sources, improving context page quality by enabling multi-hop traversal, cross-source identity resolution, and decision trail extraction -- blended with existing hybrid search, not replacing it.
 
-- [ ] **Phase 22: Graph Foundation + Rule-Based Extraction** - Graph tables, traversal function, indexes, and deterministic regex extractors for structured references
+- [x] **Phase 22: Graph Foundation + Rule-Based Extraction** - Graph tables, traversal function, indexes, and deterministic regex extractors for structured references (completed 2026-03-06)
 - [ ] **Phase 23: Identity Resolution** - Cross-source person unification via email-based deterministic matching and fuzzy candidate flagging
 - [ ] **Phase 24: LLM Extraction + Decision Extraction** - Semantic entity extraction via Gemini Flash batch pipeline with decision nodes as highest-value entity
 - [ ] **Phase 25: Graph-Enhanced Retrieval** - Graph traversal as third retrieval signal with depth-decay scoring blended into existing search
@@ -258,7 +258,7 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 22. Graph Foundation + Rule-Based Extraction | 2/3 | In Progress|  | - |
+| 22. Graph Foundation + Rule-Based Extraction | 3/3 | Complete   | 2026-03-06 | - |
 | 23. Identity Resolution | v1.2 | 0/TBD | Not started | - |
 | 24. LLM Extraction + Decision Extraction | v1.2 | 0/TBD | Not started | - |
 | 25. Graph-Enhanced Retrieval | v1.2 | 0/TBD | Not started | - |

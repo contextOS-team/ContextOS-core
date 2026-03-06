@@ -16,7 +16,7 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 ### Entity Extraction
 
 - [x] **EXTR-01**: Rule-based extractors create graph nodes and edges for ticket references, PR numbers, @mentions, and file paths from ingested content
-- [ ] **EXTR-02**: Rule-based extraction runs inline during webhook/sync ingestion with zero LLM cost
+- [x] **EXTR-02**: Rule-based extraction runs inline during webhook/sync ingestion with zero LLM cost
 - [ ] **EXTR-03**: LLM extraction identifies decisions, rationale, blockers, and semantic entities from Slack messages and meeting transcripts
 - [ ] **EXTR-04**: LLM extraction runs as batch background task via Gemini Flash with content hash deduplication
 - [ ] **EXTR-05**: LLM extraction output is validated against source text to prevent hallucinated entities
@@ -175,7 +175,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GRAPH-02 | Phase 22 | Complete |
 | GRAPH-03 | Phase 22 | Complete |
 | EXTR-01 | Phase 22 | Complete |
-| EXTR-02 | Phase 22 | Pending |
+| EXTR-02 | Phase 22 | Complete |
 | EXTR-03 | Phase 24 | Pending |
 | EXTR-04 | Phase 24 | Pending |
 | EXTR-05 | Phase 24 | Pending |

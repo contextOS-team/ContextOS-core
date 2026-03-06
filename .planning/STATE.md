@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: GraphRAG
 status: executing
-stopped_at: Completed 22-02-PLAN.md
-last_updated: "2026-03-06T20:13:35.378Z"
-last_activity: 2026-03-07 -- Completed 22-02 regex extractors with registry
+stopped_at: Completed 22-03-PLAN.md
+last_updated: "2026-03-06T20:20:19Z"
+last_activity: 2026-03-07 -- Completed 22-03 webhook integration and backfill
 progress:
   total_phases: 13
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 18
-  completed_plans: 17
-  percent: 98
+  completed_plans: 18
+  percent: 100
 ---
 
 # Project State
@@ -25,23 +25,23 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 
 ## Current Position
 
-Phase: 22 of 27 (Graph Foundation + Rule-Based Extraction)
-Plan: 2 of 3 in current phase
-Status: Executing
-Last activity: 2026-03-07 -- Completed 22-02 regex extractors with registry
+Phase: 22 of 27 (Graph Foundation + Rule-Based Extraction) -- COMPLETE
+Plan: 3 of 3 in current phase
+Status: Phase Complete
+Last activity: 2026-03-07 -- Completed 22-03 webhook integration and backfill
 
-Progress: [██████████] 98%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 30 (v1.0: 16, v1.1: 14)
+- Total plans completed: 33 (v1.0: 16, v1.1: 14, v1.2: 3)
 - Average duration: ~4min
-- Total execution time: ~2.1 hours
+- Total execution time: ~2.3 hours
 
-**Recent Trend (v1.1):**
-- Last 5 plans: 17-01 (6min), 17-02 (5min), 20-01 (2min), 20-02 (3min), 21 (est 3min)
-- Trend: Stable (2-6min per plan)
+**Recent Trend (v1.2):**
+- Last 5 plans: 20-02 (3min), 21 (3min), 22-01 (4min), 22-02 (3min), 22-03 (6min)
+- Trend: Stable (3-6min per plan)
 
 *Updated after each plan completion*
 
@@ -65,6 +65,9 @@ Recent decisions affecting current work:
 - [Phase 22-02]: Registry pattern with auto-registration at module import for zero-config extractor loading
 - [Phase 22-02]: Ambiguous PR refs from non-GitHub sources marked with status=ambiguous in properties
 - [Phase 22-02]: URL extractor matches only 5 known integration patterns to avoid noise entities
+- [Phase 22-03]: Graph extraction runs for ALL content regardless of team sync status for broad reference capture
+- [Phase 22-03]: Entity nodes from extractors marked with status=unresolved for dangling reference tracking
+- [Phase 22-03]: Backfill script processes 7 source types sequentially with configurable batch size
 
 ### Pending Todos
 
@@ -79,6 +82,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-06T20:13:35.375Z
-Stopped at: Completed 22-02-PLAN.md
+Last session: 2026-03-06T20:20:19Z
+Stopped at: Completed 22-03-PLAN.md (Phase 22 complete)
 Resume file: None
