@@ -359,3 +359,73 @@ export function searchContext(
   if (limit) params.set('limit', String(limit))
   return apiFetch<SearchResponse>(`/api/context/?${params.toString()}`)
 }
+
+// ---------------------------------------------------------------------------
+// Settings - API Keys
+// ---------------------------------------------------------------------------
+
+export interface ApiKeyResponse {
+  id: string
+  name: string
+  key_prefix: string
+  created_at: string
+}
+
+export interface ApiKeyCreatedResponse extends ApiKeyResponse {
+  key: string // Full key, shown once only
+}
+
+export function listApiKeys(): Promise<{ keys: ApiKeyResponse[] }> {
+  return apiFetch<{ keys: ApiKeyResponse[] }>('/api/workspaces/current/api-keys')
+}
+
+export function createApiKey(name: string): Promise<ApiKeyCreatedResponse> {
+  return apiFetch<ApiKeyCreatedResponse>('/api/workspaces/current/api-keys', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function revokeApiKey(keyId: string): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>(`/api/workspaces/current/api-keys/${keyId}`, {
+    method: 'DELETE',
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Settings - Workspace
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceResponse {
+  id: string
+  name: string
+  slug: string
+  created_at: string
+}
+
+export function getWorkspace(): Promise<WorkspaceResponse> {
+  return apiFetch<WorkspaceResponse>('/api/workspaces/current')
+}
+
+export function updateWorkspaceName(name: string): Promise<WorkspaceResponse> {
+  return apiFetch<WorkspaceResponse>('/api/workspaces/current', {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Settings - Team
+// ---------------------------------------------------------------------------
+
+export interface TeamMember {
+  user_id: string
+  full_name: string | null
+  email: string
+  role: string
+  created_at: string
+}
+
+export function listTeamMembers(): Promise<{ members: TeamMember[] }> {
+  return apiFetch<{ members: TeamMember[] }>('/api/workspaces/current/members')
+}
