@@ -152,7 +152,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Composite indexes on (workspace_id, entity_type), (workspace_id, relationship_type), and fingerprint uniqueness are in place and used by query plans
   4. When a webhook delivers a Slack message or Linear ticket containing ticket references, @mentions, PR numbers, or file paths, corresponding graph nodes and edges are created automatically with no LLM calls
   5. Re-ingesting the same content does not create duplicate nodes -- fingerprint deduplication prevents it
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 22-01-PLAN.md -- Graph SQL migrations (tables, RLS, indexes, traversal function) + SQLModels + graph_ops upsert service
+- [ ] 22-02-PLAN.md -- Five regex extractors with registry pattern and comprehensive unit tests
+- [ ] 22-03-PLAN.md -- Wire extraction into all webhook handlers + backfill script for existing content
 
 ### Phase 23: Identity Resolution
 **Goal**: Person identities are unified across Linear, Slack, GitHub, and Fathom into single canonical graph nodes so that context pages correctly attribute who said and decided what across tools
@@ -254,7 +258,7 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 22. Graph Foundation + Rule-Based Extraction | v1.2 | 0/TBD | Not started | - |
+| 22. Graph Foundation + Rule-Based Extraction | v1.2 | 0/3 | Not started | - |
 | 23. Identity Resolution | v1.2 | 0/TBD | Not started | - |
 | 24. LLM Extraction + Decision Extraction | v1.2 | 0/TBD | Not started | - |
 | 25. Graph-Enhanced Retrieval | v1.2 | 0/TBD | Not started | - |
