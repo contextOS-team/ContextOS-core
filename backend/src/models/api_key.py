@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import text
+from sqlalchemy import Column, DateTime, text
 from sqlmodel import Field, SQLModel
 
 
@@ -22,9 +22,12 @@ class ApiKey(SQLModel, table=True):
     name: str = Field(nullable=False)
     key_prefix: str = Field(nullable=False)
     key_hash: str = Field(nullable=False)
-    revoked_at: datetime | None = Field(default=None)
+    revoked_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
     created_at: datetime | None = Field(
         default=None,
-        nullable=False,
-        sa_column_kwargs={"server_default": text("now()")},
+        sa_column=Column(
+            DateTime(timezone=True), nullable=False, server_default=text("now()")
+        ),
     )
