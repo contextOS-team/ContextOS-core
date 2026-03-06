@@ -195,7 +195,7 @@ export function ActivityTimeline({
           data.
         </p>
         <Link
-          href="/dashboard/integrations"
+          href="/dashboard/settings?tab=integrations"
           className="text-sm text-muted-foreground underline-offset-4 hover:underline mt-3"
         >
           Connect an integration

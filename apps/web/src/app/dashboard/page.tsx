@@ -127,10 +127,10 @@ export default function DashboardPage() {
           const { authorization_url } = await connectNotion()
           window.location.href = authorization_url
         } else {
-          router.push('/dashboard/integrations')
+          router.push('/dashboard/settings?tab=integrations')
         }
       } catch {
-        router.push('/dashboard/integrations')
+        router.push('/dashboard/settings?tab=integrations')
       }
     },
     [router]
@@ -313,7 +313,7 @@ export default function DashboardPage() {
                 <div className="shrink-0 w-[72px] text-right">
                   {isConnected ? (
                     <button
-                      onClick={() => router.push('/dashboard/integrations')}
+                      onClick={() => router.push('/dashboard/settings?tab=integrations')}
                       className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-150"
                     >
                       Manage
@@ -327,7 +327,7 @@ export default function DashboardPage() {
                     </button>
                   ) : integration.key === 'fathom' ? (
                     <button
-                      onClick={() => router.push('/dashboard/integrations')}
+                      onClick={() => router.push('/dashboard/settings?tab=integrations')}
                       className="text-xs text-primary hover:text-primary/80 transition-colors duration-150"
                     >
                       Configure

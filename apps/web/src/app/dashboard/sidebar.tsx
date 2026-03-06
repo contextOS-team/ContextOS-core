@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LogOut, Settings } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   DropdownMenu,
@@ -35,7 +35,7 @@ const navItems = [
   { href: '/dashboard', label: 'Home' },
   { href: '/dashboard/context', label: 'Context' },
   { href: '/dashboard/activity', label: 'Activity' },
-  { href: '/dashboard/integrations', label: 'Integrations' },
+  { href: '/dashboard/settings', label: 'Settings' },
 ]
 
 export function Sidebar({ userEmail, userFullName }: TopNavProps) {
@@ -113,11 +113,6 @@ export function Sidebar({ userEmail, userFullName }: TopNavProps) {
                 <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
               )}
             </div>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push('/dashboard/settings')}>
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
-            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut}>
               <LogOut className="mr-2 h-4 w-4" />
