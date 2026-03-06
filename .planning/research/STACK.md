@@ -1,333 +1,438 @@
-# Stack Research
+# Technology Stack: GraphRAG Additions for ContextOS v1.2
 
-**Domain:** Dashboard redesign — guided onboarding, dark-theme design system, context feed, activity timeline, team settings
-**Researched:** 2026-03-04
-**Confidence:** HIGH
-
-> **Scope note:** This file covers ONLY net-new additions for the next milestone.
-> Existing validated stack (Next.js 15, React 19, TypeScript, Tailwind v4, shadcn/ui + Radix, CVA, clsx, tailwind-merge,
-> Inter + JetBrains Mono, Supabase Auth, @supabase/ssr, @supabase/supabase-js, PostHog, Sentry, FastAPI, Supabase
-> PostgreSQL, lucide-react, sonner, tw-animate-css) is NOT repeated here.
+**Project:** ContextOS -- GraphRAG Knowledge Graph Layer
+**Researched:** 2026-03-06
+**Scope:** NEW dependencies only. Existing stack (FastAPI, Next.js 15, Supabase, Redis, pgvector, LangGraph, tree-sitter, OpenAI SDK, SQLAlchemy async + asyncpg, Pydantic) is validated and not covered.
 
 ---
 
-## Recommended Stack
+## Critical Infrastructure Decision: Apache AGE Deployment
 
-### Core Technologies (New)
+**Apache AGE is NOT available as a Supabase managed extension.** AGE is a C extension, not a Trusted Language Extension, so it cannot be installed on Supabase Cloud. This is the single most important constraint for the v1.2 milestone.
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| react-hook-form | ^7.71.2 | Multi-step onboarding form state | Uncontrolled inputs, minimal re-renders per step — shadcn/ui's official form docs use this. Per-step Zod schema validation via `trigger()` before advancing. Zero dependencies on existing stack. |
-| @hookform/resolvers | ^5.2.2 | Zod v4 → react-hook-form bridge | Version 5.x added automatic Zod v3/v4 runtime detection. Required companion to react-hook-form for schema validation. `zodResolver` is the shadcn/ui-prescribed pattern. |
-| zod | ^4.3.6 | Per-step and final schema validation | Already used in MCP server. Add to `apps/web`. v4 is 14x faster string parsing vs v3, 1.9 KB gzipped with `zod/mini`. Use full `zod` import for compatibility — @hookform/resolvers 5.x handles both. |
-| motion | ^12.34.5 | Onboarding step transitions, timeline animations | The successor to framer-motion (same package, renamed). `tw-animate-css` already installed covers enter/exit for static elements; motion adds layout animations (step-to-step slide), height:auto transitions, and gesture-based interactions that CSS keyframes cannot do. Add ONLY because the onboarding wizard requires animated step transitions and the activity timeline needs staggered entry. Do NOT use motion for everything — keep tw-animate-css for simple fade/scale. |
-| @stepperize/react | ^6.1.0 | Onboarding wizard step state machine | Type-safe `defineStepper` + `useStepper` hook. Handles step navigation, validation gating, and progress tracking without coupling step state to form state. Composable with shadcn/ui components. Lightweight (~2 KB). Alternative: hand-rolled stepper with useState — use @stepperize/react only if onboarding has 4+ steps with conditional branching. |
+### Recommended Approach: Dedicated AGE Postgres Container
 
-**Confidence:** HIGH — versions verified against npm registry (2026-03-04). react-hook-form + zod + @hookform/resolvers is the prescribed shadcn/ui pattern. motion is the production-standard for complex React animation.
+Deploy a separate PostgreSQL 16 instance with AGE pre-installed as a Docker container alongside the existing infrastructure. The backend connects to TWO databases: Supabase for relational data/auth/RLS, and the AGE instance for graph operations.
 
----
+**Why not alternative approaches:**
 
-### Supporting Libraries (New)
+| Alternative | Why Not |
+|---|---|
+| Pure SQL recursive CTEs (no AGE) | Cypher is dramatically more expressive for graph traversal. CTEs become unreadable at 3+ hops and cannot express variable-length path patterns. The team chose AGE for good reason. |
+| Supabase fork with AGE compiled in | Requires maintaining a Nix build fork of supabase/postgres. Fragile, version-lock risk, unsupported by Supabase. |
+| postgres_fdw between Supabase and AGE | Adds latency per query, complicates transactions, FDW does not support AGE's `cypher()` function across boundaries. |
+| Neo4j or separate graph DB | New infrastructure category, new ops burden, no pgvector co-location benefit. AGE keeps everything in Postgres. |
+| postgres-graph-rag library | v0.1.2, early-stage, "interface can evolve quickly" per README. Not production-ready. |
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| nuqs | ^2.8.9 | URL-synced filter state for context feed | Context feed has type + status + search filters. nuqs gives `useQueryState` (identical to `useState` but stored in URL). Enables shareable filtered views, browser back/forward, and RSC re-render triggering (`shallow: false`). 6 KB gzipped. Use for every filter/search param in the dashboard — do NOT use `useState` for URL-representable state. |
-| date-fns | ^4.1.0 | Timestamp formatting in timeline + feed | Activity timelines show relative times ("2 minutes ago", "Mar 4") and absolute timestamps on hover. date-fns v4 is tree-shakable, immutable, and 22 MB unpacked but only what you import ships. Use `formatDistanceToNow`, `format`, `parseISO`. Alternative: dayjs (670 KB unpacked) — use dayjs if bundle size becomes critical. date-fns is the shadcn/ui DatePicker default so it's the consistent choice. |
-
-**Confidence:** HIGH — nuqs 2.8.9 verified on npm. date-fns 4.1.0 verified on npm. Both integrate with existing Next.js 15 App Router without configuration.
+**Confidence:** HIGH -- verified via Supabase GitHub Discussion #40285, Docker Hub apache/age image, and community reports.
 
 ---
 
-### Design System Additions (Zero New Dependencies)
+## Recommended Stack Additions
 
-These are CSS-only additions to the existing Tailwind v4 + `globals.css` setup. No new npm packages.
+### 1. Graph Database Layer
 
-#### 1. Unified Dark Theme Tokens
+| Technology | Version | Purpose | Why |
+|---|---|---|---|
+| Apache AGE | 1.5.0+ (PG16) | Graph extension for Postgres | Cypher query language, stays in Postgres ecosystem. Team decision already made. |
+| `apache/age` Docker image | PG16 tag | Graph DB container | Official image, supports PG 11-18. Use PG16 for stability (PG15 had string type issues with AGE per community reports). |
 
-**Problem:** Landing page uses hex-based dark tokens scoped under `.landing-theme`. Dashboard uses light-default oklch tokens in `:root` with a `.dark` override. The new dashboard milestone requires the app to be dark-first (matching the landing brand direction), but the two themes currently cannot share tokens without duplication.
+**Integration pattern:** The backend already uses SQLAlchemy async with asyncpg. AGE Cypher queries execute as raw SQL wrapping Cypher via `ag_catalog.cypher()`. Create a dedicated async engine/session factory pointing at the AGE database, mirroring the existing `src/db.py` pattern.
 
-**Solution:** Extend `globals.css` with dashboard-specific dark variables in `.dark` and a semantic token layer that both landing and dashboard reference. Do NOT merge landing.css into globals.css — landing isolation is intentional.
+```python
+# graph_db.py -- second engine for AGE database
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-```css
-/* In globals.css — extend the existing .dark block */
-.dark {
-  /* Existing oklch tokens stay. Add semantic brand aliases: */
-  --brand-teal: #00D4AA;          /* matches landing --color-teal */
-  --brand-teal-muted: rgba(0,212,170,0.12);
-  --brand-surface-0: #0A0A0F;    /* deepest layer = landing --color-navy */
-  --brand-surface-1: #0F0F18;    /* card surfaces = landing --color-surface */
-  --brand-surface-2: #141420;    /* elevated surfaces = landing --color-surface-2 */
-  --brand-border-subtle: rgba(255,255,255,0.07);
+graph_engine = create_async_engine(
+    settings.GRAPH_DATABASE_URL,  # postgresql+asyncpg://...@age-host:5433/context_graph
+    echo=False,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=5,
+)
+
+graph_session = async_sessionmaker(graph_engine, class_=AsyncSession, expire_on_commit=False)
+```
+
+```python
+# Example: raw Cypher via asyncpg/SQLAlchemy
+from sqlalchemy import text
+
+query = text("""
+    SELECT * FROM ag_catalog.cypher('context_graph', $$
+        MATCH (p:Person)-[:MADE]->(d:Decision)-[:AFFECTS]->(t:Ticket {external_id: :ticket_id})
+        RETURN p, d, t
+    $$) AS (person agtype, decision agtype, ticket agtype)
+""")
+result = await graph_session.execute(query, {"ticket_id": ticket_id})
+```
+
+**Do NOT use these Python libraries for AGE integration:**
+
+| Library | Why Not |
+|---|---|
+| `apache-age-python` (PyPI v0.0.7) | Last updated Sep 2023. Uses psycopg2 (synchronous). Incompatible with the async architecture. Dead project. |
+| `langchain-community` AGEGraph class | Wraps `psycopg2.connect()` synchronously. Cannot integrate with the existing async SQLAlchemy engine. Would require running sync code in thread executors. |
+
+**Confidence:** HIGH -- verified via Apache AGE docs, asyncpg compatibility analysis, existing codebase inspection (`src/db.py` uses `create_async_engine` with asyncpg).
+
+---
+
+### 2. AGType Parsing
+
+| Technology | Version | Purpose | Why |
+|---|---|---|---|
+| Custom agtype parser | N/A (in-house, ~100 LOC) | Parse AGE's agtype query results into typed Python objects | agtype is a JSON superset. Parse with `json.loads()` for simple cases. Build thin Pydantic models (Vertex, Edge, Path) for type safety. Avoids pulling in antlr4-python3-runtime dependency. |
+
+**Rationale:** The official `apache-age-python` package's main value is its ANTLR-based agtype parser. But agtype is effectively JSON with graph metadata wrapping. A custom parser using Python's `json` module + Pydantic models is simpler, async-compatible, and has zero dependencies. The parser needs to handle three shapes:
+- **Vertex:** `{"id": N, "label": "X", "properties": {...}}`
+- **Edge:** `{"id": N, "label": "X", "start_id": N, "end_id": N, "properties": {...}}`
+- **Path:** ordered list of vertices and edges
+
+Additionally, register a custom type codec with asyncpg using `connection.set_type_codec()` for the `agtype` OID so results are automatically deserialized.
+
+**Confidence:** MEDIUM -- agtype is documented as JSON-superset in AGE docs. Edge cases in complex nested paths or NULL handling may require iteration. The custom codec registration with asyncpg is documented but needs testing with AGE-specific OIDs.
+
+---
+
+### 3. Entity Extraction
+
+| Technology | Version | Purpose | Why |
+|---|---|---|---|
+| Existing OpenAI SDK (async) | Already in deps | LLM-based semantic entity extraction via structured output | Already in the stack as `openai` package. The LLM client (`src/services/llm_client.py`) uses `AsyncOpenAI`. Extend it with a structured output method using `response_format={"type": "json_schema", ...}` to extract entities. Works with both OpenAI models and Gemini (via OpenAI-compatible endpoint). |
+| Regex extractors | N/A (in-house) | Rule-based structured entity extraction | Regex patterns for ticket IDs (`[A-Z]+-\d+`), @mentions (`<@U[A-Z0-9]+>`), PR numbers (`#\d+`), file paths, URLs. Zero-cost, deterministic, handles 80% of linking signals. |
+
+**Entity extraction strategy (two-tier):**
+
+1. **Rule-based first (zero cost, deterministic):** Regex patterns extract ticket refs, @mentions, PR numbers, file paths, and URLs from all source content. These produce high-confidence entity references with zero LLM cost.
+
+2. **LLM second (for semantic entities):** For each source document (Slack thread, meeting transcript, ticket description), call the LLM with a JSON schema to extract:
+   - Decisions made (what was decided, who decided, when, rationale)
+   - People mentioned with role context (not just names but "reviewer", "requester", etc.)
+   - Semantic relationships between entities that regex cannot capture
+
+```python
+# Extend LLMClient with structured extraction
+ENTITY_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "entity_extraction",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "decisions": {"type": "array", "items": {...}},
+                "people": {"type": "array", "items": {...}},
+                "relationships": {"type": "array", "items": {...}},
+            },
+            "required": ["decisions", "people", "relationships"]
+        }
+    }
 }
 ```
 
-This creates a shared vocabulary between landing.css and dashboard components without requiring a CSS-in-JS library or a new design token tool. Tailwind v4 `@theme` consumes these via `var(--brand-teal)` in utility definitions.
+**Do NOT use these for entity extraction:**
 
-**Confidence:** HIGH — Tailwind v4 CSS-first architecture verified. This pattern is documented in the Tailwind v4 `@theme` guide.
+| Library | Why Not |
+|---|---|
+| spaCy | Heavyweight NLP (300MB+ models). ContextOS needs domain-specific entities (ticket IDs, decisions, code references), not generic PERSON/ORG/GPE NER. Pre-trained models would not help. |
+| GLiNER (v0.2.25) | Zero-shot NER model. Interesting but adds model inference dependency. Entity types in ContextOS are either trivially regex-extractable (ticket IDs) or require LLM-level reasoning (decisions). No middle ground where GLiNER wins over the existing LLM. |
+| LangChain `LLMGraphTransformer` | Known bug with Gemini (GitHub Issue #26624, closed NOT_PLANNED). Returns strings instead of lists when using Gemini's structured output. The `ignore_tool_usage=True` workaround is fragile. Build extraction prompts directly using existing SDK structured output instead. |
 
-#### 2. Dashboard Force-Dark
+**Confidence:** HIGH -- OpenAI SDK structured output (`response_format`) is well-documented. Rule-based extraction is standard practice. LLMGraphTransformer Gemini incompatibility verified via GitHub issue.
 
-The dashboard layout needs to run permanently in dark mode regardless of OS preference. In `globals.css`:
+---
 
-```css
-/* Force dashboard into dark mode — no OS preference dependency */
-.dashboard-theme {
-  color-scheme: dark;
-}
+### 4. Identity Resolution
+
+| Technology | Version | Purpose | Why |
+|---|---|---|---|
+| Custom resolution logic | N/A (in-house) | Cross-source person matching | ContextOS has a bounded, small identity space (team members across Linear, Slack, GitHub, Fathom). This is NOT a million-record deduplication problem. Simple heuristic matching on email + display name + known aliases suffices. |
+
+**Do NOT use:**
+
+| Library | Why Not |
+|---|---|
+| Splink (v4.0.7) | Designed for probabilistic linkage across millions of records (census-scale). Adds DuckDB dependency. Massive overkill for matching ~10-50 team members across 4 integrations. |
+| dedupe (v3.0.2) | Requires manual training by labeling record pairs. Interactive workflow incompatible with automated pipeline. |
+| recordlinkage | Same category of census-scale deduplication. Wrong tool for the problem size. |
+
+**Identity resolution strategy:**
+
+Each integration already stores user identifiers (Linear user ID, Slack user ID, GitHub username, etc.). Build a `person_identities` mapping table:
+
+```
+person_id (graph node UUID) <-> [(source: "linear", external_id: "abc123"),
+                                  (source: "slack", external_id: "U01234"),
+                                  (source: "github", external_id: "username")]
 ```
 
-Apply `className="dashboard-theme dark"` to the dashboard root layout `<div>` (already `flex flex-col min-h-screen`). This forces all Tailwind `.dark:` variants and the existing `.dark` token block without a theme toggle library.
+Resolution rules (in priority order):
+1. **Exact email match** across sources (highest confidence, handles most cases)
+2. **Display name normalization + token overlap** for ambiguous cases
+3. **Admin manual linking** via settings UI for remaining edge cases
 
-**Why not `next-themes`?** next-themes (a common suggestion) adds a ThemeProvider, hydration flash mitigation, and localStorage for user preference. The milestone does not require a light/dark toggle — the dashboard is permanently dark. next-themes is overkill and adds 3 KB for a feature not needed.
+Store in the AGE graph as `Person` nodes with `HAS_IDENTITY` edges pointing to source-specific identity nodes. A `SAME_AS` edge is not needed when the canonical Person node is the merge target.
 
-**Confidence:** HIGH — this is the zero-dependency approach for force-dark in Next.js App Router.
+**Confidence:** HIGH -- bounded problem space (small teams), well-understood matching rules.
 
-#### 3. Shadcn/ui Components to Add
+---
 
-The following shadcn/ui components are copy-pasted via CLI — no npm packages:
+### 5. Graph-Enhanced Retrieval
+
+| Technology | Version | Purpose | Why |
+|---|---|---|---|
+| No new dependencies | N/A | Blend graph signal with existing hybrid search | Graph traversal via Cypher queries produces relationship paths. Score and rank alongside existing pgvector similarity + full-text search. Implement as a scoring function in Python. |
+
+**Retrieval blending strategy:**
+
+```python
+# Pseudo-code for blended retrieval
+async def enhanced_retrieve(query: str, ticket_id: str) -> list[ScoredResult]:
+    # 1. Existing: vector similarity from Supabase pgvector
+    vector_results = await vector_search(query, workspace_id)
+
+    # 2. Existing: full-text search from Supabase
+    fts_results = await fulltext_search(query, workspace_id)
+
+    # 3. NEW: graph neighborhood from AGE
+    graph_results = await graph_neighborhood(ticket_id, max_hops=3)
+
+    # 4. Blend scores
+    combined = merge_and_score(
+        vector_results,   weight=0.4,
+        fts_results,      weight=0.3,
+        graph_results,    weight=0.3,
+    )
+    return sorted(combined, key=lambda r: r.score, reverse=True)
+```
+
+Where `graph_proximity_score` is derived from:
+- Shortest path length (closer = higher score)
+- Relationship type relevance (MADE_DECISION > MENTIONED_IN)
+- Number of distinct paths connecting entities (more paths = stronger signal)
+
+Weights start at `0.4 / 0.3 / 0.3` and are tuned empirically. The graph weight should be adjustable via config without code changes.
+
+**Confidence:** MEDIUM -- scoring weights need empirical tuning. The architecture pattern is well-established in GraphRAG literature.
+
+---
+
+### 6. Graph Explorer UI (Stretch Goal)
+
+| Technology | Version | Purpose | Why |
+|---|---|---|---|
+| react-force-graph-2d | ^1.48 | Interactive graph visualization | Canvas-based rendering, handles hundreds of nodes performantly. More React-native than D3 direct manipulation. 2D sufficient for entity-relationship explorer. |
+
+**Integration with Next.js 15:**
+
+Must use dynamic import with `ssr: false` due to ESM/Canvas incompatibility with server-side rendering (verified via GitHub Issue #352):
+
+```tsx
+import dynamic from 'next/dynamic'
+
+const ForceGraph = dynamic(() => import('react-force-graph-2d'), {
+  ssr: false,
+  loading: () => <GraphSkeleton />,
+})
+```
+
+**Do NOT use:**
+
+| Library | Why Not |
+|---|---|
+| Cytoscape.js | More powerful but heavier API surface. Overkill for "explore connections around a ticket" use case. |
+| D3.js directly | DOM manipulation conflicts with React's virtual DOM. react-force-graph already wraps D3's force simulation. |
+| react-force-graph (3D variant) | 3D adds WebGL/Three.js dependency and visual complexity without UX benefit for this use case. |
+
+**Confidence:** HIGH -- react-force-graph-2d v1.48.2 actively maintained (updated Feb 2026). Next.js SSR workaround verified.
+
+---
+
+## Docker Compose Addition
+
+```yaml
+# Addition to docker-compose.yml for local development
+services:
+  age:
+    image: apache/age:PG16_latest
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: contextos_graph
+      POSTGRES_PASSWORD: ${AGE_DB_PASSWORD}
+      POSTGRES_DB: context_graph
+    volumes:
+      - age_data:/var/lib/postgresql/data
+      - ./graph/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contextos_graph"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  age_data:
+```
+
+```sql
+-- graph/init.sql -- run once on container creation
+CREATE EXTENSION IF NOT EXISTS age;
+LOAD 'age';
+SET search_path = ag_catalog, "$user", public;
+SELECT create_graph('context_graph');
+```
+
+For production: deploy the AGE container as a separate Railway service using a custom Dockerfile, or use a VPS with docker-compose. Railway supports custom Docker image deployments (pattern documented in their PostgreSQL extension templates like PostGIS+H3).
+
+---
+
+## Backend Dependency Changes
+
+### pyproject.toml additions
+
+```toml
+dependencies = [
+    # ... existing deps unchanged ...
+    # ZERO new PyPI packages needed for core GraphRAG.
+    # AGE queries go through existing asyncpg/SQLAlchemy.
+    # Entity extraction uses existing OpenAI SDK structured output.
+    # Identity resolution is custom code.
+    # agtype parsing is custom code (~100 LOC).
+]
+```
+
+**The key finding: zero new Python backend dependencies are needed for core GraphRAG.** The existing stack (asyncpg, SQLAlchemy async, OpenAI SDK, Pydantic) handles everything. The only infrastructure addition is the AGE Postgres container.
+
+### Frontend dependency (stretch goal only)
 
 ```bash
-# Add these via shadcn CLI (they use already-installed Radix primitives)
-npx shadcn@latest add progress      # Onboarding step progress bar
-npx shadcn@latest add command       # Context feed search/filter (cmdk-powered)
-npx shadcn@latest add select        # Filter dropdowns in context feed
-npx shadcn@latest add badge         # Status chips in activity timeline
-npx shadcn@latest add separator     # Timeline dividers
-npx shadcn@latest add avatar        # Team settings user avatars
-npx shadcn@latest add tabs          # Settings page sections
-npx shadcn@latest add dialog        # Confirmation modals in onboarding/settings
-npx shadcn@latest add skeleton      # Loading states in feed/timeline
-npx shadcn@latest add scroll-area   # Scrollable context feed with custom scrollbar
+pnpm add react-force-graph-2d --filter @contextos/web
 ```
 
-`command` uses `cmdk` (version ^1.1.1, already a Radix ecosystem dependency). The Command component provides the search-as-you-type context feed filter with keyboard navigation at zero additional npm cost.
+---
 
-**Confidence:** HIGH — all listed components are in the current shadcn/ui registry (verified 2026-03-04).
+## Environment Variables to Add
+
+```env
+# Graph database (AGE container)
+GRAPH_DATABASE_URL=postgresql+asyncpg://contextos_graph:${AGE_DB_PASSWORD}@localhost:5433/context_graph
+AGE_DB_PASSWORD=<secure-password>
+
+# For production (Railway AGE service)
+# GRAPH_DATABASE_URL=postgresql+asyncpg://contextos_graph:${AGE_DB_PASSWORD}@age-service.railway.internal:5432/context_graph
+```
+
+---
+
+## Alternatives Considered
+
+| Category | Recommended | Alternative | Why Not Alternative |
+|---|---|---|---|
+| Graph DB hosting | Separate AGE container | Same Supabase instance | AGE cannot be installed on Supabase Cloud (C extension, not TLE) |
+| Graph DB hosting | Separate AGE container | Neo4j | New infra category, separate query language, no pgvector co-location |
+| AGE Python driver | Raw SQL via asyncpg | apache-age-python 0.0.7 | Dead project (Sep 2023), synchronous psycopg2, conflicts with async arch |
+| AGE Python driver | Raw SQL via asyncpg | LangChain AGEGraph | Synchronous psycopg2, cannot use existing async session factory |
+| Entity extraction | OpenAI SDK structured output | LLMGraphTransformer | Gemini incompatibility (Issue #26624, NOT_PLANNED) |
+| Entity extraction | Regex + LLM | spaCy NER | 300MB models for generic entities ContextOS does not need |
+| Identity resolution | Custom heuristics | Splink / dedupe | Census-scale tools for a ~10-person team. Massive dependency overkill. |
+| Graph viz | react-force-graph-2d | Cytoscape.js | Heavier API, overkill for entity explorer |
+| Graph storage | Cypher via AGE | Pure SQL recursive CTEs | Unreadable at 3+ hops, no variable-length path patterns |
+
+---
+
+## Integration Architecture Summary
+
+```
+                    Supabase Cloud (Postgres 15)
+                    +-- Auth, RLS, relational tables
+                    +-- pgvector embeddings
+                    +-- Full-text search
+                    |
+FastAPI Backend ----+---- Redis (caching, existing)
+                    |
+                    AGE Container (Postgres 16 + AGE)
+                    +-- Knowledge graph (Cypher queries)
+                    +-- Entity nodes, relationship edges
+                    +-- Graph traversal for retrieval
+```
+
+**Two database connections in the backend:**
+1. `engine` (existing, `src/db.py`) -> Supabase for relational data, auth, embeddings, search
+2. `graph_engine` (new, `src/graph_db.py`) -> AGE container for graph operations
+
+**Data flow:**
+1. Content ingested -> stored in Supabase tables (existing flow, unchanged)
+2. Entity extraction pipeline (new) -> regex + LLM extract entities and relationships from ingested content
+3. Graph upsert (new) -> creates/updates nodes and edges in AGE via Cypher `MERGE` statements
+4. Retrieval (enhanced) -> queries both Supabase (vector + FTS) and AGE (graph traversal), blends scores
+5. Synthesis (enhanced) -> context pages include decision trails, relationship paths, cross-referenced people
+
+---
+
+## Production Deployment Considerations
+
+| Concern | Local Dev | Production |
+|---|---|---|
+| AGE database | Docker Compose service on port 5433 | Railway custom Docker service or dedicated VPS |
+| Backups | Docker volume (dev only) | `pg_dump` cron job, same as any Postgres |
+| Connection pooling | Direct asyncpg (5 connections) | Consider PgBouncer if connection exhaustion occurs |
+| Schema migration | Init script in Docker entrypoint | Version-controlled SQL migration files (separate from Supabase migrations) |
+| Monitoring | Health check in docker-compose | Sentry + structured logging (existing infra covers this) |
+| Data consistency | N/A (dev) | Graph updates are eventually consistent with Supabase -- entity extraction runs async after ingestion |
 
 ---
 
 ## What NOT to Add
 
 | Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| `next-themes` | Overkill for a force-dark dashboard with no user toggle. Adds ThemeProvider, hydration SSR complexity, localStorage wiring. | Force dark with `.dark` class on layout root. |
-| `@tanstack/react-virtual` | Context feed at MVP scale will have <500 items. Virtualization adds significant implementation complexity (fixed row heights or measured rows) for zero perceptible benefit at this data volume. | Native browser scroll + CSS `overflow-y: auto`. Revisit if feed exceeds 2000 items. |
-| `framer-motion` | Renamed to `motion`. Using both in package.json is redundant. | `motion` (^12.34.5). |
-| `@tanstack/react-query` | Supabase client already supports subscriptions and direct async calls. Adding TanStack Query before the app has caching problems is premature. The existing `useState` + `useEffect` + Supabase client pattern works and is already established in the codebase. | Supabase client + `useEffect`. Revisit when cache invalidation complexity grows. |
-| `react-spring` | Heavier spring-physics library. motion already covers all animation needs with the same capabilities. | `motion` |
-| `dayjs` | date-fns v4 already recommended. Two date libraries in the bundle is waste. | `date-fns` ^4.1.0 |
-| `react-query` (v3 alias) | Old package name. Use `@tanstack/react-query` if/when added. | N/A |
-| Full `zod` schema in `apps/web` via separate npm install if MCP already has it | pnpm workspace: `apps/web` and `packages/mcp-server` have separate `node_modules`. Add `zod` to `apps/web/package.json` explicitly. | `pnpm add zod --filter @contextos/web` |
-| Icon libraries beyond lucide-react | Mixing Heroicons, Phosphor, etc. with lucide-react creates visual inconsistency and bundle bloat. | `lucide-react` (already installed). If a specific icon is missing, add it as an inline SVG. |
-| CSS-in-JS (styled-components, emotion) | Not compatible with Next.js 15 Server Components. Already on Tailwind v4 — adding CSS-in-JS now would be a fundamental conflict. | Tailwind v4 + CSS custom properties. |
+|---|---|---|
+| `apache-age-python` | Dead project (v0.0.7, Sep 2023), synchronous psycopg2, would conflict with async architecture | Raw SQL via existing asyncpg + custom agtype parser |
+| `langchain-community` (for AGEGraph) | Synchronous psycopg2.connect(), adds large dependency tree for one class | Raw SQL via existing asyncpg |
+| `langchain-experimental` (for LLMGraphTransformer) | Gemini incompatibility (Issue #26624). Would require adding a separate OpenAI model just for extraction. | OpenAI SDK structured output (already in stack) |
+| `langchain-google-genai` | Adds abstraction layer over google-genai SDK without clear benefit for entity extraction use case | Existing OpenAI SDK or raw google-genai (already in deps) |
+| `spacy` | 300MB+ models for generic NER. ContextOS needs domain-specific entities. | Regex for structured, LLM for semantic |
+| `gliner` | Model inference dependency for entity types either trivially regex-extractable or requiring full LLM reasoning | Regex + LLM two-tier extraction |
+| `splink` / `dedupe` / `recordlinkage` | Census-scale identity resolution for a ~10-50 person problem | Custom email + name matching heuristics |
+| `neo4j` driver | Would require a separate Neo4j server, new infrastructure category | Apache AGE on Postgres |
+| `networkx` | In-memory graph library. Graph state belongs in AGE database, not in Python process memory. | AGE Cypher queries for traversal |
+| `react-force-graph` (3D) | WebGL/Three.js dependency, visual complexity without UX benefit | `react-force-graph-2d` |
+| `cytoscape` / `cytoscape.js` | Heavy API surface for a stretch-goal feature | `react-force-graph-2d` |
 
 ---
 
-## Installation
+## Version Compatibility Matrix
 
-```bash
-# Add to apps/web — form libraries for onboarding wizard
-pnpm add react-hook-form @hookform/resolvers zod --filter @contextos/web
-
-# Add for animated step transitions and timeline entrance animations
-pnpm add motion --filter @contextos/web
-
-# Add for URL-synced context feed filters
-pnpm add nuqs --filter @contextos/web
-
-# Add for timestamp display in timeline and feed
-pnpm add date-fns --filter @contextos/web
-
-# Add for onboarding step state machine (evaluate after scoping 4+ steps)
-pnpm add @stepperize/react --filter @contextos/web
-
-# shadcn components (run from apps/web)
-cd apps/web
-npx shadcn@latest add progress command select badge separator avatar tabs dialog skeleton scroll-area
-```
-
----
-
-## Integration Points with Existing Stack
-
-### Tailwind v4 + motion
-
-motion's `animate` prop is CSS-property based and works alongside Tailwind classes. Use motion for JS-driven animations (step transitions, stagger sequences), keep Tailwind utilities + `tw-animate-css` for CSS-only states.
-
-```tsx
-// Pattern: motion for step transitions, Tailwind for state styling
-import { motion, AnimatePresence } from 'motion/react'
-
-<AnimatePresence mode="wait">
-  <motion.div
-    key={currentStep}
-    initial={{ opacity: 0, x: 20 }}
-    animate={{ opacity: 1, x: 0 }}
-    exit={{ opacity: 0, x: -20 }}
-    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-    className="rounded-xl border border-border bg-card p-6"
-  >
-    {stepContent}
-  </motion.div>
-</AnimatePresence>
-```
-
-### react-hook-form + @stepperize/react + zod
-
-Decouple step navigation (stepperize) from form state (react-hook-form). Each step validates independently before advancing.
-
-```tsx
-// Pattern: validate current step before calling stepper.next()
-const form = useForm({ resolver: zodResolver(combinedSchema), mode: 'onChange' })
-const stepper = useStepper({ initialStep: 'workspace' })
-const stepSchemas = { workspace: workspaceSchema, team: teamSchema, integrations: integrationsSchema }
-
-async function handleNext() {
-  const stepFields = getFieldsForStep(stepper.current.id)
-  const valid = await form.trigger(stepFields) // validates only current step fields
-  if (valid) stepper.next()
-}
-```
-
-### nuqs + Supabase client (context feed)
-
-nuqs manages URL filter state. Supabase client fetches on filter change. No TanStack Query layer needed.
-
-```tsx
-// Pattern: URL-synced filters driving Supabase fetch
-const [type, setType] = useQueryState('type', parseAsString)
-const [status, setStatus] = useQueryState('status', parseAsString)
-const [search, setSearch] = useQueryState('q', parseAsString)
-
-useEffect(() => {
-  let query = supabase.from('context_pages').select('*').order('created_at', { ascending: false })
-  if (type) query = query.eq('type', type)
-  if (status) query = query.eq('status', status)
-  if (search) query = query.ilike('title', `%${search}%`)
-  query.then(({ data }) => setItems(data ?? []))
-}, [type, status, search])
-```
-
-### Supabase Realtime (activity timeline)
-
-No new library. Use existing `@supabase/supabase-js` channel API in a `'use client'` component with `useEffect` cleanup. The activity timeline subscribes to `postgres_changes` on `context_pages` (and `context_generation_jobs` for status updates).
-
-```tsx
-// Pattern: realtime subscription for activity timeline — uses existing installed @supabase/supabase-js
-useEffect(() => {
-  const channel = supabase
-    .channel('activity-timeline')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'context_pages' },
-      (payload) => setItems(prev => [payload.new, ...prev].slice(0, 50))
-    )
-    .subscribe()
-  return () => { supabase.removeChannel(channel) }
-}, [])
-```
-
-### Design Token Sharing (landing ↔ dashboard)
-
-Shared teal brand values are defined once in `.dark` block of `globals.css`. Landing page continues to use its scoped `.landing-theme` class with the same hex values. When the dashboard is eventually opened alongside the landing page (same browser session, same Next.js app), there is no token conflict because landing tokens are scoped under `.landing-theme` and dashboard tokens are scoped under `.dark`.
-
----
-
-## "Not Generic AI Slop" Design Decisions
-
-These are non-code patterns that inform implementation decisions for the milestone:
-
-### 1. Information Density Over Whitespace Theater
-The existing dashboard is sparse. Developer tools (Linear, Vercel, Raycast) pack information. Target: context feed shows title + source + status + timestamp + 1-line preview in a single compact row (not a card with 80px of padding).
-
-### 2. Mono Font for Data, Sans for Prose
-Already established in design tokens. Enforce consistently: timestamps, IDs, counts, status codes → `font-mono` (JetBrains Mono). Labels, descriptions → `font-sans` (Inter). Never swap these.
-
-### 3. Teal as a Signal, Not a Theme
-Use `--brand-teal` only for actionable elements (active state indicators, primary CTA, progress fill, generation status pulse). Do not use it decoratively. Overuse is the AI slop signal.
-
-### 4. Status as Dot + Label, Not a Badge Rainbow
-Activity timeline status: `●` dot with semantic color + short label. Not pill badges with 5 different color variants. Three states: `bg-brand-teal` (ready), `bg-amber-500` (generating), `bg-red-500` (failed).
-
-### 5. No Hero Illustrations or Empty State Art
-Empty states should be functional: "No context pages yet — connect Linear to start" with a single action button. No SVG illustrations, no Lottie animations, no undraw.co artwork. These are the strongest signals of template-sourced UI.
-
-### 6. Onboarding Progress: Steps Not Percentages
-The onboarding wizard shows step numbers (1 of 3, 2 of 3) not a percentage bar. Developers understand discrete steps. The `<Progress>` component is used for context generation status (0–100% job completion), not for onboarding navigation.
-
----
-
-## Alternatives Considered
-
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| motion ^12.34.5 | tw-animate-css only | If wizard transitions are simple enter/fade with no layout animation. The existing tw-animate-css is sufficient for static page elements. Add motion only when you need AnimatePresence for unmounting or height:auto transitions. |
-| @stepperize/react | Custom useState stepper | For <4 step wizards with no conditional branching, a simple `const [step, setStep] = useState(0)` with an array of step components is sufficient. @stepperize adds value when steps have metadata (titles, descriptions, validation state) and when steps can branch conditionally. |
-| nuqs for URL filter state | useState (ephemeral) | If filters should NOT persist across navigation (e.g., a one-time modal filter). For the context feed, URL persistence is correct behavior. |
-| date-fns | dayjs | If total bundle size becomes critical and you need only a few date operations. dayjs is 670 KB unpacked vs 22 MB for date-fns, but date-fns tree-shakes to only what's imported. At the current scale, the difference is negligible. |
-| zod ^4.3.6 | zod ^3.x | Only if @hookform/resolvers <5.2.0 is pinned. Version 5.x automatically handles both Zod 3 and 4. Since we're installing fresh, go straight to Zod v4. |
-
----
-
-## Version Compatibility
-
-| Package A | Compatible With | Notes |
-|-----------|-----------------|-------|
-| react-hook-form ^7.71.2 | zod ^4.3.6 via @hookform/resolvers ^5.2.2 | resolvers v5.x added Zod v4 automatic runtime detection. Do not use resolvers <5.0.0 with Zod v4. |
-| @hookform/resolvers ^5.2.2 | zod ^4.3.6 (and ^3.25.0+) | v5 uses `zod/v4/core` subpath import — requires zod >=3.25.0 for v3 OR any zod v4. |
-| motion ^12.34.5 | React ^19.0.0 | Motion 12.x explicitly supports React 19. Import from `'motion/react'` not `'framer-motion'`. |
-| nuqs ^2.8.9 | Next.js ^15.2.0 | nuqs v2 supports Next.js >=14.2.0 including 15.x App Router. Requires NuqsAdapter in layout. |
-| @stepperize/react ^6.1.0 | React ^19.0.0 | No React version pinning issues — pure hooks and TypeScript. |
-| date-fns ^4.1.0 | TypeScript ^5.7.0 | date-fns v4 ships with TypeScript types. No @types/date-fns needed. |
-| shadcn Command (cmdk ^1.1.1) | React ^19.0.0 | cmdk v1.x requires React 18+. React 19 is compatible. |
-
----
-
-## Stack Patterns by Variant
-
-**If onboarding wizard has 3 steps or fewer with no conditional branching:**
-- Skip `@stepperize/react`
-- Use `const [step, setStep] = useState<'workspace' | 'team' | 'done'>('workspace')`
-- Save the dependency
-
-**If context feed needs real-time updates (items appearing as context generates):**
-- No new library needed
-- Use existing `@supabase/supabase-js` Realtime with `postgres_changes` on `context_pages` table
-- Combine with nuqs filter state: filter stays in URL, new items pushed via WebSocket
-
-**If team settings page requires complex multi-field updates:**
-- Use react-hook-form already installed for onboarding — same instance pattern
-- No additional state management library
-
-**If auth page redesign requires animated transitions between login/magic-link modes:**
-- Use motion's `AnimatePresence` (already added for onboarding)
-- Single install, multiple use points across dashboard
-
-**If context feed grows beyond 500 items:**
-- Add `@tanstack/react-virtual` at that point
-- Current MVP scope does not justify it
+| Component | Compatible With | Notes |
+|---|---|---|
+| Apache AGE (PG16 image) | asyncpg (existing) | Cypher queries sent as raw SQL text. asyncpg handles `agtype` as text by default; register custom codec for automatic parsing. |
+| Apache AGE (PG16 image) | SQLAlchemy 2.0 async (existing) | Execute via `session.execute(text(...))`. No ORM mapping needed for graph queries. |
+| OpenAI SDK structured output | GPT-4o-mini (current model) | `response_format={"type": "json_schema", ...}` supported since SDK v1.0. |
+| OpenAI SDK structured output | Gemini Flash (via OpenAI-compat endpoint) | If/when the team switches to Gemini, structured output works via `response_schema` in google-genai SDK. |
+| react-force-graph-2d ^1.48 | Next.js 15, React 19 | Requires `dynamic(() => import(...), { ssr: false })`. Canvas rendering, no SSR. |
+| Docker `apache/age:PG16_latest` | Docker Compose (existing) | Add as service alongside Redis. Port 5433 to avoid conflict with Supabase local (5432). |
 
 ---
 
 ## Sources
 
-- [npm registry: react-hook-form 7.71.2](https://www.npmjs.com/package/react-hook-form) — version verified 2026-03-04 (HIGH confidence)
-- [npm registry: @hookform/resolvers 5.2.2](https://www.npmjs.com/package/@hookform/resolvers) — version verified 2026-03-04 (HIGH confidence)
-- [npm registry: zod 4.3.6](https://www.npmjs.com/package/zod) — version verified 2026-03-04 (HIGH confidence)
-- [npm registry: motion 12.34.5](https://www.npmjs.com/package/motion) — version verified 2026-03-04 (HIGH confidence)
-- [npm registry: nuqs 2.8.9](https://www.npmjs.com/package/nuqs) — version verified 2026-03-04 (HIGH confidence)
-- [npm registry: @stepperize/react 6.1.0](https://www.npmjs.com/package/@stepperize/react) — version verified 2026-03-04 (HIGH confidence)
-- [npm registry: date-fns 4.1.0](https://www.npmjs.com/package/date-fns) — version verified 2026-03-04 (HIGH confidence)
-- [npm registry: cmdk 1.1.1](https://www.npmjs.com/package/cmdk) — version verified 2026-03-04 (HIGH confidence)
-- [shadcn/ui: React Hook Form docs](https://ui.shadcn.com/docs/forms/react-hook-form) — prescribed zodResolver pattern (HIGH confidence)
-- [shadcn/ui: Command component](https://ui.shadcn.com/docs/components/radix/command) — cmdk-based search (HIGH confidence)
-- [Zod v4 release notes](https://zod.dev/v4) — performance benchmarks, @zod/mini, versioning (HIGH confidence)
-- [motion/react installation](https://motion.dev/docs/react-installation) — React 19 compatibility, AnimatePresence (HIGH confidence)
-- [nuqs: Type-safe search params](https://nuqs.dev) — Next.js 15 App Router adapter (HIGH confidence)
-- [Stepperize GitHub](https://github.com/damianricobelli/stepperize) — composable step state, shadcn integration (MEDIUM confidence)
-- [Tailwind CSS v4 @theme docs](https://tailwindcss.com/docs/theme) — CSS-first design tokens, dark mode (HIGH confidence)
-- [Supabase Realtime: Subscribing to DB changes](https://supabase.com/docs/guides/realtime/subscribing-to-database-changes) — postgres_changes pattern (HIGH confidence)
-- [LogRocket: Best React animation libraries 2026](https://blog.logrocket.com/best-react-animation-libraries/) — motion recommendation, bundle comparison (MEDIUM confidence)
-- [@hookform/resolvers + Zod v4 support thread](https://github.com/react-hook-form/resolvers/issues/799) — v5.x compatibility confirmation (HIGH confidence)
+- [Apache AGE Official Site](https://age.apache.org/) -- extension overview, Cypher syntax, PG version support
+- [Apache AGE Docker Image](https://hub.docker.com/r/apache/age) -- official container, PG16 support
+- [Supabase Discussion #40285](https://github.com/orgs/supabase/discussions/40285) -- confirms AGE cannot be installed on Supabase Cloud
+- [AGE Cypher Query Format](https://age.apache.org/age-manual/master/intro/cypher.html) -- `ag_catalog.cypher()` function syntax, agtype return format
+- [postgres-age-pgvector on GitHub](https://github.com/sohamthakurdesai/postgres-age-pgvector) -- confirms AGE + pgvector co-location in single container
+- [apache-age-python on PyPI](https://pypi.org/project/apache-age-python/) -- v0.0.7, last updated Sep 2023
+- [LangChain AGEGraph](https://python.langchain.com/api_reference/community/graphs/langchain_community.graphs.age_graph.AGEGraph.html) -- uses psycopg2 (sync)
+- [LLMGraphTransformer Gemini Issue #26624](https://github.com/langchain-ai/langchain/issues/26624) -- known incompatibility, closed NOT_PLANNED
+- [Gemini Structured Output Docs](https://ai.google.dev/gemini-api/docs/structured-output) -- Pydantic response_schema support
+- [react-force-graph GitHub](https://github.com/vasturiano/react-force-graph) -- v1.48.2, updated Feb 2026
+- [react-force-graph Next.js Issue #352](https://github.com/vasturiano/react-force-graph/issues/352) -- SSR workaround with dynamic import
+- [asyncpg Custom Type Codecs](https://magicstack.github.io/asyncpg/current/usage.html) -- `set_type_codec()` for custom types
+- [Railway PostgreSQL Docs](https://docs.railway.com/databases/postgresql) -- custom Docker image deployment
+- [postgres-graph-rag](https://github.com/h4gen/postgres-graph-rag) -- v0.1.2, early-stage, interesting pattern reference
+- [Splink](https://moj-analytical-services.github.io/splink/index.html) -- v4.0.7, census-scale probabilistic linkage
+- [GLiNER on PyPI](https://pypi.org/project/gliner/) -- v0.2.25, zero-shot NER framework
 
 ---
-*Stack research for: ContextOS dashboard redesign milestone (onboarding, dark theme, context feed, activity timeline, team settings, auth redesign)*
-*Researched: 2026-03-04*
+*Stack research for: ContextOS v1.2 GraphRAG milestone (knowledge graph, entity extraction, identity resolution, graph-enhanced retrieval)*
+*Researched: 2026-03-06*
