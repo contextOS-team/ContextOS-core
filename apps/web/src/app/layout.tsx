@@ -52,12 +52,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
-      <head>
-        <script dangerouslySetInnerHTML={{
-          __html: `document.documentElement.classList.add('dark')`
-        }} />
-      </head>
+    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} dark`}>
+      <head />
       <body className="font-sans antialiased">
         <SentryInit />
         <DarkModeApplier />
