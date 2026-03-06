@@ -190,6 +190,16 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 Plans:
 - [ ] TBD (run /gsd:plan-phase 21 to break down)
 
+### Phase 22: Real-time Context Generation Progress UI
+
+**Goal:** Replace the silent toast-based generation flow with a beautiful, animated, real-time progress experience that shows the LLM searching each integrated source (Slack, GitHub, Fathom, Notion, Linear) with live feedback. Progress is real (driven by backend events), source-aware (only shows connected integrations), and transitions smoothly into the completed context page.
+**Requirements**: TBD
+**Depends on:** Phase 19
+**Plans:** TBD
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 22 to break down)
+
 ---
 *Roadmap created: 2026-02-24*
 *v1.1 milestone added: 2026-03-04*
