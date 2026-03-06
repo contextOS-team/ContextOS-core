@@ -5,9 +5,11 @@ Provides:
   - Extractor protocol for pluggable extraction
   - Registry (register_extractor, run_extractors) for composing extractors
   - Five built-in regex extractors: tickets, mentions, PR/commit refs, file paths, URLs
+  - extract_and_populate_graph() orchestrator for inline graph population
 
 All extractors are pure functions that take content text and return extracted
 entities. No database interaction, no LLM calls -- zero cost extraction.
+The orchestrator bridges extractors to graph_ops for persistence.
 """
 
 from __future__ import annotations
@@ -16,8 +18,25 @@ import logging
 import re
 from dataclasses import dataclass, field
 from typing import Protocol
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+# Source type to entity type mapping for creating source nodes
+SOURCE_TYPE_TO_ENTITY: dict[str, str] = {
+    "linear_ticket": "Ticket",
+    "linear_comment": "Ticket",
+    "slack_message": "SlackThread",
+    "github_pull_request": "PR",
+    "github_review": "PR",
+    "notion_page": "NotionPage",
+    "meeting_transcript": "Meeting",
+    "meeting_segment": "Meeting",
+    "code_chunk": "CodeChunk",
+    "context_page": "Ticket",
+}
 
 
 # ============================================================
@@ -433,6 +452,105 @@ class URLExtractor:
                         )
 
         return entities
+
+
+# ============================================================
+# Orchestrator: extract_and_populate_graph
+# ============================================================
+
+
+async def extract_and_populate_graph(
+    session: AsyncSession,
+    workspace_id: UUID,
+    content: str,
+    source_type: str,
+    source_id: UUID,
+    source_name: str,
+    source_external_id: str | None = None,
+) -> None:
+    """Extract entities from content and populate the graph.
+
+    This is the single entry point that all webhook handlers call after
+    content upsert. It:
+    1. Creates a source node for the content being processed
+    2. Runs all registered extractors to find entities
+    3. Creates/updates entity nodes via upsert (fingerprint dedup)
+    4. Creates edges from the source node to each entity node
+
+    Graph extraction is additive -- failures are logged but never raised.
+    Core ingestion (ticket upsert, embedding generation) must never fail
+    because of graph extraction.
+
+    Args:
+        session: Async database session (same transaction as webhook handler).
+        workspace_id: Workspace the content belongs to.
+        content: Text content to extract entities from.
+        source_type: Type of content source (e.g. 'linear_ticket').
+        source_id: UUID of the source record.
+        source_name: Human-readable name for the source node.
+        source_external_id: External identifier for fingerprint. Falls back
+            to str(source_id) if not provided.
+    """
+    from src.services.graph_ops import upsert_edge, upsert_node
+
+    try:
+        # Determine entity type for the source node
+        entity_type = SOURCE_TYPE_TO_ENTITY.get(source_type, "Ticket")
+        ext_id = source_external_id or str(source_id)
+
+        # 1. Create source node
+        source_node_id = await upsert_node(
+            session=session,
+            workspace_id=workspace_id,
+            entity_type=entity_type,
+            external_id=ext_id,
+            name=source_name,
+            source_type=source_type,
+            source_id=source_id,
+        )
+
+        # 2. Run extractors to get entities
+        entities = run_extractors(content, source_type)
+
+        # 3-4. For each entity, create node and edge
+        for entity in entities:
+            props = dict(entity.properties)
+            # Mark dangling references with status=unresolved
+            if "status" not in props:
+                props["status"] = "unresolved"
+
+            entity_node_id = await upsert_node(
+                session=session,
+                workspace_id=workspace_id,
+                entity_type=entity.entity_type,
+                external_id=entity.external_id,
+                name=entity.name,
+                properties=props,
+            )
+
+            await upsert_edge(
+                session=session,
+                workspace_id=workspace_id,
+                source_node_id=source_node_id,
+                target_node_id=entity_node_id,
+                relationship_type=entity.relationship_type,
+            )
+
+        logger.info(
+            "Graph extraction complete: source=%s, entities=%d, source_type=%s",
+            source_name,
+            len(entities),
+            source_type,
+        )
+
+    except Exception:
+        logger.warning(
+            "Graph extraction failed for %s (source_type=%s, source_id=%s)",
+            source_name,
+            source_type,
+            source_id,
+            exc_info=True,
+        )
 
 
 # ============================================================
