@@ -178,7 +178,7 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 | 17. Onboarding Wizard | 2/2 | Complete    | 2026-03-04 | - |
 | 18. Activity Timeline | 2/2 | Complete    | 2026-03-04 | - |
 | 19. Context Feed + Dashboard Home | 3/3 | Complete    | 2026-03-04 | - |
-| 20. Settings Page | 2/2 | Complete   | 2026-03-06 | - |
+| 20. Settings Page | 2/2 | Complete    | 2026-03-06 | - |
 
 ### Phase 21: Auth redesign and social OAuth
 
