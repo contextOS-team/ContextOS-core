@@ -171,38 +171,38 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GRAPH-01 | TBD | Pending |
-| GRAPH-02 | TBD | Pending |
-| GRAPH-03 | TBD | Pending |
-| EXTR-01 | TBD | Pending |
-| EXTR-02 | TBD | Pending |
-| EXTR-03 | TBD | Pending |
-| EXTR-04 | TBD | Pending |
-| EXTR-05 | TBD | Pending |
-| EXTR-06 | TBD | Pending |
-| IDENT-01 | TBD | Pending |
-| IDENT-02 | TBD | Pending |
-| IDENT-03 | TBD | Pending |
-| RETR-01 | TBD | Pending |
-| RETR-02 | TBD | Pending |
-| RETR-03 | TBD | Pending |
-| SYNTH-01 | TBD | Pending |
-| SYNTH-02 | TBD | Pending |
-| SYNTH-03 | TBD | Pending |
-| SYNTH-04 | TBD | Pending |
-| DECIDE-01 | TBD | Pending |
-| DECIDE-02 | TBD | Pending |
-| DECIDE-03 | TBD | Pending |
-| CODE-01 | TBD | Pending |
-| CODE-02 | TBD | Pending |
-| CODE-03 | TBD | Pending |
-| GAPI-01 | TBD | Pending |
+| GRAPH-01 | Phase 22 | Pending |
+| GRAPH-02 | Phase 22 | Pending |
+| GRAPH-03 | Phase 22 | Pending |
+| EXTR-01 | Phase 22 | Pending |
+| EXTR-02 | Phase 22 | Pending |
+| EXTR-03 | Phase 24 | Pending |
+| EXTR-04 | Phase 24 | Pending |
+| EXTR-05 | Phase 24 | Pending |
+| EXTR-06 | Phase 24 | Pending |
+| IDENT-01 | Phase 23 | Pending |
+| IDENT-02 | Phase 23 | Pending |
+| IDENT-03 | Phase 23 | Pending |
+| RETR-01 | Phase 25 | Pending |
+| RETR-02 | Phase 25 | Pending |
+| RETR-03 | Phase 25 | Pending |
+| SYNTH-01 | Phase 26 | Pending |
+| SYNTH-02 | Phase 26 | Pending |
+| SYNTH-03 | Phase 26 | Pending |
+| SYNTH-04 | Phase 26 | Pending |
+| DECIDE-01 | Phase 24 | Pending |
+| DECIDE-02 | Phase 24 | Pending |
+| DECIDE-03 | Phase 24 | Pending |
+| CODE-01 | Phase 26 | Pending |
+| CODE-02 | Phase 26 | Pending |
+| CODE-03 | Phase 26 | Pending |
+| GAPI-01 | Phase 27 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 26 total
-- Mapped to phases: 0
-- Unmapped: 26
+- Mapped to phases: 26
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-07*
-*Last updated: 2026-03-07 after v1.2 milestone definition*
+*Last updated: 2026-03-07 -- All 26 requirements mapped to phases 22-27*
