@@ -139,10 +139,11 @@ Plans:
   2. User can edit their workspace name from settings
   3. User can view connected team members
   4. Settings page is accessible from the dashboard navigation
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 20-01: TBD
+- [ ] 20-01-PLAN.md — Database migration (api_keys table + RLS), API key model/service, backend endpoints (CRUD api-keys, PATCH workspace, GET members)
+- [ ] 20-02-PLAN.md — AlertDialog component, API client functions, settings page with General/API Keys/Team/Integrations sections
 
 ## Coverage
 
@@ -177,7 +178,17 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 | 17. Onboarding Wizard | 2/2 | Complete    | 2026-03-04 | - |
 | 18. Activity Timeline | 2/2 | Complete    | 2026-03-04 | - |
 | 19. Context Feed + Dashboard Home | 3/3 | Complete    | 2026-03-04 | - |
-| 20. Settings Page | v1.1 | 0/TBD | Not started | - |
+| 20. Settings Page | v1.1 | 0/2 | Not started | - |
+
+### Phase 21: Auth redesign and social OAuth
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 20
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 21 to break down)
 
 ---
 *Roadmap created: 2026-02-24*
