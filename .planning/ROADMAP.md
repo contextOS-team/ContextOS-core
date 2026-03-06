@@ -193,12 +193,21 @@ Plans:
 ### Phase 22: Real-time Context Generation Progress UI
 
 **Goal:** Replace the silent toast-based generation flow with a beautiful, animated, real-time progress experience that shows the LLM searching each integrated source (Slack, GitHub, Fathom, Notion, Linear) with live feedback. Progress is real (driven by backend events), source-aware (only shows connected integrations), and transitions smoothly into the completed context page.
-**Requirements**: TBD
+**Requirements**: GEN-01, GEN-02, GEN-03, GEN-04, GEN-05, GEN-06
 **Depends on:** Phase 19
-**Plans:** TBD
+**Success Criteria** (what must be TRUE):
+  1. SSE endpoint streams per-source progress events during context generation
+  2. Progress UI shows vertical step list with only connected integrations
+  3. Steps animate through waiting/active/complete states with CSS transitions
+  4. On completion, progress collapses into card row then auto-navigates to detail page
+  5. Error state shows failed step with retry/dismiss buttons inline
+  6. Existing POST /generate endpoint preserved for programmatic consumers
+**Plans**: 3 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 22 to break down)
+- [ ] 22-01-PLAN.md — Backend: install sse-starlette, decompose per-source content finding, streaming generation function, SSE endpoint
+- [ ] 22-02-PLAN.md — Frontend: apiFetchSSE client with auth headers, GenerationProgress component, CSS animations (pulse, collapse, stagger)
+- [ ] 22-03-PLAN.md — Wire progress into context feed page, replace toast triggers, collapse-to-card transition, auto-navigate, human verification
 
 ---
 *Roadmap created: 2026-02-24*
