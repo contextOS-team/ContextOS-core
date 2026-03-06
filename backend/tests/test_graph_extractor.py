@@ -73,7 +73,7 @@ class TestTicketRefExtractor:
     def test_various_prefixes(self):
         """Prefixes of different lengths (2-10 uppercase chars) are matched."""
         entities = self.extractor.extract(
-            "AB-1 and PROJECTNAME-999999", "slack_message"
+            "AB-1 and PROJECTNAM-999999", "slack_message"
         )
         assert len(entities) == 2
 
