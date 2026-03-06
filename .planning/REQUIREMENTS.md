@@ -60,7 +60,7 @@ Requirements for the dashboard redesign and onboarding milestone. Each maps to r
 - [x] **SET-01**: User can create and revoke API keys (show full key once on creation, then prefix-only)
 - [x] **SET-02**: User can edit workspace name
 - [x] **SET-03**: User can view connected team members
-- [ ] **SET-04**: Settings page accessible from dashboard navigation
+- [x] **SET-04**: Settings page accessible from dashboard navigation
 
 ### Auth Redesign
 
@@ -145,7 +145,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SET-01 | Phase 20 | Complete |
 | SET-02 | Phase 20 | Complete |
 | SET-03 | Phase 20 | Complete |
-| SET-04 | Phase 20 | Pending |
+| SET-04 | Phase 20 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 36 total

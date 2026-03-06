@@ -46,7 +46,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 17: Onboarding Wizard** - 4-step guided wizard with OAuth state preservation and animated transitions (completed 2026-03-04)
 - [x] **Phase 18: Activity Timeline** - Chronological event feed with real-time updates and day-group dividers (completed 2026-03-04)
 - [x] **Phase 19: Context Feed + Dashboard Home** - Browsable context feed with filtering, search, detail view, and dashboard summary (completed 2026-03-04)
-- [ ] **Phase 20: Settings Page** - API key management, workspace editing, team member view
+- [x] **Phase 20: Settings Page** - API key management, workspace editing, team member view (completed 2026-03-06)
 
 ## Phase Details
 
@@ -178,14 +178,14 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 | 17. Onboarding Wizard | 2/2 | Complete    | 2026-03-04 | - |
 | 18. Activity Timeline | 2/2 | Complete    | 2026-03-04 | - |
 | 19. Context Feed + Dashboard Home | 3/3 | Complete    | 2026-03-04 | - |
-| 20. Settings Page | 1/2 | In Progress|  | - |
+| 20. Settings Page | 2/2 | Complete   | 2026-03-06 | - |
 
 ### Phase 21: Auth redesign and social OAuth
 
 **Goal:** [To be planned]
 **Requirements**: TBD
 **Depends on:** Phase 20
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (run /gsd:plan-phase 21 to break down)
