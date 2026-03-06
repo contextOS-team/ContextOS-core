@@ -1,75 +1,136 @@
-# Requirements: ContextOS v1.1 Dashboard & Onboarding
+# Requirements: ContextOS
 
 **Defined:** 2026-03-04
 **Core Value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
 
-## v1.1 Requirements
+## v1.2 Requirements
 
-Requirements for the dashboard redesign and onboarding milestone. Each maps to roadmap phases.
+Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases.
+
+### Graph Foundation
+
+- [ ] **GRAPH-01**: Database has graph_nodes and graph_edges tables with workspace-scoped RLS, fingerprint deduplication, and JSONB properties
+- [ ] **GRAPH-02**: traverse_graph() SECURITY DEFINER function performs recursive CTE traversal with depth limiting and workspace validation
+- [ ] **GRAPH-03**: Graph tables have composite indexes on (workspace_id, entity_type), (workspace_id, relationship_type), and fingerprint uniqueness
+
+### Entity Extraction
+
+- [ ] **EXTR-01**: Rule-based extractors create graph nodes and edges for ticket references, PR numbers, @mentions, and file paths from ingested content
+- [ ] **EXTR-02**: Rule-based extraction runs inline during webhook/sync ingestion with zero LLM cost
+- [ ] **EXTR-03**: LLM extraction identifies decisions, rationale, blockers, and semantic entities from Slack messages and meeting transcripts
+- [ ] **EXTR-04**: LLM extraction runs as batch background task via Gemini Flash with content hash deduplication
+- [ ] **EXTR-05**: LLM extraction output is validated against source text to prevent hallucinated entities
+- [ ] **EXTR-06**: Content filtering skips bot messages, short messages, and emoji-only content before LLM extraction
+
+### Identity Resolution
+
+- [ ] **IDENT-01**: Person identities are unified across Linear, Slack, GitHub, and Fathom via email-based deterministic matching
+- [ ] **IDENT-02**: Identity mapping table is seeded from team roster APIs during integration setup
+- [ ] **IDENT-03**: Fuzzy name matches create candidate same_as edges with confidence scores without auto-merging
+
+### Graph Retrieval
+
+- [ ] **RETR-01**: find_related_content() includes graph traversal as a third retrieval signal alongside explicit refs and hybrid search
+- [ ] **RETR-02**: Graph results are scored with depth-decay (1-hop highest, decaying per hop) and blended with existing signals
+- [ ] **RETR-03**: Graph context in synthesis prompts is capped at a fixed token budget to prevent context overflow
+
+### Synthesis
+
+- [ ] **SYNTH-01**: Context pages include decision trails showing what was decided, by whom, where discussed, and which tickets affected
+- [ ] **SYNTH-02**: Context pages include relationship paths explaining why things are connected
+- [ ] **SYNTH-03**: Context pages include cross-referenced people showing involvement across sources
+- [ ] **SYNTH-04**: Synthesis gracefully degrades when no graph data exists for a ticket
+
+### Decision Extraction
+
+- [ ] **DECIDE-01**: LLM extraction targets decision language in Slack messages and meeting transcripts
+- [ ] **DECIDE-02**: Decision nodes store description, rationale, source reference, date, confidence score, and status
+- [ ] **DECIDE-03**: Decisions link bidirectionally to Person, SlackThread/Meeting, and Ticket nodes
+
+### Code-to-Discussion Linking
+
+- [ ] **CODE-01**: Slack messages mentioning file paths or function names create edges to matching code_chunks
+- [ ] **CODE-02**: PRs implementing tickets create transitive links between changed code and related discussions
+- [ ] **CODE-03**: Context pages show code-to-discussion provenance in the relevant code section
+
+### Graph Explorer API
+
+- [ ] **GAPI-01**: GET endpoint returns subgraph JSON (nodes + edges) for a ticket's graph neighborhood
+
+## v1.1 Requirements (Complete)
+
+<details>
+<summary>36 requirements -- all complete</summary>
 
 ### Design System
 
-- [x] **DS-01**: Dashboard renders in dark mode by default with brand-tinted OKLCH tokens (not neutral gray shadcn defaults)
-- [x] **DS-02**: Teal (#00D4AA) used only on actionable/status elements — never as decoration
-- [x] **DS-03**: JetBrains Mono applied to all data identifiers (ticket IDs, timestamps, counts, API keys)
-- [x] **DS-04**: 4-level surface hierarchy (background → card → elevated → overlay) with consistent token usage
-- [x] **DS-05**: Radix UI portals (Dialog, Dropdown, Sheet) render correctly in dark mode via DarkModeApplier
-- [x] **DS-06**: Spring-curve microinteractions on list item appearance (stagger), status changes, and completion states
-- [x] **DS-07**: Subtle grain texture on dashboard surfaces matching the landing page aesthetic
-- [x] **DS-08**: Section labels use monospace uppercase tracking pattern from landing page
-- [x] **DS-09**: All dashboard pages render structured skeleton loading states matching the populated layout
+- [x] **DS-01**: Dashboard renders in dark mode by default with brand-tinted OKLCH tokens
+- [x] **DS-02**: Teal used only on actionable/status elements
+- [x] **DS-03**: JetBrains Mono applied to all data identifiers
+- [x] **DS-04**: 4-level surface hierarchy with consistent token usage
+- [x] **DS-05**: Radix UI portals render correctly in dark mode
+- [x] **DS-06**: Spring-curve microinteractions on list items and status changes
+- [x] **DS-07**: Subtle grain texture on dashboard surfaces
+- [x] **DS-08**: Section labels use monospace uppercase tracking
+- [x] **DS-09**: All dashboard pages render structured skeleton loading states
 
 ### Navigation
 
-- [x] **NAV-01**: Dashboard navigation restructured to hold all sections (context feed, activity, integrations, settings) with clear active state indicators
+- [x] **NAV-01**: Dashboard navigation holds all sections with clear active state indicators
 
 ### Onboarding
 
-- [x] **ONB-01**: User sees a 4-step onboarding wizard after first signup before accessing dashboard
-- [x] **ONB-02**: Step 1: user names their workspace (single text input)
-- [x] **ONB-03**: Step 2: user connects Linear (required, cannot proceed without)
-- [x] **ONB-04**: Step 3: user optionally connects additional sources (Slack, GitHub, Notion, Fathom) from a grid
-- [x] **ONB-05**: Step 4: user sees their first generated context page with realistic mock fallback if pipeline unavailable
-- [x] **ONB-06**: OAuth redirect preserves wizard state via cookie (user returns to correct step after OAuth callback)
-- [x] **ONB-07**: Onboarding progress persists across browser refreshes (database-backed state)
-- [x] **ONB-08**: Animated checkmark confirmation when integration connects successfully
-- [x] **ONB-09**: Server-side onboarding gate prevents dashboard access until onboarding complete
+- [x] **ONB-01**: 4-step onboarding wizard after first signup
+- [x] **ONB-02**: Step 1: workspace naming
+- [x] **ONB-03**: Step 2: connect Linear (required)
+- [x] **ONB-04**: Step 3: optional additional sources
+- [x] **ONB-05**: Step 4: first context page with mock fallback
+- [x] **ONB-06**: OAuth redirect preserves wizard state
+- [x] **ONB-07**: Onboarding progress persists across refreshes
+- [x] **ONB-08**: Animated checkmark on integration connect
+- [x] **ONB-09**: Server-side onboarding gate
 
 ### Dashboard Home
 
-- [x] **HOME-01**: Dashboard home page shows a summary view with recent context pages, integration health, and activity preview
+- [x] **HOME-01**: Summary view with recent pages, integration health, activity preview
 
 ### Context Feed
 
-- [x] **FEED-01**: User can browse all generated context pages in a scrollable list view
-- [x] **FEED-02**: User can filter context pages by status (All/Ready/Generating/Stale/Error)
-- [x] **FEED-03**: User can search context pages by free text (title, ticket ID)
-- [x] **FEED-04**: Context feed shows real-time status updates via Supabase Realtime
-- [x] **FEED-05**: Context page detail is a route-based view (/dashboard/context/[id]) with copy-prompt and regenerate actions
-- [x] **FEED-06**: Empty states show what a populated feed looks like with one clear CTA
+- [x] **FEED-01**: Browsable context page list
+- [x] **FEED-02**: Status filtering
+- [x] **FEED-03**: Free text search
+- [x] **FEED-04**: Real-time status updates
+- [x] **FEED-05**: Route-based detail view with copy-prompt and regenerate
+- [x] **FEED-06**: Empty states with CTA
 
 ### Activity Timeline
 
-- [x] **ACT-01**: User sees a chronological feed of workspace events (syncs, context generated, integrations connected)
-- [x] **ACT-02**: Events display with type-specific icons, relative timestamps, and day-group dividers
-- [x] **ACT-03**: Activity timeline updates in real-time via Supabase Realtime
-- [x] **ACT-04**: Activity events table exists with 30-day retention policy
+- [x] **ACT-01**: Chronological workspace event feed
+- [x] **ACT-02**: Type-specific icons, relative timestamps, day-group dividers
+- [x] **ACT-03**: Real-time updates via Supabase Realtime
+- [x] **ACT-04**: Activity events table with 30-day retention
 
 ### Settings & Team
 
-- [x] **SET-01**: User can create and revoke API keys (show full key once on creation, then prefix-only)
-- [x] **SET-02**: User can edit workspace name
-- [x] **SET-03**: User can view connected team members
-- [x] **SET-04**: Settings page accessible from dashboard navigation
+- [x] **SET-01**: API key create/revoke with one-time full key display
+- [x] **SET-02**: Edit workspace name
+- [x] **SET-03**: View connected team members
+- [x] **SET-04**: Settings accessible from navigation
 
 ### Auth Redesign
 
-- [x] **AUTH-01**: Login and signup pages use dark theme matching the dashboard brand identity
-- [x] **AUTH-02**: Auth pages use the same teal accent, typography, and surface tokens as dashboard
+- [x] **AUTH-01**: Dark theme login/signup pages
+- [x] **AUTH-02**: Same teal accent and tokens as dashboard
 
-## v2 Requirements
+</details>
+
+## Future Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
+
+### Graph Explorer Frontend
+
+- **GAPI-02**: react-force-graph-2d visualization component for graph neighborhood exploration
 
 ### Theme & Customization
 
@@ -78,15 +139,15 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ### Advanced Feed
 
-- **FEED-07**: Context feed right-panel split view (inline detail alongside list)
-- **FEED-08**: Keyboard navigation for context feed (j/k/Enter/Esc/r/c)
-- **FEED-09**: Stale reason indicator on context pages
+- **FEED-07**: Right-panel split view for inline detail
+- **FEED-08**: Keyboard navigation (j/k/Enter/Esc/r/c)
+- **FEED-09**: Stale reason indicator
 
 ### Team Management
 
 - **TEAM-01**: Team member invites via email
-- **TEAM-02**: Role-based access control (admin/member)
-- **TEAM-03**: API key usage metrics per key
+- **TEAM-02**: Role-based access control
+- **TEAM-03**: API key usage metrics
 
 ### Auth
 
@@ -96,13 +157,13 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Feature | Reason |
 |---------|--------|
-| Jira integration | Only Linear is supported as task tracker in v1. Add when Jira support is built |
-| Email onboarding drip | Marketing infrastructure overhead for a dogfooding team |
-| Video tutorials in onboarding | Developers skip them; goes stale on every UI change |
-| Onboarding checklist widget in dashboard | Visual noise once setup is complete |
-| next-themes ThemeProvider | Dark mode is a brand decision, not a user toggle. Unnecessary dependency |
-| @tanstack/react-query | Premature before caching problems exist |
-| Mobile responsive polish | Desktop-first internal tool |
+| Apache AGE extension | Not available on Supabase Cloud (C extension, not TLE). Core team dismissed Oct 2024. Use plain PG tables instead. |
+| Neo4j or separate graph DB | Doubles operational complexity, requires bidirectional sync. Graph stays in Supabase Postgres. |
+| Microsoft GraphRAG Leiden clustering | Corpus-scale summarization overkill. ContextOS has structured data from known sources. |
+| Real-time LLM extraction on every webhook | Burns API budget, adds latency. Use two-tier: regex inline, LLM batch. |
+| SpaCy / full NLP pipeline | Heavy dependency (300MB+) for generic NER when domain entities are regex-extractable or need full LLM reasoning. |
+| Graph versioning / temporal graph | Timestamp edges with created_at is sufficient. Full bitemporal queries are a research project. |
+| Person-centric aggregation UI | Emerges from graph data in context pages. Dedicated UI deferred. |
 
 ## Traceability
 
@@ -110,48 +171,38 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DS-01 | Phase 15 | Complete |
-| DS-02 | Phase 15 | Complete |
-| DS-03 | Phase 15 | Complete |
-| DS-04 | Phase 15 | Complete |
-| DS-05 | Phase 15 | Complete |
-| DS-06 | Phase 15 | Complete |
-| DS-07 | Phase 15 | Complete |
-| DS-08 | Phase 15 | Complete |
-| DS-09 | Phase 15 | Complete |
-| NAV-01 | Phase 15 | Complete |
-| AUTH-01 | Phase 16 | Complete |
-| AUTH-02 | Phase 16 | Complete |
-| ACT-04 | Phase 16 | Complete |
-| ONB-07 | Phase 16 | Complete |
-| ONB-09 | Phase 16 | Complete |
-| ONB-01 | Phase 17 | Complete |
-| ONB-02 | Phase 17 | Complete |
-| ONB-03 | Phase 17 | Complete |
-| ONB-04 | Phase 17 | Complete |
-| ONB-05 | Phase 17 | Complete |
-| ONB-06 | Phase 17 | Complete |
-| ONB-08 | Phase 17 | Complete |
-| ACT-01 | Phase 18 | Complete |
-| ACT-02 | Phase 18 | Complete |
-| ACT-03 | Phase 18 | Complete |
-| FEED-01 | Phase 19 | Complete |
-| FEED-02 | Phase 19 | Complete |
-| FEED-03 | Phase 19 | Complete |
-| FEED-04 | Phase 19 | Complete |
-| FEED-05 | Phase 19 | Complete |
-| FEED-06 | Phase 19 | Complete |
-| HOME-01 | Phase 19 | Complete |
-| SET-01 | Phase 20 | Complete |
-| SET-02 | Phase 20 | Complete |
-| SET-03 | Phase 20 | Complete |
-| SET-04 | Phase 20 | Complete |
+| GRAPH-01 | TBD | Pending |
+| GRAPH-02 | TBD | Pending |
+| GRAPH-03 | TBD | Pending |
+| EXTR-01 | TBD | Pending |
+| EXTR-02 | TBD | Pending |
+| EXTR-03 | TBD | Pending |
+| EXTR-04 | TBD | Pending |
+| EXTR-05 | TBD | Pending |
+| EXTR-06 | TBD | Pending |
+| IDENT-01 | TBD | Pending |
+| IDENT-02 | TBD | Pending |
+| IDENT-03 | TBD | Pending |
+| RETR-01 | TBD | Pending |
+| RETR-02 | TBD | Pending |
+| RETR-03 | TBD | Pending |
+| SYNTH-01 | TBD | Pending |
+| SYNTH-02 | TBD | Pending |
+| SYNTH-03 | TBD | Pending |
+| SYNTH-04 | TBD | Pending |
+| DECIDE-01 | TBD | Pending |
+| DECIDE-02 | TBD | Pending |
+| DECIDE-03 | TBD | Pending |
+| CODE-01 | TBD | Pending |
+| CODE-02 | TBD | Pending |
+| CODE-03 | TBD | Pending |
+| GAPI-01 | TBD | Pending |
 
 **Coverage:**
-- v1.1 requirements: 36 total
-- Mapped to phases: 36
-- Unmapped: 0
+- v1.2 requirements: 26 total
+- Mapped to phases: 0
+- Unmapped: 26
 
 ---
-*Requirements defined: 2026-03-04*
-*Last updated: 2026-03-04 after roadmap creation (phases 15-20 mapped)*
+*Requirements defined: 2026-03-07*
+*Last updated: 2026-03-07 after v1.2 milestone definition*
