@@ -4,13 +4,13 @@ milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: completed
 stopped_at: Phase 20 context gathered
-last_updated: "2026-03-06T05:14:45.857Z"
+last_updated: "2026-03-06T06:10:35.432Z"
 last_activity: 2026-03-04 -- Completed Phase 17 Plan 02 (Context Page Generation & Completion Flow)
 progress:
   total_phases: 7
   completed_phases: 5
-  total_plans: 13
-  completed_plans: 13
+  total_plans: 15
+  completed_plans: 14
   percent: 100
 ---
 
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 
 ## Current Position
 
-Phase: 17 of 20 (Onboarding Wizard) -- COMPLETE
-Plan: 2 of 2 (17-02 complete)
-Status: Phase 17 complete
-Last activity: 2026-03-04 -- Completed Phase 17 Plan 02 (Context Page Generation & Completion Flow)
+Phase: 20 of 20 (Settings Page)
+Plan: 1 of 2 (20-01 complete)
+Status: Executing Phase 20
+Last activity: 2026-03-06 -- Completed Phase 20 Plan 01 (Settings Backend - API Keys, Workspace, Members)
 
-Progress: [██████████] 100%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [██████████] 100%
 | Phase 19 P03 | 2min | 2 tasks | 2 files |
 | Phase 17 P01 | 6min | 2 tasks | 9 files |
 | Phase 17 P02 | 5min | 2 tasks | 2 files |
+| Phase 20 P01 | 2min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -113,6 +114,9 @@ Recent decisions affecting current work:
 - [Phase 17]: Back button positioned below step content for minimal visual interference
 - [Phase 17]: Three-state StepContext (generating/ready/completing) keeps transitions explicit and user-driven
 - [Phase 17]: Mock fallback uses realistic ENG-42 ticket data so users always see ContextOS value proposition
+- [Phase 20]: ApiKey uses SQLModel directly (not BaseModel) -- no updated_at/deleted_at needed for keys
+- [Phase 20]: RLS policies use get_user_workspace_ids() for SELECT, INSERT, UPDATE on api_keys
+- [Phase 20]: Full API key shown once at creation, only prefix stored for display
 
 ### Roadmap Evolution
 
@@ -130,6 +134,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-06T05:14:45.847Z
-Stopped at: Phase 20 context gathered
-Resume file: .planning/phases/20-settings-page/20-CONTEXT.md
+Last session: 2026-03-06T06:09:46Z
+Stopped at: Completed 20-01-PLAN.md
+Resume file: .planning/phases/20-settings-page/20-01-SUMMARY.md

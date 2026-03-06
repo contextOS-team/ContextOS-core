@@ -178,14 +178,14 @@ Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parall
 | 17. Onboarding Wizard | 2/2 | Complete    | 2026-03-04 | - |
 | 18. Activity Timeline | 2/2 | Complete    | 2026-03-04 | - |
 | 19. Context Feed + Dashboard Home | 3/3 | Complete    | 2026-03-04 | - |
-| 20. Settings Page | v1.1 | 0/2 | Not started | - |
+| 20. Settings Page | 1/2 | In Progress|  | - |
 
 ### Phase 21: Auth redesign and social OAuth
 
 **Goal:** [To be planned]
 **Requirements**: TBD
 **Depends on:** Phase 20
-**Plans:** 0 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] TBD (run /gsd:plan-phase 21 to break down)
