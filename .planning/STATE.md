@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Dashboard & Onboarding
-status: completed
-stopped_at: Completed 20-02-PLAN.md
-last_updated: "2026-03-06T06:19:46.240Z"
-last_activity: 2026-03-06 -- Completed Phase 20 Plan 02 (Settings Frontend - Settings Page UI)
+milestone: v1.2
+milestone_name: GraphRAG
+status: defining_requirements
+stopped_at: Milestone initialized, needs research + requirements + roadmap
+last_updated: "2026-03-06T22:00:00.000Z"
+last_activity: 2026-03-06 -- Milestone v1.2 GraphRAG started
 progress:
-  total_phases: 7
-  completed_phases: 6
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-04)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 16 complete -- Auth Redesign + Schema Foundation (all 3 plans done)
+**Current focus:** v1.2 GraphRAG -- adding knowledge graph layer with Apache AGE on Postgres
 
 ## Current Position
 
-Phase: 20 of 20 (Settings Page)
-Plan: 2 of 2 (20-02 complete)
-Status: Phase 20 Complete
-Last activity: 2026-03-06 -- Completed Phase 20 Plan 02 (Settings Frontend - Settings Page UI)
+Phase: Not started (defining requirements)
+Plan: --
+Status: Defining requirements
+Last activity: 2026-03-06 -- Milestone v1.2 GraphRAG started
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 

@@ -14,18 +14,19 @@ First users are the founding team (dogfooding). The product must be reliable eno
 | **Dulat** | AI/ML & Synthesis | Embedding model selection, context generation pipeline (LangGraph + Gemini Flash), synthesis prompt engineering, Slack-to-ticket linking logic, quality evaluation |
 | **Bekbol** | Frontend & Extensions | Next.js web dashboard (feed, detail, settings, integration setup), Chrome extension, frontend auth flows, UI/UX |
 
-## Current Milestone: v1.1 Dashboard & Onboarding
+## Current Milestone: v1.2 GraphRAG
 
-**Goal:** Transform the generic dashboard into a polished, brand-consistent product experience with guided onboarding, full context feed, activity timeline, and team settings — dark theme that mirrors the landing page's teal identity but stays muted for daily use.
+**Goal:** Add a knowledge graph layer (Apache AGE on Postgres) that captures entities and relationships across all data sources, improving context page quality by enabling multi-hop traversal, cross-source identity resolution, and decision trail extraction -- blended with existing hybrid search, not replacing it.
 
 **Target features:**
-- Guided onboarding: step-by-step integration setup + workspace config + first context generation (user sees the product work before hitting the dashboard)
-- Dashboard redesign: dark theme with teal accents (muted/professional, not flashy like landing), consistent typography and spacing
-- Context feed: browsable feed of all generated context pages with filtering, search, and rich detail views
-- Activity timeline: real-time feed of syncs, new context generated, integration activity
-- Team & settings: workspace settings, API key management, notification preferences, team management
-- Auth page redesign: login/signup styled to match the dark brand identity
-- Design system: unified tokens, components, and patterns shared between landing and dashboard
+- Knowledge graph schema: Apache AGE graph layer in Supabase Postgres with entity nodes (People, Decisions, Code) and typed relationship edges
+- Entity extraction pipeline: rule-based extractors for structured data (ticket IDs, @mentions, PR numbers, file paths) + LLM extraction for semantic entities (decisions, people identity resolution)
+- Cross-source identity resolution: unify person identities across Linear, Slack, GitHub, and meeting transcripts into single graph nodes
+- Decision extraction: identify and link decisions from Slack messages and meeting transcripts to the tickets they affect
+- Code-to-discussion linking: connect code chunks to the conversations and tickets that motivated them
+- Graph-enhanced retrieval: traverse graph relationships to find multi-hop connections the current hybrid search misses, blend graph signal with existing vector + full-text scores
+- Updated synthesis prompts: context pages include decision trails, relationship paths, and cross-referenced people
+- Graph explorer UI (stretch): visual graph view in the dashboard where users can explore entity connections
 
 ## Core Value
 
@@ -134,6 +135,10 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 | Meeting transcripts in v1 | Fathom API ingestion adds meeting context to tickets. Daulet: API, Dulat: linking. | -- Pending |
 | Shared roadmap for all 3 members | Previously Daulet-scoped; expanded to cover Dulat (AI/ML) and Bekbol (frontend) | -- Pending |
 | Bekbol builds auth UI | Login/signup/magic-link pages in Next.js, connecting to Supabase Auth backend | -- Pending |
+| Apache AGE (Postgres) for knowledge graph | Stays in Supabase, no new infrastructure, graph queries via Cypher | -- Pending |
+| Rule-based + LLM entity extraction | Cheap regex for structured data, LLM for semantic entities | -- Pending |
+| Blend graph with existing hybrid search | Additive improvement, not a replacement -- existing retrieval is the fallback | -- Pending |
+| Graph explorer as stretch goal | Backend-first, UI explorer if time permits | -- Pending |
 
 ---
-*Last updated: 2026-03-04 -- v1.1 milestone started, dashboard & onboarding focus*
+*Last updated: 2026-03-06 -- v1.2 milestone started, GraphRAG focus*
