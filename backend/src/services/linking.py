@@ -30,8 +30,11 @@ logger = logging.getLogger(__name__)
 WEIGHT_EXPLICIT = 1.0
 WEIGHT_HYBRID = 0.8
 
-# Semantic similarity threshold (used by hybrid_search match_threshold)
-SEMANTIC_THRESHOLD = 0.5
+# Top-k limit for hybrid search results. 10 balances recall vs noise —
+# all results are ranked by combined_score, with a low floor (0.15) to
+# exclude completely irrelevant items without filtering good matches.
+HYBRID_SEARCH_LIMIT = 10
+HYBRID_SCORE_FLOOR = 0.15
 
 
 @dataclass
@@ -155,7 +158,8 @@ async def _find_hybrid_matches(
     if not query_embedding or all(v == 0.0 for v in query_embedding):
         return items
 
-    # Call hybrid_search() SQL function
+    # Call hybrid_search() SQL function — use a low floor to exclude noise,
+    # but rely primarily on top-k ranking rather than a strict threshold
     match_stmt = text("""
         SELECT id, source_type, source_id, similarity, keyword_rank, combined_score, metadata
         FROM hybrid_search(
@@ -165,8 +169,8 @@ async def _find_hybrid_matches(
             NULL,
             0.7,
             0.3,
-            :threshold,
-            20
+            :floor,
+            :limit
         )
     """)
 
@@ -176,7 +180,8 @@ async def _find_hybrid_matches(
             "query_embedding": str(query_embedding),
             "query_text": ticket.title,
             "workspace_id": str(workspace_id),
-            "threshold": SEMANTIC_THRESHOLD,
+            "floor": HYBRID_SCORE_FLOOR,
+            "limit": HYBRID_SEARCH_LIMIT,
         },
     )
 

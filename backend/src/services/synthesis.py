@@ -9,6 +9,7 @@ from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -25,16 +26,16 @@ You are a context synthesis assistant for engineering teams. Your job is to prod
 a structured context page that helps an engineer quickly understand the full story
 behind a ticket — decisions made, requirements, related work, and open questions.
 
-Write in clear, concise technical prose. Use markdown formatting. Be factual and
-cite sources when referencing specific messages, PRs, or meetings."""
+Rules:
+- Do NOT include a title heading — the UI already provides the ticket title.
+- Only include sections that have real content from the provided sources. Skip empty sections entirely.
+- Never fabricate meetings, people, messages, or code not present in the provided content.
+- Be concise and scannable. Use bullet points and bold labels over long paragraphs.
+- Cite sources inline when referencing specific messages, PRs, or meetings.
+- If sources are limited, acknowledge it honestly rather than padding with filler."""
 
 SYNTHESIS_TEMPLATE = """\
-## Ticket: {identifier}
-**Title:** {title}
-**Status:** {status}
-**Assignee:** {assignee}
-**Priority:** {priority}
-**Labels:** {labels}
+{identifier} | {title} | {status} | {assignee} | {priority} | {labels}
 
 ### Ticket Description
 {description}
@@ -44,15 +45,28 @@ SYNTHESIS_TEMPLATE = """\
 
 ---
 
-Based on the ticket and all related content above, produce a context page with these sections:
+Based on the ticket and related content above, produce a context page. Do NOT start with a title heading. Use only these sections (skip any section that has no real content from the sources):
 
-1. **Summary** — 2-3 sentence overview of what this ticket is about and why it matters
-2. **Background & Decisions** — Key decisions, discussions, and context from Slack, meetings, and comments
-3. **Requirements** — What needs to be built or fixed, extracted from the ticket and discussions
-4. **Related Work** — PRs, linked tickets, and other relevant engineering artifacts
-5. **Relevant Code** — Code snippets from across the codebase that are relevant to this ticket. Include function signatures, class definitions, and route handlers with file paths and repo names. This helps engineers understand existing implementations even from repos they have never worked in.
-6. **Open Questions** — Unresolved questions or ambiguities that need clarification
-7. **Key People** — Who is involved and their roles (assignee, reviewers, participants in discussions)"""
+## Summary
+2-3 sentence overview of what this ticket is about and why it matters.
+
+## Background & Decisions
+Only include if there are actual discussions, Slack messages, meeting notes, or comments. Key decisions and context from those sources.
+
+## Requirements
+What needs to be built or fixed, extracted from the ticket and discussions.
+
+## Related Work
+Only include if there are actual PRs, linked tickets, or other engineering artifacts in the sources.
+
+## Relevant Code
+Only include if code chunks are present in the related content. Include function signatures, class definitions, and route handlers with file paths and repo names.
+
+## Open Questions
+Only include if there are genuinely unresolved questions or ambiguities in the sources.
+
+## Key People
+Only include if multiple people are involved. Who is involved and their roles."""
 
 
 def _format_related_content(items: list) -> str:
