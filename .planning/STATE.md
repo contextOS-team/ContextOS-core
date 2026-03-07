@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: GraphRAG
-status: completed
-stopped_at: Phase 23 context gathered
-last_updated: "2026-03-06T21:21:00.997Z"
-last_activity: 2026-03-07 -- Completed 22-03 webhook integration and backfill
+status: executing
+stopped_at: Completed 23-01-PLAN.md
+last_updated: "2026-03-07T15:26:13.931Z"
+last_activity: 2026-03-07 -- Completed 23-01 identity resolution foundation
 progress:
   total_phases: 13
   completed_phases: 7
-  total_plans: 18
-  completed_plans: 18
-  percent: 100
+  total_plans: 20
+  completed_plans: 19
+  percent: 95
 ---
 
 # Project State
@@ -21,26 +21,26 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** v1.2 GraphRAG -- Phase 22 (Graph Foundation + Rule-Based Extraction)
+**Current focus:** v1.2 GraphRAG -- Phase 23 (Identity Resolution)
 
 ## Current Position
 
-Phase: 22 of 27 (Graph Foundation + Rule-Based Extraction) -- COMPLETE
-Plan: 3 of 3 in current phase
-Status: Phase Complete
-Last activity: 2026-03-07 -- Completed 22-03 webhook integration and backfill
+Phase: 23 of 27 (Identity Resolution)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-03-07 -- Completed 23-01 identity resolution foundation
 
-Progress: [██████████] 100%
+Progress: [█████████▌] 95%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 33 (v1.0: 16, v1.1: 14, v1.2: 3)
+- Total plans completed: 34 (v1.0: 16, v1.1: 14, v1.2: 4)
 - Average duration: ~4min
 - Total execution time: ~2.3 hours
 
 **Recent Trend (v1.2):**
-- Last 5 plans: 20-02 (3min), 21 (3min), 22-01 (4min), 22-02 (3min), 22-03 (6min)
+- Last 5 plans: 21 (3min), 22-01 (4min), 22-02 (3min), 22-03 (6min), 23-01 (4min)
 - Trend: Stable (3-6min per plan)
 
 *Updated after each plan completion*
@@ -68,6 +68,10 @@ Recent decisions affecting current work:
 - [Phase 22-03]: Graph extraction runs for ALL content regardless of team sync status for broad reference capture
 - [Phase 22-03]: Entity nodes from extractors marked with status=unresolved for dangling reference tracking
 - [Phase 22-03]: Backfill script processes 7 source types sequentially with configurable batch size
+- [Phase 23-01]: Canonical Person nodes use external_id='canonical:{UUID}' for stable fingerprint decoupled from email changes
+- [Phase 23-01]: resolve_by_email groups by email and assigns shared canonical_person_id to all mappings in group
+- [Phase 23-01]: Inline resolution is fail-silent matching Phase 22-03 pattern -- errors logged but never raised
+- [Phase 23-01]: Email-based deterministic matching anchored on email, never auto-merge on name alone
 
 ### Pending Todos
 
@@ -82,6 +86,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-06T21:21:00.985Z
-Stopped at: Phase 23 context gathered
-Resume file: .planning/phases/23-identity-resolution/23-CONTEXT.md
+Last session: 2026-03-07T15:26:08.881Z
+Stopped at: Completed 23-01-PLAN.md
+Resume file: None

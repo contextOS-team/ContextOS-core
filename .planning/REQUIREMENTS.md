@@ -24,7 +24,7 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 
 ### Identity Resolution
 
-- [ ] **IDENT-01**: Person identities are unified across Linear, Slack, GitHub, and Fathom via email-based deterministic matching
+- [x] **IDENT-01**: Person identities are unified across Linear, Slack, GitHub, and Fathom via email-based deterministic matching
 - [ ] **IDENT-02**: Identity mapping table is seeded from team roster APIs during integration setup
 - [ ] **IDENT-03**: Fuzzy name matches create candidate same_as edges with confidence scores without auto-merging
 
@@ -180,7 +180,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EXTR-04 | Phase 24 | Pending |
 | EXTR-05 | Phase 24 | Pending |
 | EXTR-06 | Phase 24 | Pending |
-| IDENT-01 | Phase 23 | Pending |
+| IDENT-01 | Phase 23 | Complete |
 | IDENT-02 | Phase 23 | Pending |
 | IDENT-03 | Phase 23 | Pending |
 | RETR-01 | Phase 25 | Pending |
