@@ -106,7 +106,7 @@ export function OnboardingWizard() {
     }
   }, [step, integrations, wizardState, advanceStep])
 
-  const handleComplete = useCallback(async () => {
+  const markOnboardingComplete = useCallback(async () => {
     try {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
@@ -116,13 +116,15 @@ export function OnboardingWizard() {
         .from('user_onboarding_state')
         .update({ completed_at: new Date().toISOString() })
         .eq('user_id', user.id)
-
-      router.push('/dashboard')
     } catch {
-      // If DB update fails, still redirect -- dashboard gate will handle
-      router.push('/dashboard')
+      // Non-blocking — dashboard gate will handle
     }
-  }, [router])
+  }, [])
+
+  const handleComplete = useCallback(async () => {
+    await markOnboardingComplete()
+    router.push('/dashboard')
+  }, [markOnboardingComplete, router])
 
   const refreshIntegrations = useCallback(async () => {
     try {
@@ -211,7 +213,10 @@ export function OnboardingWizard() {
             )}
 
             {step === 4 && (
-              <StepContext onComplete={handleComplete} />
+              <StepContext
+                onComplete={handleComplete}
+                onMarkComplete={markOnboardingComplete}
+              />
             )}
           </div>
 

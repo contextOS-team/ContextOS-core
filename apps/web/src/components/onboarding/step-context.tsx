@@ -1,28 +1,25 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
-  generateContextPage,
-  getContextPage,
   searchLinearTickets,
+  apiFetchSSE,
+  SOURCE_LABELS,
   type LinearTicketSearchResult,
 } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { GenerationProgress } from '@/components/generation-progress'
+import type { GenerationState } from '@/lib/context-feed'
 
 interface StepContextProps {
   onComplete: () => void
+  onMarkComplete?: () => Promise<void>
 }
 
 type StepState = 'intro' | 'picking' | 'generating' | 'ready' | 'error'
-
-const PROGRESS_MESSAGES = [
-  'Pulling your tickets...',
-  'Analyzing context...',
-  'Gathering related discussions...',
-  'Generating prompt...',
-]
 
 const PRIORITY_LABELS: Record<number, string> = {
   0: 'None',
@@ -32,42 +29,62 @@ const PRIORITY_LABELS: Record<number, string> = {
   4: 'Low',
 }
 
-export function StepContext({ onComplete }: StepContextProps) {
+export function StepContext({ onComplete, onMarkComplete }: StepContextProps) {
+  const router = useRouter()
   const [state, setState] = useState<StepState>('intro')
-  const [messageIndex, setMessageIndex] = useState(0)
-  const [contextData, setContextData] = useState<{
-    ticketId: string
-    title: string
-    context: string
-    prompt: string
-  } | null>(null)
+  const [generation, setGeneration] = useState<GenerationState | null>(null)
 
   // Ticket picker state
   const [tickets, setTickets] = useState<LinearTicketSearchResult[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [loadingTickets, setLoadingTickets] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [endCursor, setEndCursor] = useState<string | null>(null)
+  const [hasNextPage, setHasNextPage] = useState(false)
   const [selectedTicket, setSelectedTicket] = useState<LinearTicketSearchResult | null>(null)
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
-  // Rotate progress messages
+  // Cleanup SSE stream on unmount
   useEffect(() => {
-    if (state !== 'generating') return
-    const interval = setInterval(() => {
-      setMessageIndex((prev) => (prev + 1) % PROGRESS_MESSAGES.length)
-    }, 3000)
-    return () => clearInterval(interval)
-  }, [state])
+    return () => {
+      abortRef.current?.abort()
+    }
+  }, [])
+
+  // Auto-navigate to context detail page on completion
+  useEffect(() => {
+    if (generation?.status === 'complete' && generation.contextPageId) {
+      const timer = setTimeout(async () => {
+        await onMarkComplete?.()
+        router.push(`/dashboard/context/${generation.contextPageId}`)
+      }, 1200)
+      return () => clearTimeout(timer)
+    }
+  }, [generation?.status, generation?.contextPageId, onMarkComplete, router])
 
   // Load assigned tickets when entering picker
-  const loadTickets = useCallback(async (query?: string) => {
-    setLoadingTickets(true)
+  const loadTickets = useCallback(async (query?: string, cursor?: string) => {
+    if (cursor) {
+      setLoadingMore(true)
+    } else {
+      setLoadingTickets(true)
+    }
     try {
-      const result = await searchLinearTickets(query, 10)
-      setTickets(result.tickets)
+      const result = await searchLinearTickets(query, 20, cursor)
+      if (cursor) {
+        setTickets((prev) => [...prev, ...result.tickets])
+      } else {
+        setTickets(result.tickets)
+      }
+      setHasNextPage(result.has_next_page)
+      setEndCursor(result.end_cursor)
     } catch {
-      setTickets([])
+      if (!cursor) setTickets([])
     } finally {
       setLoadingTickets(false)
+      setLoadingMore(false)
     }
   }, [])
 
@@ -87,6 +104,8 @@ export function StepContext({ onComplete }: StepContextProps) {
       isInitialMount.current = false
       return
     }
+    setHasNextPage(false)
+    setEndCursor(null)
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       loadTickets(searchQuery || undefined)
@@ -96,42 +115,111 @@ export function StepContext({ onComplete }: StepContextProps) {
     }
   }, [searchQuery, state, loadTickets])
 
-  const generateForTicket = useCallback(async (ticket: LinearTicketSearchResult) => {
+  // Infinite scroll — ref callback attaches observer when sentinel mounts
+  const loadingMoreRef = useRef(loadingMore)
+  const endCursorRef = useRef(endCursor)
+  const searchQueryRef = useRef(searchQuery)
+  loadingMoreRef.current = loadingMore
+  endCursorRef.current = endCursor
+  searchQueryRef.current = searchQuery
+
+  const sentinelRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (observerRef.current) {
+        observerRef.current.disconnect()
+        observerRef.current = null
+      }
+      if (!node) return
+      observerRef.current = new IntersectionObserver(
+        (entries) => {
+          if (entries[0]?.isIntersecting && !loadingMoreRef.current) {
+            loadTickets(searchQueryRef.current || undefined, endCursorRef.current ?? undefined)
+          }
+        },
+        { threshold: 0 }
+      )
+      observerRef.current.observe(node)
+    },
+    [loadTickets]
+  )
+
+  const generateForTicket = useCallback((ticket: LinearTicketSearchResult) => {
+    abortRef.current?.abort()
     setSelectedTicket(ticket)
     setState('generating')
 
-    try {
-      // Trigger context page generation (pass linear_issue_id so backend syncs ticket first if needed)
-      try {
-        await generateContextPage(ticket.identifier, ticket.id)
-      } catch {
-        // Trigger may fail — backend handles this in background
-      }
-
-      // Poll for the generated page (up to 20s)
-      for (let i = 0; i < 20; i++) {
-        await new Promise((r) => setTimeout(r, 1000))
-        try {
-          const page = await getContextPage(ticket.identifier)
-          if (page && page.status === 'ready' && page.content) {
-            setContextData({
-              ticketId: page.ticket_identifier,
-              title: page.title,
-              context: page.summary || page.content.slice(0, 500),
-              prompt: page.content,
-            })
-            setState('ready')
-            return
-          }
-        } catch {
-          // Not ready yet
-        }
-      }
-
-      setState('error')
-    } catch {
-      setState('error')
+    const gen: GenerationState = {
+      ticket: ticket.identifier,
+      steps: [],
+      status: 'streaming',
     }
+    setGeneration(gen)
+
+    const streamPath = `/api/context/${encodeURIComponent(ticket.identifier)}/generate-stream?linear_issue_id=${encodeURIComponent(ticket.id)}`
+
+    const controller = apiFetchSSE(
+      streamPath,
+      (event) => {
+        setGeneration((prev) => {
+          if (!prev) return prev
+
+          switch (event.event) {
+            case 'start':
+              return {
+                ...prev,
+                steps: event.steps.map((source) => ({
+                  source,
+                  label: SOURCE_LABELS[source] || source,
+                  status: 'waiting' as const,
+                })),
+              }
+            case 'step_start':
+              return {
+                ...prev,
+                steps: prev.steps.map((s) =>
+                  s.source === event.source
+                    ? { ...s, status: 'active' as const, detail: 'Searching...' }
+                    : s
+                ),
+              }
+            case 'step_complete':
+              return {
+                ...prev,
+                steps: prev.steps.map((s) =>
+                  s.source === event.source
+                    ? { ...s, status: 'complete' as const, count: event.count, detail: event.detail }
+                    : s
+                ),
+              }
+            case 'step_error':
+              return {
+                ...prev,
+                steps: prev.steps.map((s) =>
+                  s.source === event.source
+                    ? { ...s, status: 'error' as const, detail: event.error }
+                    : s
+                ),
+                status: 'error',
+                errorMessage: event.error,
+              }
+            case 'complete':
+              return { ...prev, status: 'complete', contextPageId: event.context_page_id }
+            case 'error':
+              return { ...prev, status: 'error', errorMessage: event.message }
+            default:
+              return prev
+          }
+        })
+      },
+      (error) => {
+        setGeneration((prev) =>
+          prev ? { ...prev, status: 'error', errorMessage: error.message } : prev
+        )
+        setState('error')
+      }
+    )
+
+    abortRef.current = controller
   }, [])
 
   // Intro state
@@ -199,37 +287,44 @@ export function StepContext({ onComplete }: StepContextProps) {
               {searchQuery ? 'No tickets found' : 'No assigned tickets found'}
             </p>
           ) : (
-            tickets.map((ticket) => (
-              <button
-                key={ticket.id}
-                onClick={() => generateForTicket(ticket)}
-                className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
-              >
-                <span className="shrink-0 font-mono text-xs font-medium text-primary mt-0.5">
-                  {ticket.identifier}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {ticket.title}
-                  </p>
-                  <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                    {ticket.state && <span>{ticket.state}</span>}
-                    {ticket.assignee && (
-                      <>
-                        <span className="text-border">·</span>
-                        <span>{ticket.assignee}</span>
-                      </>
-                    )}
-                    {ticket.priority != null && ticket.priority > 0 && (
-                      <>
-                        <span className="text-border">·</span>
-                        <span>{PRIORITY_LABELS[ticket.priority] ?? ''}</span>
-                      </>
-                    )}
+            <>
+              {tickets.map((ticket) => (
+                <button
+                  key={ticket.id}
+                  onClick={() => generateForTicket(ticket)}
+                  className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+                >
+                  <span className="shrink-0 font-mono text-xs font-medium text-primary mt-0.5">
+                    {ticket.identifier}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {ticket.title}
+                    </p>
+                    <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                      {ticket.state && <span>{ticket.state}</span>}
+                      {ticket.assignee && (
+                        <>
+                          <span className="text-border">·</span>
+                          <span>{ticket.assignee}</span>
+                        </>
+                      )}
+                      {ticket.priority != null && ticket.priority > 0 && (
+                        <>
+                          <span className="text-border">·</span>
+                          <span>{PRIORITY_LABELS[ticket.priority] ?? ''}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
+                </button>
+              ))}
+              {hasNextPage && (
+                <div ref={sentinelRef} className="px-3 py-2 text-xs text-center text-muted-foreground">
+                  {loadingMore ? 'Loading...' : ''}
                 </div>
-              </button>
-            ))
+              )}
+            </>
           )}
         </div>
 
@@ -243,13 +338,21 @@ export function StepContext({ onComplete }: StepContextProps) {
     )
   }
 
-  // Generating state
-  if (state === 'generating') {
+  // Generating / complete / error — all use SSE live progress
+  if (state === 'generating' || state === 'ready' || state === 'error') {
+    const genStatus = generation?.status
+    const isComplete = genStatus === 'complete'
+    const isError = genStatus === 'error' || state === 'error'
+
     return (
       <div className="space-y-6">
         <div>
           <h2 className="text-xl font-semibold text-foreground">
-            Generating context
+            {isComplete
+              ? 'Your first context page'
+              : isError
+                ? "Couldn\u2019t generate context"
+                : 'Generating context'}
           </h2>
           {selectedTicket && (
             <p className="mt-1 text-sm text-muted-foreground">
@@ -261,113 +364,40 @@ export function StepContext({ onComplete }: StepContextProps) {
           )}
         </div>
 
-        {/* Shimmer skeleton */}
-        <div className="space-y-4 rounded-lg border border-border bg-background p-5">
-          <div className="flex items-center gap-3">
-            <Skeleton className="h-5 w-16" />
-            <Skeleton className="h-5 w-48" />
-          </div>
-          <div className="space-y-2">
-            <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-3 w-[90%]" />
-            <Skeleton className="h-3 w-[75%]" />
-          </div>
-          <div className="space-y-2">
-            <Skeleton className="h-3 w-full" />
-            <Skeleton className="h-3 w-[85%]" />
-            <Skeleton className="h-3 w-[60%]" />
-          </div>
-          <div className="rounded-md border border-border bg-muted/30 p-4 space-y-2">
-            <Skeleton className="h-3 w-[70%]" />
-            <Skeleton className="h-3 w-[50%]" />
-            <Skeleton className="h-3 w-[80%]" />
-            <Skeleton className="h-3 w-[40%]" />
-          </div>
-        </div>
-
-        <p className="text-center text-sm font-mono text-muted-foreground">
-          {PROGRESS_MESSAGES[messageIndex]}
-        </p>
-      </div>
-    )
-  }
-
-  // Error state
-  if (state === 'error') {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground">
-            Couldn&apos;t generate context
-          </h2>
-          <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-            Generation is taking longer than expected. You can try a different
-            ticket or generate context pages from the dashboard later.
-          </p>
-        </div>
+        {generation && (
+          <GenerationProgress
+            ticketIdentifier={generation.ticket}
+            steps={generation.steps}
+            status={generation.status}
+            errorMessage={generation.errorMessage}
+            onRetry={
+              selectedTicket
+                ? () => generateForTicket(selectedTicket)
+                : undefined
+            }
+            onDismiss={() => {
+              abortRef.current?.abort()
+              enterPicker()
+            }}
+          />
+        )}
 
         <div className="space-y-3">
-          <Button onClick={enterPicker} variant="outline" className="w-full">
-            Try another ticket
-          </Button>
-          <Button onClick={onComplete} className="w-full">
-            Continue to dashboard
-          </Button>
+          {isError && (
+            <>
+              <Button onClick={enterPicker} variant="outline" className="w-full">
+                Try another ticket
+              </Button>
+              <Button onClick={onComplete} className="w-full">
+                Continue to dashboard
+              </Button>
+            </>
+          )}
         </div>
       </div>
     )
   }
 
-  // Ready state — show generated context page
-  return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-semibold text-foreground">
-          Your first context page
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Here&apos;s what ContextOS delivers for every ticket
-        </p>
-      </div>
-
-      {contextData && (
-        <div className="space-y-4 rounded-lg border border-border bg-background p-5 animate-fade-in-up">
-          <div className="flex items-start gap-2">
-            <span className="shrink-0 font-mono text-sm font-medium text-primary">
-              {contextData.ticketId}
-            </span>
-            <span className="text-sm font-medium text-foreground">
-              {contextData.title}
-            </span>
-          </div>
-
-          <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Context
-            </h3>
-            <div className="space-y-2 text-sm leading-relaxed text-foreground/80">
-              {contextData.context.split('\n\n').map((paragraph, i) => (
-                <p key={i}>{paragraph}</p>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Prompt
-            </h3>
-            <div className="rounded-md border border-border bg-muted/30 p-4">
-              <pre className="whitespace-pre-wrap text-xs font-mono leading-relaxed text-foreground/70">
-                {contextData.prompt}
-              </pre>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <Button onClick={onComplete} className="w-full">
-        Continue
-      </Button>
-    </div>
-  )
+  // Fallback — should not be reached
+  return null
 }
