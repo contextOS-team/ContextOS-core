@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: executing
-stopped_at: Completed 22-01-PLAN.md
-last_updated: "2026-03-07T09:33:19.752Z"
+stopped_at: Phase 23 context gathered
+last_updated: "2026-03-07T21:50:02.512Z"
 last_activity: 2026-03-07 -- Completed Phase 22 Plan 02 (Frontend SSE Client & Generation Progress Component)
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 6
   total_plans: 18
   completed_plans: 17
@@ -131,6 +131,7 @@ Recent decisions affecting current work:
 ### Roadmap Evolution
 
 - Phase 21 added: Auth redesign and social OAuth
+- Phase 23 added: Remotion Animated Hero
 
 ### Pending Todos
 
@@ -144,6 +145,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T09:33:19.750Z
-Stopped at: Completed 22-01-PLAN.md
-Resume file: None
+Last session: 2026-03-07T21:50:02.505Z
+Stopped at: Phase 23 context gathered
+Resume file: .planning/phases/23-remotion-animated-hero/23-CONTEXT.md
