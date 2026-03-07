@@ -71,7 +71,7 @@ export const TicketScene: React.FC = () => {
         style={{
           transform: `translateY(${translateY}px) scale(${scale})`,
           opacity: enterOpacity,
-          width: 700,
+          width: 820,
         }}
       >
         <MockCard>
@@ -87,7 +87,7 @@ export const TicketScene: React.FC = () => {
             <span
               style={{
                 fontFamily: "monospace",
-                fontSize: 16,
+                fontSize: 20,
                 color: COLORS.teal,
                 fontWeight: 600,
               }}
@@ -107,10 +107,10 @@ export const TicketScene: React.FC = () => {
           {/* Ticket title */}
           <div
             style={{
-              fontSize: 24,
+              fontSize: 30,
               fontWeight: 600,
               color: COLORS.text,
-              marginBottom: 24,
+              marginBottom: 28,
               lineHeight: 1.4,
             }}
           >
@@ -128,7 +128,7 @@ export const TicketScene: React.FC = () => {
                   justifyContent: "space-between",
                 }}
               >
-                <span style={{ fontSize: 15, color: COLORS.textMuted }}>
+                <span style={{ fontSize: 18, color: COLORS.textMuted }}>
                   Priority
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -140,7 +140,7 @@ export const TicketScene: React.FC = () => {
                       background: "#F59E0B",
                     }}
                   />
-                  <span style={{ fontSize: 15, color: COLORS.text }}>High</span>
+                  <span style={{ fontSize: 18, color: COLORS.text }}>High</span>
                 </div>
               </div>
             </div>
@@ -154,7 +154,7 @@ export const TicketScene: React.FC = () => {
                   justifyContent: "space-between",
                 }}
               >
-                <span style={{ fontSize: 15, color: COLORS.textMuted }}>
+                <span style={{ fontSize: 18, color: COLORS.textMuted }}>
                   Assignee
                 </span>
                 <span style={{ fontSize: 15, color: COLORS.text }}>
@@ -172,7 +172,7 @@ export const TicketScene: React.FC = () => {
                   justifyContent: "space-between",
                 }}
               >
-                <span style={{ fontSize: 15, color: COLORS.textMuted }}>
+                <span style={{ fontSize: 18, color: COLORS.textMuted }}>
                   Status
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -184,7 +184,7 @@ export const TicketScene: React.FC = () => {
                       background: COLORS.teal,
                     }}
                   />
-                  <span style={{ fontSize: 15, color: COLORS.text }}>
+                  <span style={{ fontSize: 18, color: COLORS.text }}>
                     In Progress
                   </span>
                 </div>

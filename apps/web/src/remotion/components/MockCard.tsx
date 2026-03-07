@@ -17,8 +17,8 @@ export const MockCard: React.FC<MockCardProps> = ({
         background: COLORS.cardGradient,
         border: `1px solid ${COLORS.cardBorder}`,
         borderRadius: 16,
-        boxShadow: `0 0 40px rgba(0,212,170,0.05), 0 0 80px rgba(0,212,170,0.03)`,
-        padding: 32,
+        boxShadow: `0 0 40px rgba(0,212,170,0.10), 0 0 80px rgba(0,212,170,0.06)`,
+        padding: 40,
         ...style,
       }}
     >

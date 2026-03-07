@@ -73,7 +73,7 @@ export const ContextScene: React.FC = () => {
     >
       <div
         style={{
-          width: 740,
+          width: 820,
           transform: `translateY(${cardTranslateY}px) scale(${cardScale})`,
           opacity: cardOpacity,
         }}
@@ -87,10 +87,10 @@ export const ContextScene: React.FC = () => {
           <div style={sectionStyle(headerProgress)}>
             <div
               style={{
-                fontSize: 26,
+                fontSize: 30,
                 fontWeight: 700,
                 color: COLORS.text,
-                marginBottom: 24,
+                marginBottom: 28,
               }}
             >
               ENG-42: Authentication Flow
@@ -101,7 +101,7 @@ export const ContextScene: React.FC = () => {
           <div style={{ ...sectionStyle(bgProgress), marginBottom: 20 }}>
             <div
               style={{
-                fontSize: 17,
+                fontSize: 20,
                 fontWeight: 600,
                 color: COLORS.text,
                 marginBottom: 10,
@@ -111,7 +111,7 @@ export const ContextScene: React.FC = () => {
             </div>
             <div
               style={{
-                fontSize: 15,
+                fontSize: 18,
                 color: COLORS.textMuted,
                 lineHeight: 1.6,
               }}
@@ -126,7 +126,7 @@ export const ContextScene: React.FC = () => {
           <div style={{ ...sectionStyle(decisionsProgress), marginBottom: 20 }}>
             <div
               style={{
-                fontSize: 17,
+                fontSize: 20,
                 fontWeight: 600,
                 color: COLORS.text,
                 marginBottom: 10,
@@ -136,7 +136,7 @@ export const ContextScene: React.FC = () => {
             </div>
             <div
               style={{
-                fontSize: 15,
+                fontSize: 18,
                 color: COLORS.textMuted,
                 lineHeight: 1.8,
               }}
@@ -156,18 +156,18 @@ export const ContextScene: React.FC = () => {
           <div style={sectionStyle(promptProgress)}>
             <div
               style={{
-                borderLeft: `3px solid ${COLORS.teal}`,
-                background: "rgba(0,212,170,0.06)",
+                borderLeft: `3px solid ${COLORS.aiAccent}`,
+                background: "rgba(139,92,246,0.06)",
                 borderRadius: 8,
                 padding: 20,
-                boxShadow: `0 0 ${interpolate(promptGlow, [0, 1], [0, 24])}px ${COLORS.tealGlow}`,
+                boxShadow: `0 0 ${interpolate(promptGlow, [0, 1], [0, 24])}px ${COLORS.aiAccentGlow}`,
               }}
             >
               <div
                 style={{
-                  fontSize: 14,
+                  fontSize: 16,
                   fontWeight: 600,
-                  color: COLORS.teal,
+                  color: COLORS.aiAccent,
                   marginBottom: 10,
                   textTransform: "uppercase" as const,
                   letterSpacing: 1,
@@ -177,14 +177,14 @@ export const ContextScene: React.FC = () => {
               </div>
               <div
                 style={{
-                  fontSize: 15,
+                  fontSize: 17,
                   color: COLORS.textMuted,
                   lineHeight: 1.6,
                   fontFamily: "monospace",
                 }}
               >
-                Implement OAuth 2.0 PKCE flow with jose JWT, 15-min access
-                tokens, and 7-day rotating refresh tokens...
+                Implement OAuth 2.0 PKCE flow with jose JWT, 15-min access tokens,
+                and 7-day rotating refresh tokens...
               </div>
             </div>
           </div>

@@ -25,9 +25,9 @@ interface SourceRow {
 }
 
 const SOURCES: SourceRow[] = [
-  { name: "Slack", color: COLORS.slackGreen },
-  { name: "GitHub", color: COLORS.github },
-  { name: "Linear", color: COLORS.linear },
+  { name: "Slack", color: COLORS.teal },
+  { name: "GitHub", color: COLORS.teal },
+  { name: "Linear", color: COLORS.teal },
 ];
 
 const SOURCE_STAGGER = STAGGER_FRAMES * 3; // 12 frames between each source
@@ -85,7 +85,7 @@ export const SourcesScene: React.FC = () => {
     >
       <div
         style={{
-          width: 700,
+          width: 820,
           transform: `translateY(${cardTranslateY}px) scale(${cardScale})`,
           opacity: cardOpacity,
         }}
@@ -94,9 +94,9 @@ export const SourcesScene: React.FC = () => {
           {/* Animated label */}
           <div
             style={{
-              fontSize: 15,
+              fontSize: 18,
               color: COLORS.textMuted,
-              marginBottom: 24,
+              marginBottom: 28,
               fontFamily: "monospace",
               position: "relative",
               height: 20,
@@ -158,7 +158,7 @@ export const SourcesScene: React.FC = () => {
                   <div style={{ flex: 1 }}>
                     <div
                       style={{
-                        fontSize: 16,
+                        fontSize: 20,
                         color: COLORS.text,
                         marginBottom: 8,
                         fontWeight: 500,

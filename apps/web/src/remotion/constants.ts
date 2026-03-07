@@ -34,10 +34,10 @@ export const COLORS = {
   background: "#0A0A0F",
   teal: "#00D4AA",
   tealGlow: "rgba(0,212,170,0.3)",
-  cardBg: "rgba(255,255,255,0.06)",
-  cardBorder: "rgba(255,255,255,0.12)",
+  cardBg: "rgba(255,255,255,0.13)",
+  cardBorder: "rgba(255,255,255,0.24)",
   cardGradient:
-    "radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 70%)",
+    "linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.07) 100%)",
   text: "#FFFFFF",
   textMuted: "#9CA3AF",
   slackPurple: "#611F69",
@@ -47,4 +47,6 @@ export const COLORS = {
   slackRed: "#E01E5A",
   github: "#FFFFFF",
   linear: "#5E6AD2",
+  aiAccent: "#8B5CF6",
+  aiAccentGlow: "rgba(139,92,246,0.3)",
 } as const;
