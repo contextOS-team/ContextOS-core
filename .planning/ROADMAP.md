@@ -58,7 +58,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 22: Graph Foundation + Rule-Based Extraction** - Graph tables, traversal function, indexes, and deterministic regex extractors for structured references (completed 2026-03-06)
 - [x] **Phase 23: Identity Resolution** - Cross-source person unification via email-based deterministic matching and fuzzy candidate flagging (completed 2026-03-07)
 - [x] **Phase 24: LLM Extraction + Decision Extraction** - Semantic entity extraction via Gemini Flash batch pipeline with decision nodes as highest-value entity (completed 2026-03-07)
-- [ ] **Phase 25: Graph-Enhanced Retrieval** - Graph traversal as third retrieval signal with depth-decay scoring blended into existing search
+- [x] **Phase 25: Graph-Enhanced Retrieval** - Graph traversal as third retrieval signal with depth-decay scoring blended into existing search (completed 2026-03-08)
 - [ ] **Phase 26: Synthesis + Code-to-Discussion Linking** - Context pages enhanced with decision trails, relationship paths, people cross-references, and code provenance
 - [ ] **Phase 27: Graph Explorer API** - Subgraph JSON endpoint for a ticket's graph neighborhood
 
@@ -268,7 +268,7 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 | 22. Graph Foundation + Rule-Based Extraction | 3/3 | Complete    | 2026-03-06 | - |
 | 23. Identity Resolution | 2/2 | Complete    | 2026-03-07 | - |
 | 24. LLM Extraction + Decision Extraction | 3/3 | Complete    | 2026-03-07 | - |
-| 25. Graph-Enhanced Retrieval | 1/2 | In Progress|  | - |
+| 25. Graph-Enhanced Retrieval | 2/2 | Complete    | 2026-03-08 | - |
 | 26. Synthesis + Code-to-Discussion Linking | v1.2 | 0/TBD | Not started | - |
 | 27. Graph Explorer API | v1.2 | 0/TBD | Not started | - |
 
@@ -288,8 +288,8 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 **Plans**: 2 plans
 
 Plans:
-- [ ] 25-01-PLAN.md — Merge graph branch, add config constants, create test scaffolds, implement _find_graph_results() with depth decay and same_as transparency
-- [ ] 25-02-PLAN.md — Token budget trimming with signal diversity, 3-way merge wiring, graph section formatting and synthesis integration
+- [x] 25-01-PLAN.md -- Merge graph branch, add config constants, create test scaffolds, implement _find_graph_results() with depth decay and same_as transparency
+- [x] 25-02-PLAN.md -- Token budget trimming with signal diversity, 3-way merge wiring, graph section formatting and synthesis integration
 
 ---
 *Roadmap created: 2026-02-24*

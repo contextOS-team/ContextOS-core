@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: Executing
-stopped_at: Completed 25-01-PLAN.md
-last_updated: "2026-03-07T23:18:11Z"
-last_activity: 2026-03-08 -- Phase 25 Plan 01 complete
+stopped_at: Completed 25-02-PLAN.md
+last_updated: "2026-03-07T23:28:17Z"
+last_activity: 2026-03-08 -- Phase 25 Plan 02 complete (phase complete)
 progress:
   total_phases: 9
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 20
-  completed_plans: 19
-  percent: 98
+  completed_plans: 20
+  percent: 100
 ---
 
 # Project State
@@ -21,27 +21,27 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** v1.2 GraphRAG -- Phase 25 (Graph-Enhanced Retrieval)
+**Current focus:** v1.2 GraphRAG -- Phase 25 complete, ready for Phase 26
 
 ## Current Position
 
-Phase: 25 of 27 (Graph-Enhanced Retrieval)
-Plan: 1 of 2 in current phase
+Phase: 25 of 27 (Graph-Enhanced Retrieval) -- COMPLETE
+Plan: 2 of 2 in current phase (phase complete)
 Status: Executing
-Last activity: 2026-03-08 -- Phase 25 Plan 01 complete
+Last activity: 2026-03-08 -- Phase 25 Plan 02 complete
 
-Progress: [██████████] 98%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 39 (v1.0: 16, v1.1: 14, v1.2: 9)
+- Total plans completed: 40 (v1.0: 16, v1.1: 14, v1.2: 10)
 - Average duration: ~4min
-- Total execution time: ~2.6 hours
+- Total execution time: ~2.7 hours
 
 **Recent Trend (v1.2):**
-- Last 5 plans: 24-01 (2min), 24-02 (8min), 24-03 (5min), 25-01 (7min)
-- Trend: Stable (2-8min per plan)
+- Last 5 plans: 24-02 (8min), 24-03 (5min), 25-01 (7min), 25-02 (6min)
+- Trend: Stable (5-8min per plan)
 
 *Updated after each plan completion*
 
@@ -92,6 +92,10 @@ Recent decisions affecting current work:
 - [Phase 25-01]: same_as nodes skipped as results, tracked for path-based depth adjustment
 - [Phase 25-01]: Graph results capped at 20 to prevent same_as expansion explosion
 - [Phase 25-01]: Decision nodes formatted with [DECISION] highlighting and metadata fields
+- [Phase 25-02]: Token estimation heuristic (char_length + 50) // 4 -- avoids tokenizer dependency
+- [Phase 25-02]: Signal diversity first trimming -- reserve top-1 from each signal group before filling by score
+- [Phase 25-02]: Graph items separated in synthesis by checking for 'graph:' prefix in signals list
+- [Phase 25-02]: SYNTHESIS_TEMPLATE {graph_section} placeholder renders empty string when no graph items
 
 ### Pending Todos
 
@@ -106,6 +110,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T23:18:11Z
-Stopped at: Completed 25-01-PLAN.md
-Resume file: .planning/phases/25-graph-enhanced-retrieval/25-02-PLAN.md
+Last session: 2026-03-07T23:28:17Z
+Stopped at: Completed 25-02-PLAN.md (Phase 25 complete)
+Resume file: Next phase (26 or 27)

@@ -30,9 +30,9 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 
 ### Graph Retrieval
 
-- [ ] **RETR-01**: find_related_content() includes graph traversal as a third retrieval signal alongside explicit refs and hybrid search
+- [x] **RETR-01**: find_related_content() includes graph traversal as a third retrieval signal alongside explicit refs and hybrid search
 - [x] **RETR-02**: Graph results are scored with depth-decay (1-hop highest, decaying per hop) and blended with existing signals
-- [ ] **RETR-03**: Graph context in synthesis prompts is capped at a fixed token budget to prevent context overflow
+- [x] **RETR-03**: Graph context in synthesis prompts is capped at a fixed token budget to prevent context overflow
 
 ### Synthesis
 
@@ -183,9 +183,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IDENT-01 | Phase 23 | Complete |
 | IDENT-02 | Phase 23 | Complete |
 | IDENT-03 | Phase 23 | Complete |
-| RETR-01 | Phase 25 | Pending |
+| RETR-01 | Phase 25 | Complete |
 | RETR-02 | Phase 25 | Complete |
-| RETR-03 | Phase 25 | Pending |
+| RETR-03 | Phase 25 | Complete |
 | SYNTH-01 | Phase 26 | Pending |
 | SYNTH-02 | Phase 26 | Pending |
 | SYNTH-03 | Phase 26 | Pending |
