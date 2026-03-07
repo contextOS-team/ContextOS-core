@@ -413,12 +413,41 @@ class TestDecisionExtraction:
 
 
 # ============================================================
+# Decision / Blocker Persistence Helpers
+# ============================================================
+
+# Pre-populate sys.modules with a mock graph_ops so that:
+# 1. The lazy `from src.services import graph_ops` inside persist_decision/persist_blocker
+#    doesn't trigger sqlmodel/SQLAlchemy imports in the test environment
+# 2. unittest.mock.patch("src.services.graph_ops.upsert_node") can resolve the target
+import sys
+import types as _types
+
+_mock_graph_ops = _types.ModuleType("src.services.graph_ops")
+_mock_graph_ops.upsert_node = AsyncMock()
+_mock_graph_ops.upsert_edge = AsyncMock()
+if "src.services.graph_ops" not in sys.modules:
+    sys.modules["src.services.graph_ops"] = _mock_graph_ops
+    # Also register on the parent package so `from src.services import graph_ops` works
+    import src.services
+    src.services.graph_ops = _mock_graph_ops  # type: ignore[attr-defined]
+
+
+# ============================================================
 # Decision Node Schema (persistence)
 # ============================================================
 
 
 class TestDecisionNodeSchema:
     """Tests for persist_decision graph node creation."""
+
+    @staticmethod
+    def _find_decision_node_call(mock_upsert_node):
+        """Find the upsert_node call for the Decision entity type."""
+        for call in mock_upsert_node.call_args_list:
+            if call.kwargs.get("entity_type") == "Decision":
+                return call.kwargs
+        raise AssertionError("No upsert_node call with entity_type='Decision'")
 
     @pytest.mark.asyncio
     async def test_decision_node_has_required_properties(self):
@@ -431,11 +460,11 @@ class TestDecisionNodeSchema:
         decision_node_id = uuid4()
 
         with patch(
-            "src.services.llm_extractor.upsert_node",
+            "src.services.graph_ops.upsert_node",
             new_callable=AsyncMock,
             return_value=decision_node_id,
         ) as mock_upsert_node, patch(
-            "src.services.llm_extractor.upsert_edge",
+            "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid4(),
         ):
@@ -443,8 +472,8 @@ class TestDecisionNodeSchema:
                 mock_session, workspace_id, decision, source_node_id
             )
 
-            # Check the properties dict passed to upsert_node
-            call_kwargs = mock_upsert_node.call_args.kwargs
+            # Check the properties dict passed to the Decision upsert_node call
+            call_kwargs = self._find_decision_node_call(mock_upsert_node)
             props = call_kwargs["properties"]
             assert props["description"] == decision.description
             assert props["rationale"] == decision.rationale
@@ -467,11 +496,11 @@ class TestDecisionNodeSchema:
         decision_node_id = uuid4()
 
         with patch(
-            "src.services.llm_extractor.upsert_node",
+            "src.services.graph_ops.upsert_node",
             new_callable=AsyncMock,
             return_value=decision_node_id,
         ) as mock_upsert_node, patch(
-            "src.services.llm_extractor.upsert_edge",
+            "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid4(),
         ):
@@ -479,7 +508,7 @@ class TestDecisionNodeSchema:
                 mock_session, workspace_id, decision, source_node_id
             )
 
-            call_kwargs = mock_upsert_node.call_args.kwargs
+            call_kwargs = self._find_decision_node_call(mock_upsert_node)
             assert call_kwargs["external_id"] == expected_ext_id
 
     @pytest.mark.asyncio
@@ -494,11 +523,11 @@ class TestDecisionNodeSchema:
         decision_node_id = uuid4()
 
         with patch(
-            "src.services.llm_extractor.upsert_node",
+            "src.services.graph_ops.upsert_node",
             new_callable=AsyncMock,
             return_value=decision_node_id,
         ) as mock_upsert_node, patch(
-            "src.services.llm_extractor.upsert_edge",
+            "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid4(),
         ):
@@ -506,7 +535,7 @@ class TestDecisionNodeSchema:
                 mock_session, workspace_id, decision, source_node_id
             )
 
-            call_kwargs = mock_upsert_node.call_args.kwargs
+            call_kwargs = self._find_decision_node_call(mock_upsert_node)
             assert len(call_kwargs["name"]) == 100
             assert call_kwargs["name"] == long_desc[:100]
 
@@ -530,11 +559,11 @@ class TestDecisionEdges:
         decision_node_id = uuid4()
 
         with patch(
-            "src.services.llm_extractor.upsert_node",
+            "src.services.graph_ops.upsert_node",
             new_callable=AsyncMock,
             return_value=decision_node_id,
         ), patch(
-            "src.services.llm_extractor.upsert_edge",
+            "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid4(),
         ) as mock_upsert_edge:
@@ -565,11 +594,11 @@ class TestDecisionEdges:
         decision_node_id = uuid4()
 
         with patch(
-            "src.services.llm_extractor.upsert_node",
+            "src.services.graph_ops.upsert_node",
             new_callable=AsyncMock,
             return_value=decision_node_id,
         ), patch(
-            "src.services.llm_extractor.upsert_edge",
+            "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid4(),
         ) as mock_upsert_edge:
@@ -598,11 +627,11 @@ class TestDecisionEdges:
         decision_node_id = uuid4()
 
         with patch(
-            "src.services.llm_extractor.upsert_node",
+            "src.services.graph_ops.upsert_node",
             new_callable=AsyncMock,
             return_value=decision_node_id,
         ), patch(
-            "src.services.llm_extractor.upsert_edge",
+            "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid4(),
         ) as mock_upsert_edge:
@@ -634,11 +663,11 @@ class TestDecisionEdges:
         node_ids = [decision_node_id, ticket_node_id_1, ticket_node_id_2]
 
         with patch(
-            "src.services.llm_extractor.upsert_node",
+            "src.services.graph_ops.upsert_node",
             new_callable=AsyncMock,
             side_effect=node_ids,
         ) as mock_upsert_node, patch(
-            "src.services.llm_extractor.upsert_edge",
+            "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid4(),
         ) as mock_upsert_edge:
@@ -675,11 +704,11 @@ class TestDecisionEdges:
         blocker_node_id = uuid4()
 
         with patch(
-            "src.services.llm_extractor.upsert_node",
+            "src.services.graph_ops.upsert_node",
             new_callable=AsyncMock,
             return_value=blocker_node_id,
         ) as mock_upsert_node, patch(
-            "src.services.llm_extractor.upsert_edge",
+            "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid4(),
         ) as mock_upsert_edge:

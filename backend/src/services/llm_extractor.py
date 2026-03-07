@@ -242,3 +242,148 @@ async def extract_entities(
     )
     result: ExtractionResult = response.parsed
     return validate_extraction(result, content)
+
+
+# ============================================================
+# Graph Persistence: Decision and Blocker nodes + edges
+# ============================================================
+
+async def persist_decision(
+    session,
+    workspace_id: UUID,
+    decision: ExtractedDecision,
+    source_node_id: UUID,
+    author_node_id: UUID | None = None,
+) -> UUID:
+    """Create Decision node and edges from extraction result.
+
+    Creates:
+    - Decision node with all extraction properties
+    - 'discussed_in' edge: Decision -> source_node_id
+    - 'authored_by' edge: Decision -> author_node_id (if provided)
+    - 'references' edges: Decision -> Ticket nodes (for each ticket_ref)
+
+    External ID uses hash of source_quote for deterministic dedup -- same
+    quote from the same source always maps to the same Decision node.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace UUID.
+        decision: Extracted decision from Gemini.
+        source_node_id: UUID of the source content node (SlackThread, Meeting, etc.).
+        author_node_id: Optional UUID of the Person node who authored the decision.
+
+    Returns:
+        UUID of the created/updated Decision node.
+    """
+    from src.services import graph_ops
+
+    external_id = f"decision:{compute_content_hash(decision.source_quote)}"
+
+    decision_node_id = await graph_ops.upsert_node(
+        session=session,
+        workspace_id=workspace_id,
+        entity_type="Decision",
+        external_id=external_id,
+        name=decision.description[:100],
+        properties={
+            "description": decision.description,
+            "rationale": decision.rationale,
+            "source_quote": decision.source_quote,
+            "confidence": decision.confidence,
+            "status": "active",
+            "extraction_model": "gemini-2.0-flash",
+        },
+    )
+
+    # Edge: Decision -> discussed_in -> Source (SlackThread/Meeting)
+    await graph_ops.upsert_edge(
+        session=session,
+        workspace_id=workspace_id,
+        source_node_id=decision_node_id,
+        target_node_id=source_node_id,
+        relationship_type="discussed_in",
+    )
+
+    # Edge: Decision -> authored_by -> Person (if author known)
+    if author_node_id is not None:
+        await graph_ops.upsert_edge(
+            session=session,
+            workspace_id=workspace_id,
+            source_node_id=decision_node_id,
+            target_node_id=author_node_id,
+            relationship_type="authored_by",
+        )
+
+    # Edges: Decision -> references -> Ticket (for each ticket_ref)
+    for ticket_ref in decision.ticket_refs:
+        ticket_node_id = await graph_ops.upsert_node(
+            session=session,
+            workspace_id=workspace_id,
+            entity_type="Ticket",
+            external_id=ticket_ref,
+            name=ticket_ref,
+        )
+        await graph_ops.upsert_edge(
+            session=session,
+            workspace_id=workspace_id,
+            source_node_id=decision_node_id,
+            target_node_id=ticket_node_id,
+            relationship_type="references",
+        )
+
+    return decision_node_id
+
+
+async def persist_blocker(
+    session,
+    workspace_id: UUID,
+    blocker: ExtractedBlocker,
+    source_node_id: UUID,
+) -> UUID:
+    """Create Blocker node and edge from extraction result.
+
+    Creates:
+    - Blocker node with extraction properties
+    - 'blocks' edge: Blocker -> source_node_id
+
+    External ID uses hash of source_quote for deterministic dedup.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace UUID.
+        blocker: Extracted blocker from Gemini.
+        source_node_id: UUID of the source content node.
+
+    Returns:
+        UUID of the created/updated Blocker node.
+    """
+    from src.services import graph_ops
+
+    external_id = f"blocker:{compute_content_hash(blocker.source_quote)}"
+
+    blocker_node_id = await graph_ops.upsert_node(
+        session=session,
+        workspace_id=workspace_id,
+        entity_type="Blocker",
+        external_id=external_id,
+        name=blocker.description[:100],
+        properties={
+            "description": blocker.description,
+            "source_quote": blocker.source_quote,
+            "confidence": blocker.confidence,
+            "status": "active",
+            "extraction_model": "gemini-2.0-flash",
+        },
+    )
+
+    # Edge: Blocker -> blocks -> Source
+    await graph_ops.upsert_edge(
+        session=session,
+        workspace_id=workspace_id,
+        source_node_id=blocker_node_id,
+        target_node_id=source_node_id,
+        relationship_type="blocks",
+    )
+
+    return blocker_node_id
