@@ -8,6 +8,8 @@ import {
 import { MockCard } from "../components/MockCard";
 import {
   COLORS,
+  CROSSFADE_FRAMES,
+  SCENE_3_DURATION,
   SPRING_BOUNCY,
   SPRING_ENTER,
   SPRING_SUBTLE,
@@ -20,10 +22,11 @@ export const ContextScene: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  // Card slide-up animation
+  // Unified card entrance: translateY + opacity + scale
   const cardProgress = spring({ frame, fps, config: SPRING_ENTER });
-  const cardTranslateY = interpolate(cardProgress, [0, 1], [40, 0]);
+  const cardTranslateY = interpolate(cardProgress, [0, 1], [30, 0]);
   const cardOpacity = interpolate(cardProgress, [0, 1], [0, 1]);
+  const cardScale = interpolate(cardProgress, [0, 1], [0.97, 1]);
 
   // Section fade-in animations
   const sectionProgress = (index: number) =>
@@ -38,18 +41,20 @@ export const ContextScene: React.FC = () => {
   const decisionsProgress = sectionProgress(2);
   const promptProgress = sectionProgress(3);
 
-  // AI Prompt glow pulse
+  // AI Prompt glow — smooth interpolation instead of binary
   const promptGlow = spring({
     frame: Math.max(0, frame - 10 - 3 * SECTION_STAGGER),
     fps,
     config: SPRING_BOUNCY,
   });
 
-  // End-of-scene fade out (frame > 100, fade over 20 frames)
-  const fadeOut = interpolate(frame, [100, 120], [1, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
+  // End-of-scene fade out
+  const fadeOut = interpolate(
+    frame,
+    [SCENE_3_DURATION - CROSSFADE_FRAMES, SCENE_3_DURATION],
+    [1, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+  );
 
   const sectionStyle = (progress: number): React.CSSProperties => ({
     opacity: progress,
@@ -68,20 +73,24 @@ export const ContextScene: React.FC = () => {
     >
       <div
         style={{
-          width: 560,
-          transform: `translateY(${cardTranslateY}px)`,
+          width: 740,
+          transform: `translateY(${cardTranslateY}px) scale(${cardScale})`,
           opacity: cardOpacity,
         }}
       >
-        <MockCard>
+        <MockCard
+          style={{
+            boxShadow: `0 0 60px rgba(0,212,170,0.08), 0 0 80px rgba(0,212,170,0.03)`,
+          }}
+        >
           {/* Header */}
           <div style={sectionStyle(headerProgress)}>
             <div
               style={{
-                fontSize: 20,
+                fontSize: 26,
                 fontWeight: 700,
                 color: COLORS.text,
-                marginBottom: 20,
+                marginBottom: 24,
               }}
             >
               ENG-42: Authentication Flow
@@ -89,20 +98,20 @@ export const ContextScene: React.FC = () => {
           </div>
 
           {/* Background section */}
-          <div style={{ ...sectionStyle(bgProgress), marginBottom: 16 }}>
+          <div style={{ ...sectionStyle(bgProgress), marginBottom: 20 }}>
             <div
               style={{
-                fontSize: 14,
+                fontSize: 17,
                 fontWeight: 600,
                 color: COLORS.text,
-                marginBottom: 8,
+                marginBottom: 10,
               }}
             >
               Background
             </div>
             <div
               style={{
-                fontSize: 13,
+                fontSize: 15,
                 color: COLORS.textMuted,
                 lineHeight: 1.6,
               }}
@@ -114,20 +123,20 @@ export const ContextScene: React.FC = () => {
           </div>
 
           {/* Key Decisions section */}
-          <div style={{ ...sectionStyle(decisionsProgress), marginBottom: 16 }}>
+          <div style={{ ...sectionStyle(decisionsProgress), marginBottom: 20 }}>
             <div
               style={{
-                fontSize: 14,
+                fontSize: 17,
                 fontWeight: 600,
                 color: COLORS.text,
-                marginBottom: 8,
+                marginBottom: 10,
               }}
             >
               Key Decisions
             </div>
             <div
               style={{
-                fontSize: 13,
+                fontSize: 15,
                 color: COLORS.textMuted,
                 lineHeight: 1.8,
               }}
@@ -150,19 +159,16 @@ export const ContextScene: React.FC = () => {
                 borderLeft: `3px solid ${COLORS.teal}`,
                 background: "rgba(0,212,170,0.06)",
                 borderRadius: 8,
-                padding: 16,
-                boxShadow:
-                  promptGlow > 0.5
-                    ? `0 0 20px ${COLORS.tealGlow}`
-                    : "none",
+                padding: 20,
+                boxShadow: `0 0 ${interpolate(promptGlow, [0, 1], [0, 24])}px ${COLORS.tealGlow}`,
               }}
             >
               <div
                 style={{
-                  fontSize: 12,
+                  fontSize: 14,
                   fontWeight: 600,
                   color: COLORS.teal,
-                  marginBottom: 8,
+                  marginBottom: 10,
                   textTransform: "uppercase" as const,
                   letterSpacing: 1,
                 }}
@@ -171,7 +177,7 @@ export const ContextScene: React.FC = () => {
               </div>
               <div
                 style={{
-                  fontSize: 13,
+                  fontSize: 15,
                   color: COLORS.textMuted,
                   lineHeight: 1.6,
                   fontFamily: "monospace",

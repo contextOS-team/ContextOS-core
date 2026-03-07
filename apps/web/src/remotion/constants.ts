@@ -26,18 +26,25 @@ export const SPRING_BOUNCY = { damping: 10, stiffness: 100, mass: 1 };
 /** Stagger delay between sequential animations */
 export const STAGGER_FRAMES = 4; // ~133ms at 30fps
 
+/** Cross-fade overlap between scenes */
+export const CROSSFADE_FRAMES = 12;
+
 /** Brand and UI colors */
 export const COLORS = {
   background: "#0A0A0F",
   teal: "#00D4AA",
   tealGlow: "rgba(0,212,170,0.3)",
-  cardBg: "rgba(255,255,255,0.03)",
-  cardBorder: "rgba(255,255,255,0.08)",
+  cardBg: "rgba(255,255,255,0.06)",
+  cardBorder: "rgba(255,255,255,0.12)",
+  cardGradient:
+    "radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 70%)",
   text: "#FFFFFF",
   textMuted: "#9CA3AF",
   slackPurple: "#611F69",
   slackGreen: "#2EB67D",
   slackYellow: "#ECB22E",
+  slackBlue: "#36C5F0",
+  slackRed: "#E01E5A",
   github: "#FFFFFF",
   linear: "#5E6AD2",
 } as const;

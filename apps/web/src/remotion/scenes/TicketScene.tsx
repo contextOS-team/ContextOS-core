@@ -6,19 +6,33 @@ import {
   useVideoConfig,
 } from "remotion";
 import { MockCard } from "../components/MockCard";
-import { COLORS, SPRING_ENTER, SPRING_SUBTLE, STAGGER_FRAMES } from "../constants";
+import {
+  COLORS,
+  CROSSFADE_FRAMES,
+  SCENE_1_DURATION,
+  SPRING_ENTER,
+  SPRING_SUBTLE,
+} from "../constants";
 
 export const TicketScene: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  // Card slide-in animation
+  // Unified card entrance: translateY + opacity + scale
   const enterProgress = spring({ frame, fps, config: SPRING_ENTER });
-  const translateX = interpolate(enterProgress, [0, 1], [120, 0]);
-  const opacity = interpolate(enterProgress, [0, 1], [0, 1]);
-  const scale = interpolate(enterProgress, [0, 1], [0.95, 1]);
+  const translateY = interpolate(enterProgress, [0, 1], [30, 0]);
+  const enterOpacity = interpolate(enterProgress, [0, 1], [0, 1]);
+  const scale = interpolate(enterProgress, [0, 1], [0.97, 1]);
 
-  // Staggered detail animations (after card lands, ~12 frame delay each)
+  // Cross-fade out at end of scene
+  const fadeOut = interpolate(
+    frame,
+    [SCENE_1_DURATION - CROSSFADE_FRAMES, SCENE_1_DURATION],
+    [1, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+  );
+
+  // Staggered detail animations
   const detailDelay = 20;
   const detailStagger = 12;
 
@@ -50,13 +64,14 @@ export const TicketScene: React.FC = () => {
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: COLORS.background,
+        opacity: fadeOut,
       }}
     >
       <div
         style={{
-          transform: `translateX(${translateX}px) scale(${scale})`,
-          opacity,
-          width: 500,
+          transform: `translateY(${translateY}px) scale(${scale})`,
+          opacity: enterOpacity,
+          width: 700,
         }}
       >
         <MockCard>
@@ -66,13 +81,13 @@ export const TicketScene: React.FC = () => {
               display: "flex",
               alignItems: "center",
               gap: 10,
-              marginBottom: 16,
+              marginBottom: 20,
             }}
           >
             <span
               style={{
                 fontFamily: "monospace",
-                fontSize: 14,
+                fontSize: 16,
                 color: COLORS.teal,
                 fontWeight: 600,
               }}
@@ -92,10 +107,10 @@ export const TicketScene: React.FC = () => {
           {/* Ticket title */}
           <div
             style={{
-              fontSize: 18,
+              fontSize: 24,
               fontWeight: 600,
               color: COLORS.text,
-              marginBottom: 20,
+              marginBottom: 24,
               lineHeight: 1.4,
             }}
           >
@@ -103,7 +118,7 @@ export const TicketScene: React.FC = () => {
           </div>
 
           {/* Detail rows */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {/* Priority */}
             <div style={detailStyle(priorityProgress)}>
               <div
@@ -113,7 +128,7 @@ export const TicketScene: React.FC = () => {
                   justifyContent: "space-between",
                 }}
               >
-                <span style={{ fontSize: 13, color: COLORS.textMuted }}>
+                <span style={{ fontSize: 15, color: COLORS.textMuted }}>
                   Priority
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -125,7 +140,7 @@ export const TicketScene: React.FC = () => {
                       background: "#F59E0B",
                     }}
                   />
-                  <span style={{ fontSize: 13, color: COLORS.text }}>High</span>
+                  <span style={{ fontSize: 15, color: COLORS.text }}>High</span>
                 </div>
               </div>
             </div>
@@ -139,10 +154,10 @@ export const TicketScene: React.FC = () => {
                   justifyContent: "space-between",
                 }}
               >
-                <span style={{ fontSize: 13, color: COLORS.textMuted }}>
+                <span style={{ fontSize: 15, color: COLORS.textMuted }}>
                   Assignee
                 </span>
-                <span style={{ fontSize: 13, color: COLORS.text }}>
+                <span style={{ fontSize: 15, color: COLORS.text }}>
                   Sarah Chen
                 </span>
               </div>
@@ -157,7 +172,7 @@ export const TicketScene: React.FC = () => {
                   justifyContent: "space-between",
                 }}
               >
-                <span style={{ fontSize: 13, color: COLORS.textMuted }}>
+                <span style={{ fontSize: 15, color: COLORS.textMuted }}>
                   Status
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -169,7 +184,7 @@ export const TicketScene: React.FC = () => {
                       background: COLORS.teal,
                     }}
                   />
-                  <span style={{ fontSize: 13, color: COLORS.text }}>
+                  <span style={{ fontSize: 15, color: COLORS.text }}>
                     In Progress
                   </span>
                 </div>

@@ -10,6 +10,8 @@ import { ProgressBar } from "../components/ProgressBar";
 import { SourceIcon } from "../components/SourceIcon";
 import {
   COLORS,
+  CROSSFADE_FRAMES,
+  SCENE_2_DURATION,
   SPRING_ENTER,
   SPRING_SUBTLE,
   STAGGER_FRAMES,
@@ -30,12 +32,46 @@ const SOURCES: SourceRow[] = [
 
 const SOURCE_STAGGER = STAGGER_FRAMES * 3; // 12 frames between each source
 const PROGRESS_DELAY = 15; // frames after source appears before bar fills
+const CONTENT_START = 15; // delay for content after card entrance
 
 export const SourcesScene: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  const labelText = frame > 90 ? "3 sources found" : "Searching sources...";
+  // Card entrance animation
+  const cardProgress = spring({ frame, fps, config: SPRING_ENTER });
+  const cardTranslateY = interpolate(cardProgress, [0, 1], [30, 0]);
+  const cardOpacity = interpolate(cardProgress, [0, 1], [0, 1]);
+  const cardScale = interpolate(cardProgress, [0, 1], [0.97, 1]);
+
+  // Cross-fade out at end of scene
+  const fadeOut = interpolate(
+    frame,
+    [SCENE_2_DURATION - CROSSFADE_FRAMES, SCENE_2_DURATION],
+    [1, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+  );
+
+  // Animated label transition
+  const labelTransitionFrame = 90;
+  const searchingOpacity = interpolate(
+    frame,
+    [labelTransitionFrame - 6, labelTransitionFrame],
+    [1, 0],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+  );
+  const foundOpacity = interpolate(
+    frame,
+    [labelTransitionFrame, labelTransitionFrame + 6],
+    [0, 1],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+  );
+  const foundScale = interpolate(
+    frame,
+    [labelTransitionFrame, labelTransitionFrame + 8, labelTransitionFrame + 16],
+    [0.95, 1.05, 1],
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+  );
 
   return (
     <AbsoluteFill
@@ -44,26 +80,47 @@ export const SourcesScene: React.FC = () => {
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: COLORS.background,
+        opacity: fadeOut,
       }}
     >
-      <div style={{ width: 480 }}>
+      <div
+        style={{
+          width: 700,
+          transform: `translateY(${cardTranslateY}px) scale(${cardScale})`,
+          opacity: cardOpacity,
+        }}
+      >
         <MockCard>
-          {/* Label */}
+          {/* Animated label */}
           <div
             style={{
-              fontSize: 13,
+              fontSize: 15,
               color: COLORS.textMuted,
-              marginBottom: 20,
+              marginBottom: 24,
               fontFamily: "monospace",
+              position: "relative",
+              height: 20,
             }}
           >
-            {labelText}
+            <span style={{ position: "absolute", opacity: searchingOpacity }}>
+              Searching sources...
+            </span>
+            <span
+              style={{
+                position: "absolute",
+                opacity: foundOpacity,
+                transform: `scale(${foundScale})`,
+                color: COLORS.teal,
+              }}
+            >
+              3 sources found
+            </span>
           </div>
 
           {/* Source rows */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {SOURCES.map((source, index) => {
-              const sourceDelay = index * SOURCE_STAGGER;
+              const sourceDelay = CONTENT_START + index * SOURCE_STAGGER;
               const appearProgress = spring({
                 frame: Math.max(0, frame - sourceDelay),
                 fps,
@@ -88,7 +145,7 @@ export const SourcesScene: React.FC = () => {
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 12,
+                    gap: 16,
                     opacity: appearProgress,
                     transform: `scale(${interpolate(
                       appearProgress,
@@ -101,9 +158,9 @@ export const SourcesScene: React.FC = () => {
                   <div style={{ flex: 1 }}>
                     <div
                       style={{
-                        fontSize: 14,
+                        fontSize: 16,
                         color: COLORS.text,
-                        marginBottom: 6,
+                        marginBottom: 8,
                         fontWeight: 500,
                       }}
                     >

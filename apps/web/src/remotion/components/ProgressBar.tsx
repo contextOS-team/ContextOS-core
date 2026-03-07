@@ -15,9 +15,9 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
     <div
       style={{
         width: "100%",
-        height: 6,
-        borderRadius: 3,
-        background: "rgba(255,255,255,0.06)",
+        height: 8,
+        borderRadius: 4,
+        background: "rgba(255,255,255,0.10)",
         overflow: "hidden",
       }}
     >
@@ -25,7 +25,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
         style={{
           width: `${Math.min(progress * 100, 100)}%`,
           height: "100%",
-          borderRadius: 3,
+          borderRadius: 4,
           background: color,
           boxShadow: isActive ? `0 0 12px ${COLORS.tealGlow}` : "none",
         }}

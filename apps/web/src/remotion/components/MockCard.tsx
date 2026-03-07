@@ -14,11 +14,11 @@ export const MockCard: React.FC<MockCardProps> = ({
   return (
     <div
       style={{
-        background: COLORS.cardBg,
+        background: COLORS.cardGradient,
         border: `1px solid ${COLORS.cardBorder}`,
         borderRadius: 16,
-        boxShadow: `0 4px 24px rgba(0,0,0,0.4)`,
-        padding: 24,
+        boxShadow: `0 0 40px rgba(0,212,170,0.05), 0 0 80px rgba(0,212,170,0.03)`,
+        padding: 32,
         ...style,
       }}
     >
