@@ -30,6 +30,7 @@ import { useContextPagesRealtime } from '@/hooks/use-context-pages-realtime'
 import {
   searchLinearTickets,
   type LinearTicketSearchResult,
+  type LinearTicketSearchResponse,
 } from '@/lib/api'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
@@ -162,19 +163,34 @@ function GenerateTicketPicker({
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<LinearTicketSearchResult[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [endCursor, setEndCursor] = useState<string | null>(null)
+  const [hasNextPage, setHasNextPage] = useState(false)
   const [pendingTicket, setPendingTicket] = useState<LinearTicketSearchResult | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<NodeJS.Timeout | null>(null)
+  const observerRef = useRef<IntersectionObserver | null>(null)
 
-  const loadTickets = useCallback(async (q?: string) => {
-    setLoading(true)
+  const loadTickets = useCallback(async (q?: string, cursor?: string) => {
+    if (cursor) {
+      setLoadingMore(true)
+    } else {
+      setLoading(true)
+    }
     try {
-      const result = await searchLinearTickets(q, 5)
-      setResults(result.tickets)
+      const result = await searchLinearTickets(q, 20, cursor)
+      if (cursor) {
+        setResults((prev) => [...prev, ...result.tickets])
+      } else {
+        setResults(result.tickets)
+      }
+      setHasNextPage(result.has_next_page)
+      setEndCursor(result.end_cursor)
     } catch {
-      setResults([])
+      if (!cursor) setResults([])
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
   }, [])
 
@@ -187,9 +203,11 @@ function GenerateTicketPicker({
     }
   }, [open, loadTickets])
 
-  // Debounced search
+  // Debounced search — reset pagination immediately on query change
   useEffect(() => {
     if (!open) return
+    setHasNextPage(false)
+    setEndCursor(null)
     if (searchRef.current) clearTimeout(searchRef.current)
     searchRef.current = setTimeout(() => {
       loadTickets(query.trim() || undefined)
@@ -198,6 +216,34 @@ function GenerateTicketPicker({
       if (searchRef.current) clearTimeout(searchRef.current)
     }
   }, [query, open, loadTickets])
+
+  // Infinite scroll — ref callback attaches observer when sentinel mounts
+  const loadingMoreRef = useRef(loadingMore)
+  const endCursorRef = useRef(endCursor)
+  const queryRef = useRef(query)
+  loadingMoreRef.current = loadingMore
+  endCursorRef.current = endCursor
+  queryRef.current = query
+
+  const sentinelRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (observerRef.current) {
+        observerRef.current.disconnect()
+        observerRef.current = null
+      }
+      if (!node) return
+      observerRef.current = new IntersectionObserver(
+        (entries) => {
+          if (entries[0]?.isIntersecting && !loadingMoreRef.current) {
+            loadTickets(queryRef.current.trim() || undefined, endCursorRef.current ?? undefined)
+          }
+        },
+        { threshold: 0 }
+      )
+      observerRef.current.observe(node)
+    },
+    [loadTickets]
+  )
 
   // Close on click outside
   useEffect(() => {
@@ -297,6 +343,11 @@ function GenerateTicketPicker({
                     </div>
                   </button>
                 ))}
+                {hasNextPage && (
+                  <div ref={sentinelRef} className="px-3 py-2 text-xs text-center text-muted-foreground">
+                    {loadingMore ? 'Loading...' : ''}
+                  </div>
+                )}
               </>
             ) : (
               <p className="px-3 py-6 text-center text-sm text-muted-foreground">

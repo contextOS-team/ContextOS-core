@@ -98,15 +98,24 @@ export interface LinearTicketSearchResult {
   updated_at: string | null
 }
 
+export type LinearTicketSearchResponse = {
+  tickets: LinearTicketSearchResult[]
+  count: number
+  has_next_page: boolean
+  end_cursor: string | null
+}
+
 export function searchLinearTickets(
   query?: string,
-  limit?: number
-): Promise<{ tickets: LinearTicketSearchResult[]; count: number }> {
+  limit?: number,
+  after?: string
+): Promise<LinearTicketSearchResponse> {
   const params = new URLSearchParams()
   if (query) params.set('q', query)
   if (limit) params.set('limit', String(limit))
+  if (after) params.set('after', after)
   const qs = params.toString()
-  return apiFetch<{ tickets: LinearTicketSearchResult[]; count: number }>(
+  return apiFetch<LinearTicketSearchResponse>(
     `/api/linear/tickets/search${qs ? `?${qs}` : ''}`
   )
 }
