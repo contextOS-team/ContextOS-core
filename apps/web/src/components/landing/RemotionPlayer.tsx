@@ -1,7 +1,7 @@
 "use client";
 
-import { Player } from "@remotion/player";
-import { useCallback } from "react";
+import { Player, type PlayerRef } from "@remotion/player";
+import { useCallback, useEffect, useRef } from "react";
 import {
   FPS,
   COMPOSITION_WIDTH,
@@ -9,7 +9,13 @@ import {
   TOTAL_DURATION,
 } from "@/remotion/constants";
 
-export function RemotionHeroPlayer() {
+interface RemotionHeroPlayerProps {
+  onFrameUpdate?: (frame: number) => void;
+}
+
+export function RemotionHeroPlayer({ onFrameUpdate }: RemotionHeroPlayerProps) {
+  const playerRef = useRef<PlayerRef>(null);
+
   const lazyComp = useCallback(
     () =>
       import("@/remotion/HeroComposition").then((m) => ({
@@ -18,8 +24,22 @@ export function RemotionHeroPlayer() {
     []
   );
 
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player || !onFrameUpdate) return;
+
+    const handler = () => {
+      const frame = player.getCurrentFrame();
+      onFrameUpdate(frame);
+    };
+
+    player.addEventListener("frameupdate", handler);
+    return () => player.removeEventListener("frameupdate", handler);
+  }, [onFrameUpdate]);
+
   return (
     <Player
+      ref={playerRef}
       lazyComponent={lazyComp}
       durationInFrames={TOTAL_DURATION}
       fps={FPS}
@@ -27,7 +47,7 @@ export function RemotionHeroPlayer() {
       compositionHeight={COMPOSITION_HEIGHT}
       loop
       autoPlay
-      style={{ width: "100%", borderRadius: "1rem" }}
+      style={{ width: "100%" }}
       acknowledgeRemotionLicense
     />
   );

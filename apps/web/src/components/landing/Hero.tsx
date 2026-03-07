@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { usePostHog } from "posthog-js/react";
 import dynamic from "next/dynamic";
 
@@ -17,18 +17,28 @@ const RemotionHeroPlayer = dynamic(
           width: "100%",
           aspectRatio: "16/9",
           backgroundColor: "#0A0A0F",
-          borderRadius: "1rem",
+          borderRadius: "0 0 1rem 1rem",
         }}
       />
     ),
   }
 );
 
+/** Scene boundaries in frames (must match remotion/constants.ts) */
+const SCENE_FRAMES = [0, 90, 210, 330]; // scene1 start, scene2 start, scene3 start, end
+
 export default function Hero() {
   const posthog = usePostHog();
   const [visible, setVisible] = useState(false);
   const [scrollY, setScrollY] = useState(0);
+  const [activeStep, setActiveStep] = useState(0);
   const heroRef = useRef<HTMLDivElement>(null);
+
+  const onFrameUpdate = useCallback((frame: number) => {
+    if (frame < SCENE_FRAMES[1]) setActiveStep(0);
+    else if (frame < SCENE_FRAMES[2]) setActiveStep(1);
+    else setActiveStep(2);
+  }, []);
 
   useEffect(() => {
     setTimeout(() => setVisible(true), 100);
@@ -39,13 +49,13 @@ export default function Hero() {
 
   const heroHeight = heroRef.current?.offsetHeight ?? 900;
   const progress = Math.min(scrollY / (heroHeight * 0.5), 1);
-  const rotateX = 12 * (1 - progress);
-  const scale = 0.88 + 0.12 * progress;
+  const rotateX = 6 * (1 - progress);
+  const scale = 0.94 + 0.06 * progress;
 
   return (
     <section
       ref={heroRef}
-      className="relative min-h-screen flex flex-col items-center justify-center pt-24 pb-16 px-6 overflow-hidden"
+      className="relative min-h-screen flex flex-col items-center justify-center pt-20 pb-12 px-6 overflow-hidden"
     >
       {/* Background radial glow */}
       <div
@@ -56,13 +66,13 @@ export default function Hero() {
         }}
       />
 
-      {/* Dot grid */}
+      {/* Subtle dot grid */}
       <div
-        className="absolute inset-0 pointer-events-none opacity-40"
+        className="absolute inset-0 pointer-events-none opacity-50"
         style={{
           backgroundImage:
-            "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)",
-          backgroundSize: "32px 32px",
+            "radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
         }}
       />
 
@@ -118,7 +128,7 @@ export default function Hero() {
 
         {/* CTAs */}
         <div
-          className={`flex flex-col sm:flex-row items-center justify-center gap-3 mb-16 transition-all duration-700 ${
+          className={`flex flex-col sm:flex-row items-center justify-center gap-3 mb-10 transition-all duration-700 ${
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "300ms" }}
@@ -160,15 +170,15 @@ export default function Hero() {
         >
           {/* Glow behind video */}
           <div
-            className="relative mx-auto max-w-3xl"
+            className="relative mx-auto max-w-5xl"
             style={{ perspective: "1200px" }}
           >
             <div
               className="absolute -inset-8 pointer-events-none"
               style={{
                 background:
-                  "radial-gradient(ellipse at center, rgba(0,212,170,0.12) 0%, transparent 65%)",
-                filter: "blur(20px)",
+                  "radial-gradient(ellipse at center, rgba(0,212,170,0.22) 0%, transparent 65%)",
+                filter: "blur(30px)",
               }}
             />
             <div
@@ -180,15 +190,103 @@ export default function Hero() {
               }}
             >
               <div
-                className="rounded-2xl overflow-hidden"
+                className="overflow-hidden rounded-2xl"
                 style={{
                   boxShadow:
-                    "0 40px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06), 0 0 40px rgba(0,212,170,0.08)",
+                    "0 40px 80px rgba(0,0,0,0.6), 0 0 60px rgba(0,212,170,0.12)",
+                  border: "1px solid rgba(255,255,255,0.10)",
                 }}
               >
-                <RemotionHeroPlayer />
+                {/* Window titlebar */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "10px 14px",
+                    background: "rgba(255,255,255,0.04)",
+                    borderBottom: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 5,
+                      background: "#FF5F57",
+                    }}
+                  />
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 5,
+                      background: "#FEBC2E",
+                    }}
+                  />
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 5,
+                      background: "#28C840",
+                    }}
+                  />
+                  <span
+                    style={{
+                      flex: 1,
+                      textAlign: "center",
+                      fontSize: 12,
+                      color: "rgba(255,255,255,0.3)",
+                      fontFamily: "system-ui, sans-serif",
+                    }}
+                  >
+                    ContextOS
+                  </span>
+                  {/* Spacer to balance the dots */}
+                  <span style={{ width: 48 }} />
+                </div>
+                <RemotionHeroPlayer onFrameUpdate={onFrameUpdate} />
               </div>
             </div>
+          </div>
+          {/* Scene step indicators — synced with animation */}
+          <div
+            className="flex items-center justify-center gap-8 mt-6"
+            style={{ fontSize: 14, fontFamily: "system-ui, sans-serif" }}
+          >
+            {[
+              { num: "1", label: "Pick a ticket" },
+              { num: "2", label: "We find sources" },
+              { num: "3", label: "You get context" },
+            ].map((step, i) => {
+              const isActive = activeStep === i;
+              return (
+                <span key={i} className="flex items-center gap-3">
+                  {i > 0 && (
+                    <span
+                      style={{
+                        color: "rgba(255,255,255,0.15)",
+                        marginRight: 4,
+                      }}
+                    >
+                      /
+                    </span>
+                  )}
+                  <span
+                    className="flex items-center gap-2"
+                    style={{
+                      color: isActive ? "#00D4AA" : "#6B7280",
+                      fontWeight: isActive ? 600 : 400,
+                      transition: "color 0.3s, font-weight 0.3s",
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{step.num}.</span>
+                    {step.label}
+                  </span>
+                </span>
+              );
+            })}
           </div>
         </div>
       </div>
