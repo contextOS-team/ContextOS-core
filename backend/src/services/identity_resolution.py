@@ -5,6 +5,14 @@ Provides:
   - lookup_mapping: Find an identity mapping by platform + user ID
   - resolve_by_email: Group mappings by email and create canonical nodes
   - resolve_identity_inline: Hook for real-time resolution during extraction
+  - fetch_linear_roster: Fetch team members from Linear GraphQL API
+  - fetch_slack_roster: Fetch workspace members from Slack users.list API
+  - fetch_github_roster: Fetch collaborators from GitHub repos API
+  - upsert_identity_mapping: Upsert a single identity mapping row
+  - seed_roster: Orchestrate roster upsert + resolve + fuzzy matching
+  - compute_name_similarity: Fuzzy name comparison with rapidfuzz
+  - find_fuzzy_candidates: Create candidate same_as edges for similar names
+  - backfill_identity_resolution: Link pre-existing Person nodes retroactively
 
 Canonical Person nodes use fingerprint hash('Person:canonical:{UUID}') and
 are linked to platform-specific Person nodes via same_as edges.
@@ -12,9 +20,13 @@ are linked to platform-specific Person nodes via same_as edges.
 
 import logging
 import uuid
+from datetime import datetime, timezone
 from uuid import UUID
 
+import httpx
+from rapidfuzz import fuzz
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.identity_mapping import IdentityMapping
@@ -316,3 +328,580 @@ async def resolve_identity_inline(
             workspace_id,
             exc_info=True,
         )
+
+
+# ============================================================
+# Roster fetch functions
+# ============================================================
+
+# Linear users GraphQL query
+LINEAR_USERS_QUERY = """
+query($after: String) {
+    users(first: 50, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { id name displayName email active }
+    }
+}
+"""
+
+
+async def fetch_linear_roster(
+    session: AsyncSession,
+    workspace_id: UUID,
+    user_id: UUID,
+    settings: "Settings",
+) -> list[dict]:
+    """Fetch active team members from Linear via GraphQL.
+
+    Uses the LinearGraphQLClient with cursor-based pagination to fetch
+    all active users in the Linear organization.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to fetch roster for.
+        user_id: User who initiated the action (for token lookup).
+        settings: Application settings.
+
+    Returns:
+        List of dicts with platform_user_id, display_name, email.
+    """
+    from src.services.linear_graphql import LinearGraphQLClient
+    from src.services.linear_oauth import get_valid_access_token
+
+    access_token = await get_valid_access_token(session, workspace_id, user_id, settings)
+    client = LinearGraphQLClient(access_token)
+
+    try:
+        all_users = await client.fetch_all_pages(
+            LINEAR_USERS_QUERY, {}, ["users"]
+        )
+    finally:
+        await client.close()
+
+    members: list[dict] = []
+    for user in all_users:
+        if not user.get("active", True):
+            continue
+        members.append({
+            "platform_user_id": user["id"],
+            "display_name": user.get("displayName") or user.get("name", ""),
+            "email": user.get("email"),
+        })
+
+    logger.info(
+        "Fetched %d active Linear users for workspace %s",
+        len(members),
+        workspace_id,
+    )
+    return members
+
+
+async def fetch_slack_roster(
+    session: AsyncSession,
+    workspace_id: UUID,
+) -> list[dict]:
+    """Fetch non-bot workspace members from Slack users.list API.
+
+    Uses cursor-based pagination with the Slack bot token.
+    Skips bot accounts and deleted users.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to fetch roster for.
+
+    Returns:
+        List of dicts with platform_user_id, display_name, email.
+    """
+    from src.services.slack_oauth import get_bot_token
+
+    bot_token = await get_bot_token(session, workspace_id)
+
+    members: list[dict] = []
+    cursor: str | None = None
+
+    async with httpx.AsyncClient() as client:
+        while True:
+            params: dict = {
+                "limit": 200,
+            }
+            if cursor:
+                params["cursor"] = cursor
+
+            response = await client.get(
+                "https://slack.com/api/users.list",
+                params=params,
+                headers={"Authorization": f"Bearer {bot_token}"},
+            )
+            data = response.json()
+
+            for member in data.get("members", []):
+                # Skip bots and deleted users
+                if member.get("is_bot", False):
+                    continue
+                if member.get("deleted", False):
+                    continue
+
+                profile = member.get("profile", {})
+                display_name = profile.get("real_name") or member.get("name", "")
+                email = profile.get("email")
+
+                members.append({
+                    "platform_user_id": member["id"],
+                    "display_name": display_name,
+                    "email": email,
+                })
+
+            # Check for next page
+            next_cursor = data.get("response_metadata", {}).get("next_cursor", "")
+            if not next_cursor:
+                break
+            cursor = next_cursor
+
+    logger.info(
+        "Fetched %d Slack members for workspace %s",
+        len(members),
+        workspace_id,
+    )
+    return members
+
+
+async def fetch_github_roster(
+    session: AsyncSession,
+    workspace_id: UUID,
+    settings: "Settings",
+) -> list[dict]:
+    """Fetch collaborators from GitHub repos with per-user email lookup.
+
+    For each selected repo, fetches collaborators via the GitHub API.
+    Deduplicates by login across repos. Attempts per-user email lookup
+    via GET /users/{login}.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to fetch roster for.
+        settings: Application settings.
+
+    Returns:
+        List of dicts with platform_user_id, display_name, email.
+    """
+    from src.services.github_common import (
+        GITHUB_API_BASE,
+        check_rate_limit,
+        create_github_client,
+        github_headers,
+        parse_link_next,
+    )
+    from src.services.github_oauth import get_installation_token
+    from src.services.github_repos import get_cached_repos
+
+    token = await get_installation_token(workspace_id, session, settings)
+    repos = await get_cached_repos(workspace_id, session)
+
+    seen_logins: set[str] = set()
+    unique_logins: list[str] = []
+
+    async with create_github_client() as client:
+        # Step 1: Collect unique collaborator logins across all repos
+        for repo in repos:
+            full_name = repo.get("full_name", "")
+            url: str | None = (
+                f"{GITHUB_API_BASE}/repos/{full_name}/collaborators?per_page=100"
+            )
+
+            while url:
+                response = await client.get(url, headers=github_headers(token))
+                if response.status_code != 200:
+                    logger.warning(
+                        "Failed to fetch collaborators for %s: %d",
+                        full_name,
+                        response.status_code,
+                    )
+                    break
+
+                await check_rate_limit(response)
+
+                collaborators = response.json()
+                for collab in collaborators:
+                    login = collab.get("login", "")
+                    if login and login not in seen_logins:
+                        seen_logins.add(login)
+                        unique_logins.append(login)
+
+                url = parse_link_next(response.headers.get("link"))
+
+        # Step 2: Per-user email lookup
+        members: list[dict] = []
+        for login in unique_logins:
+            email = None
+            display_name = login
+            try:
+                user_response = await client.get(
+                    f"{GITHUB_API_BASE}/users/{login}",
+                    headers=github_headers(token),
+                )
+                if user_response.status_code == 200:
+                    await check_rate_limit(user_response)
+                    user_data = user_response.json()
+                    email = user_data.get("email")
+                    display_name = user_data.get("name") or login
+            except httpx.HTTPError:
+                logger.debug("Failed to fetch user details for %s", login)
+
+            members.append({
+                "platform_user_id": login,
+                "display_name": display_name,
+                "email": email,
+            })
+
+    logger.info(
+        "Fetched %d GitHub collaborators for workspace %s",
+        len(members),
+        workspace_id,
+    )
+    return members
+
+
+# ============================================================
+# Identity mapping upsert
+# ============================================================
+
+
+async def upsert_identity_mapping(
+    session: AsyncSession,
+    workspace_id: UUID,
+    email: str | None,
+    platform: str,
+    platform_user_id: str,
+    display_name: str | None,
+) -> IdentityMapping:
+    """Insert or update an identity mapping row.
+
+    Uses ON CONFLICT (workspace_id, platform, platform_user_id) DO UPDATE
+    to upsert email, display_name, clear deleted_at, and update updated_at.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace the mapping belongs to.
+        email: User's email address (may be None).
+        platform: Platform name ('linear', 'slack', 'github').
+        platform_user_id: Platform-specific user identifier.
+        display_name: Human-readable display name.
+
+    Returns:
+        The upserted IdentityMapping.
+    """
+    stmt = pg_insert(IdentityMapping).values(
+        workspace_id=workspace_id,
+        email=email,
+        platform=platform,
+        platform_user_id=platform_user_id,
+        display_name=display_name,
+    )
+    stmt = stmt.on_conflict_do_update(
+        constraint="identity_mappings_workspace_platform_user_key",
+        set_={
+            "email": stmt.excluded.email,
+            "display_name": stmt.excluded.display_name,
+            "deleted_at": None,
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None),
+        },
+    )
+    stmt = stmt.returning(IdentityMapping.__table__.c.id)
+
+    result = await session.execute(stmt)
+    mapping_id = result.scalar_one()
+    await session.flush()
+
+    # Fetch the full record
+    fetch_stmt = select(IdentityMapping).where(IdentityMapping.id == mapping_id)
+    fetch_result = await session.execute(fetch_stmt)
+    return fetch_result.scalar_one()
+
+
+# ============================================================
+# Roster seeding orchestrator
+# ============================================================
+
+
+async def seed_roster(
+    session: AsyncSession,
+    workspace_id: UUID,
+    platform: str,
+    members: list[dict],
+) -> int:
+    """Seed identity mappings from a platform roster and run resolution.
+
+    For each member in the roster:
+    1. Upserts an identity_mapping row
+    2. After all members upserted, runs email-based resolution
+    3. Runs fuzzy name matching for candidate links
+    4. Backfills existing Person nodes
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to seed.
+        platform: Platform name ('linear', 'slack', 'github').
+        members: List of member dicts with platform_user_id, display_name, email.
+
+    Returns:
+        Number of members seeded.
+    """
+    count = 0
+    for member in members:
+        await upsert_identity_mapping(
+            session=session,
+            workspace_id=workspace_id,
+            email=member.get("email"),
+            platform=platform,
+            platform_user_id=member["platform_user_id"],
+            display_name=member.get("display_name"),
+        )
+        count += 1
+
+    # Run email-based resolution
+    resolved = await resolve_by_email(session, workspace_id)
+    logger.info(
+        "Email resolution created %d canonical persons for workspace %s",
+        resolved,
+        workspace_id,
+    )
+
+    # Run fuzzy name matching
+    fuzzy_count = await find_fuzzy_candidates(session, workspace_id)
+    logger.info(
+        "Fuzzy matching found %d candidates for workspace %s",
+        fuzzy_count,
+        workspace_id,
+    )
+
+    # Backfill existing Person nodes
+    backfilled = await backfill_identity_resolution(session, workspace_id)
+    logger.info(
+        "Backfilled %d person nodes for workspace %s",
+        backfilled,
+        workspace_id,
+    )
+
+    logger.info(
+        "Seeded %d %s members for workspace %s",
+        count,
+        platform,
+        workspace_id,
+    )
+    return count
+
+
+# ============================================================
+# Fuzzy name matching
+# ============================================================
+
+
+def compute_name_similarity(name_a: str, name_b: str) -> float:
+    """Compute similarity between two names using token sort ratio.
+
+    Uses rapidfuzz.fuzz.token_sort_ratio with a cutoff of 80.
+    Normalizes names to lowercase and strips whitespace before comparison.
+
+    Args:
+        name_a: First name string.
+        name_b: Second name string.
+
+    Returns:
+        Score from 0.0-100.0, or 0.0 if below threshold 80.
+    """
+    a = name_a.strip().lower()
+    b = name_b.strip().lower()
+    score = fuzz.token_sort_ratio(a, b, score_cutoff=80)
+    return score
+
+
+def build_confidence_score(name_score: float) -> float:
+    """Convert a name similarity score (80-100) to a confidence score (0.5-0.9).
+
+    Never returns 1.0 for name-only matching to reflect inherent uncertainty.
+
+    Args:
+        name_score: Score from compute_name_similarity (80-100).
+
+    Returns:
+        Confidence score between 0.5 and 0.9.
+    """
+    # Normalize 80-100 range to 0.5-0.9
+    normalized = (name_score - 80) / 20  # 0.0 to 1.0
+    confidence = 0.5 + (normalized * 0.4)  # 0.5 to 0.9
+    return min(confidence, 0.9)
+
+
+async def find_fuzzy_candidates(
+    session: AsyncSession,
+    workspace_id: UUID,
+) -> int:
+    """Find candidate same_as edges between canonical Person nodes with similar names.
+
+    For each pair of canonical Person nodes in the workspace with different
+    canonical_person_ids, compares display names. If similarity >= 80,
+    creates a candidate same_as edge with confidence score.
+
+    IMPORTANT: Never auto-merges. Only creates candidate edges.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to process.
+
+    Returns:
+        Number of candidate edges created.
+    """
+    from src.models.graph_node import GraphNode
+
+    # Query all canonical Person nodes
+    stmt = (
+        select(GraphNode)
+        .where(
+            GraphNode.workspace_id == workspace_id,
+            GraphNode.entity_type == "Person",
+            GraphNode.deleted_at.is_(None),
+        )
+    )
+    result = await session.execute(stmt)
+    all_person_nodes = result.scalars().all()
+
+    # Filter to canonical nodes only
+    canonical_nodes = [
+        n for n in all_person_nodes
+        if n.properties and n.properties.get("canonical") is True
+    ]
+
+    candidate_count = 0
+
+    # Compare each pair
+    for i in range(len(canonical_nodes)):
+        for j in range(i + 1, len(canonical_nodes)):
+            node_a = canonical_nodes[i]
+            node_b = canonical_nodes[j]
+
+            # Skip if they share the same canonical_person_id
+            cpid_a = node_a.properties.get("canonical_person_id")
+            cpid_b = node_b.properties.get("canonical_person_id")
+            if cpid_a and cpid_b and cpid_a == cpid_b:
+                continue
+
+            score = compute_name_similarity(node_a.name, node_b.name)
+            if score >= 80:
+                confidence = build_confidence_score(score)
+                await upsert_edge(
+                    session=session,
+                    workspace_id=workspace_id,
+                    source_node_id=node_a.id,
+                    target_node_id=node_b.id,
+                    relationship_type="same_as",
+                    properties={
+                        "status": "candidate",
+                        "confidence": confidence,
+                        "match_type": "fuzzy_name",
+                    },
+                )
+                candidate_count += 1
+                logger.info(
+                    "Fuzzy candidate: %s <-> %s (score=%.1f, confidence=%.2f)",
+                    node_a.name,
+                    node_b.name,
+                    score,
+                    confidence,
+                )
+
+    return candidate_count
+
+
+# ============================================================
+# Backfill: link pre-existing Person nodes to canonical nodes
+# ============================================================
+
+
+async def backfill_identity_resolution(
+    session: AsyncSession,
+    workspace_id: UUID,
+) -> int:
+    """Backfill existing Person nodes by linking them to canonical nodes.
+
+    Finds Person nodes in graph_nodes that have no same_as edge to any
+    canonical Person node. For each unlinked Person node, extracts platform
+    and platform_user_id from its external_id, looks up the identity mapping,
+    and creates a same_as edge if a canonical_person_id exists.
+
+    Handles the race condition where Person nodes were created before
+    roster seeding ran.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to backfill.
+
+    Returns:
+        Number of newly linked Person nodes.
+    """
+    from src.models.graph_edge import GraphEdge
+    from src.models.graph_node import GraphNode
+
+    # Find all Person nodes in this workspace
+    person_stmt = (
+        select(GraphNode)
+        .where(
+            GraphNode.workspace_id == workspace_id,
+            GraphNode.entity_type == "Person",
+            GraphNode.deleted_at.is_(None),
+        )
+    )
+    person_result = await session.execute(person_stmt)
+    person_nodes = person_result.scalars().all()
+
+    linked_count = 0
+
+    for node in person_nodes:
+        # Skip canonical nodes themselves
+        if node.properties and node.properties.get("canonical") is True:
+            continue
+
+        # Check if this node already has a same_as edge
+        edge_stmt = (
+            select(GraphEdge.id)
+            .where(
+                GraphEdge.workspace_id == workspace_id,
+                GraphEdge.source_node_id == node.id,
+                GraphEdge.relationship_type == "same_as",
+                GraphEdge.deleted_at.is_(None),
+            )
+        )
+        edge_result = await session.execute(edge_stmt)
+        if edge_result.scalar_one_or_none() is not None:
+            continue  # Already linked
+
+        # Extract platform and platform_user_id from external_id
+        # Format: "slack:U12345" or "username:alice"
+        external_id = node.name  # fallback
+        # The GraphNode doesn't store external_id directly, but we can
+        # try to extract platform info from properties
+        platform = (node.properties or {}).get("platform")
+        platform_user_id = (node.properties or {}).get("platform_user_id")
+
+        # Fallback: parse from the node name or fingerprint pattern
+        if not platform or not platform_user_id:
+            # Try to reverse-lookup from identity_mappings by display_name
+            # This is a best-effort backfill
+            continue
+
+        mapping = await lookup_mapping(session, workspace_id, platform, platform_user_id)
+        if mapping and mapping.canonical_person_id:
+            await upsert_edge(
+                session=session,
+                workspace_id=workspace_id,
+                source_node_id=node.id,
+                target_node_id=mapping.canonical_person_id,
+                relationship_type="same_as",
+            )
+            linked_count += 1
+            logger.info(
+                "Backfill: linked Person node %s to canonical %s",
+                node.id,
+                mapping.canonical_person_id,
+            )
+
+    return linked_count

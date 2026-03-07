@@ -444,13 +444,13 @@ class TestFetchLinearRoster:
         user_id = uuid.uuid4()
         settings = MagicMock()
 
-        # Mock get_valid_access_token
+        # Mock get_valid_access_token at source module
         with patch(
-            "src.services.identity_resolution.get_valid_access_token",
+            "src.services.linear_oauth.get_valid_access_token",
             new_callable=AsyncMock,
             return_value="test-token",
         ), patch(
-            "src.services.identity_resolution.LinearGraphQLClient"
+            "src.services.linear_graphql.LinearGraphQLClient"
         ) as MockClient:
             client_instance = AsyncMock()
             MockClient.return_value = client_instance
@@ -490,11 +490,11 @@ class TestFetchLinearRoster:
         settings = MagicMock()
 
         with patch(
-            "src.services.identity_resolution.get_valid_access_token",
+            "src.services.linear_oauth.get_valid_access_token",
             new_callable=AsyncMock,
             return_value="test-token",
         ), patch(
-            "src.services.identity_resolution.LinearGraphQLClient"
+            "src.services.linear_graphql.LinearGraphQLClient"
         ) as MockClient:
             client_instance = AsyncMock()
             MockClient.return_value = client_instance
@@ -560,7 +560,7 @@ class TestFetchSlackRoster:
         }
 
         with patch(
-            "src.services.identity_resolution.get_bot_token",
+            "src.services.slack_oauth.get_bot_token",
             new_callable=AsyncMock,
             return_value="xoxb-test-token",
         ), patch("httpx.AsyncClient") as MockHttpx:
@@ -616,7 +616,7 @@ class TestFetchSlackRoster:
         }
 
         with patch(
-            "src.services.identity_resolution.get_bot_token",
+            "src.services.slack_oauth.get_bot_token",
             new_callable=AsyncMock,
             return_value="xoxb-test-token",
         ), patch("httpx.AsyncClient") as MockHttpx:
@@ -669,7 +669,7 @@ class TestFetchSlackRoster:
         }
 
         with patch(
-            "src.services.identity_resolution.get_bot_token",
+            "src.services.slack_oauth.get_bot_token",
             new_callable=AsyncMock,
             return_value="xoxb-test-token",
         ), patch("httpx.AsyncClient") as MockHttpx:
@@ -716,15 +716,15 @@ class TestFetchGithubRoster:
         settings = MagicMock()
 
         with patch(
-            "src.services.identity_resolution.get_installation_token",
+            "src.services.github_oauth.get_installation_token",
             new_callable=AsyncMock,
             return_value="ghs_test-token",
         ), patch(
-            "src.services.identity_resolution.get_cached_repos",
+            "src.services.github_repos.get_cached_repos",
             new_callable=AsyncMock,
             return_value=[{"full_name": "org/repo1"}],
         ), patch(
-            "src.services.identity_resolution.create_github_client"
+            "src.services.github_common.create_github_client"
         ) as MockGhClient:
             mock_client = AsyncMock()
             MockGhClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -753,7 +753,7 @@ class TestFetchGithubRoster:
             mock_client.get = AsyncMock(side_effect=[collab_response, alice_resp, bob_resp])
 
             with patch(
-                "src.services.identity_resolution.check_rate_limit",
+                "src.services.github_common.check_rate_limit",
                 new_callable=AsyncMock,
             ):
                 from src.services.identity_resolution import fetch_github_roster
@@ -773,15 +773,15 @@ class TestFetchGithubRoster:
         settings = MagicMock()
 
         with patch(
-            "src.services.identity_resolution.get_installation_token",
+            "src.services.github_oauth.get_installation_token",
             new_callable=AsyncMock,
             return_value="ghs_test-token",
         ), patch(
-            "src.services.identity_resolution.get_cached_repos",
+            "src.services.github_repos.get_cached_repos",
             new_callable=AsyncMock,
             return_value=[{"full_name": "org/repo1"}],
         ), patch(
-            "src.services.identity_resolution.create_github_client"
+            "src.services.github_common.create_github_client"
         ) as MockGhClient:
             mock_client = AsyncMock()
             MockGhClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -800,7 +800,7 @@ class TestFetchGithubRoster:
             mock_client.get = AsyncMock(side_effect=[collab_response, user_resp])
 
             with patch(
-                "src.services.identity_resolution.check_rate_limit",
+                "src.services.github_common.check_rate_limit",
                 new_callable=AsyncMock,
             ):
                 from src.services.identity_resolution import fetch_github_roster
@@ -819,15 +819,15 @@ class TestFetchGithubRoster:
         settings = MagicMock()
 
         with patch(
-            "src.services.identity_resolution.get_installation_token",
+            "src.services.github_oauth.get_installation_token",
             new_callable=AsyncMock,
             return_value="ghs_test-token",
         ), patch(
-            "src.services.identity_resolution.get_cached_repos",
+            "src.services.github_repos.get_cached_repos",
             new_callable=AsyncMock,
             return_value=[{"full_name": "org/repo1"}, {"full_name": "org/repo2"}],
         ), patch(
-            "src.services.identity_resolution.create_github_client"
+            "src.services.github_common.create_github_client"
         ) as MockGhClient:
             mock_client = AsyncMock()
             MockGhClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
@@ -851,10 +851,10 @@ class TestFetchGithubRoster:
             collab_resp2.json.return_value = [{"login": "alice", "id": 1}]
             collab_resp2.headers = {}
 
-            mock_client.get = AsyncMock(side_effect=[collab_resp1, alice_resp, collab_resp2])
+            mock_client.get = AsyncMock(side_effect=[collab_resp1, collab_resp2, alice_resp])
 
             with patch(
-                "src.services.identity_resolution.check_rate_limit",
+                "src.services.github_common.check_rate_limit",
                 new_callable=AsyncMock,
             ):
                 from src.services.identity_resolution import fetch_github_roster
