@@ -1,4 +1,4 @@
-import { Nav, Hero, TrustBar, ProblemSection, HowItWorks, Features, ProductDemo, Integrations, CTASection, Footer } from '@/components/landing'
+import { Nav, Hero, TrustBar, ProblemSection, HowItWorks, Features, Integrations, CTASection, Footer } from '@/components/landing'
 
 export default function LandingPage() {
   return (
@@ -9,7 +9,6 @@ export default function LandingPage() {
       <ProblemSection />
       <HowItWorks />
       <Features />
-      <ProductDemo />
       <Integrations />
       <CTASection />
       <Footer />
