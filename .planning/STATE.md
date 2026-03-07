@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
-status: completed
-stopped_at: Phase 22 context gathered
-last_updated: "2026-03-06T15:55:53.965Z"
-last_activity: 2026-03-06 -- Completed Phase 20 Plan 02 (Settings Frontend - Settings Page UI)
+status: executing
+stopped_at: Completed 22-01-PLAN.md
+last_updated: "2026-03-07T09:33:19.752Z"
+last_activity: 2026-03-07 -- Completed Phase 22 Plan 02 (Frontend SSE Client & Generation Progress Component)
 progress:
   total_phases: 8
   completed_phases: 6
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
+  total_plans: 18
+  completed_plans: 17
+  percent: 66
 ---
 
 # Project State
@@ -73,6 +73,7 @@ Progress: [██████░░░░] 66%
 | Phase 17 P02 | 5min | 2 tasks | 2 files |
 | Phase 20 P01 | 2min | 2 tasks | 5 files |
 | Phase 20 P02 | 3min | 2 tasks | 3 files |
+| Phase 22 P01 | 3min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,8 @@ Recent decisions affecting current work:
 - [Phase 22]: fetch+ReadableStream over EventSource for SSE -- EventSource cannot send Authorization headers
 - [Phase 22]: GenerationProgress is purely presentational -- state management deferred to Plan 03 parent
 - [Phase 22]: Active step uses CSS step-pulse animation (not JS interval) for teal pulsing
+- [Phase 22]: Dedicated session inside SSE generator (not Depends) to avoid FastAPI closing session before stream ends
+- [Phase 22]: SSE concurrent generation returns error event (not HTTP 409) for uniform client handling
 
 ### Roadmap Evolution
 
@@ -141,6 +144,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T09:30:30Z
-Stopped at: Completed 22-02-PLAN.md
-Resume file: .planning/phases/22-realtime-generation-progress-ui/22-03-PLAN.md
+Last session: 2026-03-07T09:33:19.750Z
+Stopped at: Completed 22-01-PLAN.md
+Resume file: None
