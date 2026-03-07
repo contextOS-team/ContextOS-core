@@ -1,17 +1,24 @@
-"""LLM extraction service: schemas, content filter, source validation, content hash.
+"""LLM extraction service: Gemini Flash structured extraction, graph persistence.
 
-Provides the pure-function foundation for Gemini Flash structured extraction:
+Provides:
 - Pydantic schemas for Decision and Blocker extraction output (no defaults for Gemini SDK)
 - Content pre-filter to skip bot, short, and emoji-only messages before LLM calls
 - Source text validation to drop hallucinated entities
 - SHA-256 content hash for deduplication
+- Gemini Flash extraction with structured output (extract_entities)
+- Decision and blocker persistence to graph nodes and edges
 """
 
 import hashlib
 import logging
 import re
+from uuid import UUID
 
+from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field
+
+from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -154,3 +161,84 @@ def compute_content_hash(text: str) -> str:
     """
     normalized = " ".join(text.strip().split())
     return hashlib.sha256(normalized.encode()).hexdigest()
+
+
+# ============================================================
+# Extraction System Prompt
+# ============================================================
+
+EXTRACTION_SYSTEM_PROMPT = """\
+You are an entity extraction assistant for engineering team communications.
+Extract decisions and blockers from the provided text.
+
+Rules:
+- Only extract entities that are explicitly stated in the text
+- The source_quote MUST be an exact substring of the input text -- do not paraphrase
+- Do not infer or fabricate entities that are not directly stated
+- If no decisions or blockers are found, return empty lists
+
+Decision language indicators (look for these patterns):
+- "agreed", "decided", "going with", "let's do", "approved"
+- Statements that resolve a choice between alternatives
+- Explicit commitments to a course of action
+
+Confidence calibration:
+- 1.0 = explicit decision language ("we decided", "agreed to", "going with")
+- 0.7-0.9 = strong implication of a decision
+- 0.5-0.7 = possible decision, ambiguous language
+- Below 0.5 = do not extract
+
+For person_name: use the name or handle of the person who made the decision.
+If unclear, use an empty string.
+
+For ticket_refs: extract any ticket identifiers mentioned in the context
+of the decision (e.g., ENG-123, PROJ-456). If none, use an empty list.
+"""
+
+
+# ============================================================
+# Gemini Client
+# ============================================================
+
+
+def get_gemini_client() -> genai.Client:
+    """Create a Gemini client using the project's API key."""
+    settings = get_settings()
+    return genai.Client(api_key=settings.GEMINI_API_KEY)
+
+
+# ============================================================
+# Gemini Extraction Service
+# ============================================================
+
+
+async def extract_entities(
+    client: genai.Client,
+    content: str,
+    source_type: str,
+) -> ExtractionResult:
+    """Extract semantic entities from content using Gemini Flash structured output.
+
+    Calls Gemini with temperature=0 and Pydantic response_schema for type-safe
+    extraction. Validates results against source text before returning.
+
+    Args:
+        client: Gemini API client instance.
+        content: The text content to extract entities from.
+        source_type: Type of source (e.g. 'slack_message', 'meeting_transcript').
+
+    Returns:
+        Validated ExtractionResult with decisions and blockers.
+    """
+    response = await client.aio.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=f"Extract decisions and blockers from this {source_type}:\n\n{content}",
+        config=types.GenerateContentConfig(
+            system_instruction=EXTRACTION_SYSTEM_PROMPT,
+            response_mime_type="application/json",
+            response_schema=ExtractionResult,
+            temperature=0,
+        ),
+    )
+    result: ExtractionResult = response.parsed
+    return validate_extraction(result, content)
