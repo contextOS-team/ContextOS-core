@@ -46,9 +46,9 @@ export const SourceIcon: React.FC<SourceIconProps> = ({ name, active }) => {
   return (
     <div
       style={{
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 48,
+        height: 48,
+        borderRadius: 24,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
