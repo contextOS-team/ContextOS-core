@@ -1,7 +1,9 @@
-"""Unit tests for identity resolution: email-based deterministic matching.
+"""Unit tests for identity resolution: email-based deterministic matching,
+roster fetching, fuzzy name matching, and seed_roster orchestration.
 
 Tests canonical Person node creation, email-based grouping, mapping lookup,
-and inline resolution during graph extraction.
+inline resolution during graph extraction, roster fetch functions for
+Linear/Slack/GitHub, fuzzy name matching, and seed_roster orchestration.
 """
 
 import uuid
@@ -419,3 +421,609 @@ class TestResolveIdentityInline:
 
         # lookup_mapping should never be called for non-Person entities
         mock_lookup.assert_not_called()
+
+
+# ============================================================
+# Test: fetch_linear_roster
+# ============================================================
+
+
+class TestFetchLinearRoster:
+    """Tests for fetch_linear_roster()."""
+
+    @pytest.fixture
+    def mock_session(self):
+        session = AsyncMock()
+        return session
+
+    @pytest.mark.asyncio
+    async def test_returns_active_users_with_correct_fields(self, mock_session):
+        """fetch_linear_roster returns list of dicts with platform_user_id,
+        display_name, email for active users."""
+        workspace_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        settings = MagicMock()
+
+        # Mock get_valid_access_token
+        with patch(
+            "src.services.identity_resolution.get_valid_access_token",
+            new_callable=AsyncMock,
+            return_value="test-token",
+        ), patch(
+            "src.services.identity_resolution.LinearGraphQLClient"
+        ) as MockClient:
+            client_instance = AsyncMock()
+            MockClient.return_value = client_instance
+            # Simulate fetch_all_pages returning active users
+            client_instance.fetch_all_pages = AsyncMock(return_value=[
+                {
+                    "id": "user-1",
+                    "name": "Alice Smith",
+                    "displayName": "Alice",
+                    "email": "alice@example.com",
+                    "active": True,
+                },
+                {
+                    "id": "user-2",
+                    "name": "Bob Jones",
+                    "displayName": "Bob",
+                    "email": "bob@example.com",
+                    "active": True,
+                },
+            ])
+
+            from src.services.identity_resolution import fetch_linear_roster
+
+            result = await fetch_linear_roster(mock_session, workspace_id, user_id, settings)
+
+        assert len(result) == 2
+        assert result[0]["platform_user_id"] == "user-1"
+        assert result[0]["display_name"] == "Alice"
+        assert result[0]["email"] == "alice@example.com"
+        assert result[1]["platform_user_id"] == "user-2"
+
+    @pytest.mark.asyncio
+    async def test_skips_inactive_users(self, mock_session):
+        """fetch_linear_roster skips inactive/deactivated users."""
+        workspace_id = uuid.uuid4()
+        user_id = uuid.uuid4()
+        settings = MagicMock()
+
+        with patch(
+            "src.services.identity_resolution.get_valid_access_token",
+            new_callable=AsyncMock,
+            return_value="test-token",
+        ), patch(
+            "src.services.identity_resolution.LinearGraphQLClient"
+        ) as MockClient:
+            client_instance = AsyncMock()
+            MockClient.return_value = client_instance
+            client_instance.fetch_all_pages = AsyncMock(return_value=[
+                {
+                    "id": "user-1",
+                    "name": "Alice",
+                    "displayName": "Alice",
+                    "email": "alice@example.com",
+                    "active": True,
+                },
+                {
+                    "id": "user-2",
+                    "name": "Deactivated User",
+                    "displayName": "Deactivated",
+                    "email": "deactivated@example.com",
+                    "active": False,
+                },
+            ])
+
+            from src.services.identity_resolution import fetch_linear_roster
+
+            result = await fetch_linear_roster(mock_session, workspace_id, user_id, settings)
+
+        assert len(result) == 1
+        assert result[0]["platform_user_id"] == "user-1"
+
+
+# ============================================================
+# Test: fetch_slack_roster
+# ============================================================
+
+
+class TestFetchSlackRoster:
+    """Tests for fetch_slack_roster()."""
+
+    @pytest.fixture
+    def mock_session(self):
+        session = AsyncMock()
+        return session
+
+    @pytest.mark.asyncio
+    async def test_returns_users_with_correct_fields(self, mock_session):
+        """fetch_slack_roster returns list of dicts with platform_user_id,
+        display_name, email."""
+        workspace_id = uuid.uuid4()
+
+        slack_response = {
+            "ok": True,
+            "members": [
+                {
+                    "id": "U001",
+                    "name": "alice",
+                    "is_bot": False,
+                    "deleted": False,
+                    "profile": {
+                        "real_name": "Alice Smith",
+                        "email": "alice@example.com",
+                    },
+                },
+            ],
+            "response_metadata": {"next_cursor": ""},
+        }
+
+        with patch(
+            "src.services.identity_resolution.get_bot_token",
+            new_callable=AsyncMock,
+            return_value="xoxb-test-token",
+        ), patch("httpx.AsyncClient") as MockHttpx:
+            mock_client = AsyncMock()
+            MockHttpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            MockHttpx.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            mock_response = MagicMock()
+            mock_response.json.return_value = slack_response
+            mock_response.status_code = 200
+            mock_client.get = AsyncMock(return_value=mock_response)
+
+            from src.services.identity_resolution import fetch_slack_roster
+
+            result = await fetch_slack_roster(mock_session, workspace_id)
+
+        assert len(result) == 1
+        assert result[0]["platform_user_id"] == "U001"
+        assert result[0]["display_name"] == "Alice Smith"
+        assert result[0]["email"] == "alice@example.com"
+
+    @pytest.mark.asyncio
+    async def test_skips_bots_and_deleted_users(self, mock_session):
+        """fetch_slack_roster skips bots and deleted users."""
+        workspace_id = uuid.uuid4()
+
+        slack_response = {
+            "ok": True,
+            "members": [
+                {
+                    "id": "U001",
+                    "name": "alice",
+                    "is_bot": False,
+                    "deleted": False,
+                    "profile": {"real_name": "Alice", "email": "alice@example.com"},
+                },
+                {
+                    "id": "UBOT",
+                    "name": "slackbot",
+                    "is_bot": True,
+                    "deleted": False,
+                    "profile": {"real_name": "Slackbot"},
+                },
+                {
+                    "id": "UDEL",
+                    "name": "departed",
+                    "is_bot": False,
+                    "deleted": True,
+                    "profile": {"real_name": "Departed User"},
+                },
+            ],
+            "response_metadata": {"next_cursor": ""},
+        }
+
+        with patch(
+            "src.services.identity_resolution.get_bot_token",
+            new_callable=AsyncMock,
+            return_value="xoxb-test-token",
+        ), patch("httpx.AsyncClient") as MockHttpx:
+            mock_client = AsyncMock()
+            MockHttpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            MockHttpx.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            mock_response = MagicMock()
+            mock_response.json.return_value = slack_response
+            mock_response.status_code = 200
+            mock_client.get = AsyncMock(return_value=mock_response)
+
+            from src.services.identity_resolution import fetch_slack_roster
+
+            result = await fetch_slack_roster(mock_session, workspace_id)
+
+        assert len(result) == 1
+        assert result[0]["platform_user_id"] == "U001"
+
+    @pytest.mark.asyncio
+    async def test_handles_cursor_pagination(self, mock_session):
+        """fetch_slack_roster handles cursor-based pagination (two pages)."""
+        workspace_id = uuid.uuid4()
+
+        page1 = {
+            "ok": True,
+            "members": [
+                {
+                    "id": "U001",
+                    "name": "alice",
+                    "is_bot": False,
+                    "deleted": False,
+                    "profile": {"real_name": "Alice", "email": "alice@example.com"},
+                },
+            ],
+            "response_metadata": {"next_cursor": "cursor_page2"},
+        }
+        page2 = {
+            "ok": True,
+            "members": [
+                {
+                    "id": "U002",
+                    "name": "bob",
+                    "is_bot": False,
+                    "deleted": False,
+                    "profile": {"real_name": "Bob", "email": "bob@example.com"},
+                },
+            ],
+            "response_metadata": {"next_cursor": ""},
+        }
+
+        with patch(
+            "src.services.identity_resolution.get_bot_token",
+            new_callable=AsyncMock,
+            return_value="xoxb-test-token",
+        ), patch("httpx.AsyncClient") as MockHttpx:
+            mock_client = AsyncMock()
+            MockHttpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            MockHttpx.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            mock_resp1 = MagicMock()
+            mock_resp1.json.return_value = page1
+            mock_resp1.status_code = 200
+
+            mock_resp2 = MagicMock()
+            mock_resp2.json.return_value = page2
+            mock_resp2.status_code = 200
+
+            mock_client.get = AsyncMock(side_effect=[mock_resp1, mock_resp2])
+
+            from src.services.identity_resolution import fetch_slack_roster
+
+            result = await fetch_slack_roster(mock_session, workspace_id)
+
+        assert len(result) == 2
+        assert result[0]["platform_user_id"] == "U001"
+        assert result[1]["platform_user_id"] == "U002"
+
+
+# ============================================================
+# Test: fetch_github_roster
+# ============================================================
+
+
+class TestFetchGithubRoster:
+    """Tests for fetch_github_roster()."""
+
+    @pytest.fixture
+    def mock_session(self):
+        session = AsyncMock()
+        return session
+
+    @pytest.mark.asyncio
+    async def test_returns_collaborators_with_login(self, mock_session):
+        """fetch_github_roster returns collaborators with login as platform_user_id."""
+        workspace_id = uuid.uuid4()
+        settings = MagicMock()
+
+        with patch(
+            "src.services.identity_resolution.get_installation_token",
+            new_callable=AsyncMock,
+            return_value="ghs_test-token",
+        ), patch(
+            "src.services.identity_resolution.get_cached_repos",
+            new_callable=AsyncMock,
+            return_value=[{"full_name": "org/repo1"}],
+        ), patch(
+            "src.services.identity_resolution.create_github_client"
+        ) as MockGhClient:
+            mock_client = AsyncMock()
+            MockGhClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            MockGhClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            # Collaborators response (no Link header = single page)
+            collab_response = MagicMock()
+            collab_response.status_code = 200
+            collab_response.json.return_value = [
+                {"login": "alice", "id": 1},
+                {"login": "bob", "id": 2},
+            ]
+            collab_response.headers = {}
+
+            # User detail responses (for email lookup)
+            alice_resp = MagicMock()
+            alice_resp.status_code = 200
+            alice_resp.json.return_value = {"login": "alice", "email": "alice@example.com", "name": "Alice Smith"}
+            alice_resp.headers = {}
+
+            bob_resp = MagicMock()
+            bob_resp.status_code = 200
+            bob_resp.json.return_value = {"login": "bob", "email": None, "name": "Bob"}
+            bob_resp.headers = {}
+
+            mock_client.get = AsyncMock(side_effect=[collab_response, alice_resp, bob_resp])
+
+            with patch(
+                "src.services.identity_resolution.check_rate_limit",
+                new_callable=AsyncMock,
+            ):
+                from src.services.identity_resolution import fetch_github_roster
+
+                result = await fetch_github_roster(mock_session, workspace_id, settings)
+
+        assert len(result) == 2
+        alice = next(r for r in result if r["platform_user_id"] == "alice")
+        assert alice["email"] == "alice@example.com"
+        bob = next(r for r in result if r["platform_user_id"] == "bob")
+        assert bob["email"] is None
+
+    @pytest.mark.asyncio
+    async def test_attempts_per_user_email_lookup(self, mock_session):
+        """fetch_github_roster attempts GET /users/{login} to get public email."""
+        workspace_id = uuid.uuid4()
+        settings = MagicMock()
+
+        with patch(
+            "src.services.identity_resolution.get_installation_token",
+            new_callable=AsyncMock,
+            return_value="ghs_test-token",
+        ), patch(
+            "src.services.identity_resolution.get_cached_repos",
+            new_callable=AsyncMock,
+            return_value=[{"full_name": "org/repo1"}],
+        ), patch(
+            "src.services.identity_resolution.create_github_client"
+        ) as MockGhClient:
+            mock_client = AsyncMock()
+            MockGhClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            MockGhClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            collab_response = MagicMock()
+            collab_response.status_code = 200
+            collab_response.json.return_value = [{"login": "charlie", "id": 3}]
+            collab_response.headers = {}
+
+            user_resp = MagicMock()
+            user_resp.status_code = 200
+            user_resp.json.return_value = {"login": "charlie", "email": "charlie@example.com", "name": "Charlie"}
+            user_resp.headers = {}
+
+            mock_client.get = AsyncMock(side_effect=[collab_response, user_resp])
+
+            with patch(
+                "src.services.identity_resolution.check_rate_limit",
+                new_callable=AsyncMock,
+            ):
+                from src.services.identity_resolution import fetch_github_roster
+
+                result = await fetch_github_roster(mock_session, workspace_id, settings)
+
+        assert len(result) == 1
+        # Verify the user endpoint was called
+        calls = mock_client.get.call_args_list
+        assert any("/users/charlie" in str(c) for c in calls)
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_across_repos(self, mock_session):
+        """fetch_github_roster deduplicates collaborators across multiple repos."""
+        workspace_id = uuid.uuid4()
+        settings = MagicMock()
+
+        with patch(
+            "src.services.identity_resolution.get_installation_token",
+            new_callable=AsyncMock,
+            return_value="ghs_test-token",
+        ), patch(
+            "src.services.identity_resolution.get_cached_repos",
+            new_callable=AsyncMock,
+            return_value=[{"full_name": "org/repo1"}, {"full_name": "org/repo2"}],
+        ), patch(
+            "src.services.identity_resolution.create_github_client"
+        ) as MockGhClient:
+            mock_client = AsyncMock()
+            MockGhClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            MockGhClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            # repo1 collaborators
+            collab_resp1 = MagicMock()
+            collab_resp1.status_code = 200
+            collab_resp1.json.return_value = [{"login": "alice", "id": 1}]
+            collab_resp1.headers = {}
+
+            # alice user detail
+            alice_resp = MagicMock()
+            alice_resp.status_code = 200
+            alice_resp.json.return_value = {"login": "alice", "email": "alice@example.com", "name": "Alice"}
+            alice_resp.headers = {}
+
+            # repo2 collaborators (same alice)
+            collab_resp2 = MagicMock()
+            collab_resp2.status_code = 200
+            collab_resp2.json.return_value = [{"login": "alice", "id": 1}]
+            collab_resp2.headers = {}
+
+            mock_client.get = AsyncMock(side_effect=[collab_resp1, alice_resp, collab_resp2])
+
+            with patch(
+                "src.services.identity_resolution.check_rate_limit",
+                new_callable=AsyncMock,
+            ):
+                from src.services.identity_resolution import fetch_github_roster
+
+                result = await fetch_github_roster(mock_session, workspace_id, settings)
+
+        # alice should appear only once
+        assert len(result) == 1
+        assert result[0]["platform_user_id"] == "alice"
+
+
+# ============================================================
+# Test: compute_name_similarity
+# ============================================================
+
+
+class TestComputeNameSimilarity:
+    """Tests for compute_name_similarity()."""
+
+    def test_similar_names_high_score(self):
+        """compute_name_similarity('John Smith', 'Smith, John') returns score >= 80."""
+        from src.services.identity_resolution import compute_name_similarity
+
+        score = compute_name_similarity("John Smith", "Smith, John")
+        assert score >= 80
+
+    def test_dissimilar_names_zero(self):
+        """compute_name_similarity('John Smith', 'Jane Doe') returns 0 (below threshold)."""
+        from src.services.identity_resolution import compute_name_similarity
+
+        score = compute_name_similarity("John Smith", "Jane Doe")
+        assert score == 0.0
+
+
+# ============================================================
+# Test: find_fuzzy_candidates
+# ============================================================
+
+
+class TestFindFuzzyCandidates:
+    """Tests for find_fuzzy_candidates()."""
+
+    @pytest.fixture
+    def mock_session(self):
+        session = AsyncMock()
+        return session
+
+    @pytest.mark.asyncio
+    async def test_creates_candidate_edge_for_similar_names(self, mock_session):
+        """find_fuzzy_candidates creates candidate same_as edge with
+        status=candidate and confidence score for name matches across
+        different emails."""
+        from src.models.graph_node import GraphNode
+
+        workspace_id = uuid.uuid4()
+
+        # Two canonical Person nodes with similar names but different person IDs
+        canonical_1_id = uuid.uuid4()
+        canonical_2_id = uuid.uuid4()
+
+        node1 = MagicMock(spec=GraphNode)
+        node1.id = canonical_1_id
+        node1.name = "John Smith"
+        node1.properties = {"canonical": True, "canonical_person_id": str(uuid.uuid4())}
+
+        node2 = MagicMock(spec=GraphNode)
+        node2.id = canonical_2_id
+        node2.name = "Smith, John"
+        node2.properties = {"canonical": True, "canonical_person_id": str(uuid.uuid4())}
+
+        # Mock session to return the two canonical nodes
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [node1, node2]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with patch(
+            "src.services.identity_resolution.upsert_edge",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        ) as mock_upsert_edge:
+            from src.services.identity_resolution import find_fuzzy_candidates
+
+            count = await find_fuzzy_candidates(mock_session, workspace_id)
+
+        assert count == 1
+        mock_upsert_edge.assert_called_once()
+        edge_kwargs = mock_upsert_edge.call_args.kwargs
+        assert edge_kwargs["relationship_type"] == "same_as"
+        assert edge_kwargs["properties"]["status"] == "candidate"
+        assert 0.5 <= edge_kwargs["properties"]["confidence"] <= 0.9
+        assert edge_kwargs["properties"]["match_type"] == "fuzzy_name"
+
+    @pytest.mark.asyncio
+    async def test_no_edge_for_dissimilar_names(self, mock_session):
+        """find_fuzzy_candidates does NOT create edge when score is below threshold 80."""
+        from src.models.graph_node import GraphNode
+
+        workspace_id = uuid.uuid4()
+
+        node1 = MagicMock(spec=GraphNode)
+        node1.id = uuid.uuid4()
+        node1.name = "Alice Johnson"
+        node1.properties = {"canonical": True, "canonical_person_id": str(uuid.uuid4())}
+
+        node2 = MagicMock(spec=GraphNode)
+        node2.id = uuid.uuid4()
+        node2.name = "Bob Williams"
+        node2.properties = {"canonical": True, "canonical_person_id": str(uuid.uuid4())}
+
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [node1, node2]
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        with patch(
+            "src.services.identity_resolution.upsert_edge",
+            new_callable=AsyncMock,
+        ) as mock_upsert_edge:
+            from src.services.identity_resolution import find_fuzzy_candidates
+
+            count = await find_fuzzy_candidates(mock_session, workspace_id)
+
+        assert count == 0
+        mock_upsert_edge.assert_not_called()
+
+
+# ============================================================
+# Test: seed_roster
+# ============================================================
+
+
+class TestSeedRoster:
+    """Tests for seed_roster()."""
+
+    @pytest.fixture
+    def mock_session(self):
+        session = AsyncMock()
+        return session
+
+    @pytest.mark.asyncio
+    async def test_upserts_and_calls_resolve_and_fuzzy(self, mock_session):
+        """seed_roster upserts identity_mapping rows and calls
+        resolve_by_email + find_fuzzy_candidates."""
+        workspace_id = uuid.uuid4()
+        members = [
+            {"platform_user_id": "U001", "display_name": "Alice", "email": "alice@example.com"},
+            {"platform_user_id": "U002", "display_name": "Bob", "email": "bob@example.com"},
+        ]
+
+        with patch(
+            "src.services.identity_resolution.upsert_identity_mapping",
+            new_callable=AsyncMock,
+        ) as mock_upsert_mapping, patch(
+            "src.services.identity_resolution.resolve_by_email",
+            new_callable=AsyncMock,
+            return_value=2,
+        ) as mock_resolve, patch(
+            "src.services.identity_resolution.find_fuzzy_candidates",
+            new_callable=AsyncMock,
+            return_value=0,
+        ) as mock_fuzzy, patch(
+            "src.services.identity_resolution.backfill_identity_resolution",
+            new_callable=AsyncMock,
+            return_value=0,
+        ):
+            from src.services.identity_resolution import seed_roster
+
+            count = await seed_roster(mock_session, workspace_id, "slack", members)
+
+        assert count == 2
+        assert mock_upsert_mapping.call_count == 2
+        mock_resolve.assert_called_once_with(mock_session, workspace_id)
+        mock_fuzzy.assert_called_once_with(mock_session, workspace_id)
