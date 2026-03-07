@@ -40,6 +40,7 @@ SYNTHESIS_TEMPLATE = """\
 ### Related Content
 {related_content}
 
+{graph_section}
 ---
 
 Based on the ticket and all related content above, produce a context page with these sections:
@@ -51,6 +52,66 @@ Based on the ticket and all related content above, produce a context page with t
 5. **Relevant Code** — Code snippets from across the codebase that are relevant to this ticket. Include function signatures, class definitions, and route handlers with file paths and repo names. This helps engineers understand existing implementations even from repos they have never worked in.
 6. **Open Questions** — Unresolved questions or ambiguities that need clarification
 7. **Key People** — Who is involved and their roles (assignee, reviewers, participants in discussions)"""
+
+
+def _format_decision_node(name: str, properties: dict) -> str:
+    """Format a decision node with special highlighting.
+
+    Args:
+        name: Decision description/name.
+        properties: Dict with person_name, source_type, ticket_refs, confidence.
+
+    Returns:
+        Formatted string: [DECISION] name | By: person | In: source | Affects: tickets | Confidence: X.X
+    """
+    person = properties.get("person_name", "Unknown")
+    source = properties.get("source_type", "Unknown")
+    tickets = ", ".join(properties.get("ticket_refs", []))
+    confidence = properties.get("confidence", "N/A")
+    parts = [f"[DECISION] {name}"]
+    parts.append(f"By: {person}")
+    parts.append(f"In: {source}")
+    if tickets:
+        parts.append(f"Affects: {tickets}")
+    parts.append(f"Confidence: {confidence}")
+    return " | ".join(parts)
+
+
+GRAPH_SECTION_TEMPLATE = """\
+### Graph Connections
+The following items were discovered through knowledge graph traversal --
+connections between entities that may not appear in direct text search:
+
+{graph_content}"""
+
+
+def _format_graph_section(items: list) -> str:
+    """Format graph-discovered items into a separate prompt section.
+
+    Items with graph signals are rendered with their graph path provenance
+    and entity types. Decision nodes get special [DECISION] highlighting.
+
+    Args:
+        items: List of LinkedItems with graph signals.
+
+    Returns:
+        Formatted graph section string, or empty string if no items.
+    """
+    if not items:
+        return ""
+
+    sections = []
+    for item in items:
+        if item.source_type == "Decision":
+            # Decision items already have [DECISION] format in their snippet
+            path_signal = next((s for s in item.signals if s.startswith("graph:")), "")
+            section = f"**{path_signal}**\n{item.snippet}"
+        else:
+            path_signal = next((s for s in item.signals if s.startswith("graph:")), "")
+            section = f"**{path_signal}**\n{item.snippet}\n*Type: {item.source_type}*"
+        sections.append(section)
+
+    return GRAPH_SECTION_TEMPLATE.format(graph_content="\n\n---\n\n".join(sections))
 
 
 def _format_related_content(items: list) -> str:
@@ -136,8 +197,19 @@ async def generate_context_page(
     # 2. Find related content
     linking_result = await find_related_content(session, workspace_id, ticket)
 
-    # 3. Build prompt
-    related_text = _format_related_content(linking_result.items)
+    # 3. Separate graph items from non-graph items
+    graph_items = [
+        item for item in linking_result.items
+        if any(s.startswith("graph:") for s in item.signals)
+    ]
+    non_graph_items = [
+        item for item in linking_result.items
+        if not any(s.startswith("graph:") for s in item.signals)
+    ]
+
+    # Build prompt with both sections
+    related_text = _format_related_content(non_graph_items)
+    graph_text = _format_graph_section(graph_items)
 
     prompt = SYNTHESIS_TEMPLATE.format(
         identifier=ticket.identifier,
@@ -148,6 +220,7 @@ async def generate_context_page(
         labels=", ".join(ticket.labels) if ticket.labels else "None",
         description=ticket.description or "No description provided.",
         related_content=related_text,
+        graph_section=graph_text,
     )
 
     # 4. Call LLM
