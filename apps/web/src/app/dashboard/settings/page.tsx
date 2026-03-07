@@ -774,7 +774,7 @@ export default function SettingsPage() {
       <h2 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">Settings</h2>
 
       {/* Tab navigation */}
-      <nav className="flex gap-1 border-b border-border -mb-px">
+      <nav className="flex gap-1 border-b border-border pb-0 mb-2">
         {TABS.map((tab) => (
           <button
             key={tab.id}
