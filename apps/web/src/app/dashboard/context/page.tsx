@@ -6,17 +6,23 @@ import { Search, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { toast } from 'sonner'
 import { formatRelativeTime } from '@/lib/utils'
 import {
   type ContextPageRow,
+  type GenerationState,
   STATUS_COLORS,
   FILTER_OPTIONS,
   type StatusFilter,
   fetchContextPages,
 } from '@/lib/context-feed'
 import { useContextPagesRealtime } from '@/hooks/use-context-pages-realtime'
-import { generateContextPage } from '@/lib/api'
+import {
+  apiFetchSSE,
+  SOURCE_LABELS,
+  searchLinearTickets,
+  type LinearTicketSearchResult,
+} from '@/lib/api'
+import { GenerationProgress } from '@/components/generation-progress'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
 type RowPayload = RealtimePostgresChangesPayload<Record<string, unknown>>
@@ -51,7 +57,17 @@ export default function ContextFeedPage() {
   const [error, setError] = useState<string | null>(null)
   const [showGenerateForm, setShowGenerateForm] = useState(false)
   const [generateTicketId, setGenerateTicketId] = useState('')
-  const [isGenerating, setIsGenerating] = useState(false)
+
+  // SSE generation progress state
+  const [generation, setGeneration] = useState<GenerationState | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  // Ticket search state
+  const [ticketResults, setTicketResults] = useState<LinearTicketSearchResult[]>([])
+  const [loadingTickets, setLoadingTickets] = useState(false)
+  const [showTicketDropdown, setShowTicketDropdown] = useState(false)
+  const searchContainerRef = useRef<HTMLDivElement>(null)
+  const ticketSearchRef = useRef<NodeJS.Timeout | null>(null)
 
   const debouncedQuery = useDebounce(searchQuery, 200)
 
@@ -91,6 +107,182 @@ export default function ContextFeedPage() {
     }, []),
   })
 
+  // Load tickets (empty query = assigned tickets, like onboarding)
+  const loadTickets = useCallback(async (query?: string) => {
+    setLoadingTickets(true)
+    try {
+      const result = await searchLinearTickets(query, 5)
+      setTicketResults(result.tickets)
+    } catch {
+      setTicketResults([])
+    } finally {
+      setLoadingTickets(false)
+    }
+  }, [])
+
+  // Debounced search on query changes (skip initial)
+  const isInitialTicketLoad = useRef(true)
+  useEffect(() => {
+    if (!showTicketDropdown) {
+      isInitialTicketLoad.current = true
+      return
+    }
+    if (isInitialTicketLoad.current) {
+      isInitialTicketLoad.current = false
+      return
+    }
+    if (ticketSearchRef.current) clearTimeout(ticketSearchRef.current)
+    ticketSearchRef.current = setTimeout(() => {
+      loadTickets(searchQuery.trim() || undefined)
+    }, 300)
+    return () => {
+      if (ticketSearchRef.current) clearTimeout(ticketSearchRef.current)
+    }
+  }, [searchQuery, showTicketDropdown, loadTickets])
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowTicketDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Shared SSE generation trigger
+  const startGeneration = useCallback((ticketIdentifier: string, linearIssueId?: string) => {
+    // Cancel any existing stream
+    abortRef.current?.abort()
+
+    // Initialize generation state with empty steps (populated on 'start' event)
+    setGeneration({
+      ticket: ticketIdentifier,
+      steps: [],
+      status: 'streaming',
+    })
+
+    const controller = apiFetchSSE(
+      `/api/context/${encodeURIComponent(ticketIdentifier)}/generate-stream`,
+      (event) => {
+        // Use functional setState to avoid stale closures
+        setGeneration((prev) => {
+          if (!prev) return prev
+
+          switch (event.event) {
+            case 'start':
+              return {
+                ...prev,
+                steps: event.steps.map((source) => ({
+                  source,
+                  label: SOURCE_LABELS[source] || source,
+                  status: 'waiting' as const,
+                })),
+              }
+
+            case 'step_start':
+              return {
+                ...prev,
+                steps: prev.steps.map((s) =>
+                  s.source === event.source
+                    ? { ...s, status: 'active' as const, detail: 'Searching...' }
+                    : s
+                ),
+              }
+
+            case 'step_complete':
+              return {
+                ...prev,
+                steps: prev.steps.map((s) =>
+                  s.source === event.source
+                    ? { ...s, status: 'complete' as const, count: event.count, detail: event.detail }
+                    : s
+                ),
+              }
+
+            case 'step_error':
+              return {
+                ...prev,
+                steps: prev.steps.map((s) =>
+                  s.source === event.source
+                    ? { ...s, status: 'error' as const, detail: event.error }
+                    : s
+                ),
+                status: 'error',
+                errorMessage: event.error,
+              }
+
+            case 'complete':
+              return {
+                ...prev,
+                status: 'complete',
+                contextPageId: event.context_page_id,
+              }
+
+            case 'error':
+              return {
+                ...prev,
+                status: 'error',
+                errorMessage: event.message,
+              }
+
+            default:
+              return prev
+          }
+        })
+      },
+      (error) => {
+        setGeneration((prev) =>
+          prev ? { ...prev, status: 'error', errorMessage: error.message } : prev
+        )
+      }
+    )
+
+    abortRef.current = controller
+  }, [])
+
+  // Handle completion with collapse + auto-navigate
+  useEffect(() => {
+    if (generation?.status === 'complete' && generation.contextPageId) {
+      // Brief pause to show all-green checkmarks, then collapse
+      const showTimer = setTimeout(() => {
+        setGeneration((prev) => prev ? { ...prev, status: 'collapsing' } : prev)
+      }, 1200) // Show completed state for 1.2s
+
+      return () => clearTimeout(showTimer)
+    }
+  }, [generation?.status, generation?.contextPageId])
+
+  useEffect(() => {
+    if (generation?.status === 'collapsing' && generation.contextPageId) {
+      // After collapse animation, navigate
+      const navTimer = setTimeout(() => {
+        router.push(`/dashboard/context/${generation.contextPageId}`)
+        setGeneration(null)
+      }, 500) // Match progress-collapse animation duration
+
+      return () => clearTimeout(navTimer)
+    }
+  }, [generation?.status, generation?.contextPageId, router])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+    }
+  }, [])
+
+  // Generate context for a ticket from search results
+  const handleGenerateFromSearch = useCallback(
+    (ticket: LinearTicketSearchResult) => {
+      setShowTicketDropdown(false)
+      setSearchQuery('')
+      startGeneration(ticket.identifier, ticket.id)
+    },
+    [startGeneration]
+  )
+
   // Filtering logic
   const filteredPages = useMemo(() => {
     let result = pages
@@ -114,26 +306,17 @@ export default function ContextFeedPage() {
   // Whether any filter/search is active
   const hasActiveFilters = statusFilter !== 'all' || debouncedQuery.trim().length > 0
 
-  // Generate handler
+  // Generate handler (manual form)
   const handleGenerate = useCallback(
-    async (e: React.FormEvent) => {
+    (e: React.FormEvent) => {
       e.preventDefault()
-      const ticketId = generateTicketId.trim()
+      const ticketId = generateTicketId.trim().toUpperCase()
       if (!ticketId) return
-
-      setIsGenerating(true)
-      try {
-        await generateContextPage(ticketId.toUpperCase())
-        toast(`Generating ${ticketId.toUpperCase()}...`)
-        setGenerateTicketId('')
-        setShowGenerateForm(false)
-      } catch {
-        toast.error('Failed to start generation')
-      } finally {
-        setIsGenerating(false)
-      }
+      setGenerateTicketId('')
+      setShowGenerateForm(false)
+      startGeneration(ticketId)
     },
-    [generateTicketId]
+    [generateTicketId, startGeneration]
   )
 
   // Clear filters handler
@@ -233,21 +416,95 @@ export default function ContextFeedPage() {
         ))}
       </div>
 
-      {/* Search input */}
-      <div className="relative max-w-sm">
+      {/* Search input with ticket dropdown */}
+      <div className="relative max-w-sm" ref={searchContainerRef}>
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Filter by title or ticket ID..."
+          placeholder="Search tickets or filter by title..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => {
+            setSearchQuery(e.target.value)
+            setShowTicketDropdown(true)
+          }}
+          onFocus={() => {
+            setShowTicketDropdown(true)
+            loadTickets(searchQuery.trim() || undefined)
+          }}
           className="pl-9"
         />
+
+        {/* Ticket search dropdown */}
+        {showTicketDropdown && (
+          <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-lg border border-border bg-popover shadow-md overflow-hidden">
+            {loadingTickets ? (
+              <div className="p-3 space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="h-4 w-14 shrink-0" />
+                    <Skeleton className="h-4 w-full" />
+                  </div>
+                ))}
+              </div>
+            ) : ticketResults.length > 0 ? (
+              <div>
+                <div className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  {searchQuery.trim() ? 'Linear tickets' : 'Your tickets'}
+                </div>
+                {ticketResults.map((ticket) => (
+                  <button
+                    key={ticket.id}
+                    onClick={() => handleGenerateFromSearch(ticket)}
+                    className="flex w-full items-start gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/50"
+                  >
+                    <span className="shrink-0 font-mono text-xs font-medium text-primary mt-0.5">
+                      {ticket.identifier}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-foreground truncate">
+                        {ticket.title}
+                      </p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {ticket.state && <span>{ticket.state}</span>}
+                        {ticket.assignee && (
+                          <>
+                            <span className="text-border">·</span>
+                            <span>{ticket.assignee}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="px-3 py-4 text-center text-sm text-muted-foreground">
+                {searchQuery.trim() ? 'No tickets found' : 'No assigned tickets found'}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Feed list / empty states */}
-      {filteredPages.length > 0 ? (
+      {(filteredPages.length > 0 || generation) ? (
         /* Populated feed */
         <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border stagger-children">
+          {/* Active generation progress -- always at top */}
+          {generation && (
+            <GenerationProgress
+              ticketIdentifier={generation.ticket}
+              steps={generation.steps}
+              status={generation.status}
+              errorMessage={generation.errorMessage}
+              onRetry={() => startGeneration(generation.ticket)}
+              onDismiss={() => {
+                abortRef.current?.abort()
+                setGeneration(null)
+              }}
+            />
+          )}
+
+          {/* Existing feed rows */}
           {filteredPages.map((page) => (
             <button
               key={page.id}
@@ -339,11 +596,11 @@ export default function ContextFeedPage() {
                   placeholder="Enter ticket ID (e.g. CON-16)"
                   value={generateTicketId}
                   onChange={(e) => setGenerateTicketId(e.target.value)}
-                  disabled={isGenerating}
+                  disabled={generation !== null}
                   autoFocus
                 />
-                <Button type="submit" disabled={isGenerating || !generateTicketId.trim()}>
-                  {isGenerating ? (
+                <Button type="submit" disabled={generation !== null || !generateTicketId.trim()}>
+                  {generation !== null ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     'Generate'

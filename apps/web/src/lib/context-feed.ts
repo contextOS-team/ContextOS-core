@@ -6,10 +6,19 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
+import type { GenerationStep } from '@/lib/api'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export interface GenerationState {
+  ticket: string
+  steps: GenerationStep[]
+  status: 'streaming' | 'complete' | 'error' | 'collapsing'
+  contextPageId?: string
+  errorMessage?: string
+}
 
 export interface ContextPageRow {
   id: string
