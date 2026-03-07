@@ -1,19 +1,22 @@
-"""Unit tests for llm_extractor: content filter, schemas, source validation, content hash.
+"""Unit tests for llm_extractor: content filter, schemas, source validation, content hash,
+Gemini extraction service, and decision/blocker persistence.
 
-Tests the pure-function foundation for LLM extraction: Pydantic schemas,
-content pre-filter, source text validation, and SHA-256 content hashing.
-All pure function tests -- no database or LLM calls needed.
+Tests the pure-function foundation, mocked Gemini extraction, and graph persistence.
 """
 
 import inspect
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import UUID, uuid4
 
 import pytest
 
 from src.services.llm_extractor import (
+    EXTRACTION_SYSTEM_PROMPT,
     ExtractedBlocker,
     ExtractedDecision,
     ExtractionResult,
     compute_content_hash,
+    extract_entities,
     should_skip_for_llm,
     validate_extraction,
 )
@@ -259,3 +262,149 @@ class TestContentHashDedup:
         hash1 = compute_content_hash("  hello world  ")
         hash2 = compute_content_hash("hello world")
         assert hash1 == hash2
+
+
+# ============================================================
+# Gemini Extraction Service (mocked)
+# ============================================================
+
+
+def _mock_gemini_response(parsed: ExtractionResult) -> MagicMock:
+    """Create a mock Gemini response with a parsed attribute."""
+    response = MagicMock()
+    response.parsed = parsed
+    return response
+
+
+class TestLLMExtraction:
+    """Tests for extract_entities with mocked Gemini client."""
+
+    CONTENT = (
+        "In today's standup, we decided to use Redis for caching because it handles "
+        "pub/sub well. Also, the CI pipeline is currently broken and blocking deploys."
+    )
+
+    @pytest.mark.asyncio
+    async def test_extracts_decisions_from_slack(self):
+        """extract_entities with mocked Gemini response containing a decision returns
+        ExtractionResult with 1 decision."""
+        decision = _make_decision(source_quote="we decided to use Redis for caching")
+        mock_result = ExtractionResult(decisions=[decision], blockers=[])
+
+        client = MagicMock()
+        client.aio.models.generate_content = AsyncMock(
+            return_value=_mock_gemini_response(mock_result)
+        )
+
+        result = await extract_entities(client, self.CONTENT, "slack_message")
+        assert len(result.decisions) == 1
+        assert result.decisions[0].description == "Use Redis for caching"
+
+    @pytest.mark.asyncio
+    async def test_extracts_blockers(self):
+        """extract_entities with mocked Gemini response containing a blocker returns
+        ExtractionResult with 1 blocker."""
+        blocker = _make_blocker(source_quote="CI pipeline is currently broken")
+        mock_result = ExtractionResult(decisions=[], blockers=[blocker])
+
+        client = MagicMock()
+        client.aio.models.generate_content = AsyncMock(
+            return_value=_mock_gemini_response(mock_result)
+        )
+
+        result = await extract_entities(client, self.CONTENT, "slack_message")
+        assert len(result.blockers) == 1
+        assert result.blockers[0].description == "CI pipeline broken"
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_entities(self):
+        """extract_entities with mocked Gemini returning empty lists returns
+        ExtractionResult with empty decisions and blockers lists."""
+        mock_result = ExtractionResult(decisions=[], blockers=[])
+
+        client = MagicMock()
+        client.aio.models.generate_content = AsyncMock(
+            return_value=_mock_gemini_response(mock_result)
+        )
+
+        result = await extract_entities(client, self.CONTENT, "slack_message")
+        assert len(result.decisions) == 0
+        assert len(result.blockers) == 0
+
+    @pytest.mark.asyncio
+    async def test_validates_against_source_text(self):
+        """extract_entities calls validate_extraction on the raw Gemini output
+        before returning -- hallucinated quotes are dropped."""
+        hallucinated = _make_decision(source_quote="we switched to Memcached")
+        mock_result = ExtractionResult(decisions=[hallucinated], blockers=[])
+
+        client = MagicMock()
+        client.aio.models.generate_content = AsyncMock(
+            return_value=_mock_gemini_response(mock_result)
+        )
+
+        result = await extract_entities(client, self.CONTENT, "slack_message")
+        # Hallucinated quote not in CONTENT, so should be filtered out
+        assert len(result.decisions) == 0
+
+    @pytest.mark.asyncio
+    async def test_uses_temperature_zero(self):
+        """The GenerateContentConfig passed to Gemini has temperature=0."""
+        mock_result = ExtractionResult(decisions=[], blockers=[])
+
+        client = MagicMock()
+        client.aio.models.generate_content = AsyncMock(
+            return_value=_mock_gemini_response(mock_result)
+        )
+
+        await extract_entities(client, self.CONTENT, "slack_message")
+
+        call_kwargs = client.aio.models.generate_content.call_args
+        config = call_kwargs.kwargs.get("config") or call_kwargs[1].get("config")
+        assert config.temperature == 0
+
+    @pytest.mark.asyncio
+    async def test_uses_structured_output(self):
+        """The GenerateContentConfig uses response_schema=ExtractionResult
+        and response_mime_type='application/json'."""
+        mock_result = ExtractionResult(decisions=[], blockers=[])
+
+        client = MagicMock()
+        client.aio.models.generate_content = AsyncMock(
+            return_value=_mock_gemini_response(mock_result)
+        )
+
+        await extract_entities(client, self.CONTENT, "slack_message")
+
+        call_kwargs = client.aio.models.generate_content.call_args
+        config = call_kwargs.kwargs.get("config") or call_kwargs[1].get("config")
+        assert config.response_schema == ExtractionResult
+        assert config.response_mime_type == "application/json"
+
+
+class TestDecisionExtraction:
+    """Tests for extraction system prompt and source_type inclusion."""
+
+    def test_system_prompt_targets_decision_language(self):
+        """EXTRACTION_SYSTEM_PROMPT contains keywords: 'decided', 'agreed', 'going with'."""
+        prompt_lower = EXTRACTION_SYSTEM_PROMPT.lower()
+        assert "decided" in prompt_lower
+        assert "agreed" in prompt_lower
+        assert "going with" in prompt_lower
+
+    @pytest.mark.asyncio
+    async def test_extraction_includes_source_type_in_prompt(self):
+        """The content string passed to Gemini includes the source_type parameter."""
+        mock_result = ExtractionResult(decisions=[], blockers=[])
+
+        client = MagicMock()
+        client.aio.models.generate_content = AsyncMock(
+            return_value=_mock_gemini_response(mock_result)
+        )
+
+        content = "We agreed to deploy on Friday after the review is complete and all tests pass."
+        await extract_entities(client, content, "meeting_transcript")
+
+        call_args = client.aio.models.generate_content.call_args
+        contents_arg = call_args.kwargs.get("contents") or call_args[0][1]
+        assert "meeting_transcript" in contents_arg
