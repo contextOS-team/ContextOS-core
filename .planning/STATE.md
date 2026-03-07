@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: GraphRAG
 status: completed
-stopped_at: Completed 24-03-PLAN.md
-last_updated: "2026-03-07T18:08:32.540Z"
-last_activity: 2026-03-07 -- Completed 24-03 Batch LLM extraction pipeline with backfill integration
+stopped_at: Phase 25 context gathered
+last_updated: "2026-03-08T00:00:00.000Z"
+last_activity: 2026-03-08 -- Phase 25 context gathered
 progress:
   total_phases: 13
   completed_phases: 9
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** v1.2 GraphRAG -- Phase 24 (LLM Extraction + Decision Extraction)
+**Current focus:** v1.2 GraphRAG -- Phase 25 (Graph-Enhanced Retrieval)
 
 ## Current Position
 
-Phase: 24 of 27 (LLM Extraction + Decision Extraction)
-Plan: 3 of 3 in current phase
-Status: Phase Complete
-Last activity: 2026-03-07 -- Completed 24-03 Batch LLM extraction pipeline with backfill integration
+Phase: 25 of 27 (Graph-Enhanced Retrieval)
+Plan: 0 of TBD in current phase
+Status: Context Gathered
+Last activity: 2026-03-08 -- Phase 25 context gathered
 
 Progress: [██████████] 98%
 
@@ -83,11 +83,11 @@ Recent decisions affecting current work:
 - [Phase 24-02]: Module-level attribute access for graph_ops (graph_ops.upsert_node) for mockability with lazy imports
 - [Phase 24-02]: Decision external_id uses source_quote hash for deterministic dedup -- same quote always same node
 - [Phase 24-02]: sys.modules pre-population with mock graph_ops in tests avoids sqlmodel dependency chain
-- [Phase 24]: Module-level attribute access for graph_ops (graph_ops.upsert_node) for mockability with lazy imports
-- [Phase 24]: Decision external_id uses source_quote hash for deterministic dedup
-- [Phase 24]: sys.modules pre-population with mock graph_ops in tests avoids sqlmodel dependency chain
-- [Phase 24]: sys.modules mock for GraphNode model to avoid sqlmodel import chain in unit tests
 - [Phase 24]: Batch pipeline uses asyncio.gather with Semaphore for concurrent Gemini calls within each batch
+- [Phase 25]: Graph signal weight 0.8 (equal to hybrid), additive score boosting for overlaps
+- [Phase 25]: 2,000 token unified budget for ALL retrieval signals, signal diversity first trimming
+- [Phase 25]: Separate graph section in synthesis prompt with decision node highlighting
+- [Phase 25]: same_as edges followed transparently (don't count as hop), silent fallback for missing graph nodes
 
 ### Pending Todos
 
@@ -102,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T18:04:07.495Z
-Stopped at: Completed 24-03-PLAN.md
-Resume file: None
+Last session: 2026-03-08T00:00:00.000Z
+Stopped at: Phase 25 context gathered
+Resume file: .planning/phases/25-graph-enhanced-retrieval/25-CONTEXT.md

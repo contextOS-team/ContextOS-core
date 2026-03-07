@@ -16,10 +16,10 @@ First users are the founding team (dogfooding). The product must be reliable eno
 
 ## Current Milestone: v1.2 GraphRAG
 
-**Goal:** Add a knowledge graph layer (plain PostgreSQL tables with recursive CTEs) that captures entities and relationships across all data sources, improving context page quality by enabling multi-hop traversal, cross-source identity resolution, and decision trail extraction -- blended with existing hybrid search, not replacing it.
+**Goal:** Add a knowledge graph layer (Apache AGE on Postgres) that captures entities and relationships across all data sources, improving context page quality by enabling multi-hop traversal, cross-source identity resolution, and decision trail extraction -- blended with existing hybrid search, not replacing it.
 
 **Target features:**
-- Knowledge graph schema: Plain PostgreSQL tables (graph_nodes + graph_edges) with recursive CTEs in Supabase Postgres, entity nodes (People, Decisions, Code) and typed relationship edges
+- Knowledge graph schema: Apache AGE graph layer in Supabase Postgres with entity nodes (People, Decisions, Code) and typed relationship edges
 - Entity extraction pipeline: rule-based extractors for structured data (ticket IDs, @mentions, PR numbers, file paths) + LLM extraction for semantic entities (decisions, people identity resolution)
 - Cross-source identity resolution: unify person identities across Linear, Slack, GitHub, and meeting transcripts into single graph nodes
 - Decision extraction: identify and link decisions from Slack messages and meeting transcripts to the tickets they affect
@@ -135,10 +135,10 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 | Meeting transcripts in v1 | Fathom API ingestion adds meeting context to tickets. Daulet: API, Dulat: linking. | -- Pending |
 | Shared roadmap for all 3 members | Previously Daulet-scoped; expanded to cover Dulat (AI/ML) and Bekbol (frontend) | -- Pending |
 | Bekbol builds auth UI | Login/signup/magic-link pages in Next.js, connecting to Supabase Auth backend | -- Pending |
-| ~~Apache AGE~~ -> Plain PG tables for knowledge graph | AGE not available on Supabase Cloud (C extension, not TLE). Core team dismissed Oct 2024. Plain tables + recursive CTEs work on Supabase today. | ✓ Good |
+| Apache AGE (Postgres) for knowledge graph | Stays in Supabase, no new infrastructure, graph queries via Cypher | -- Pending |
 | Rule-based + LLM entity extraction | Cheap regex for structured data, LLM for semantic entities | -- Pending |
 | Blend graph with existing hybrid search | Additive improvement, not a replacement -- existing retrieval is the fallback | -- Pending |
 | Graph explorer as stretch goal | Backend-first, UI explorer if time permits | -- Pending |
 
 ---
-*Last updated: 2026-03-07 -- v1.2 requirements defined, AGE pivoted to plain PG tables*
+*Last updated: 2026-03-06 -- v1.2 milestone started, GraphRAG focus*
