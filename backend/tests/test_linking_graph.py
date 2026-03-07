@@ -6,6 +6,9 @@ Covers:
 - GRAPH-ERROR: Database errors return empty dict with warning logged
 - DEPTH-DECAY: Depth-1 scores higher than depth-2 via exponential decay
 - SAME-AS: same_as edges followed without counting as traversal hop
+- MERGE-3WAY: 3-way merge of explicit + hybrid + graph with additive scoring
+- TOKEN-BUDGET: Token budget trimming enforces limit
+- TOKEN-DIVERSITY: Token budget guarantees signal diversity
 """
 
 import logging
@@ -359,3 +362,190 @@ async def test_same_as_transparent() -> None:
     assert len(pr_items) == 1
     expected_score = WEIGHT_GRAPH * (DEPTH_DECAY ** 1)  # 0.48, not 0.288
     assert abs(pr_items[0].relevance_score - expected_score) < 0.001
+
+
+# ---------------------------------------------------------------------------
+# 3-way merge and token budget tests (Plan 02)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_three_signal_merge() -> None:
+    """Given items from all 3 signals where one item appears in both explicit
+    and graph, find_related_content() returns the item with combined score
+    (additive) and both signals in its signals list. Graph-only items are
+    included. Result count reflects merged items."""
+    mock_session = AsyncMock()
+    ticket = _make_ticket()
+
+    shared_id = uuid4()  # Appears in both explicit and graph
+
+    # Explicit: one slack message (shared_id)
+    explicit_items = {
+        ("slack_message", shared_id): MagicMock(
+            source_type="slack_message",
+            source_id=shared_id,
+            title="Slack about auth",
+            snippet="We need to fix auth",
+            relevance_score=1.0,
+            signals=["explicit_reference"],
+        ),
+    }
+
+    # Hybrid: one PR (unique)
+    hybrid_pr_id = uuid4()
+    hybrid_items = {
+        ("github_pull_request", hybrid_pr_id): MagicMock(
+            source_type="github_pull_request",
+            source_id=hybrid_pr_id,
+            title="PR #10: Hybrid match",
+            snippet="Hybrid matched PR",
+            relevance_score=0.5,
+            signals=["hybrid_search"],
+        ),
+    }
+
+    # Graph: shared_id (also found via graph) + one graph-only Decision
+    graph_decision_id = uuid4()
+    graph_items = {
+        ("slack_message", shared_id): MagicMock(
+            source_type="slack_message",
+            source_id=shared_id,
+            title="Slack about auth",
+            snippet="We need to fix auth",
+            relevance_score=0.48,
+            signals=["graph:SlackThread(discussed_in,d=1)"],
+        ),
+        ("decision", graph_decision_id): MagicMock(
+            source_type="decision",
+            source_id=graph_decision_id,
+            title="Use PostgreSQL",
+            snippet="[DECISION] Use PostgreSQL | By: Alice | In: Slack | Affects: CON-16 | Confidence: 0.9",
+            relevance_score=0.48,
+            signals=["graph:Decision(decided_in,d=1)"],
+        ),
+    }
+
+    with (
+        patch("src.services.linking._find_explicit_refs", new_callable=AsyncMock, return_value=explicit_items),
+        patch("src.services.linking._find_hybrid_matches", new_callable=AsyncMock, return_value=hybrid_items),
+        patch("src.services.linking._find_graph_results", new_callable=AsyncMock, return_value=graph_items),
+    ):
+        from src.services.linking import find_related_content
+
+        result = await find_related_content(mock_session, WORKSPACE_ID, ticket)
+
+    # 3 unique keys: shared slack, hybrid PR, graph-only Decision
+    assert len(result.items) == 3
+
+    # The shared item should have additive score: 1.0 + 0.48 = 1.48
+    shared_item = [i for i in result.items if i.source_id == shared_id][0]
+    assert abs(shared_item.relevance_score - 1.48) < 0.01
+    assert len(shared_item.signals) >= 2  # explicit_reference + graph:...
+
+    # Graph-only decision should be present
+    decision_items = [i for i in result.items if i.source_type == "decision"]
+    assert len(decision_items) == 1
+
+
+@pytest.mark.asyncio
+async def test_token_budget_basic() -> None:
+    """Given 10 LinkedItems totaling ~4000 tokens, _apply_token_budget()
+    with budget=500 returns a subset fitting within 500 tokens."""
+    from src.services.linking import LinkedItem, _apply_token_budget
+
+    items = []
+    for i in range(10):
+        items.append(
+            LinkedItem(
+                source_type="slack_message",
+                source_id=uuid4(),
+                title=f"Message {i}",
+                snippet="x" * 400,  # ~400 chars => ~112 estimated tokens each
+                relevance_score=1.0 - i * 0.05,
+                signals=["explicit_link"],
+            )
+        )
+
+    result = _apply_token_budget(items, budget_tokens=500)
+
+    assert len(result) < len(items)
+    # Estimate total tokens in result
+    total = sum(
+        (len(it.title) + len(it.snippet) + sum(len(s) for s in it.signals) + 50) // 4
+        for it in result
+    )
+    assert total <= 500
+
+
+@pytest.mark.asyncio
+async def test_token_budget_diversity() -> None:
+    """Given items with 3 different primary signal types (explicit, hybrid,
+    graph), _apply_token_budget() guarantees at least 1 item from each signal
+    type even if a lower-scored item from a minority signal is included over
+    a higher-scored item from a majority signal."""
+    from src.services.linking import LinkedItem, _apply_token_budget
+
+    items = [
+        # 3 explicit items (high scores)
+        LinkedItem(
+            source_type="slack_message",
+            source_id=uuid4(),
+            title="Explicit 1",
+            snippet="Short snippet",
+            relevance_score=1.0,
+            signals=["explicit_link"],
+        ),
+        LinkedItem(
+            source_type="slack_message",
+            source_id=uuid4(),
+            title="Explicit 2",
+            snippet="Short snippet",
+            relevance_score=0.9,
+            signals=["explicit_link"],
+        ),
+        LinkedItem(
+            source_type="slack_message",
+            source_id=uuid4(),
+            title="Explicit 3",
+            snippet="Short snippet",
+            relevance_score=0.85,
+            signals=["explicit_link"],
+        ),
+        # 1 hybrid item (medium score)
+        LinkedItem(
+            source_type="github_pull_request",
+            source_id=uuid4(),
+            title="Hybrid PR",
+            snippet="Short snippet",
+            relevance_score=0.5,
+            signals=["hybrid_search"],
+        ),
+        # 1 graph item (lowest score)
+        LinkedItem(
+            source_type="decision",
+            source_id=uuid4(),
+            title="Graph Decision",
+            snippet="Short snippet",
+            relevance_score=0.3,
+            signals=["graph:Decision(decided_in,d=1)"],
+        ),
+    ]
+
+    # Budget allowing roughly 3 items (each ~30 tokens, budget=100)
+    result = _apply_token_budget(items, budget_tokens=100)
+
+    # Should have at least 1 from each signal type
+    signal_types = set()
+    for it in result:
+        for s in it.signals:
+            if s.startswith("graph:"):
+                signal_types.add("graph")
+            elif s in ("explicit_link", "explicit_reference"):
+                signal_types.add("explicit")
+            elif s == "hybrid_search":
+                signal_types.add("hybrid")
+
+    assert "explicit" in signal_types, "Missing explicit signal in budget result"
+    assert "hybrid" in signal_types, "Missing hybrid signal in budget result"
+    assert "graph" in signal_types, "Missing graph signal in budget result"
