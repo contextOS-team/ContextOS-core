@@ -74,6 +74,7 @@ async def stream_context_generation(
     ticket_identifier: str,
     user: UserContext = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
+    linear_issue_id: str | None = Query(default=None),
 ):
     """Stream context generation progress via SSE.
 
@@ -99,6 +100,29 @@ async def stream_context_generation(
                         event="error",
                     )
                     return
+
+                # Sync ticket from Linear if not found locally
+                ticket_stmt = select(LinearTicket).where(
+                    LinearTicket.workspace_id == user.workspace_id,
+                    LinearTicket.identifier == ticket_identifier,
+                    LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
+                )
+                ticket_result = await session.execute(ticket_stmt)
+                if ticket_result.scalar_one_or_none() is None and linear_issue_id:
+                    from src.services.linear_sync import sync_single_ticket
+                    from src.services.linear_oauth import get_valid_access_token
+
+                    logger.info(
+                        "SSE: Ticket %s not found locally, syncing from Linear",
+                        ticket_identifier,
+                    )
+                    access_token = await get_valid_access_token(
+                        session, user.workspace_id, user.user_id, settings
+                    )
+                    await sync_single_ticket(
+                        session, user.workspace_id, access_token, linear_issue_id
+                    )
+                    await session.commit()
 
                 async for event in generate_context_page_stream(
                     session, user.workspace_id, ticket_identifier

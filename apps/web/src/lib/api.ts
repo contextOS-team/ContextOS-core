@@ -524,6 +524,8 @@ export function apiFetchSSE(
       const decoder = new TextDecoder()
       let buffer = ''
 
+      let currentData = ''
+
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -532,13 +534,10 @@ export function apiFetchSSE(
         const lines = buffer.split('\n')
         buffer = lines.pop() ?? ''
 
-        let currentEvent = ''
-        let currentData = ''
+        for (const rawLine of lines) {
+          const line = rawLine.replace(/\r$/, '')
 
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7)
-          } else if (line.startsWith('data: ')) {
+          if (line.startsWith('data: ')) {
             currentData = line.slice(6)
           } else if (line === '' && currentData) {
             try {
@@ -546,7 +545,6 @@ export function apiFetchSSE(
             } catch {
               // Skip malformed events
             }
-            currentEvent = ''
             currentData = ''
           }
         }

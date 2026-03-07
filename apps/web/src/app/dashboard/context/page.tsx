@@ -163,8 +163,12 @@ export default function ContextFeedPage() {
       status: 'streaming',
     })
 
+    const streamPath = linearIssueId
+      ? `/api/context/${encodeURIComponent(ticketIdentifier)}/generate-stream?linear_issue_id=${encodeURIComponent(linearIssueId)}`
+      : `/api/context/${encodeURIComponent(ticketIdentifier)}/generate-stream`
+
     const controller = apiFetchSSE(
-      `/api/context/${encodeURIComponent(ticketIdentifier)}/generate-stream`,
+      streamPath,
       (event) => {
         // Use functional setState to avoid stale closures
         setGeneration((prev) => {
