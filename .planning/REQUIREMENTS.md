@@ -17,8 +17,8 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 
 - [x] **EXTR-01**: Rule-based extractors create graph nodes and edges for ticket references, PR numbers, @mentions, and file paths from ingested content
 - [x] **EXTR-02**: Rule-based extraction runs inline during webhook/sync ingestion with zero LLM cost
-- [ ] **EXTR-03**: LLM extraction identifies decisions, rationale, blockers, and semantic entities from Slack messages and meeting transcripts
-- [ ] **EXTR-04**: LLM extraction runs as batch background task via Gemini Flash with content hash deduplication
+- [x] **EXTR-03**: LLM extraction identifies decisions, rationale, blockers, and semantic entities from Slack messages and meeting transcripts
+- [x] **EXTR-04**: LLM extraction runs as batch background task via Gemini Flash with content hash deduplication
 - [x] **EXTR-05**: LLM extraction output is validated against source text to prevent hallucinated entities
 - [x] **EXTR-06**: Content filtering skips bot messages, short messages, and emoji-only content before LLM extraction
 
@@ -43,8 +43,8 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 
 ### Decision Extraction
 
-- [ ] **DECIDE-01**: LLM extraction targets decision language in Slack messages and meeting transcripts
-- [ ] **DECIDE-02**: Decision nodes store description, rationale, source reference, date, confidence score, and status
+- [x] **DECIDE-01**: LLM extraction targets decision language in Slack messages and meeting transcripts
+- [x] **DECIDE-02**: Decision nodes store description, rationale, source reference, date, confidence score, and status
 - [ ] **DECIDE-03**: Decisions link bidirectionally to Person, SlackThread/Meeting, and Ticket nodes
 
 ### Code-to-Discussion Linking
@@ -176,8 +176,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GRAPH-03 | Phase 22 | Complete |
 | EXTR-01 | Phase 22 | Complete |
 | EXTR-02 | Phase 22 | Complete |
-| EXTR-03 | Phase 24 | Pending |
-| EXTR-04 | Phase 24 | Pending |
+| EXTR-03 | Phase 24 | Complete |
+| EXTR-04 | Phase 24 | Complete |
 | EXTR-05 | Phase 24 | Complete |
 | EXTR-06 | Phase 24 | Complete |
 | IDENT-01 | Phase 23 | Complete |
@@ -190,8 +190,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SYNTH-02 | Phase 26 | Pending |
 | SYNTH-03 | Phase 26 | Pending |
 | SYNTH-04 | Phase 26 | Pending |
-| DECIDE-01 | Phase 24 | Pending |
-| DECIDE-02 | Phase 24 | Pending |
+| DECIDE-01 | Phase 24 | Complete |
+| DECIDE-02 | Phase 24 | Complete |
 | DECIDE-03 | Phase 24 | Pending |
 | CODE-01 | Phase 26 | Pending |
 | CODE-02 | Phase 26 | Pending |

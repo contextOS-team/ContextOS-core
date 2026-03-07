@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: GraphRAG
-status: in_progress
-stopped_at: Completed 24-01-PLAN.md
-last_updated: "2026-03-07T17:42:45Z"
-last_activity: 2026-03-07 -- Completed 24-01 LLM extraction foundation (schemas, filter, validation, hash)
+status: executing
+stopped_at: Completed 24-02-PLAN.md
+last_updated: "2026-03-07T17:55:54.038Z"
+last_activity: 2026-03-07 -- Completed 24-02 Gemini extraction service and decision persistence
 progress:
   total_phases: 13
   completed_phases: 8
   total_plans: 23
-  completed_plans: 21
-  percent: 91
+  completed_plans: 22
+  percent: 98
 ---
 
 # Project State
@@ -26,21 +26,21 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 24 of 27 (LLM Extraction + Decision Extraction)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In Progress
-Last activity: 2026-03-07 -- Completed 24-01 LLM extraction foundation (schemas, filter, validation, hash)
+Last activity: 2026-03-07 -- Completed 24-02 Gemini extraction service and decision persistence
 
-Progress: [█████████ ] 91%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 36 (v1.0: 16, v1.1: 14, v1.2: 6)
+- Total plans completed: 37 (v1.0: 16, v1.1: 14, v1.2: 7)
 - Average duration: ~4min
 - Total execution time: ~2.4 hours
 
 **Recent Trend (v1.2):**
-- Last 5 plans: 22-03 (6min), 23-01 (4min), 23-02 (8min), 24-01 (2min)
+- Last 5 plans: 23-01 (4min), 23-02 (8min), 24-01 (2min), 24-02 (8min)
 - Trend: Stable (2-8min per plan)
 
 *Updated after each plan completion*
@@ -80,6 +80,12 @@ Recent decisions affecting current work:
 - [Phase 24-01]: Case-insensitive source_quote matching in validate_extraction for LLM case flexibility
 - [Phase 24-01]: Case-preserving content hash (Hello != hello) because different-cased content is semantically different
 - [Phase 24-01]: 50-char minimum threshold for LLM extraction cost optimization (higher than real-time filter)
+- [Phase 24-02]: Module-level attribute access for graph_ops (graph_ops.upsert_node) for mockability with lazy imports
+- [Phase 24-02]: Decision external_id uses source_quote hash for deterministic dedup -- same quote always same node
+- [Phase 24-02]: sys.modules pre-population with mock graph_ops in tests avoids sqlmodel dependency chain
+- [Phase 24]: Module-level attribute access for graph_ops (graph_ops.upsert_node) for mockability with lazy imports
+- [Phase 24]: Decision external_id uses source_quote hash for deterministic dedup
+- [Phase 24]: sys.modules pre-population with mock graph_ops in tests avoids sqlmodel dependency chain
 
 ### Pending Todos
 
@@ -94,6 +100,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T17:42:45Z
-Stopped at: Completed 24-01-PLAN.md
+Last session: 2026-03-07T17:55:47.856Z
+Stopped at: Completed 24-02-PLAN.md
 Resume file: None
