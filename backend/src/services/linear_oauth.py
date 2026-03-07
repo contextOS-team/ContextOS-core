@@ -216,7 +216,7 @@ async def refresh_access_token(
         raise OAuthError("No OAuth token found for this workspace")
 
     # If token is still valid, return current access token
-    if oauth_token.token_expires_at and oauth_token.token_expires_at > datetime.now(timezone.utc).replace(tzinfo=None):
+    if oauth_token.token_expires_at and oauth_token.token_expires_at > datetime.now(timezone.utc):
         access_name = token_name(Provider.LINEAR, workspace_id, "access")
         current_token = await read_token(session, access_name)
         if current_token:
