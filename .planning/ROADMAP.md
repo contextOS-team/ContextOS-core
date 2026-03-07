@@ -272,6 +272,25 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 | 26. Synthesis + Code-to-Discussion Linking | v1.2 | 0/TBD | Not started | - |
 | 27. Graph Explorer API | v1.2 | 0/TBD | Not started | - |
 
+### Phase 25: Graph-Enhanced Retrieval
+
+**Goal:** Add graph traversal as a third retrieval signal in find_related_content() alongside explicit refs and hybrid search, with depth-decay scoring, unified 2,000 token budget with signal diversity trimming, and a separate Graph Connections section in the synthesis prompt with decision node highlighting
+**Requirements**: GRAPH-SIGNAL, GRAPH-FALLBACK, GRAPH-ERROR, DEPTH-DECAY, SAME-AS, MERGE-3WAY, TOKEN-BUDGET, TOKEN-DIVERSITY, GRAPH-SECTION, DECISION-FMT, E2E-MERGE
+**Depends on:** Phase 23 (graph infrastructure from v1.2 branch merged in Plan 01)
+**Success Criteria** (what must be TRUE):
+  1. Graph traversal returns LinkedItems with provenance paths for nodes within 2 hops of the ticket
+  2. Missing graph nodes and DB errors fall back silently to 2-signal retrieval
+  3. Depth-1 results score higher than depth-2 via exponential decay (0.8 * 0.6^depth)
+  4. same_as edges followed transparently without counting as hops
+  5. find_related_content() merges all 3 signals with additive scoring for overlaps
+  6. Token budget (2,000) enforced with signal diversity guarantee (1 result per signal type)
+  7. Synthesis prompt includes separate "Graph Connections" section with [DECISION] highlighting
+**Plans**: 2 plans
+
+Plans:
+- [ ] 25-01-PLAN.md — Merge graph branch, add config constants, create test scaffolds, implement _find_graph_results() with depth decay and same_as transparency
+- [ ] 25-02-PLAN.md — Token budget trimming with signal diversity, 3-way merge wiring, graph section formatting and synthesis integration
+
 ---
 *Roadmap created: 2026-02-24*
 *v1.1 milestone added: 2026-03-04*
