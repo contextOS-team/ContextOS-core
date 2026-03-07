@@ -45,7 +45,7 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 
 - [x] **DECIDE-01**: LLM extraction targets decision language in Slack messages and meeting transcripts
 - [x] **DECIDE-02**: Decision nodes store description, rationale, source reference, date, confidence score, and status
-- [ ] **DECIDE-03**: Decisions link bidirectionally to Person, SlackThread/Meeting, and Ticket nodes
+- [x] **DECIDE-03**: Decisions link bidirectionally to Person, SlackThread/Meeting, and Ticket nodes
 
 ### Code-to-Discussion Linking
 
@@ -192,7 +192,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SYNTH-04 | Phase 26 | Pending |
 | DECIDE-01 | Phase 24 | Complete |
 | DECIDE-02 | Phase 24 | Complete |
-| DECIDE-03 | Phase 24 | Pending |
+| DECIDE-03 | Phase 24 | Complete |
 | CODE-01 | Phase 26 | Pending |
 | CODE-02 | Phase 26 | Pending |
 | CODE-03 | Phase 26 | Pending |

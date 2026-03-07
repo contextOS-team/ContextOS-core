@@ -57,7 +57,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 22: Graph Foundation + Rule-Based Extraction** - Graph tables, traversal function, indexes, and deterministic regex extractors for structured references (completed 2026-03-06)
 - [x] **Phase 23: Identity Resolution** - Cross-source person unification via email-based deterministic matching and fuzzy candidate flagging (completed 2026-03-07)
-- [ ] **Phase 24: LLM Extraction + Decision Extraction** - Semantic entity extraction via Gemini Flash batch pipeline with decision nodes as highest-value entity
+- [x] **Phase 24: LLM Extraction + Decision Extraction** - Semantic entity extraction via Gemini Flash batch pipeline with decision nodes as highest-value entity (completed 2026-03-07)
 - [ ] **Phase 25: Graph-Enhanced Retrieval** - Graph traversal as third retrieval signal with depth-decay scoring blended into existing search
 - [ ] **Phase 26: Synthesis + Code-to-Discussion Linking** - Context pages enhanced with decision trails, relationship paths, people cross-references, and code provenance
 - [ ] **Phase 27: Graph Explorer API** - Subgraph JSON endpoint for a ticket's graph neighborhood
@@ -267,7 +267,7 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 |-------|-----------|----------------|--------|-----------|
 | 22. Graph Foundation + Rule-Based Extraction | 3/3 | Complete    | 2026-03-06 | - |
 | 23. Identity Resolution | 2/2 | Complete    | 2026-03-07 | - |
-| 24. LLM Extraction + Decision Extraction | 2/3 | In Progress|  | - |
+| 24. LLM Extraction + Decision Extraction | 3/3 | Complete   | 2026-03-07 | - |
 | 25. Graph-Enhanced Retrieval | v1.2 | 0/TBD | Not started | - |
 | 26. Synthesis + Code-to-Discussion Linking | v1.2 | 0/TBD | Not started | - |
 | 27. Graph Explorer API | v1.2 | 0/TBD | Not started | - |
