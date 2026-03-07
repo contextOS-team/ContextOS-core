@@ -310,6 +310,40 @@
   animation: banner-slide-in 200ms ease-out both;
 }
 
+/* Generation progress step pulse (active state) */
+@keyframes step-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Collapse progress panel into card row */
+@keyframes progress-collapse {
+  from {
+    max-height: 400px;
+    opacity: 1;
+  }
+  to {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin: 0;
+    overflow: hidden;
+  }
+}
+
+/* Step item staggered entrance */
+@keyframes step-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 /* Section label utility (monospace uppercase tracking) */
 .section-label {
   font-family: var(--font-mono), 'JetBrains Mono', monospace;
