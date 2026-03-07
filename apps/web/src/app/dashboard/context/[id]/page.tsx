@@ -1,9 +1,24 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Copy, RefreshCw, Loader2, ExternalLink } from 'lucide-react'
+import {
+  ArrowLeft,
+  Copy,
+  RefreshCw,
+  Loader2,
+  ExternalLink,
+  MessageSquare,
+  GitPullRequest,
+  Code2,
+  FileText,
+  Video,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Sparkles,
+} from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
@@ -16,21 +31,107 @@ import {
   STATUS_COLORS,
 } from '@/lib/context-feed'
 import { useContextPagesRealtime } from '@/hooks/use-context-pages-realtime'
-import { apiFetchSSE, SOURCE_LABELS, type SSEEventData } from '@/lib/api'
+import { apiFetchSSE, SOURCE_LABELS } from '@/lib/api'
 import { GenerationProgress } from '@/components/generation-progress'
 import type { GenerationState } from '@/lib/context-feed'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
-const SOURCE_TYPE_LABELS: Record<string, string> = {
-  linear_ticket: 'Ticket',
-  linear_comment: 'Comment',
-  slack_message: 'Slack',
-  meeting_transcript: 'Meeting',
-  meeting_segment: 'Meeting Segment',
-  github_pull_request: 'Pull Request',
-  github_review: 'Review',
-  context_page: 'Context Page',
+// ---------------------------------------------------------------------------
+// Source type config
+// ---------------------------------------------------------------------------
+
+const SOURCE_TYPE_CONFIG: Record<
+  string,
+  { label: string; icon: React.ElementType; group: string }
+> = {
+  linear_ticket: { label: 'Ticket', icon: CheckCircle2, group: 'Linear' },
+  linear_comment: { label: 'Comment', icon: MessageSquare, group: 'Linear' },
+  slack_message: { label: 'Message', icon: MessageSquare, group: 'Slack' },
+  meeting_transcript: { label: 'Meeting', icon: Video, group: 'Meetings' },
+  meeting_segment: { label: 'Segment', icon: Video, group: 'Meetings' },
+  github_pull_request: { label: 'Pull Request', icon: GitPullRequest, group: 'GitHub' },
+  github_review: { label: 'Review', icon: GitPullRequest, group: 'GitHub' },
+  code_chunk: { label: 'Code', icon: Code2, group: 'GitHub' },
+  notion_page: { label: 'Page', icon: FileText, group: 'Notion' },
+  context_page: { label: 'Context', icon: FileText, group: 'Other' },
 }
+
+const GROUP_ICONS: Record<string, React.ElementType> = {
+  Linear: CheckCircle2,
+  Slack: MessageSquare,
+  Meetings: Video,
+  GitHub: Code2,
+  Notion: FileText,
+  Other: FileText,
+}
+
+const GROUP_COLORS: Record<string, string> = {
+  Linear: 'text-violet-400',
+  Slack: 'text-pink-400',
+  Meetings: 'text-amber-400',
+  GitHub: 'text-emerald-400',
+  Notion: 'text-blue-400',
+  Other: 'text-muted-foreground',
+}
+
+// ---------------------------------------------------------------------------
+// Markdown section parser
+// ---------------------------------------------------------------------------
+
+interface ParsedSection {
+  heading: string
+  content: string
+}
+
+function parseMarkdownSections(markdown: string): ParsedSection[] {
+  const lines = markdown.split('\n')
+  const sections: ParsedSection[] = []
+  let currentHeading = ''
+  let currentLines: string[] = []
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^##\s+(.+)$/)
+    if (headingMatch) {
+      if (currentHeading || currentLines.length > 0) {
+        sections.push({
+          heading: currentHeading,
+          content: currentLines.join('\n').trim(),
+        })
+      }
+      currentHeading = headingMatch[1]
+      currentLines = []
+    } else {
+      currentLines.push(line)
+    }
+  }
+
+  if (currentHeading || currentLines.length > 0) {
+    sections.push({
+      heading: currentHeading,
+      content: currentLines.join('\n').trim(),
+    })
+  }
+
+  return sections.filter((s) => s.content.length > 0)
+}
+
+const SECTION_STYLES: Record<string, { accent: string; bg: string }> = {
+  Summary: { accent: 'border-l-primary', bg: 'bg-primary/5' },
+  'Background & Decisions': { accent: 'border-l-violet-500', bg: '' },
+  Requirements: { accent: 'border-l-amber-500', bg: '' },
+  'Related Work': { accent: 'border-l-blue-500', bg: '' },
+  'Relevant Code': { accent: 'border-l-emerald-500', bg: '' },
+  'Open Questions': { accent: 'border-l-orange-500', bg: '' },
+  'Key People': { accent: 'border-l-pink-500', bg: '' },
+}
+
+function getSectionStyle(heading: string) {
+  return SECTION_STYLES[heading] ?? { accent: 'border-l-border', bg: '' }
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 interface ContextPageData {
   id: string
@@ -42,6 +143,133 @@ interface ContextPageData {
   generated_at: string | null
   updated_at: string
 }
+
+// ---------------------------------------------------------------------------
+// Collapsible Section
+// ---------------------------------------------------------------------------
+
+function ContentSection({
+  heading,
+  content,
+  defaultOpen = true,
+}: {
+  heading: string
+  content: string
+  defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  const style = getSectionStyle(heading)
+  const isPrompt = heading.toLowerCase().includes('implementation prompt')
+
+  return (
+    <div
+      className={`rounded-lg border ${style.bg} overflow-hidden transition-all duration-200`}
+    >
+      <button
+        onClick={() => setOpen(!open)}
+        className={`w-full flex items-center gap-2 px-4 py-3 text-left border-l-2 ${style.accent} hover:bg-muted/30 transition-colors`}
+      >
+        {open ? (
+          <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        )}
+        <span className="text-sm font-semibold text-foreground">{heading}</span>
+        {isPrompt && (
+          <span className="ml-auto flex items-center gap-1 text-xs text-primary">
+            <Sparkles className="h-3 w-3" />
+            AI Prompt
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className={`px-4 pb-4 pt-1 border-l-2 ${style.accent}`}>
+          <div className="prose prose-sm prose-invert max-w-none">
+            <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Source group sidebar
+// ---------------------------------------------------------------------------
+
+function SourceSidebar({
+  sources,
+}: {
+  sources: Array<{ type: string; id: string; title: string; relevance_score: number }>
+}) {
+  const grouped = useMemo(() => {
+    const groups: Record<string, typeof sources> = {}
+    for (const source of sources) {
+      const config = SOURCE_TYPE_CONFIG[source.type]
+      const groupName = config?.group ?? 'Other'
+      if (!groups[groupName]) groups[groupName] = []
+      groups[groupName].push(source)
+    }
+    return groups
+  }, [sources])
+
+  const groupNames = Object.keys(grouped)
+
+  if (groupNames.length === 0) {
+    return (
+      <div className="text-xs text-muted-foreground px-1">
+        Generated from ticket description only
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {groupNames.map((groupName) => {
+        const items = grouped[groupName]
+        const Icon = GROUP_ICONS[groupName] ?? FileText
+        const color = GROUP_COLORS[groupName] ?? 'text-muted-foreground'
+
+        return (
+          <div key={groupName}>
+            <div className={`flex items-center gap-1.5 mb-1.5 ${color}`}>
+              <Icon className="h-3.5 w-3.5" />
+              <span className="text-xs font-medium">{groupName}</span>
+              <span className="text-xs text-muted-foreground ml-auto">
+                {items.length}
+              </span>
+            </div>
+            <div className="space-y-0.5">
+              {items.map((source, i) => {
+                const config = SOURCE_TYPE_CONFIG[source.type]
+                return (
+                  <div
+                    key={`${source.type}-${source.id}-${i}`}
+                    className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/30 transition-colors group"
+                  >
+                    <span className="text-muted-foreground shrink-0 mt-0.5">
+                      {config?.label ?? source.type}
+                    </span>
+                    <span className="text-foreground/80 truncate flex-1">
+                      {source.title}
+                    </span>
+                    <span className="font-mono text-muted-foreground/60 tabular-nums shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {(source.relevance_score * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main page component
+// ---------------------------------------------------------------------------
 
 export default function ContextDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -68,7 +296,6 @@ export default function ContextDetailPage() {
     loadPage()
   }, [loadPage])
 
-  // Realtime subscription -- update page when status changes (e.g. fallback if SSE disconnects)
   useContextPagesRealtime({
     onUpdate: useCallback(
       (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
@@ -179,7 +406,6 @@ export default function ContextDetailPage() {
     startGeneration(page.ticket_identifier)
   }, [page?.ticket_identifier, startGeneration])
 
-  // On generation complete, reload page data after brief delay
   useEffect(() => {
     if (generation?.status === 'complete') {
       const timer = setTimeout(() => {
@@ -190,42 +416,64 @@ export default function ContextDetailPage() {
     }
   }, [generation?.status, loadPage])
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       abortRef.current?.abort()
     }
   }, [])
 
+  // Parse content into sections
+  const { sections, promptText, hasPromptSection } = useMemo(() => {
+    if (!page?.content) return { sections: [], promptText: '', hasPromptSection: false }
+    const prompt = extractAIPrompt(page.content)
+    const hasPrompt = prompt !== page.content
+    const mainContent = hasPrompt
+      ? page.content.slice(0, page.content.indexOf(prompt))
+      : page.content
+    const parsed = parseMarkdownSections(mainContent)
+    return { sections: parsed, promptText: prompt, hasPromptSection: hasPrompt }
+  }, [page?.content])
+
+  // Source type breakdown for header
+  const sourceBreakdown = useMemo(() => {
+    if (!page?.sources?.length) return ''
+    const groups: Record<string, number> = {}
+    for (const s of page.sources) {
+      const config = SOURCE_TYPE_CONFIG[s.type]
+      const group = config?.group ?? 'Other'
+      groups[group] = (groups[group] ?? 0) + 1
+    }
+    return Object.entries(groups)
+      .map(([g, n]) => `${n} ${g}`)
+      .join(', ')
+  }, [page?.sources])
+
   // Loading skeleton
   if (isLoading) {
     return (
       <div className="space-y-6 animate-fade-in-up">
-        {/* Back link skeleton */}
         <Skeleton className="h-4 w-20" />
-        {/* Title skeleton */}
         <Skeleton className="h-6 w-3/4" />
-        {/* Metadata row skeleton */}
         <div className="flex items-center gap-3">
           <Skeleton className="h-4 w-24" />
-          <Skeleton className="h-1.5 w-1.5 rounded-full" />
           <Skeleton className="h-4 w-32" />
         </div>
-        {/* Action bar skeleton */}
-        <div className="flex items-center gap-2">
-          <Skeleton className="h-9 w-28" />
-          <Skeleton className="h-9 w-28" />
-          <Skeleton className="h-9 w-32" />
-        </div>
-        {/* Content area skeleton */}
-        <div className="space-y-3 mt-8">
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-5/6" />
-          <Skeleton className="h-4 w-4/5" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-4 w-5/6" />
-          <Skeleton className="h-4 w-2/3" />
+        <div className="flex gap-6 mt-6">
+          <div className="w-56 shrink-0 space-y-3">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-16 mt-4" />
+            <Skeleton className="h-4 w-full" />
+          </div>
+          <div className="flex-1 space-y-3">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+            <Skeleton className="h-4 w-4/5" />
+            <Skeleton className="h-32 w-full mt-4" />
+            <Skeleton className="h-4 w-3/4 mt-4" />
+            <Skeleton className="h-4 w-5/6" />
+          </div>
         </div>
       </div>
     )
@@ -250,73 +498,79 @@ export default function ContextDetailPage() {
   }
 
   const colors = STATUS_COLORS[page.status] ?? STATUS_COLORS.draft
-  const promptText = extractAIPrompt(page.content)
-  const hasPromptSection = promptText !== page.content
-  const mainContent = hasPromptSection
-    ? page.content.slice(0, page.content.indexOf(promptText))
-    : page.content
 
   return (
-    <div className="space-y-0 animate-fade-in-up">
+    <div className="animate-fade-in-up">
       {/* Back link */}
       <Link
         href="/dashboard/context"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
         Context
       </Link>
 
       {/* Header */}
-      <h1 className="text-xl font-semibold text-foreground">{page.title}</h1>
-      <div className="flex items-center gap-3 mt-1.5">
-        {page.ticket_identifier && (
-          <span className="font-mono text-sm text-muted-foreground">
-            {page.ticket_identifier}
-          </span>
-        )}
-        <span className={`h-1.5 w-1.5 rounded-full ${colors.dot}`} />
-        <span className="text-sm text-muted-foreground capitalize">{page.status}</span>
-        {page.generated_at && (
-          <span className="text-sm text-muted-foreground">
-            Generated {formatRelativeTime(page.generated_at)}
-          </span>
-        )}
-      </div>
-
-      {/* Action bar */}
-      <div className="flex items-center gap-2 mt-4">
-        <Button onClick={handleCopyPrompt}>
-          <Copy className="h-4 w-4 mr-1.5" />
-          Copy Prompt
-        </Button>
-        <Button
-          variant="outline"
-          onClick={handleRegenerate}
-          disabled={generation !== null || !page.ticket_identifier}
-        >
-          {generation ? (
-            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-          ) : (
-            <RefreshCw className="h-4 w-4 mr-1.5" />
+      <div className="mt-5">
+        <h1 className="text-xl font-semibold text-foreground">{page.title}</h1>
+        <div className="flex items-center gap-3 mt-1.5">
+          {page.ticket_identifier && (
+            <span className="font-mono text-sm text-muted-foreground">
+              {page.ticket_identifier}
+            </span>
           )}
-          {generation ? 'Regenerating...' : 'Regenerate'}
-        </Button>
-        {page.ticket_identifier && (
-          <Button
-            variant="ghost"
-            asChild
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${
+              page.status === 'ready'
+                ? 'bg-emerald-500/10 text-emerald-400'
+                : page.status === 'stale'
+                  ? 'bg-amber-500/10 text-amber-400'
+                  : page.status === 'generating'
+                    ? 'bg-blue-500/10 text-blue-400'
+                    : 'bg-muted text-muted-foreground'
+            }`}
           >
-            <a
-              href={`https://linear.app/issue/${page.ticket_identifier}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <ExternalLink className="h-4 w-4 mr-1.5" />
-              Open in Linear
-            </a>
+            <span className={`h-2 w-2 rounded-full ${colors.dot}`} />
+            {page.status}
+          </span>
+          {page.generated_at && (
+            <span className="text-sm text-muted-foreground">
+              Generated {formatRelativeTime(page.generated_at)}
+            </span>
+          )}
+        </div>
+
+        {/* Action bar */}
+        <div className="flex items-center gap-2 mt-4">
+          <Button variant="outline" onClick={handleCopyPrompt}>
+            <Copy className="h-4 w-4 mr-1.5" />
+            Copy Prompt
           </Button>
-        )}
+          <Button
+            variant="outline"
+            onClick={handleRegenerate}
+            disabled={generation !== null || !page.ticket_identifier}
+          >
+            {generation ? (
+              <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-1.5" />
+            )}
+            {generation ? 'Regenerating...' : 'Regenerate'}
+          </Button>
+          {page.ticket_identifier && (
+            <Button variant="ghost" asChild>
+              <a
+                href={`https://linear.app/issue/${page.ticket_identifier}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="h-4 w-4 mr-1.5" />
+                Open in Linear
+              </a>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Generation progress */}
@@ -336,50 +590,74 @@ export default function ContextDetailPage() {
         </div>
       )}
 
-      {/* Content area -- markdown rendering */}
-      <div className="mt-8 prose prose-sm prose-invert max-w-none">
-        <Markdown remarkPlugins={[remarkGfm]}>{mainContent}</Markdown>
+      {/* Two-column layout */}
+      <div className="flex gap-6 mt-6">
+        {/* Left sidebar — sources */}
+        <aside className="w-56 shrink-0 hidden lg:block">
+          <div className="sticky top-6 space-y-5">
+            {/* Source summary */}
+            <div>
+              <p className="section-label mb-2">
+                Sources ({page.sources?.length ?? 0})
+              </p>
+              {sourceBreakdown && (
+                <p className="text-xs text-muted-foreground mb-3">{sourceBreakdown}</p>
+              )}
+              <SourceSidebar sources={page.sources ?? []} />
+            </div>
+          </div>
+        </aside>
+
+        {/* Main content */}
+        <main className="flex-1 min-w-0 space-y-3">
+          {/* Parsed sections with distinct visual treatment */}
+          {sections.length > 0 ? (
+            <div className="space-y-3 stagger-children">
+              {sections.map((section, i) => (
+                <ContentSection
+                  key={section.heading || i}
+                  heading={section.heading || 'Overview'}
+                  content={section.content}
+                  defaultOpen={i < 4}
+                />
+              ))}
+            </div>
+          ) : (
+            /* Fallback: render raw markdown */
+            <div className="rounded-lg border bg-card p-5">
+              <div className="prose prose-sm prose-invert max-w-none">
+                <Markdown remarkPlugins={[remarkGfm]}>{page.content}</Markdown>
+              </div>
+            </div>
+          )}
+
+          {/* AI Prompt section */}
+          {hasPromptSection && (
+            <div className="relative">
+              <ContentSection
+                heading="AI Implementation Prompt"
+                content={promptText}
+                defaultOpen={false}
+              />
+              <button
+                onClick={handleCopyPrompt}
+                className="absolute top-3 right-3 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 z-10"
+              >
+                <Copy className="h-3 w-3" />
+                Copy
+              </button>
+            </div>
+          )}
+        </main>
       </div>
 
-      {/* AI Prompt callout */}
-      {hasPromptSection && (
-        <div className="mt-8 rounded-xl border bg-elevated p-6 relative">
-          <button
-            onClick={handleCopyPrompt}
-            className="absolute top-4 right-4 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
-          >
-            <Copy className="h-3 w-3" />
-            Copy
-          </button>
-          <div className="prose prose-sm prose-invert max-w-none">
-            <Markdown remarkPlugins={[remarkGfm]}>{promptText}</Markdown>
-          </div>
+      {/* Mobile sources — shown below content on small screens */}
+      <div className="lg:hidden mt-8">
+        <p className="section-label mb-3">Sources ({page.sources?.length ?? 0})</p>
+        <div className="rounded-lg border bg-card p-4">
+          <SourceSidebar sources={page.sources ?? []} />
         </div>
-      )}
-
-      {/* Sources section */}
-      {page.sources?.length > 0 && (
-        <div>
-          <h3 className="section-label mt-8 mb-3">
-            Sources ({page.sources.length})
-          </h3>
-          <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border">
-            {page.sources.map((source, i) => (
-              <div key={`${source.type}-${source.id}-${i}`} className="flex items-center px-4 py-2.5">
-                <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium shrink-0">
-                  {SOURCE_TYPE_LABELS[source.type] ?? source.type}
-                </span>
-                <span className="text-sm text-foreground truncate ml-2 flex-1">
-                  {source.title}
-                </span>
-                <span className="text-xs font-mono text-muted-foreground tabular-nums shrink-0 ml-3">
-                  {(source.relevance_score * 100).toFixed(0)}%
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   )
 }
