@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.models.context_page import ContextPage
-from src.models.integration import OAuthToken
+from src.models.integration import OAuthToken, WorkspaceIntegration
 from src.models.ticket import LinearTicket
 from src.services.linking import LinkedItem, find_content_by_source, find_related_content
 from src.services.llm_client import get_llm_client
@@ -260,12 +260,22 @@ async def generate_context_page_stream(
             return
 
         # 2. Determine connected integrations
+        # Check OAuth tokens (slack, github, notion, linear)
         token_stmt = select(OAuthToken.provider).where(
             OAuthToken.workspace_id == workspace_id,
             OAuthToken.deleted_at.is_(None),  # type: ignore[union-attr]
         )
         token_result = await session.execute(token_stmt)
         connected_providers = {row[0] for row in token_result.fetchall()}
+
+        # Also check WorkspaceIntegration for API-key integrations (fathom)
+        integration_stmt = select(WorkspaceIntegration.provider).where(
+            WorkspaceIntegration.workspace_id == workspace_id,
+            WorkspaceIntegration.status == "connected",
+            WorkspaceIntegration.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        integration_result = await session.execute(integration_stmt)
+        connected_providers.update(row[0] for row in integration_result.fetchall())
 
         # linear is always connected (required by onboarding)
         connected_sources = ["linear"]
