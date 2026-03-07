@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 # Signal weights for combined scoring
 WEIGHT_EXPLICIT = 1.0
 WEIGHT_HYBRID = 0.8
+WEIGHT_GRAPH = 0.8
+DEPTH_DECAY = 0.6  # Exponential decay factor for graph depth scoring
 
 # Semantic similarity threshold (used by hybrid_search match_threshold)
 SEMANTIC_THRESHOLD = 0.5
