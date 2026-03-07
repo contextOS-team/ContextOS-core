@@ -512,3 +512,211 @@ def _get_graph_node_class():
     """Lazy import of GraphNode to avoid circular/heavy imports at module level."""
     from src.models.graph_node import GraphNode
     return GraphNode
+
+
+# ============================================================
+# Batch Extraction Pipeline
+# ============================================================
+
+# Source types that warrant LLM extraction (unstructured text content)
+DEFAULT_LLM_SOURCE_TYPES = ["slack_message", "meeting_transcript"]
+
+
+def _get_async_session():
+    """Lazy import of async_session to avoid DB/sqlmodel imports at module level."""
+    from src.db import async_session
+    return async_session()
+
+
+async def _query_source_records(session, source_type: str) -> list:
+    """Query all non-deleted records for a given source type.
+
+    Returns a list of ORM records with id, workspace_id, text/transcript,
+    and author metadata.
+    """
+    from sqlmodel import select
+
+    if source_type == "slack_message":
+        from src.models.slack import SlackMessage
+        stmt = select(SlackMessage).where(
+            SlackMessage.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+    elif source_type == "meeting_transcript":
+        from src.models.meeting import MeetingTranscript
+        stmt = select(MeetingTranscript).where(
+            MeetingTranscript.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+    else:
+        logger.warning("Unknown source_type for LLM extraction: %s", source_type)
+        return []
+
+
+async def _find_source_node_id(session, workspace_id: UUID, source_type: str, record) -> UUID | None:
+    """Look up the graph node for a source record by fingerprint.
+
+    Uses the SOURCE_TYPE_TO_ENTITY mapping to determine entity type, then
+    computes the fingerprint and queries for the matching graph node.
+
+    Returns None if no matching graph node exists (rule-based extraction
+    hasn't run yet for this record).
+    """
+    from src.services.graph_extractor import SOURCE_TYPE_TO_ENTITY
+    from src.services import graph_ops
+
+    entity_type = SOURCE_TYPE_TO_ENTITY.get(source_type)
+    if not entity_type:
+        return None
+
+    # Determine external_id based on source_type (matching graph_backfill.py patterns)
+    if source_type == "slack_message":
+        external_id = record.slack_ts
+    elif source_type == "meeting_transcript":
+        external_id = str(record.id)
+    else:
+        external_id = str(record.id)
+
+    # Compute fingerprint and query for node
+    fingerprint = _compute_fingerprint(entity_type, external_id)
+    GraphNode = _get_graph_node_class()
+
+    from sqlmodel import select
+    stmt = select(GraphNode).where(
+        GraphNode.workspace_id == workspace_id,  # type: ignore[arg-type]
+        GraphNode.fingerprint == fingerprint,
+    )
+    result = await session.execute(stmt)
+    node = result.scalars().first()
+    return node.id if node else None
+
+
+def _compute_fingerprint(entity_type: str, external_id: str) -> str:
+    """Compute fingerprint matching graph_ops.compute_fingerprint."""
+    return hashlib.sha256(f"{entity_type}:{external_id}".encode()).hexdigest()
+
+
+def _get_content_and_author(record, source_type: str) -> tuple[str, str | None, str | None]:
+    """Extract content text, author_user_id, and bot_id from a source record.
+
+    Returns:
+        Tuple of (content, author_user_id, bot_id).
+    """
+    if source_type == "slack_message":
+        content = record.text
+        author_user_id = getattr(record, "user_id", None)
+        bot_id = (getattr(record, "raw_data", None) or {}).get("bot_id")
+        return content, author_user_id, bot_id
+
+    elif source_type == "meeting_transcript":
+        title = getattr(record, "title", None) or ""
+        transcript = getattr(record, "transcript", "")
+        content = f"{title}\n\n{transcript}".strip()
+        return content, None, None
+
+    else:
+        return str(record), None, None
+
+
+async def batch_extract_llm(
+    workspace_id: UUID,
+    source_types: list[str] | None = None,
+    batch_size: int = 50,
+    max_concurrent: int = 5,
+) -> dict:
+    """Batch LLM extraction pipeline for Slack messages and meeting transcripts.
+
+    Processes source records in batches, applying content hash dedup,
+    pre-filtering, Gemini extraction with asyncio.Semaphore rate limiting,
+    and per-batch commits.
+
+    Args:
+        workspace_id: Workspace UUID to process.
+        source_types: Source types to process (default: slack_message, meeting_transcript).
+        batch_size: Number of records per batch commit.
+        max_concurrent: Maximum concurrent Gemini API calls.
+
+    Returns:
+        Aggregate stats dict: extracted, skipped_filter, skipped_dedup, errors,
+        decisions, blockers, source_types_processed.
+    """
+    import asyncio
+
+    if source_types is None:
+        source_types = list(DEFAULT_LLM_SOURCE_TYPES)
+
+    client = get_gemini_client()
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    aggregate = {
+        "extracted": 0,
+        "skipped_filter": 0,
+        "skipped_dedup": 0,
+        "errors": 0,
+        "decisions": 0,
+        "blockers": 0,
+        "source_types_processed": [],
+    }
+
+    async with _get_async_session() as session:
+        for source_type in source_types:
+            logger.info("LLM extraction: processing source_type=%s", source_type)
+            records = await _query_source_records(session, source_type)
+            total = len(records)
+
+            if total == 0:
+                logger.info("LLM extraction: no records for %s", source_type)
+                continue
+
+            aggregate["source_types_processed"].append(source_type)
+            import math
+            total_batches = max(1, math.ceil(total / batch_size))
+
+            for i in range(0, total, batch_size):
+                batch = records[i : i + batch_size]
+                batch_num = (i // batch_size) + 1
+
+                async def _process_one(record):
+                    async with semaphore:
+                        source_node_id = await _find_source_node_id(
+                            session, workspace_id, source_type, record,
+                        )
+                        if source_node_id is None:
+                            return {"extracted": 0, "skipped_filter": 0, "skipped_dedup": 0, "errors": 0, "decisions": 0, "blockers": 0}
+
+                        content, author_user_id, bot_id = _get_content_and_author(record, source_type)
+                        return await process_single_content(
+                            session=session,
+                            client=client,
+                            workspace_id=workspace_id,
+                            content=content,
+                            source_type=source_type,
+                            source_node_id=source_node_id,
+                            author_user_id=author_user_id,
+                            bot_id=bot_id,
+                        )
+
+                results = await asyncio.gather(
+                    *[_process_one(record) for record in batch]
+                )
+
+                for stats in results:
+                    for key in ("extracted", "skipped_filter", "skipped_dedup", "errors", "decisions", "blockers"):
+                        aggregate[key] += stats.get(key, 0)
+
+                await session.commit()
+                logger.info(
+                    "LLM extraction %s: batch %d/%d, %d records processed",
+                    source_type, batch_num, total_batches, len(batch),
+                )
+
+    logger.info(
+        "LLM extraction complete: %d extracted, %d skipped (filter=%d, dedup=%d), %d errors",
+        aggregate["extracted"], aggregate["skipped_filter"] + aggregate["skipped_dedup"],
+        aggregate["skipped_filter"], aggregate["skipped_dedup"], aggregate["errors"],
+    )
+    return aggregate

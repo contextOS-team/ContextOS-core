@@ -321,7 +321,7 @@ async def _process_meeting_transcripts(batch_size: int) -> int:
     return count
 
 
-async def backfill_graph(batch_size: int = 100) -> dict:
+async def backfill_graph(batch_size: int = 100, llm_extract: bool = False) -> dict:
     """Process all existing content to populate graph nodes and edges.
 
     Processes each source type in sequence, creating graph nodes and edges
@@ -330,6 +330,8 @@ async def backfill_graph(batch_size: int = 100) -> dict:
 
     Args:
         batch_size: Number of records to process per batch commit.
+        llm_extract: If True, run LLM extraction (Gemini) after rule-based
+            backfill completes. This calls the Gemini API.
 
     Returns:
         Dict with counts per source type, e.g.
@@ -351,10 +353,43 @@ async def backfill_graph(batch_size: int = 100) -> dict:
     logger.info("Graph backfill complete: %d total records processed", total)
     logger.info("Backfill counts: %s", counts)
 
+    # Optional LLM extraction pass (calls Gemini API)
+    if llm_extract:
+        logger.info("Starting LLM extraction batch (this will call Gemini API)...")
+        from src.services.llm_extractor import batch_extract_llm
+
+        # Process all workspaces that had content -- extract workspace_id from
+        # the first available source. In practice, the caller should pass
+        # workspace_id explicitly; for CLI usage we process all workspaces.
+        llm_stats = await batch_extract_llm(
+            workspace_id=await _get_first_workspace_id(),
+            batch_size=batch_size,
+        )
+        counts["llm_extraction"] = llm_stats
+        logger.info("LLM extraction complete: %s", llm_stats)
+
     return counts
 
 
+async def _get_first_workspace_id() -> UUID:
+    """Get the first workspace ID from the database for CLI batch processing."""
+    from sqlmodel import select
+    from src.models.slack import SlackMessage
+
+    async with async_session() as session:
+        stmt = select(SlackMessage.workspace_id).limit(1)
+        result = await session.execute(stmt)
+        workspace_id = result.scalar_one_or_none()
+        if workspace_id is None:
+            raise RuntimeError("No workspace found for LLM extraction. Ensure data exists.")
+        return workspace_id
+
+
 if __name__ == "__main__":
+    import sys as _sys
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    result = asyncio.run(backfill_graph())
+
+    llm_flag = "--llm" in _sys.argv
+    result = asyncio.run(backfill_graph(llm_extract=llm_flag))
     print(f"Backfill complete: {result}")

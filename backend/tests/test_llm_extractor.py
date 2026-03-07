@@ -15,6 +15,7 @@ from src.services.llm_extractor import (
     ExtractedBlocker,
     ExtractedDecision,
     ExtractionResult,
+    batch_extract_llm,
     compute_content_hash,
     extract_entities,
     persist_blocker,
@@ -998,3 +999,193 @@ class TestBatchPipeline:
 
         assert stats["errors"] == 1
         assert stats["extracted"] == 0
+
+    # ============================================================
+    # Batch Pipeline: batch_extract_llm
+    # ============================================================
+
+    @pytest.mark.asyncio
+    async def test_batch_extract_processes_messages(self):
+        """batch_extract_llm with mocked session returning 3 messages processes
+        all 3 via process_single_content."""
+        workspace_id = uuid4()
+
+        with patch(
+            "src.services.llm_extractor.get_gemini_client",
+        ) as mock_get_client, patch(
+            "src.services.llm_extractor._get_async_session",
+        ) as mock_session_factory, patch(
+            "src.services.llm_extractor.process_single_content",
+            new_callable=AsyncMock,
+            return_value={"extracted": 1, "skipped_filter": 0, "skipped_dedup": 0, "errors": 0, "decisions": 1, "blockers": 0},
+        ) as mock_process, patch(
+            "src.services.llm_extractor._query_source_records",
+            new_callable=AsyncMock,
+        ) as mock_query:
+            # Simulate 3 slack messages
+            mock_records = []
+            for _ in range(3):
+                rec = MagicMock()
+                rec.id = uuid4()
+                rec.workspace_id = workspace_id
+                rec.text = "We decided to go with option A for the deployment strategy"
+                rec.user_id = "U12345"
+                rec.raw_data = {}
+                mock_records.append(rec)
+
+            mock_query.return_value = mock_records
+
+            # Mock the session context manager
+            mock_session = AsyncMock()
+            mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            # Mock source node lookup (returns a node_id for each record)
+            with patch(
+                "src.services.llm_extractor._find_source_node_id",
+                new_callable=AsyncMock,
+                return_value=uuid4(),
+            ):
+                stats = await batch_extract_llm(
+                    workspace_id=workspace_id,
+                    source_types=["slack_message"],
+                    batch_size=50,
+                )
+
+            assert mock_process.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_batch_extract_uses_semaphore(self):
+        """batch_extract_llm creates asyncio.Semaphore with max_concurrent parameter."""
+        workspace_id = uuid4()
+
+        with patch(
+            "src.services.llm_extractor.get_gemini_client",
+        ), patch(
+            "src.services.llm_extractor._get_async_session",
+        ) as mock_session_factory, patch(
+            "src.services.llm_extractor.process_single_content",
+            new_callable=AsyncMock,
+            return_value={"extracted": 0, "skipped_filter": 0, "skipped_dedup": 0, "errors": 0, "decisions": 0, "blockers": 0},
+        ), patch(
+            "src.services.llm_extractor._query_source_records",
+            new_callable=AsyncMock,
+            return_value=[],
+        ), patch(
+            "asyncio.Semaphore",
+        ) as mock_semaphore_cls:
+            mock_session = AsyncMock()
+            mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            await batch_extract_llm(
+                workspace_id=workspace_id,
+                max_concurrent=7,
+            )
+
+            mock_semaphore_cls.assert_called_once_with(7)
+
+    @pytest.mark.asyncio
+    async def test_batch_extract_returns_aggregate_stats(self):
+        """batch_extract_llm returns dict with total extracted, skipped, errors counts."""
+        workspace_id = uuid4()
+
+        call_count = 0
+
+        async def _mock_process(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return {"extracted": 1, "skipped_filter": 0, "skipped_dedup": 0, "errors": 0, "decisions": 1, "blockers": 0}
+            elif call_count == 2:
+                return {"extracted": 0, "skipped_filter": 1, "skipped_dedup": 0, "errors": 0, "decisions": 0, "blockers": 0}
+            else:
+                return {"extracted": 0, "skipped_filter": 0, "skipped_dedup": 1, "errors": 0, "decisions": 0, "blockers": 0}
+
+        with patch(
+            "src.services.llm_extractor.get_gemini_client",
+        ), patch(
+            "src.services.llm_extractor._get_async_session",
+        ) as mock_session_factory, patch(
+            "src.services.llm_extractor.process_single_content",
+            side_effect=_mock_process,
+        ), patch(
+            "src.services.llm_extractor._query_source_records",
+            new_callable=AsyncMock,
+        ) as mock_query, patch(
+            "src.services.llm_extractor._find_source_node_id",
+            new_callable=AsyncMock,
+            return_value=uuid4(),
+        ):
+            mock_records = []
+            for _ in range(3):
+                rec = MagicMock()
+                rec.id = uuid4()
+                rec.workspace_id = workspace_id
+                rec.text = "We decided to go with option A for the deployment"
+                rec.user_id = "U12345"
+                rec.raw_data = {}
+                mock_records.append(rec)
+
+            mock_query.return_value = mock_records
+
+            mock_session = AsyncMock()
+            mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            stats = await batch_extract_llm(
+                workspace_id=workspace_id,
+                source_types=["slack_message"],
+            )
+
+            assert stats["extracted"] == 1
+            assert stats["skipped_filter"] == 1
+            assert stats["skipped_dedup"] == 1
+            assert stats["decisions"] == 1
+
+    @pytest.mark.asyncio
+    async def test_batch_extract_commits_per_batch(self):
+        """batch_extract_llm calls session.commit() after each batch of batch_size items."""
+        workspace_id = uuid4()
+
+        with patch(
+            "src.services.llm_extractor.get_gemini_client",
+        ), patch(
+            "src.services.llm_extractor._get_async_session",
+        ) as mock_session_factory, patch(
+            "src.services.llm_extractor.process_single_content",
+            new_callable=AsyncMock,
+            return_value={"extracted": 1, "skipped_filter": 0, "skipped_dedup": 0, "errors": 0, "decisions": 1, "blockers": 0},
+        ), patch(
+            "src.services.llm_extractor._query_source_records",
+            new_callable=AsyncMock,
+        ) as mock_query, patch(
+            "src.services.llm_extractor._find_source_node_id",
+            new_callable=AsyncMock,
+            return_value=uuid4(),
+        ):
+            # 5 records, batch_size=2 -> should commit 3 times (2+2+1)
+            mock_records = []
+            for _ in range(5):
+                rec = MagicMock()
+                rec.id = uuid4()
+                rec.workspace_id = workspace_id
+                rec.text = "We decided to go with option A for the deployment"
+                rec.user_id = "U12345"
+                rec.raw_data = {}
+                mock_records.append(rec)
+
+            mock_query.return_value = mock_records
+
+            mock_session = AsyncMock()
+            mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            await batch_extract_llm(
+                workspace_id=workspace_id,
+                source_types=["slack_message"],
+                batch_size=2,
+            )
+
+            # Expect 3 commits: batch of 2, batch of 2, batch of 1
+            assert mock_session.commit.call_count == 3
