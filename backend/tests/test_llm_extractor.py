@@ -17,6 +17,8 @@ from src.services.llm_extractor import (
     ExtractionResult,
     compute_content_hash,
     extract_entities,
+    persist_blocker,
+    persist_decision,
     should_skip_for_llm,
     validate_extraction,
 )
@@ -408,3 +410,298 @@ class TestDecisionExtraction:
         call_args = client.aio.models.generate_content.call_args
         contents_arg = call_args.kwargs.get("contents") or call_args[0][1]
         assert "meeting_transcript" in contents_arg
+
+
+# ============================================================
+# Decision Node Schema (persistence)
+# ============================================================
+
+
+class TestDecisionNodeSchema:
+    """Tests for persist_decision graph node creation."""
+
+    @pytest.mark.asyncio
+    async def test_decision_node_has_required_properties(self):
+        """persist_decision creates a Decision node with properties containing
+        description, rationale, source_quote, confidence, status, extraction_model."""
+        decision = _make_decision()
+        mock_session = AsyncMock()
+        workspace_id = uuid4()
+        source_node_id = uuid4()
+        decision_node_id = uuid4()
+
+        with patch(
+            "src.services.llm_extractor.upsert_node",
+            new_callable=AsyncMock,
+            return_value=decision_node_id,
+        ) as mock_upsert_node, patch(
+            "src.services.llm_extractor.upsert_edge",
+            new_callable=AsyncMock,
+            return_value=uuid4(),
+        ):
+            await persist_decision(
+                mock_session, workspace_id, decision, source_node_id
+            )
+
+            # Check the properties dict passed to upsert_node
+            call_kwargs = mock_upsert_node.call_args.kwargs
+            props = call_kwargs["properties"]
+            assert props["description"] == decision.description
+            assert props["rationale"] == decision.rationale
+            assert props["source_quote"] == decision.source_quote
+            assert props["confidence"] == decision.confidence
+            assert props["status"] == "active"
+            assert props["extraction_model"] == "gemini-2.0-flash"
+
+    @pytest.mark.asyncio
+    async def test_decision_external_id_uses_source_quote_hash(self):
+        """The external_id passed to upsert_node is 'decision:{hash_of_source_quote}'
+        for deterministic fingerprint dedup."""
+        decision = _make_decision(source_quote="we decided to use Redis for caching")
+        expected_hash = compute_content_hash("we decided to use Redis for caching")
+        expected_ext_id = f"decision:{expected_hash}"
+
+        mock_session = AsyncMock()
+        workspace_id = uuid4()
+        source_node_id = uuid4()
+        decision_node_id = uuid4()
+
+        with patch(
+            "src.services.llm_extractor.upsert_node",
+            new_callable=AsyncMock,
+            return_value=decision_node_id,
+        ) as mock_upsert_node, patch(
+            "src.services.llm_extractor.upsert_edge",
+            new_callable=AsyncMock,
+            return_value=uuid4(),
+        ):
+            await persist_decision(
+                mock_session, workspace_id, decision, source_node_id
+            )
+
+            call_kwargs = mock_upsert_node.call_args.kwargs
+            assert call_kwargs["external_id"] == expected_ext_id
+
+    @pytest.mark.asyncio
+    async def test_decision_name_truncated(self):
+        """The name passed to upsert_node is description truncated to 100 chars."""
+        long_desc = "A" * 200
+        decision = _make_decision(description=long_desc)
+
+        mock_session = AsyncMock()
+        workspace_id = uuid4()
+        source_node_id = uuid4()
+        decision_node_id = uuid4()
+
+        with patch(
+            "src.services.llm_extractor.upsert_node",
+            new_callable=AsyncMock,
+            return_value=decision_node_id,
+        ) as mock_upsert_node, patch(
+            "src.services.llm_extractor.upsert_edge",
+            new_callable=AsyncMock,
+            return_value=uuid4(),
+        ):
+            await persist_decision(
+                mock_session, workspace_id, decision, source_node_id
+            )
+
+            call_kwargs = mock_upsert_node.call_args.kwargs
+            assert len(call_kwargs["name"]) == 100
+            assert call_kwargs["name"] == long_desc[:100]
+
+
+# ============================================================
+# Decision Edges (persistence)
+# ============================================================
+
+
+class TestDecisionEdges:
+    """Tests for persist_decision and persist_blocker edge creation."""
+
+    @pytest.mark.asyncio
+    async def test_decision_discussed_in_edge(self):
+        """persist_decision creates a 'discussed_in' edge from Decision node
+        to source_node_id."""
+        decision = _make_decision(ticket_refs=[])
+        mock_session = AsyncMock()
+        workspace_id = uuid4()
+        source_node_id = uuid4()
+        decision_node_id = uuid4()
+
+        with patch(
+            "src.services.llm_extractor.upsert_node",
+            new_callable=AsyncMock,
+            return_value=decision_node_id,
+        ), patch(
+            "src.services.llm_extractor.upsert_edge",
+            new_callable=AsyncMock,
+            return_value=uuid4(),
+        ) as mock_upsert_edge:
+            await persist_decision(
+                mock_session, workspace_id, decision, source_node_id
+            )
+
+            # Find the discussed_in edge call
+            edge_calls = mock_upsert_edge.call_args_list
+            discussed_in_calls = [
+                c for c in edge_calls
+                if c.kwargs.get("relationship_type") == "discussed_in"
+            ]
+            assert len(discussed_in_calls) == 1
+            call_kwargs = discussed_in_calls[0].kwargs
+            assert call_kwargs["source_node_id"] == decision_node_id
+            assert call_kwargs["target_node_id"] == source_node_id
+
+    @pytest.mark.asyncio
+    async def test_decision_authored_by_edge(self):
+        """When author_node_id is provided, persist_decision creates an
+        'authored_by' edge from Decision to Person node."""
+        decision = _make_decision(ticket_refs=[])
+        mock_session = AsyncMock()
+        workspace_id = uuid4()
+        source_node_id = uuid4()
+        author_node_id = uuid4()
+        decision_node_id = uuid4()
+
+        with patch(
+            "src.services.llm_extractor.upsert_node",
+            new_callable=AsyncMock,
+            return_value=decision_node_id,
+        ), patch(
+            "src.services.llm_extractor.upsert_edge",
+            new_callable=AsyncMock,
+            return_value=uuid4(),
+        ) as mock_upsert_edge:
+            await persist_decision(
+                mock_session, workspace_id, decision, source_node_id,
+                author_node_id=author_node_id,
+            )
+
+            edge_calls = mock_upsert_edge.call_args_list
+            authored_by_calls = [
+                c for c in edge_calls
+                if c.kwargs.get("relationship_type") == "authored_by"
+            ]
+            assert len(authored_by_calls) == 1
+            call_kwargs = authored_by_calls[0].kwargs
+            assert call_kwargs["source_node_id"] == decision_node_id
+            assert call_kwargs["target_node_id"] == author_node_id
+
+    @pytest.mark.asyncio
+    async def test_decision_no_author_edge_when_none(self):
+        """When author_node_id is None, no 'authored_by' edge is created."""
+        decision = _make_decision(ticket_refs=[])
+        mock_session = AsyncMock()
+        workspace_id = uuid4()
+        source_node_id = uuid4()
+        decision_node_id = uuid4()
+
+        with patch(
+            "src.services.llm_extractor.upsert_node",
+            new_callable=AsyncMock,
+            return_value=decision_node_id,
+        ), patch(
+            "src.services.llm_extractor.upsert_edge",
+            new_callable=AsyncMock,
+            return_value=uuid4(),
+        ) as mock_upsert_edge:
+            await persist_decision(
+                mock_session, workspace_id, decision, source_node_id,
+                author_node_id=None,
+            )
+
+            edge_calls = mock_upsert_edge.call_args_list
+            authored_by_calls = [
+                c for c in edge_calls
+                if c.kwargs.get("relationship_type") == "authored_by"
+            ]
+            assert len(authored_by_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_decision_references_ticket_edges(self):
+        """When ticket_refs is non-empty, persist_decision creates 'references'
+        edges from Decision to Ticket nodes."""
+        decision = _make_decision(ticket_refs=["ENG-123", "ENG-456"])
+        mock_session = AsyncMock()
+        workspace_id = uuid4()
+        source_node_id = uuid4()
+        decision_node_id = uuid4()
+        ticket_node_id_1 = uuid4()
+        ticket_node_id_2 = uuid4()
+
+        # upsert_node returns different IDs: first for Decision, then for each Ticket
+        node_ids = [decision_node_id, ticket_node_id_1, ticket_node_id_2]
+
+        with patch(
+            "src.services.llm_extractor.upsert_node",
+            new_callable=AsyncMock,
+            side_effect=node_ids,
+        ) as mock_upsert_node, patch(
+            "src.services.llm_extractor.upsert_edge",
+            new_callable=AsyncMock,
+            return_value=uuid4(),
+        ) as mock_upsert_edge:
+            await persist_decision(
+                mock_session, workspace_id, decision, source_node_id,
+            )
+
+            # Verify Ticket nodes were upserted
+            node_calls = mock_upsert_node.call_args_list
+            ticket_calls = [
+                c for c in node_calls
+                if c.kwargs.get("entity_type") == "Ticket"
+            ]
+            assert len(ticket_calls) == 2
+            assert ticket_calls[0].kwargs["external_id"] == "ENG-123"
+            assert ticket_calls[1].kwargs["external_id"] == "ENG-456"
+
+            # Verify references edges
+            edge_calls = mock_upsert_edge.call_args_list
+            ref_calls = [
+                c for c in edge_calls
+                if c.kwargs.get("relationship_type") == "references"
+            ]
+            assert len(ref_calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_blocker_persistence(self):
+        """persist_blocker creates a Blocker node with 'blocks' relationship
+        to source node."""
+        blocker = _make_blocker()
+        mock_session = AsyncMock()
+        workspace_id = uuid4()
+        source_node_id = uuid4()
+        blocker_node_id = uuid4()
+
+        with patch(
+            "src.services.llm_extractor.upsert_node",
+            new_callable=AsyncMock,
+            return_value=blocker_node_id,
+        ) as mock_upsert_node, patch(
+            "src.services.llm_extractor.upsert_edge",
+            new_callable=AsyncMock,
+            return_value=uuid4(),
+        ) as mock_upsert_edge:
+            result_id = await persist_blocker(
+                mock_session, workspace_id, blocker, source_node_id,
+            )
+
+            # Verify Blocker node was created
+            node_kwargs = mock_upsert_node.call_args.kwargs
+            assert node_kwargs["entity_type"] == "Blocker"
+            assert "blocker:" in node_kwargs["external_id"]
+            props = node_kwargs["properties"]
+            assert props["description"] == blocker.description
+            assert props["source_quote"] == blocker.source_quote
+            assert props["confidence"] == blocker.confidence
+            assert props["status"] == "active"
+            assert props["extraction_model"] == "gemini-2.0-flash"
+
+            # Verify blocks edge
+            edge_kwargs = mock_upsert_edge.call_args.kwargs
+            assert edge_kwargs["relationship_type"] == "blocks"
+            assert edge_kwargs["source_node_id"] == blocker_node_id
+            assert edge_kwargs["target_node_id"] == source_node_id
+
+            assert result_id == blocker_node_id
