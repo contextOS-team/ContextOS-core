@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 
 ## Current Position
 
-Phase: 20 of 20 (Settings Page)
-Plan: 2 of 2 (20-02 complete)
-Status: Phase 20 Complete
-Last activity: 2026-03-06 -- Completed Phase 20 Plan 02 (Settings Frontend - Settings Page UI)
+Phase: 22 of 22 (Real-time Generation Progress UI)
+Plan: 2 of 3 (22-02 complete)
+Status: In Progress
+Last activity: 2026-03-07 -- Completed Phase 22 Plan 02 (Frontend SSE Client & Generation Progress Component)
 
-Progress: [██████████] 100%
+Progress: [██████░░░░] 66%
 
 ## Performance Metrics
 
@@ -121,6 +121,9 @@ Recent decisions affecting current work:
 - [Phase 20]: AlertDialog follows exact dropdown-menu.tsx pattern (data-slot, cn() merging, functional components)
 - [Phase 20]: Settings page is single scrollable layout (not tabbed) -- 4 sections vertical
 - [Phase 20]: Created API key shown inline with teal box and copy-once warning (not modal)
+- [Phase 22]: fetch+ReadableStream over EventSource for SSE -- EventSource cannot send Authorization headers
+- [Phase 22]: GenerationProgress is purely presentational -- state management deferred to Plan 03 parent
+- [Phase 22]: Active step uses CSS step-pulse animation (not JS interval) for teal pulsing
 
 ### Roadmap Evolution
 
@@ -138,6 +141,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-06T15:55:53.957Z
-Stopped at: Phase 22 context gathered
-Resume file: .planning/phases/22-realtime-generation-progress-ui/22-CONTEXT.md
+Last session: 2026-03-07T09:30:30Z
+Stopped at: Completed 22-02-PLAN.md
+Resume file: .planning/phases/22-realtime-generation-progress-ui/22-03-PLAN.md
