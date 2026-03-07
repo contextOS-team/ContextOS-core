@@ -166,7 +166,10 @@ Plans:
   1. A person who exists in both Linear and Slack resolves to a single Person node in the graph via email-based deterministic matching
   2. During integration setup, the identity mapping table is seeded from team roster APIs (Linear users, Slack members, GitHub collaborators) so resolution works from day one
   3. When names match across platforms but emails differ, a candidate same_as edge is created with a confidence score -- no auto-merging occurs on name alone
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 23-01-PLAN.md -- Identity mappings schema, model, core email-based resolution service, and inline resolution hook
+- [ ] 23-02-PLAN.md -- Roster seeding from Linear/Slack/GitHub APIs, fuzzy name matching with rapidfuzz, sync flow wiring, and backfill
 
 ### Phase 24: LLM Extraction + Decision Extraction
 **Goal**: The system extracts semantic entities (decisions, rationale, blockers) from Slack messages and meeting transcripts via Gemini Flash, with decisions as the highest-value entity linking what was decided to who decided it and which tickets it affects
@@ -259,7 +262,7 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 22. Graph Foundation + Rule-Based Extraction | 3/3 | Complete    | 2026-03-06 | - |
-| 23. Identity Resolution | v1.2 | 0/TBD | Not started | - |
+| 23. Identity Resolution | v1.2 | 0/2 | Not started | - |
 | 24. LLM Extraction + Decision Extraction | v1.2 | 0/TBD | Not started | - |
 | 25. Graph-Enhanced Retrieval | v1.2 | 0/TBD | Not started | - |
 | 26. Synthesis + Code-to-Discussion Linking | v1.2 | 0/TBD | Not started | - |
