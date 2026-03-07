@@ -13,7 +13,9 @@ from src.services.llm_extractor import (
     ExtractedBlocker,
     ExtractedDecision,
     ExtractionResult,
+    compute_content_hash,
     should_skip_for_llm,
+    validate_extraction,
 )
 
 
@@ -108,3 +110,152 @@ class TestSchemas:
         expected_fields = {"decisions", "blockers"}
         actual_fields = set(ExtractionResult.model_fields.keys())
         assert expected_fields == actual_fields
+
+
+# ============================================================
+# Source Text Validation (Anti-Hallucination)
+# ============================================================
+
+
+def _make_decision(**overrides) -> ExtractedDecision:
+    """Helper to create an ExtractedDecision with sensible defaults for tests."""
+    defaults = {
+        "description": "Use Redis for caching",
+        "rationale": "It handles pub/sub well",
+        "source_quote": "we decided to use Redis for caching",
+        "confidence": 0.9,
+        "person_name": "alice",
+        "ticket_refs": ["ENG-123"],
+    }
+    defaults.update(overrides)
+    return ExtractedDecision(**defaults)
+
+
+def _make_blocker(**overrides) -> ExtractedBlocker:
+    """Helper to create an ExtractedBlocker with sensible defaults for tests."""
+    defaults = {
+        "description": "CI pipeline broken",
+        "source_quote": "CI pipeline is currently broken",
+        "confidence": 0.8,
+    }
+    defaults.update(overrides)
+    return ExtractedBlocker(**defaults)
+
+
+class TestSourceValidation:
+    """Tests for validate_extraction source quote verification."""
+
+    ORIGINAL_CONTENT = (
+        "In today's standup, we decided to use Redis for caching because it handles "
+        "pub/sub well. Also, the CI pipeline is currently broken and blocking deploys."
+    )
+
+    def test_keeps_valid_entities(self):
+        """Entities whose source_quote is found in original content are kept."""
+        result = ExtractionResult(
+            decisions=[_make_decision(source_quote="we decided to use Redis for caching")],
+            blockers=[_make_blocker(source_quote="CI pipeline is currently broken")],
+        )
+        validated = validate_extraction(result, self.ORIGINAL_CONTENT)
+        assert len(validated.decisions) == 1
+        assert len(validated.blockers) == 1
+
+    def test_drops_hallucinated_decisions(self):
+        """Decisions whose source_quote is NOT in original content are dropped."""
+        result = ExtractionResult(
+            decisions=[_make_decision(source_quote="we switched to Memcached for performance")],
+            blockers=[],
+        )
+        validated = validate_extraction(result, self.ORIGINAL_CONTENT)
+        assert len(validated.decisions) == 0
+
+    def test_drops_hallucinated_blockers(self):
+        """Blockers whose source_quote is NOT in original content are dropped."""
+        result = ExtractionResult(
+            decisions=[],
+            blockers=[_make_blocker(source_quote="database migration is failing")],
+        )
+        validated = validate_extraction(result, self.ORIGINAL_CONTENT)
+        assert len(validated.blockers) == 0
+
+    def test_mixed_valid_and_invalid(self):
+        """Given 3 decisions (2 valid, 1 hallucinated), only the 2 valid ones survive."""
+        result = ExtractionResult(
+            decisions=[
+                _make_decision(source_quote="we decided to use Redis for caching"),
+                _make_decision(
+                    description="Also handles pub/sub",
+                    source_quote="it handles pub/sub well",
+                ),
+                _make_decision(
+                    description="Switch to MongoDB",
+                    source_quote="we are migrating to MongoDB",
+                ),
+            ],
+            blockers=[],
+        )
+        validated = validate_extraction(result, self.ORIGINAL_CONTENT)
+        assert len(validated.decisions) == 2
+        assert validated.decisions[0].source_quote == "we decided to use Redis for caching"
+        assert validated.decisions[1].source_quote == "it handles pub/sub well"
+
+    def test_empty_result_passthrough(self):
+        """Empty extraction results pass through unchanged."""
+        result = ExtractionResult(decisions=[], blockers=[])
+        validated = validate_extraction(result, self.ORIGINAL_CONTENT)
+        assert len(validated.decisions) == 0
+        assert len(validated.blockers) == 0
+
+    def test_case_insensitive_matching(self):
+        """Source quote matching is case-insensitive."""
+        result = ExtractionResult(
+            decisions=[_make_decision(source_quote="We Decided To Use Redis For Caching")],
+            blockers=[],
+        )
+        validated = validate_extraction(result, self.ORIGINAL_CONTENT)
+        assert len(validated.decisions) == 1
+
+
+# ============================================================
+# Content Hash Deduplication
+# ============================================================
+
+
+class TestContentHashDedup:
+    """Tests for compute_content_hash SHA-256 content hashing."""
+
+    def test_deterministic_hash(self):
+        """Same input always produces the same hash."""
+        hash1 = compute_content_hash("hello world")
+        hash2 = compute_content_hash("hello world")
+        assert hash1 == hash2
+
+    def test_whitespace_normalization(self):
+        """Multiple spaces are normalized to single space before hashing."""
+        hash1 = compute_content_hash("hello  world")
+        hash2 = compute_content_hash("hello world")
+        assert hash1 == hash2
+
+    def test_different_content_different_hash(self):
+        """Different content produces different hashes."""
+        hash1 = compute_content_hash("hello")
+        hash2 = compute_content_hash("world")
+        assert hash1 != hash2
+
+    def test_case_preservation(self):
+        """Case is preserved -- 'Hello' and 'hello' produce different hashes."""
+        hash1 = compute_content_hash("Hello")
+        hash2 = compute_content_hash("hello")
+        assert hash1 != hash2
+
+    def test_returns_hex_string(self):
+        """Hash is a 64-character hex string (SHA-256)."""
+        result = compute_content_hash("test content")
+        assert len(result) == 64
+        assert all(c in "0123456789abcdef" for c in result)
+
+    def test_leading_trailing_whitespace_stripped(self):
+        """Leading and trailing whitespace is stripped before hashing."""
+        hash1 = compute_content_hash("  hello world  ")
+        hash2 = compute_content_hash("hello world")
+        assert hash1 == hash2
