@@ -1027,3 +1027,123 @@ class TestSeedRoster:
         assert mock_upsert_mapping.call_count == 2
         mock_resolve.assert_called_once_with(mock_session, workspace_id)
         mock_fuzzy.assert_called_once_with(mock_session, workspace_id)
+
+
+# ============================================================
+# Test: SLACK_BOT_SCOPES includes users:read.email
+# ============================================================
+
+
+class TestSlackBotScopes:
+    """Tests for SLACK_BOT_SCOPES configuration."""
+
+    def test_includes_users_read_email(self):
+        """SLACK_BOT_SCOPES includes users:read.email for roster email access."""
+        from src.services.slack_oauth import SLACK_BOT_SCOPES
+
+        assert "users:read.email" in SLACK_BOT_SCOPES
+
+
+# ============================================================
+# Test: backfill_identity_resolution
+# ============================================================
+
+
+class TestBackfillIdentityResolution:
+    """Tests for backfill_identity_resolution()."""
+
+    @pytest.fixture
+    def mock_session(self):
+        session = AsyncMock()
+        return session
+
+    @pytest.mark.asyncio
+    async def test_links_existing_person_nodes_to_canonical(self, mock_session):
+        """backfill_identity_resolution links existing Person nodes to
+        canonical nodes when mapping exists."""
+        from src.models.graph_node import GraphNode
+
+        workspace_id = uuid.uuid4()
+        canonical_node_id = uuid.uuid4()
+
+        # A platform Person node with platform info in properties
+        person_node = MagicMock(spec=GraphNode)
+        person_node.id = uuid.uuid4()
+        person_node.name = "Alice (Slack)"
+        person_node.properties = {
+            "platform": "slack",
+            "platform_user_id": "U12345",
+        }
+
+        # Mock: first query returns person nodes, second query returns no existing edge
+        person_result = MagicMock()
+        person_result.scalars.return_value.all.return_value = [person_node]
+
+        edge_result = MagicMock()
+        edge_result.scalar_one_or_none.return_value = None  # No existing same_as edge
+
+        mock_session.execute = AsyncMock(side_effect=[person_result, edge_result])
+
+        # Mock: lookup_mapping returns a mapping with canonical_person_id
+        mock_mapping = MagicMock()
+        mock_mapping.canonical_person_id = canonical_node_id
+
+        with patch(
+            "src.services.identity_resolution.lookup_mapping",
+            new_callable=AsyncMock,
+            return_value=mock_mapping,
+        ), patch(
+            "src.services.identity_resolution.upsert_edge",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        ) as mock_upsert_edge:
+            from src.services.identity_resolution import backfill_identity_resolution
+
+            count = await backfill_identity_resolution(mock_session, workspace_id)
+
+        assert count == 1
+        mock_upsert_edge.assert_called_once()
+        edge_kwargs = mock_upsert_edge.call_args.kwargs
+        assert edge_kwargs["source_node_id"] == person_node.id
+        assert edge_kwargs["target_node_id"] == canonical_node_id
+        assert edge_kwargs["relationship_type"] == "same_as"
+
+    @pytest.mark.asyncio
+    async def test_skips_nodes_with_existing_same_as_edge(self, mock_session):
+        """backfill_identity_resolution skips Person nodes that already
+        have same_as edges."""
+        from src.models.graph_node import GraphNode
+
+        workspace_id = uuid.uuid4()
+
+        person_node = MagicMock(spec=GraphNode)
+        person_node.id = uuid.uuid4()
+        person_node.name = "Bob (GitHub)"
+        person_node.properties = {
+            "platform": "github",
+            "platform_user_id": "bob-gh",
+        }
+
+        # Mock: first query returns person nodes, second query returns existing edge
+        person_result = MagicMock()
+        person_result.scalars.return_value.all.return_value = [person_node]
+
+        edge_result = MagicMock()
+        edge_result.scalar_one_or_none.return_value = uuid.uuid4()  # Existing edge
+
+        mock_session.execute = AsyncMock(side_effect=[person_result, edge_result])
+
+        with patch(
+            "src.services.identity_resolution.lookup_mapping",
+            new_callable=AsyncMock,
+        ) as mock_lookup, patch(
+            "src.services.identity_resolution.upsert_edge",
+            new_callable=AsyncMock,
+        ) as mock_upsert_edge:
+            from src.services.identity_resolution import backfill_identity_resolution
+
+            count = await backfill_identity_resolution(mock_session, workspace_id)
+
+        assert count == 0
+        mock_lookup.assert_not_called()
+        mock_upsert_edge.assert_not_called()

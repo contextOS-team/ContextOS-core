@@ -11,6 +11,7 @@ Slack's OAuth V2 flow:
 - Team info (id, name) comes from the token exchange response.
 """
 
+import logging
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -26,12 +27,14 @@ from src.services.oauth_common import (
 )
 from src.services.vault import read_token, store_token, token_name
 
+logger = logging.getLogger(__name__)
+
 # Slack OAuth V2 endpoints
 SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
 SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access"
 
-# Bot scopes for reading channel messages and user info
-SLACK_BOT_SCOPES = "channels:read,channels:history,groups:read,groups:history,users:read"
+# Bot scopes for reading channel messages, user info, and user emails
+SLACK_BOT_SCOPES = "channels:read,channels:history,groups:read,groups:history,users:read,users:read.email"
 
 
 class SlackOAuthError(Exception):
@@ -132,6 +135,24 @@ async def exchange_code(
     )
 
     await session.commit()
+
+    # Seed Slack roster for identity resolution (fail-silent)
+    try:
+        from src.services.identity_resolution import fetch_slack_roster, seed_roster
+
+        members = await fetch_slack_roster(session, workspace_id)
+        seeded = await seed_roster(session, workspace_id, "slack", members)
+        logger.info(
+            "Slack roster seeding: %d members for workspace %s",
+            seeded,
+            workspace_id,
+        )
+    except Exception:
+        logger.warning(
+            "Slack roster seeding failed for workspace %s (non-blocking)",
+            workspace_id,
+            exc_info=True,
+        )
 
     return {"id": team_id, "name": team_name}
 
