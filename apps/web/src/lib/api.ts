@@ -198,26 +198,47 @@ export interface GithubRepo {
   language: string | null
 }
 
-export function getGithubRepos(): Promise<{ repos: GithubRepo[] }> {
-  return apiFetch<{ repos: GithubRepo[] }>('/api/github/repos')
+export interface GithubReposResponse {
+  repos: GithubRepo[]
+  selected_repos: string[]
 }
 
-export function refreshGithubRepos(): Promise<{ repos: GithubRepo[] }> {
-  return apiFetch<{ repos: GithubRepo[] }>('/api/github/repos/refresh', {
+export function getGithubRepos(): Promise<GithubReposResponse> {
+  return apiFetch<GithubReposResponse>('/api/github/repos')
+}
+
+export function refreshGithubRepos(): Promise<GithubReposResponse> {
+  return apiFetch<GithubReposResponse>('/api/github/repos/refresh', {
     method: 'POST',
   })
 }
 
 export function saveGithubRepoSelection(
   repoFullNames: string[]
-): Promise<{ status: string; selected_repos: string[] }> {
-  return apiFetch<{ status: string; selected_repos: string[] }>(
+): Promise<{ selected_repos: string[] }> {
+  return apiFetch<{ selected_repos: string[] }>(
     '/api/github/repos/select',
     {
       method: 'POST',
       body: JSON.stringify({ repo_full_names: repoFullNames }),
     }
   )
+}
+
+export function triggerGithubIndex(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/github/index', {
+    method: 'POST',
+  })
+}
+
+export interface GithubIndexStatus {
+  status: string
+  last_indexed_at: string | null
+  repos: { repo: string; chunks: number }[]
+}
+
+export function getGithubIndexStatus(): Promise<GithubIndexStatus> {
+  return apiFetch<GithubIndexStatus>('/api/github/index/status')
 }
 
 // ---------------------------------------------------------------------------
@@ -428,4 +449,114 @@ export interface TeamMember {
 
 export function listTeamMembers(): Promise<{ members: TeamMember[] }> {
   return apiFetch<{ members: TeamMember[] }>('/api/workspaces/current/members')
+}
+
+// ---------------------------------------------------------------------------
+// SSE Generation Progress
+// ---------------------------------------------------------------------------
+
+export interface GenerationStep {
+  source: string
+  label: string
+  status: 'waiting' | 'active' | 'complete' | 'error'
+  detail?: string
+  count?: number
+}
+
+export type SSEEventData =
+  | { event: 'start'; steps: string[] }
+  | { event: 'step_start'; source: string }
+  | { event: 'step_complete'; source: string; count: number; detail: string }
+  | { event: 'step_error'; source: string; error: string }
+  | { event: 'complete'; context_page_id: string }
+  | { event: 'error'; message: string }
+
+/** Map source keys to human-readable labels */
+export const SOURCE_LABELS: Record<string, string> = {
+  slack: 'Slack',
+  github: 'GitHub',
+  notion: 'Notion',
+  fathom: 'Fathom',
+  linear: 'Linear',
+  synthesize: 'Synthesize',
+}
+
+/**
+ * Consume an SSE stream from the backend with auth headers.
+ *
+ * Uses fetch + ReadableStream instead of EventSource because
+ * EventSource cannot send custom Authorization headers.
+ *
+ * @param path - API path starting with / (e.g. "/api/context/CON-51/generate-stream")
+ * @param onEvent - Callback for each parsed SSE event
+ * @param onError - Optional error callback
+ * @returns AbortController to cancel the stream
+ */
+export function apiFetchSSE(
+  path: string,
+  onEvent: (data: SSEEventData) => void,
+  onError?: (error: Error) => void,
+): AbortController {
+  const controller = new AbortController()
+
+  ;(async () => {
+    try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token ?? ''
+
+      const response = await fetch(`${BACKEND_URL}${path}`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'text/event-stream',
+        },
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        throw new Error(`SSE error ${response.status}`)
+      }
+      if (!response.body) {
+        throw new Error('No response body')
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        let currentEvent = ''
+        let currentData = ''
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7)
+          } else if (line.startsWith('data: ')) {
+            currentData = line.slice(6)
+          } else if (line === '' && currentData) {
+            try {
+              onEvent(JSON.parse(currentData) as SSEEventData)
+            } catch {
+              // Skip malformed events
+            }
+            currentEvent = ''
+            currentData = ''
+          }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        onError?.(err instanceof Error ? err : new Error(String(err)))
+      }
+    }
+  })()
+
+  return controller
 }
