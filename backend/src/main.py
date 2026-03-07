@@ -81,10 +81,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup: clear any stale sync locks left from previous crashes
     await _reset_stale_sync_locks()
 
-    # Startup: launch background workers
-    embedding_task = asyncio.create_task(run_embedding_worker())
-    polling_task = asyncio.create_task(run_polling_fallback())
-    code_index_task = asyncio.create_task(run_code_index_worker())
+    # Startup: launch background workers with auto-restart on crash
+    async def _supervised(name: str, coro_fn):
+        """Run a worker coroutine, restarting it if it crashes."""
+        while True:
+            try:
+                await coro_fn()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Worker %s crashed, restarting in 5s", name)
+                await asyncio.sleep(5)
+
+    embedding_task = asyncio.create_task(_supervised("embedding_worker", run_embedding_worker))
+    polling_task = asyncio.create_task(_supervised("polling_fallback", run_polling_fallback))
+    code_index_task = asyncio.create_task(_supervised("code_index_worker", run_code_index_worker))
 
     logger.info("Background workers started: embedding_worker, polling_fallback, code_index_worker")
 

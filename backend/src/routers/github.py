@@ -144,19 +144,37 @@ class RepoSelectRequest(BaseModel):
     repo_full_names: list[str]
 
 
+async def _get_selected_repos(
+    workspace_id, session: AsyncSession
+) -> list[str]:
+    """Read selected_repos from workspace_integrations config."""
+    from sqlmodel import select as sm_select
+
+    stmt = sm_select(WorkspaceIntegration).where(
+        WorkspaceIntegration.workspace_id == workspace_id,
+        WorkspaceIntegration.provider == Provider.GITHUB,
+    )
+    result = await session.execute(stmt)
+    integration = result.scalar_one_or_none()
+    if not integration or not integration.config:
+        return []
+    return integration.config.get("selected_repos", [])
+
+
 @router.get("/repos")
 async def get_repos(
     user: UserContext = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Get cached list of available repos.
+    """Get cached list of available repos and current selection.
 
-    Returns the cached repo list from workspace_integrations.config
-    without making a GitHub API call. Use POST /repos/refresh to
-    fetch a fresh list from GitHub.
+    Returns the cached repo list and selected_repos from
+    workspace_integrations.config without making a GitHub API call.
+    Use POST /repos/refresh to fetch a fresh list from GitHub.
     """
     repos = await get_cached_repos(user.workspace_id, session)
-    return {"repos": repos}
+    selected = await _get_selected_repos(user.workspace_id, session)
+    return {"repos": repos, "selected_repos": selected}
 
 
 @router.post("/repos/refresh")
@@ -172,7 +190,8 @@ async def refresh_repos_endpoint(
     settings = config_module.get_settings()
     try:
         repos = await refresh_repos(user.workspace_id, session, settings)
-        return {"repos": repos}
+        selected = await _get_selected_repos(user.workspace_id, session)
+        return {"repos": repos, "selected_repos": selected}
     except GitHubOAuthError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -299,6 +318,23 @@ async def trigger_index(
         "status": "accepted",
         "message": "Code indexing started for all selected repos",
     }
+
+
+@router.post("/index/backfill-embeddings", status_code=status.HTTP_202_ACCEPTED)
+async def backfill_embeddings(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Backfill embeddings for code chunks that were indexed but never embedded.
+
+    Calls process_pending_embeddings which finds all source records
+    missing embeddings and generates them directly (bypasses Redis).
+    """
+    from src.services.embedding import process_pending_embeddings
+
+    count = await process_pending_embeddings(session, user.workspace_id)
+    await session.commit()
+    return {"status": "completed", "embeddings_generated": count}
 
 
 @router.post("/index/{repo_full_name:path}", status_code=status.HTTP_202_ACCEPTED)
