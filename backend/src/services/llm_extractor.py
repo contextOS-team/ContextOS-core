@@ -387,3 +387,128 @@ async def persist_blocker(
     )
 
     return blocker_node_id
+
+
+# ============================================================
+# Single-Content Extraction Pipeline
+# ============================================================
+
+# Platform prefix mapping for author resolution
+_AUTHOR_PREFIX: dict[str, str] = {
+    "slack_message": "slack",
+    "meeting_transcript": "meeting",
+}
+
+
+async def process_single_content(
+    session,
+    client: genai.Client,
+    workspace_id: UUID,
+    content: str,
+    source_type: str,
+    source_node_id: UUID,
+    author_user_id: str | None = None,
+    bot_id: str | None = None,
+) -> dict:
+    """Process a single content item through the full LLM extraction pipeline.
+
+    Pipeline steps:
+    1. Pre-filter via should_skip_for_llm (bot, short, emoji-only)
+    2. Content hash dedup against source node properties
+    3. Gemini extraction with validation (fail-silent on errors)
+    4. Person resolution from author_user_id
+    5. Persist decisions and blockers to graph
+    6. Mark source node with extraction metadata
+
+    Args:
+        session: Async database session.
+        client: Gemini API client instance.
+        workspace_id: Workspace UUID.
+        content: Text content to extract entities from.
+        source_type: Type of source (e.g. 'slack_message', 'meeting_transcript').
+        source_node_id: UUID of the source graph node.
+        author_user_id: Optional platform user ID for person resolution.
+        bot_id: Optional bot ID (if present, content is skipped).
+
+    Returns:
+        Stats dict with keys: extracted, skipped_filter, skipped_dedup,
+        errors, decisions, blockers.
+    """
+    from src.services import graph_ops
+
+    stats = {
+        "extracted": 0,
+        "skipped_filter": 0,
+        "skipped_dedup": 0,
+        "errors": 0,
+        "decisions": 0,
+        "blockers": 0,
+    }
+
+    # Step 1: Pre-filter
+    if should_skip_for_llm(content, bot_id=bot_id):
+        stats["skipped_filter"] = 1
+        return stats
+
+    # Step 2: Content hash dedup
+    content_hash = compute_content_hash(content)
+    source_node = await session.get(
+        _get_graph_node_class(), source_node_id
+    )
+    if source_node and (source_node.properties or {}).get("llm_content_hash") == content_hash:
+        stats["skipped_dedup"] = 1
+        return stats
+
+    # Step 3: Gemini extraction (fail-silent)
+    try:
+        result = await extract_entities(client, content, source_type)
+    except Exception:
+        logger.error(
+            "LLM extraction failed for source_node %s", source_node_id, exc_info=True
+        )
+        stats["errors"] = 1
+        return stats
+
+    # Step 4: Person resolution
+    author_node_id = None
+    if author_user_id:
+        prefix = _AUTHOR_PREFIX.get(source_type, source_type)
+        external_id = f"{prefix}:{author_user_id}"
+        author_node_id = await graph_ops.upsert_node(
+            session=session,
+            workspace_id=workspace_id,
+            entity_type="Person",
+            external_id=external_id,
+            name=author_user_id,
+        )
+
+    # Step 5: Persist decisions and blockers
+    for decision in result.decisions:
+        await persist_decision(
+            session, workspace_id, decision, source_node_id,
+            author_node_id=author_node_id,
+        )
+        stats["decisions"] += 1
+
+    for blocker in result.blockers:
+        await persist_blocker(session, workspace_id, blocker, source_node_id)
+        stats["blockers"] += 1
+
+    # Step 6: Mark source node as extracted
+    if source_node:
+        from datetime import datetime, timezone
+
+        props = dict(source_node.properties or {})
+        props["llm_content_hash"] = content_hash
+        props["llm_extracted_at"] = datetime.now(timezone.utc).isoformat()
+        props["llm_extraction_model"] = "gemini-2.0-flash"
+        source_node.properties = props
+
+    stats["extracted"] = 1
+    return stats
+
+
+def _get_graph_node_class():
+    """Lazy import of GraphNode to avoid circular/heavy imports at module level."""
+    from src.models.graph_node import GraphNode
+    return GraphNode
