@@ -75,7 +75,10 @@ class TestResolveByEmail:
             "src.services.identity_resolution.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid.uuid4(),
-        ) as mock_upsert_edge:
+        ) as mock_upsert_edge, patch(
+            "src.services.identity_resolution._create_same_as_edge",
+            new_callable=AsyncMock,
+        ):
             from src.services.identity_resolution import resolve_by_email
 
             count = await resolve_by_email(mock_session, workspace_id)
@@ -152,6 +155,9 @@ class TestResolveByEmail:
             "src.services.identity_resolution.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid.uuid4(),
+        ), patch(
+            "src.services.identity_resolution._create_same_as_edge",
+            new_callable=AsyncMock,
         ):
             from src.services.identity_resolution import resolve_by_email
 
@@ -196,6 +202,9 @@ class TestResolveByEmail:
             new_callable=AsyncMock,
         ) as mock_upsert_node, patch(
             "src.services.identity_resolution.upsert_edge",
+            new_callable=AsyncMock,
+        ), patch(
+            "src.services.identity_resolution._create_same_as_edge",
             new_callable=AsyncMock,
         ):
             from src.services.identity_resolution import resolve_by_email
