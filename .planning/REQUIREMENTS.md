@@ -31,7 +31,7 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 ### Graph Retrieval
 
 - [ ] **RETR-01**: find_related_content() includes graph traversal as a third retrieval signal alongside explicit refs and hybrid search
-- [ ] **RETR-02**: Graph results are scored with depth-decay (1-hop highest, decaying per hop) and blended with existing signals
+- [x] **RETR-02**: Graph results are scored with depth-decay (1-hop highest, decaying per hop) and blended with existing signals
 - [ ] **RETR-03**: Graph context in synthesis prompts is capped at a fixed token budget to prevent context overflow
 
 ### Synthesis
@@ -39,7 +39,7 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 - [ ] **SYNTH-01**: Context pages include decision trails showing what was decided, by whom, where discussed, and which tickets affected
 - [ ] **SYNTH-02**: Context pages include relationship paths explaining why things are connected
 - [ ] **SYNTH-03**: Context pages include cross-referenced people showing involvement across sources
-- [ ] **SYNTH-04**: Synthesis gracefully degrades when no graph data exists for a ticket
+- [x] **SYNTH-04**: Synthesis gracefully degrades when no graph data exists for a ticket
 
 ### Decision Extraction
 
@@ -184,12 +184,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | IDENT-02 | Phase 23 | Complete |
 | IDENT-03 | Phase 23 | Complete |
 | RETR-01 | Phase 25 | Pending |
-| RETR-02 | Phase 25 | Pending |
+| RETR-02 | Phase 25 | Complete |
 | RETR-03 | Phase 25 | Pending |
 | SYNTH-01 | Phase 26 | Pending |
 | SYNTH-02 | Phase 26 | Pending |
 | SYNTH-03 | Phase 26 | Pending |
-| SYNTH-04 | Phase 26 | Pending |
+| SYNTH-04 | Phase 26 | Complete |
 | DECIDE-01 | Phase 24 | Complete |
 | DECIDE-02 | Phase 24 | Complete |
 | DECIDE-03 | Phase 24 | Complete |

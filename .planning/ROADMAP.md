@@ -268,7 +268,7 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 | 22. Graph Foundation + Rule-Based Extraction | 3/3 | Complete    | 2026-03-06 | - |
 | 23. Identity Resolution | 2/2 | Complete    | 2026-03-07 | - |
 | 24. LLM Extraction + Decision Extraction | 3/3 | Complete    | 2026-03-07 | - |
-| 25. Graph-Enhanced Retrieval | v1.2 | 0/TBD | Not started | - |
+| 25. Graph-Enhanced Retrieval | 1/2 | In Progress|  | - |
 | 26. Synthesis + Code-to-Discussion Linking | v1.2 | 0/TBD | Not started | - |
 | 27. Graph Explorer API | v1.2 | 0/TBD | Not started | - |
 

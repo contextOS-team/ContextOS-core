@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
-status: Context Gathered
-stopped_at: Phase 25 context gathered
-last_updated: "2026-03-07T22:32:40.526Z"
-last_activity: 2026-03-08 -- Phase 25 context gathered
+status: Executing
+stopped_at: Completed 25-01-PLAN.md
+last_updated: "2026-03-07T23:18:11Z"
+last_activity: 2026-03-08 -- Phase 25 Plan 01 complete
 progress:
   total_phases: 9
   completed_phases: 6
   total_plans: 20
-  completed_plans: 18
+  completed_plans: 19
   percent: 98
 ---
 
@@ -26,21 +26,21 @@ See: .planning/PROJECT.md (updated 2026-03-07)
 ## Current Position
 
 Phase: 25 of 27 (Graph-Enhanced Retrieval)
-Plan: 0 of TBD in current phase
-Status: Context Gathered
-Last activity: 2026-03-08 -- Phase 25 context gathered
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-03-08 -- Phase 25 Plan 01 complete
 
 Progress: [██████████] 98%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 38 (v1.0: 16, v1.1: 14, v1.2: 8)
+- Total plans completed: 39 (v1.0: 16, v1.1: 14, v1.2: 9)
 - Average duration: ~4min
-- Total execution time: ~2.5 hours
+- Total execution time: ~2.6 hours
 
 **Recent Trend (v1.2):**
-- Last 5 plans: 23-02 (8min), 24-01 (2min), 24-02 (8min), 24-03 (5min)
+- Last 5 plans: 24-01 (2min), 24-02 (8min), 24-03 (5min), 25-01 (7min)
 - Trend: Stable (2-8min per plan)
 
 *Updated after each plan completion*
@@ -88,6 +88,10 @@ Recent decisions affecting current work:
 - [Phase 25]: 2,000 token unified budget for ALL retrieval signals, signal diversity first trimming
 - [Phase 25]: Separate graph section in synthesis prompt with decision node highlighting
 - [Phase 25]: same_as edges followed transparently (don't count as hop), silent fallback for missing graph nodes
+- [Phase 25-01]: Exponential decay WEIGHT_GRAPH * DEPTH_DECAY^depth -- depth-1=0.48, depth-2=0.288
+- [Phase 25-01]: same_as nodes skipped as results, tracked for path-based depth adjustment
+- [Phase 25-01]: Graph results capped at 20 to prevent same_as expansion explosion
+- [Phase 25-01]: Decision nodes formatted with [DECISION] highlighting and metadata fields
 
 ### Pending Todos
 
@@ -102,6 +106,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T22:32:40.523Z
-Stopped at: Phase 25 context gathered
-Resume file: .planning/phases/25-graph-enhanced-retrieval/25-CONTEXT.md
+Last session: 2026-03-07T23:18:11Z
+Stopped at: Completed 25-01-PLAN.md
+Resume file: .planning/phases/25-graph-enhanced-retrieval/25-02-PLAN.md
