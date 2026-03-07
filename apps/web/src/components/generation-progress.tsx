@@ -1,6 +1,6 @@
 'use client'
 
-import { Check, Circle, Loader2, AlertCircle } from 'lucide-react'
+import { Check, Circle, Loader2, AlertCircle, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { GenerationStep } from '@/lib/api'
 import { SOURCE_LABELS } from '@/lib/api'
@@ -14,25 +14,28 @@ interface GenerationProgressProps {
   onDismiss?: () => void
 }
 
-function StepIcon({ status }: { status: GenerationStep['status'] }) {
+function StepIcon({ status, hasResults }: { status: GenerationStep['status']; hasResults: boolean }) {
   switch (status) {
     case 'waiting':
-      return <Circle className="h-4 w-4 text-muted-foreground" />
+      return <Circle className="h-4 w-4 text-muted-foreground/40" />
     case 'active':
       return <Loader2 className="h-4 w-4 text-primary animate-spin" />
     case 'complete':
-      return <Check className="h-4 w-4 text-foreground" />
+      return hasResults
+        ? <Check className="h-4 w-4 text-emerald-400" />
+        : <Check className="h-4 w-4 text-muted-foreground/50" />
     case 'error':
       return <AlertCircle className="h-4 w-4 text-destructive" />
   }
 }
 
 function StepDetail({ step }: { step: GenerationStep }) {
+  const isSynthesize = step.source === 'synthesize'
   switch (step.status) {
     case 'waiting':
       return <span>Waiting</span>
     case 'active':
-      return <span>Searching...</span>
+      return <span>{isSynthesize ? 'Generating...' : 'Searching...'}</span>
     case 'complete':
       return <span>{step.detail ?? `${step.count ?? 0} results`}</span>
     case 'error':
@@ -48,61 +51,141 @@ export function GenerationProgress({
   onRetry,
   onDismiss,
 }: GenerationProgressProps) {
+  const sourceSteps = steps.filter((s) => s.source !== 'synthesize')
+  const synthesizeStep = steps.find((s) => s.source === 'synthesize')
+  const allSourcesEmpty = sourceSteps.length > 0 &&
+    sourceSteps.every((s) => s.status === 'complete' && (s.count ?? 0) === 0)
+
   return (
     <div
-      className="rounded-lg border border-border bg-card p-4 overflow-hidden"
+      className="rounded-lg border border-border bg-card px-4 py-3 overflow-hidden"
       style={
         status === 'collapsing'
           ? { animation: 'progress-collapse 500ms ease-in forwards' }
-          : undefined
+          : status === 'complete'
+            ? { borderColor: 'oklch(0.75 0.18 170 / 0.2)' }
+            : undefined
       }
     >
       {/* Header */}
-      <p className="section-label mb-3">
+      <p className="section-label mb-2">
         Generating context for {ticketIdentifier}
       </p>
 
-      {/* Step list */}
-      <div className="space-y-2">
-        {steps.map((step, index) => (
+      {/* Loading state before steps arrive */}
+      {steps.length === 0 && status === 'streaming' && (
+        <div className="flex items-center gap-3 py-2">
+          <Loader2 className="h-4 w-4 text-primary animate-spin" />
+          <span className="text-sm text-muted-foreground">Connecting...</span>
+        </div>
+      )}
+
+      {/* Source steps */}
+      <div className="space-y-0.5">
+        {sourceSteps.map((step, index) => {
+          const hasResults = step.status === 'complete' && (step.count ?? 0) > 0
+          const isEmpty = step.status === 'complete' && (step.count ?? 0) === 0
+          return (
+            <div
+              key={step.source}
+              className={`flex items-center gap-3 py-1 ${
+                step.status === 'active'
+                  ? 'text-primary'
+                  : step.status === 'error'
+                    ? 'text-destructive'
+                    : isEmpty
+                      ? 'opacity-50'
+                      : ''
+              }`}
+              style={{
+                animationName: step.status === 'active'
+                  ? 'step-slide-in, step-pulse'
+                  : 'step-slide-in',
+                animationDuration: step.status === 'active'
+                  ? '300ms, 1.5s'
+                  : '300ms',
+                animationTimingFunction: step.status === 'active'
+                  ? 'ease-out, ease-in-out'
+                  : 'ease-out',
+                animationFillMode: step.status === 'active'
+                  ? 'both, none'
+                  : 'both',
+                animationIterationCount: step.status === 'active'
+                  ? '1, infinite'
+                  : '1',
+                animationDelay: `${index * 100}ms`,
+              }}
+            >
+              <StepIcon status={step.status} hasResults={hasResults} />
+              <span className="text-sm font-medium">
+                {SOURCE_LABELS[step.source] ?? step.source}
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                <StepDetail step={step} />
+              </span>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Synthesize step — visually separated */}
+      {synthesizeStep && (
+        <>
+          <div className="border-t border-border/50 my-1.5" />
           <div
-            key={step.source}
             className={`flex items-center gap-3 py-1 ${
-              step.status === 'active'
+              synthesizeStep.status === 'active'
                 ? 'text-primary'
-                : step.status === 'error'
-                  ? 'text-destructive'
-                  : ''
+                : synthesizeStep.status === 'complete'
+                  ? 'text-emerald-400'
+                  : synthesizeStep.status === 'error'
+                    ? 'text-destructive'
+                    : ''
             }`}
             style={{
-              animationName: step.status === 'active'
+              animationName: synthesizeStep.status === 'active'
                 ? 'step-slide-in, step-pulse'
                 : 'step-slide-in',
-              animationDuration: step.status === 'active'
+              animationDuration: synthesizeStep.status === 'active'
                 ? '300ms, 1.5s'
                 : '300ms',
-              animationTimingFunction: step.status === 'active'
+              animationTimingFunction: synthesizeStep.status === 'active'
                 ? 'ease-out, ease-in-out'
                 : 'ease-out',
-              animationFillMode: step.status === 'active'
+              animationFillMode: synthesizeStep.status === 'active'
                 ? 'both, none'
                 : 'both',
-              animationIterationCount: step.status === 'active'
+              animationIterationCount: synthesizeStep.status === 'active'
                 ? '1, infinite'
                 : '1',
-              animationDelay: `${index * 100}ms`,
+              animationDelay: `${sourceSteps.length * 100}ms`,
             }}
           >
-            <StepIcon status={step.status} />
+            {synthesizeStep.status === 'complete' ? (
+              <Sparkles className="h-4 w-4 text-emerald-400" />
+            ) : synthesizeStep.status === 'active' ? (
+              <Loader2 className="h-4 w-4 text-primary animate-spin" />
+            ) : synthesizeStep.status === 'error' ? (
+              <AlertCircle className="h-4 w-4 text-destructive" />
+            ) : (
+              <Circle className="h-4 w-4 text-muted-foreground/40" />
+            )}
             <span className="text-sm font-medium">
-              {SOURCE_LABELS[step.source] ?? step.source}
+              {SOURCE_LABELS[synthesizeStep.source] ?? synthesizeStep.source}
             </span>
             <span className="ml-auto text-xs text-muted-foreground">
-              <StepDetail step={step} />
+              <StepDetail step={synthesizeStep} />
             </span>
           </div>
-        ))}
-      </div>
+        </>
+      )}
+
+      {/* Zero-result summary — elevated when all sources empty */}
+      {allSourcesEmpty && sourceSteps.some((s) => s.status === 'complete') && (
+        <p className="text-sm text-muted-foreground mt-2 pl-7">
+          Context generated from ticket description only
+        </p>
+      )}
 
       {/* Error actions */}
       {status === 'error' && (
