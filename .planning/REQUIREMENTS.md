@@ -19,8 +19,8 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 - [x] **EXTR-02**: Rule-based extraction runs inline during webhook/sync ingestion with zero LLM cost
 - [ ] **EXTR-03**: LLM extraction identifies decisions, rationale, blockers, and semantic entities from Slack messages and meeting transcripts
 - [ ] **EXTR-04**: LLM extraction runs as batch background task via Gemini Flash with content hash deduplication
-- [ ] **EXTR-05**: LLM extraction output is validated against source text to prevent hallucinated entities
-- [ ] **EXTR-06**: Content filtering skips bot messages, short messages, and emoji-only content before LLM extraction
+- [x] **EXTR-05**: LLM extraction output is validated against source text to prevent hallucinated entities
+- [x] **EXTR-06**: Content filtering skips bot messages, short messages, and emoji-only content before LLM extraction
 
 ### Identity Resolution
 
@@ -178,8 +178,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EXTR-02 | Phase 22 | Complete |
 | EXTR-03 | Phase 24 | Pending |
 | EXTR-04 | Phase 24 | Pending |
-| EXTR-05 | Phase 24 | Pending |
-| EXTR-06 | Phase 24 | Pending |
+| EXTR-05 | Phase 24 | Complete |
+| EXTR-06 | Phase 24 | Complete |
 | IDENT-01 | Phase 23 | Complete |
 | IDENT-02 | Phase 23 | Complete |
 | IDENT-03 | Phase 23 | Complete |

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: GraphRAG
-status: completed
-stopped_at: Completed 23-02-PLAN.md
-last_updated: "2026-03-07T15:41:35.071Z"
-last_activity: 2026-03-07 -- Completed 23-02 roster seeding and fuzzy matching
+status: in_progress
+stopped_at: Completed 24-01-PLAN.md
+last_updated: "2026-03-07T17:42:45Z"
+last_activity: 2026-03-07 -- Completed 24-01 LLM extraction foundation (schemas, filter, validation, hash)
 progress:
   total_phases: 13
   completed_phases: 8
-  total_plans: 20
-  completed_plans: 20
-  percent: 100
+  total_plans: 23
+  completed_plans: 21
+  percent: 91
 ---
 
 # Project State
@@ -21,27 +21,27 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** v1.2 GraphRAG -- Phase 23 (Identity Resolution)
+**Current focus:** v1.2 GraphRAG -- Phase 24 (LLM Extraction + Decision Extraction)
 
 ## Current Position
 
-Phase: 23 of 27 (Identity Resolution)
-Plan: 2 of 2 in current phase
-Status: Phase Complete
-Last activity: 2026-03-07 -- Completed 23-02 roster seeding and fuzzy matching
+Phase: 24 of 27 (LLM Extraction + Decision Extraction)
+Plan: 1 of 3 in current phase
+Status: In Progress
+Last activity: 2026-03-07 -- Completed 24-01 LLM extraction foundation (schemas, filter, validation, hash)
 
-Progress: [██████████] 100%
+Progress: [█████████ ] 91%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 35 (v1.0: 16, v1.1: 14, v1.2: 5)
+- Total plans completed: 36 (v1.0: 16, v1.1: 14, v1.2: 6)
 - Average duration: ~4min
 - Total execution time: ~2.4 hours
 
 **Recent Trend (v1.2):**
-- Last 5 plans: 22-01 (4min), 22-02 (3min), 22-03 (6min), 23-01 (4min), 23-02 (8min)
-- Trend: Stable (3-8min per plan)
+- Last 5 plans: 22-03 (6min), 23-01 (4min), 23-02 (8min), 24-01 (2min)
+- Trend: Stable (2-8min per plan)
 
 *Updated after each plan completion*
 
@@ -76,6 +76,10 @@ Recent decisions affecting current work:
 - [Phase 23-02]: Fuzzy name matching uses rapidfuzz token_sort_ratio with threshold 80 and confidence 0.5-0.9
 - [Phase 23-02]: GitHub roster deduplicates collaborators across all repos before per-user email lookup
 - [Phase 23-02]: Candidate same_as edges have status=candidate and match_type=fuzzy_name -- never auto-merged
+- [Phase 24-01]: All Pydantic extraction fields required with no defaults for Gemini SDK response_schema compatibility
+- [Phase 24-01]: Case-insensitive source_quote matching in validate_extraction for LLM case flexibility
+- [Phase 24-01]: Case-preserving content hash (Hello != hello) because different-cased content is semantically different
+- [Phase 24-01]: 50-char minimum threshold for LLM extraction cost optimization (higher than real-time filter)
 
 ### Pending Todos
 
@@ -90,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-07T15:35:28Z
-Stopped at: Completed 23-02-PLAN.md
+Last session: 2026-03-07T17:42:45Z
+Stopped at: Completed 24-01-PLAN.md
 Resume file: None
