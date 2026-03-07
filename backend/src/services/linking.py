@@ -1,10 +1,12 @@
 """Linking engine for finding content related to a Linear ticket.
 
-Combines two signals with weighted scores to find and rank related content:
+Combines three signals with weighted scores to find and rank related content:
 - Explicit references (weight 1.0): PRs linked via FK, Slack messages containing
   ticket identifier, comments via ticket_id FK
 - Hybrid search (weight 0.8): Combined vector similarity + full-text search
   via hybrid_search() SQL function
+- Graph traversal (weight 0.8): Knowledge graph neighbors via traverse_graph()
+  with exponential depth-decay scoring
 """
 
 import logging
@@ -15,13 +17,16 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from src.config import GRAPH_MAX_DEPTH
 from src.models.code_chunk import CodeChunk
 from src.models.github import GithubPullRequest, GithubReview
+from src.models.graph_node import GraphNode
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
 from src.models.ticket import LinearComment, LinearTicket
 from src.services.embedding import generate_embedding
+from src.services.graph_ops import compute_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +38,20 @@ DEPTH_DECAY = 0.6  # Exponential decay factor for graph depth scoring
 
 # Semantic similarity threshold (used by hybrid_search match_threshold)
 SEMANTIC_THRESHOLD = 0.5
+
+# Graph entity type to source type mapping for source-backed entities
+_GRAPH_ENTITY_TO_SOURCE: dict[str, str] = {
+    "Ticket": "linear_ticket",
+    "SlackThread": "slack_message",
+    "PR": "github_pull_request",
+    "CodeChunk": "code_chunk",
+    "NotionPage": "notion_page",
+    "Meeting": "meeting_transcript",
+}
+_GRAPH_ONLY_ENTITIES = {"Person", "Decision", "Blocker", "Feature", "Component"}
+
+# Maximum number of graph results to prevent same_as expansion explosion
+_GRAPH_MAX_RESULTS = 20
 
 
 @dataclass
@@ -326,6 +345,178 @@ async def _lookup_source_summary(
     if record is None:
         return (source_type, "")
     return extract(record)
+
+
+async def _find_graph_results(
+    session: AsyncSession,
+    workspace_id: UUID,
+    ticket: LinearTicket,
+) -> dict[tuple[str, UUID], LinkedItem]:
+    """Find related content via knowledge graph traversal.
+
+    Looks up the ticket's graph node by fingerprint, then traverses
+    neighboring nodes using the traverse_graph() SQL function. Results
+    are scored with exponential depth decay and returned as LinkedItems
+    with graph provenance metadata.
+
+    Fails silently on missing graph nodes or database errors, returning
+    an empty dict so retrieval continues with explicit + hybrid signals.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to search within.
+        ticket: The LinearTicket to find graph neighbors for.
+
+    Returns:
+        Dict mapping (source_type, source_id) to LinkedItem with graph signals.
+    """
+    items: dict[tuple[str, UUID], LinkedItem] = {}
+
+    try:
+        # 1. Find the ticket's graph node by fingerprint
+        fingerprint = compute_fingerprint("Ticket", ticket.identifier)
+        node_stmt = select(GraphNode).where(
+            GraphNode.workspace_id == workspace_id,
+            GraphNode.fingerprint == fingerprint,
+            GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        node_result = await session.execute(node_stmt)
+        graph_node = node_result.scalar_one_or_none()
+
+        if graph_node is None:
+            return items
+
+        # 2. Traverse the graph from this node
+        # Extra hop budget for same_as edges that don't count as real hops
+        traverse_stmt = text("""
+            SELECT node_id, entity_type, name, properties,
+                   edge_relationship_type, depth, path
+            FROM traverse_graph(
+                CAST(:start_node_id AS uuid),
+                CAST(:workspace_id AS uuid),
+                :max_depth,
+                'both',
+                NULL,
+                NULL
+            )
+            WHERE depth > 0
+        """)
+        traverse_result = await session.execute(
+            traverse_stmt,
+            {
+                "start_node_id": str(graph_node.id),
+                "workspace_id": str(workspace_id),
+                "max_depth": GRAPH_MAX_DEPTH + 1,
+            },
+        )
+        rows = traverse_result.fetchall()
+
+        if not rows:
+            return items
+
+        # 3. Build node map for provenance path construction and
+        #    track which nodes were reached via same_as edges
+        same_as_node_ids: set[UUID] = set()
+        result_rows = []
+
+        for row in rows:
+            if row.edge_relationship_type == "same_as":
+                same_as_node_ids.add(row.node_id)
+                continue  # same_as nodes themselves are not results
+            result_rows.append(row)
+
+        # Cap results to prevent explosion
+        result_rows = result_rows[:_GRAPH_MAX_RESULTS]
+
+        # 4. Process each result row
+        source_backed_keys: list[tuple[str, UUID]] = []
+        pending: list[tuple[tuple[str, UUID], float, str]] = []
+
+        for row in result_rows:
+            entity_type = row.entity_type
+            effective_depth = row.depth
+
+            # Adjust effective depth: if any ancestor in the path is a
+            # same_as node, reduce depth by the number of same_as hops
+            if row.path:
+                same_as_count = sum(
+                    1 for nid in row.path
+                    if nid in same_as_node_ids
+                )
+                effective_depth = max(1, row.depth - same_as_count)
+
+            score = WEIGHT_GRAPH * (DEPTH_DECAY ** effective_depth)
+
+            # Build provenance path string
+            provenance = f"graph:{entity_type}({row.edge_relationship_type},d={effective_depth})"
+
+            if entity_type in _GRAPH_ENTITY_TO_SOURCE:
+                source_type = _GRAPH_ENTITY_TO_SOURCE[entity_type]
+                source_id = row.source_id if hasattr(row, "source_id") and row.source_id else row.node_id
+                key = (source_type, source_id)
+                source_backed_keys.append(key)
+                pending.append((key, score, provenance))
+            elif entity_type in _GRAPH_ONLY_ENTITIES:
+                # Graph-only entities use node_id as source_id
+                source_type = entity_type.lower()
+                source_id = row.node_id
+                key = (source_type, source_id)
+
+                # Special formatting for Decision nodes
+                if entity_type == "Decision":
+                    props = row.properties or {}
+                    snippet = (
+                        f"[DECISION] {row.name}"
+                        f" | By: {props.get('by', 'Unknown')}"
+                        f" | In: {props.get('source', 'Unknown')}"
+                        f" | Affects: {props.get('affects', 'Unknown')}"
+                        f" | Confidence: {props.get('confidence', 'N/A')}"
+                    )
+                    items[key] = LinkedItem(
+                        source_type=source_type,
+                        source_id=source_id,
+                        title=row.name,
+                        snippet=snippet,
+                        relevance_score=score,
+                        signals=[provenance],
+                    )
+                else:
+                    props = row.properties or {}
+                    snippet = props.get("description", row.name)[:200]
+                    items[key] = LinkedItem(
+                        source_type=source_type,
+                        source_id=source_id,
+                        title=row.name,
+                        snippet=snippet,
+                        relevance_score=score,
+                        signals=[provenance],
+                    )
+
+        # 5. Bulk-fetch summaries for source-backed entities
+        if source_backed_keys:
+            summaries = await _bulk_lookup_source_summaries(
+                session, source_backed_keys
+            )
+
+            for key, score, provenance in pending:
+                title, snippet = summaries.get(key, (key[0], ""))
+                items[key] = LinkedItem(
+                    source_type=key[0],
+                    source_id=key[1],
+                    title=title,
+                    snippet=snippet,
+                    relevance_score=score,
+                    signals=[provenance],
+                )
+
+    except Exception:
+        logger.warning(
+            "Graph traversal failed for ticket %s, falling back to empty graph results",
+            ticket.identifier,
+        )
+        return {}
+
+    return items
 
 
 async def find_related_content(

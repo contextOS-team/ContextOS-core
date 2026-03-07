@@ -287,27 +287,36 @@ async def test_same_as_transparent() -> None:
     #                 Ticket --(same_as)--> AliasTicket (depth=1, same_as)
     #                 AliasTicket --(implements)--> PR (depth=2, but effective=1 because same_as)
     same_as_source_id = uuid4()
+    same_as_node_id = uuid4()
     pr_source_id = uuid4()
+    pr_node_id = uuid4()
+    slack_node_id = uuid4()
 
     row_slack = _make_traverse_row(
+        node_id=slack_node_id,
         entity_type="SlackThread",
         edge_relationship_type="discussed_in",
         depth=1,
+        path=[start_node_id, slack_node_id],
         source_type="slack_message",
         source_id=uuid4(),
     )
     row_same_as = _make_traverse_row(
+        node_id=same_as_node_id,
         entity_type="Ticket",
         edge_relationship_type="same_as",
         depth=1,
+        path=[start_node_id, same_as_node_id],
         source_type="linear_ticket",
         source_id=same_as_source_id,
     )
     row_via_same_as = _make_traverse_row(
+        node_id=pr_node_id,
         entity_type="PR",
         name="PR through same_as",
         edge_relationship_type="implements",
         depth=2,
+        path=[start_node_id, same_as_node_id, pr_node_id],
         source_type="github_pull_request",
         source_id=pr_source_id,
     )
@@ -315,7 +324,7 @@ async def test_same_as_transparent() -> None:
     mock_traverse_result = MagicMock()
     mock_traverse_result.fetchall.return_value = [row_slack, row_same_as, row_via_same_as]
 
-    # Mock bulk lookups
+    # Mock bulk lookups (same_as node is skipped, so only slack + PR lookups)
     mock_slack_obj = MagicMock()
     mock_slack_obj.id = row_slack.source_id
     mock_slack_obj.text = "Thread"
@@ -324,27 +333,19 @@ async def test_same_as_transparent() -> None:
     mock_b1 = MagicMock()
     mock_b1.scalars.return_value.all.return_value = [mock_slack_obj]
 
-    mock_ticket_obj = MagicMock()
-    mock_ticket_obj.id = same_as_source_id
-    mock_ticket_obj.title = "Alias"
-    mock_ticket_obj.description = "desc"
-    mock_b2 = MagicMock()
-    mock_b2.scalars.return_value.all.return_value = [mock_ticket_obj]
-
     mock_pr_obj = MagicMock()
     mock_pr_obj.id = pr_source_id
     mock_pr_obj.number = 50
     mock_pr_obj.title = "PR via alias"
     mock_pr_obj.description = "desc"
-    mock_b3 = MagicMock()
-    mock_b3.scalars.return_value.all.return_value = [mock_pr_obj]
+    mock_b2 = MagicMock()
+    mock_b2.scalars.return_value.all.return_value = [mock_pr_obj]
 
     mock_session.execute.side_effect = [
         mock_node_result,
         mock_traverse_result,
         mock_b1,
         mock_b2,
-        mock_b3,
     ]
 
     with patch("src.services.linking.compute_fingerprint", return_value="fp"):
