@@ -61,7 +61,12 @@ class TestSearchTicketsWithQuery:
 
         mock_client = AsyncMock()
         mock_client.query.return_value = {
-            "data": {"issueSearch": {"nodes": FAKE_NODES}}
+            "data": {
+                "issueSearch": {
+                    "nodes": FAKE_NODES,
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            }
         }
 
         with patch(
@@ -80,6 +85,8 @@ class TestSearchTicketsWithQuery:
         assert response.status_code == 200
         data = response.json()
         assert data["count"] == 2
+        assert data["has_next_page"] is False
+        assert data["end_cursor"] is None
         assert data["tickets"][0]["identifier"] == "ENG-42"
         assert data["tickets"][0]["title"] == "Implement notifications"
         assert data["tickets"][0]["state"] == "In Progress"
@@ -98,7 +105,12 @@ class TestSearchTicketsWithQuery:
 
         mock_client = AsyncMock()
         mock_client.query.return_value = {
-            "data": {"issueSearch": {"nodes": [FAKE_NODES[1]]}}
+            "data": {
+                "issueSearch": {
+                    "nodes": [FAKE_NODES[1]],
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            }
         }
 
         with patch(
@@ -131,7 +143,14 @@ class TestSearchTicketsNoQuery:
 
         mock_client = AsyncMock()
         mock_client.query.return_value = {
-            "data": {"viewer": {"assignedIssues": {"nodes": FAKE_NODES}}}
+            "data": {
+                "viewer": {
+                    "assignedIssues": {
+                        "nodes": FAKE_NODES,
+                        "pageInfo": {"hasNextPage": True, "endCursor": "cursor-abc"},
+                    }
+                }
+            }
         }
 
         with patch(
@@ -150,6 +169,8 @@ class TestSearchTicketsNoQuery:
         assert response.status_code == 200
         data = response.json()
         assert data["count"] == 2
+        assert data["has_next_page"] is True
+        assert data["end_cursor"] == "cursor-abc"
         # Verify assigned issues query was used
         call_args = mock_client.query.call_args
         assert "assignedIssues" in call_args[0][0]
@@ -164,7 +185,14 @@ class TestSearchTicketsNoQuery:
 
         mock_client = AsyncMock()
         mock_client.query.return_value = {
-            "data": {"viewer": {"assignedIssues": {"nodes": []}}}
+            "data": {
+                "viewer": {
+                    "assignedIssues": {
+                        "nodes": [],
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    }
+                }
+            }
         }
 
         with patch(
@@ -181,7 +209,12 @@ class TestSearchTicketsNoQuery:
             )
 
         assert response.status_code == 200
-        assert response.json() == {"tickets": [], "count": 0}
+        assert response.json() == {
+            "tickets": [],
+            "count": 0,
+            "has_next_page": False,
+            "end_cursor": None,
+        }
 
 
 class TestSearchTicketsErrors:
@@ -246,3 +279,162 @@ class TestSearchTicketsErrors:
     def test_requires_auth(self, client: TestClient) -> None:
         response = client.get("/api/linear/tickets/search")
         assert response.status_code in (401, 403)
+
+
+class TestSearchTicketsPagination:
+    """Tests for cursor-based pagination."""
+
+    def test_after_cursor_forwarded_to_graphql(
+        self,
+        client: TestClient,
+        valid_auth_header: dict,
+        mock_session: AsyncMock,
+    ) -> None:
+        """Verify the 'after' query param is passed through to the GraphQL variables."""
+        _mock_membership(mock_session)
+
+        mock_client = AsyncMock()
+        mock_client.query.return_value = {
+            "data": {
+                "viewer": {
+                    "assignedIssues": {
+                        "nodes": [],
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    }
+                }
+            }
+        }
+
+        with patch(
+            "src.routers.linear.get_valid_access_token",
+            new_callable=AsyncMock,
+            return_value="fake-token",
+        ), patch(
+            "src.routers.linear.LinearGraphQLClient",
+            return_value=mock_client,
+        ):
+            response = client.get(
+                "/api/linear/tickets/search?after=cursor-xyz",
+                headers=valid_auth_header,
+            )
+
+        assert response.status_code == 200
+        call_args = mock_client.query.call_args
+        variables = call_args[0][1]
+        assert variables["after"] == "cursor-xyz"
+
+    def test_after_cursor_forwarded_with_search_query(
+        self,
+        client: TestClient,
+        valid_auth_header: dict,
+        mock_session: AsyncMock,
+    ) -> None:
+        """Verify 'after' works together with a search query (issueSearch path)."""
+        _mock_membership(mock_session)
+
+        mock_client = AsyncMock()
+        mock_client.query.return_value = {
+            "data": {
+                "issueSearch": {
+                    "nodes": [FAKE_NODES[0]],
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            }
+        }
+
+        with patch(
+            "src.routers.linear.get_valid_access_token",
+            new_callable=AsyncMock,
+            return_value="fake-token",
+        ), patch(
+            "src.routers.linear.LinearGraphQLClient",
+            return_value=mock_client,
+        ):
+            response = client.get(
+                "/api/linear/tickets/search?q=notif&after=cursor-page2",
+                headers=valid_auth_header,
+            )
+
+        assert response.status_code == 200
+        call_args = mock_client.query.call_args
+        variables = call_args[0][1]
+        assert variables["after"] == "cursor-page2"
+        assert variables["query"] == "notif"
+        assert "issueSearch" in call_args[0][0]
+
+    def test_no_after_param_omits_cursor_from_variables(
+        self,
+        client: TestClient,
+        valid_auth_header: dict,
+        mock_session: AsyncMock,
+    ) -> None:
+        """When no 'after' param is sent, cursor should not appear in variables."""
+        _mock_membership(mock_session)
+
+        mock_client = AsyncMock()
+        mock_client.query.return_value = {
+            "data": {
+                "viewer": {
+                    "assignedIssues": {
+                        "nodes": FAKE_NODES,
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    }
+                }
+            }
+        }
+
+        with patch(
+            "src.routers.linear.get_valid_access_token",
+            new_callable=AsyncMock,
+            return_value="fake-token",
+        ), patch(
+            "src.routers.linear.LinearGraphQLClient",
+            return_value=mock_client,
+        ):
+            response = client.get(
+                "/api/linear/tickets/search",
+                headers=valid_auth_header,
+            )
+
+        assert response.status_code == 200
+        call_args = mock_client.query.call_args
+        variables = call_args[0][1]
+        assert "after" not in variables
+
+    def test_pageinfo_missing_defaults_gracefully(
+        self,
+        client: TestClient,
+        valid_auth_header: dict,
+        mock_session: AsyncMock,
+    ) -> None:
+        """If Linear omits pageInfo, defaults to no next page."""
+        _mock_membership(mock_session)
+
+        mock_client = AsyncMock()
+        mock_client.query.return_value = {
+            "data": {
+                "viewer": {
+                    "assignedIssues": {
+                        "nodes": FAKE_NODES,
+                    }
+                }
+            }
+        }
+
+        with patch(
+            "src.routers.linear.get_valid_access_token",
+            new_callable=AsyncMock,
+            return_value="fake-token",
+        ), patch(
+            "src.routers.linear.LinearGraphQLClient",
+            return_value=mock_client,
+        ):
+            response = client.get(
+                "/api/linear/tickets/search",
+                headers=valid_auth_header,
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["has_next_page"] is False
+        assert data["end_cursor"] is None

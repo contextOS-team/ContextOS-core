@@ -280,8 +280,8 @@ async def get_sync_status(
 # ---------- Ticket Search ----------
 
 SEARCH_ISSUES_QUERY = """
-query($query: String!, $first: Int!) {
-    issueSearch(query: $query, first: $first) {
+query($query: String!, $first: Int!, $after: String) {
+    issueSearch(query: $query, first: $first, after: $after) {
         nodes {
             id
             identifier
@@ -292,15 +292,17 @@ query($query: String!, $first: Int!) {
             priority
             updatedAt
         }
+        pageInfo { hasNextPage endCursor }
     }
 }
 """
 
 ASSIGNED_ISSUES_QUERY = """
-query($first: Int!) {
+query($first: Int!, $after: String) {
     viewer {
         assignedIssues(
             first: $first,
+            after: $after,
             filter: { state: { type: { nin: ["canceled", "completed"] } } },
             orderBy: updatedAt
         ) {
@@ -314,6 +316,7 @@ query($first: Int!) {
                 priority
                 updatedAt
             }
+            pageInfo { hasNextPage endCursor }
         }
     }
 }
@@ -326,12 +329,14 @@ async def search_tickets(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
     q: str = Query(default="", max_length=200),
-    limit: int = Query(default=10, ge=1, le=25),
+    limit: int = Query(default=20, ge=1, le=50),
+    after: str | None = Query(default=None),
 ) -> dict:
     """Search Linear tickets via the API.
 
     If a query is provided, uses Linear's issue search. Otherwise returns
-    the user's most recently updated assigned issues.
+    the user's most recently updated assigned issues.  Supports cursor-based
+    pagination via the ``after`` parameter.
     """
     try:
         access_token = await get_valid_access_token(
@@ -345,27 +350,24 @@ async def search_tickets(
 
     client = LinearGraphQLClient(access_token)
     try:
+        variables: dict = {"first": limit}
+        if after:
+            variables["after"] = after
+
         if q.strip():
-            data = await client.query(
-                SEARCH_ISSUES_QUERY,
-                {"query": q.strip(), "first": limit},
-            )
-            nodes = (
-                data.get("data", {})
-                .get("issueSearch", {})
-                .get("nodes", [])
-            )
+            variables["query"] = q.strip()
+            data = await client.query(SEARCH_ISSUES_QUERY, variables)
+            connection = data.get("data", {}).get("issueSearch", {})
         else:
-            data = await client.query(
-                ASSIGNED_ISSUES_QUERY,
-                {"first": limit},
-            )
-            nodes = (
+            data = await client.query(ASSIGNED_ISSUES_QUERY, variables)
+            connection = (
                 data.get("data", {})
                 .get("viewer", {})
                 .get("assignedIssues", {})
-                .get("nodes", [])
             )
+
+        nodes = connection.get("nodes", [])
+        page_info = connection.get("pageInfo", {})
     except LinearAPIError as e:
         logger.error("Linear API error during ticket search: %s", e)
         raise HTTPException(
@@ -391,4 +393,9 @@ async def search_tickets(
         for n in nodes
     ]
 
-    return {"tickets": tickets, "count": len(tickets)}
+    return {
+        "tickets": tickets,
+        "count": len(tickets),
+        "has_next_page": page_info.get("hasNextPage", False),
+        "end_cursor": page_info.get("endCursor"),
+    }
