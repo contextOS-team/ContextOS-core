@@ -75,11 +75,22 @@ export function GenerationProgress({
                   : ''
             }`}
             style={{
-              animation: 'step-slide-in 300ms ease-out both',
+              animationName: step.status === 'active'
+                ? 'step-slide-in, step-pulse'
+                : 'step-slide-in',
+              animationDuration: step.status === 'active'
+                ? '300ms, 1.5s'
+                : '300ms',
+              animationTimingFunction: step.status === 'active'
+                ? 'ease-out, ease-in-out'
+                : 'ease-out',
+              animationFillMode: step.status === 'active'
+                ? 'both, none'
+                : 'both',
+              animationIterationCount: step.status === 'active'
+                ? '1, infinite'
+                : '1',
               animationDelay: `${index * 100}ms`,
-              ...(step.status === 'active'
-                ? { animation: `step-slide-in 300ms ease-out both, step-pulse 1.5s ease-in-out infinite` }
-                : {}),
             }}
           >
             <StepIcon status={step.status} />
