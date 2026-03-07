@@ -2,146 +2,27 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePostHog } from "posthog-js/react";
+import dynamic from "next/dynamic";
 
-function MockContextPage() {
-  return (
-    <div
-      className="rounded-xl overflow-hidden w-full"
-      style={{
-        background: "#0F0F18",
-        border: "1px solid rgba(255,255,255,0.08)",
-        fontFamily: "monospace",
-      }}
-    >
-      {/* Browser chrome */}
+const RemotionHeroPlayer = dynamic(
+  () =>
+    import("./RemotionPlayer").then((m) => ({
+      default: m.RemotionHeroPlayer,
+    })),
+  {
+    ssr: false,
+    loading: () => (
       <div
-        className="flex items-center gap-2 px-4 py-3"
         style={{
-          background: "#141420",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          width: "100%",
+          aspectRatio: "16/9",
+          backgroundColor: "#0A0A0F",
+          borderRadius: "1rem",
         }}
-      >
-        <div className="flex gap-1.5">
-          <div className="w-3 h-3 rounded-full" style={{ background: "#FF5F57" }} />
-          <div className="w-3 h-3 rounded-full" style={{ background: "#FFBD2E" }} />
-          <div className="w-3 h-3 rounded-full" style={{ background: "#28CA41" }} />
-        </div>
-        <div
-          className="flex-1 mx-4 rounded-md px-3 py-1 text-xs text-[#6B7280]"
-          style={{ background: "#0A0A0F" }}
-        >
-          app.contextos.dev/tickets/ENG-421
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="p-5">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span
-                className="text-xs px-2 py-0.5 rounded font-mono"
-                style={{
-                  background: "rgba(0,212,170,0.1)",
-                  color: "#00D4AA",
-                  border: "1px solid rgba(0,212,170,0.2)",
-                }}
-              >
-                ENG-421
-              </span>
-              <span className="text-xs text-[#6B7280]">In Progress</span>
-            </div>
-            <h3 className="text-sm font-semibold text-white">
-              Implement real-time sync for shared workspaces
-            </h3>
-          </div>
-          <div
-            className="text-xs px-2 py-1 rounded-md flex items-center gap-1"
-            style={{
-              background: "rgba(0,212,170,0.1)",
-              color: "#00D4AA",
-              border: "1px solid rgba(0,212,170,0.2)",
-            }}
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-              <circle cx="5" cy="5" r="2" />
-            </svg>
-            Auto-generated
-          </div>
-        </div>
-
-        {/* Sections */}
-        <div className="space-y-3">
-          {/* Background */}
-          <div
-            className="rounded-lg p-3"
-            style={{ background: "#141420", border: "1px solid rgba(255,255,255,0.05)" }}
-          >
-            <div className="text-xs font-mono text-[#00D4AA] mb-2 uppercase tracking-wider">
-              Background
-            </div>
-            <p className="text-xs text-[#9CA3AF] leading-relaxed">
-              Discussed in #engineering on Nov 12. Decision was made to use WebSockets
-              over polling. See Notion doc: &ldquo;Real-time Architecture v2&rdquo;
-            </p>
-          </div>
-
-          {/* Sources grid */}
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { icon: "S", label: "4 Slack threads", color: "#4A154B" },
-              { icon: "N", label: "2 Notion docs", color: "#1e1e1e" },
-              { icon: "M", label: "1 Meeting clip", color: "#1a3a5c" },
-            ].map((s) => (
-              <div
-                key={s.label}
-                className="rounded-lg p-2 flex items-center gap-2"
-                style={{
-                  background: "#0A0A0F",
-                  border: "1px solid rgba(255,255,255,0.05)",
-                }}
-              >
-                <div
-                  className="w-5 h-5 rounded text-xs flex items-center justify-center font-bold text-white"
-                  style={{ background: s.color }}
-                >
-                  {s.icon}
-                </div>
-                <span className="text-[10px] text-[#6B7280]">{s.label}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Key decisions */}
-          <div
-            className="rounded-lg p-3"
-            style={{ background: "#141420", border: "1px solid rgba(255,255,255,0.05)" }}
-          >
-            <div className="text-xs font-mono text-[#00D4AA] mb-2 uppercase tracking-wider">
-              Key Decisions
-            </div>
-            <div className="space-y-1.5">
-              {[
-                "Use Socket.io v4 — decided Nov 10",
-                "Redis adapter for multi-instance scaling",
-                "Fallback to long polling for legacy clients",
-              ].map((d) => (
-                <div key={d} className="flex items-start gap-2">
-                  <div
-                    className="w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0"
-                    style={{ background: "#00D4AA" }}
-                  />
-                  <span className="text-xs text-[#9CA3AF]">{d}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+      />
+    ),
+  }
+);
 
 export default function Hero() {
   const posthog = usePostHog();
@@ -270,14 +151,14 @@ export default function Hero() {
           </a>
         </div>
 
-        {/* Product screenshot in perspective */}
+        {/* Demo video in perspective */}
         <div
           className={`transition-all duration-700 ${
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
           }`}
           style={{ transitionDelay: "450ms" }}
         >
-          {/* Glow behind screenshot */}
+          {/* Glow behind video */}
           <div
             className="relative mx-auto max-w-3xl"
             style={{ perspective: "1200px" }}
@@ -305,7 +186,7 @@ export default function Hero() {
                     "0 40px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06), 0 0 40px rgba(0,212,170,0.08)",
                 }}
               >
-                <MockContextPage />
+                <RemotionHeroPlayer />
               </div>
             </div>
           </div>
