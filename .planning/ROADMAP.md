@@ -209,6 +209,23 @@ Plans:
 - [ ] 22-02-PLAN.md — Frontend: apiFetchSSE client with auth headers, GenerationProgress component, CSS animations (pulse, collapse, stagger)
 - [ ] 22-03-PLAN.md — Wire progress into context feed page, replace toast triggers, collapse-to-card transition, auto-navigate, human verification
 
+### Phase 23: Remotion Animated Hero
+
+**Goal:** Replace the static demo.mp4 hero video with a Remotion-powered 3-scene animated product walkthrough (ticket card -> source search -> context page) rendered in real-time via @remotion/player, matching the Linear/Vercel minimal aesthetic with spring animations and brand colors
+**Requirements**: HERO-ANIM-01, HERO-ANIM-02, HERO-ANIM-03, HERO-ANIM-04
+**Depends on:** Phase 22
+**Success Criteria** (what must be TRUE):
+  1. Landing page hero shows an animated 3-scene walkthrough instead of static video
+  2. Animation auto-plays, loops continuously with ~1s gap, and uses spring physics for all motion
+  3. Scroll-driven perspective effect (rotateX + scale) works on the Player container
+  4. Player is lazy-loaded with no layout shift (placeholder with matching aspect ratio)
+  5. Headline, subheadline, badge, and CTAs remain as regular HTML
+**Plans**: 2 plans
+
+Plans:
+- [ ] 23-01-PLAN.md — Install Remotion, create constants/shared components, build 3 scene compositions and root HeroComposition
+- [ ] 23-02-PLAN.md — Create RemotionPlayer wrapper, integrate into Hero.tsx replacing video, visual verification checkpoint
+
 ---
 *Roadmap created: 2026-02-24*
 *v1.1 milestone added: 2026-03-04*
