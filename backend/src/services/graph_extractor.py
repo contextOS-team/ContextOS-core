@@ -536,6 +536,17 @@ async def extract_and_populate_graph(
                 relationship_type=entity.relationship_type,
             )
 
+            # Identity resolution for Person entities: link to canonical node
+            if entity.entity_type == "Person":
+                from src.services.identity_resolution import resolve_identity_inline
+
+                await resolve_identity_inline(
+                    session=session,
+                    workspace_id=workspace_id,
+                    entity=entity,
+                    entity_node_id=entity_node_id,
+                )
+
         logger.info(
             "Graph extraction complete: source=%s, entities=%d, source_type=%s",
             source_name,

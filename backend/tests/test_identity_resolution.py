@@ -307,3 +307,115 @@ class TestLookupMapping:
         result = await lookup_mapping(mock_session, workspace_id, "slack", "UXXXXX")
 
         assert result is None
+
+
+# ============================================================
+# Test: resolve_identity_inline (inline hook)
+# ============================================================
+
+
+class TestResolveIdentityInline:
+    """Tests for resolve_identity_inline() called during graph extraction."""
+
+    @pytest.fixture
+    def mock_session(self):
+        session = AsyncMock()
+        return session
+
+    @pytest.mark.asyncio
+    async def test_creates_same_as_edge_when_mapping_exists(self, mock_session):
+        """When a Person entity is extracted and a matching identity_mapping
+        exists with a canonical_person_id, a same_as edge is created."""
+        workspace_id = uuid.uuid4()
+        entity_node_id = uuid.uuid4()
+        canonical_node_id = uuid.uuid4()
+
+        entity = ExtractedEntity(
+            entity_type="Person",
+            external_id="slack:U12345",
+            name="Slack user U12345",
+            properties={"platform": "slack", "platform_user_id": "U12345"},
+            relationship_type="mentions",
+        )
+
+        # Mock lookup_mapping to return a mapping with canonical
+        mock_mapping = MagicMock()
+        mock_mapping.canonical_person_id = canonical_node_id
+
+        with patch(
+            "src.services.identity_resolution.lookup_mapping",
+            new_callable=AsyncMock,
+            return_value=mock_mapping,
+        ), patch(
+            "src.services.identity_resolution.upsert_edge",
+            new_callable=AsyncMock,
+            return_value=uuid.uuid4(),
+        ) as mock_upsert_edge:
+            from src.services.identity_resolution import resolve_identity_inline
+
+            await resolve_identity_inline(
+                mock_session, workspace_id, entity, entity_node_id
+            )
+
+        mock_upsert_edge.assert_called_once()
+        edge_kwargs = mock_upsert_edge.call_args.kwargs
+        assert edge_kwargs["source_node_id"] == entity_node_id
+        assert edge_kwargs["target_node_id"] == canonical_node_id
+        assert edge_kwargs["relationship_type"] == "same_as"
+
+    @pytest.mark.asyncio
+    async def test_no_edge_when_no_mapping_exists(self, mock_session):
+        """When no identity_mapping exists, no same_as edge is created."""
+        workspace_id = uuid.uuid4()
+        entity_node_id = uuid.uuid4()
+
+        entity = ExtractedEntity(
+            entity_type="Person",
+            external_id="slack:UXXXXX",
+            name="Slack user UXXXXX",
+            properties={"platform": "slack", "platform_user_id": "UXXXXX"},
+            relationship_type="mentions",
+        )
+
+        with patch(
+            "src.services.identity_resolution.lookup_mapping",
+            new_callable=AsyncMock,
+            return_value=None,
+        ), patch(
+            "src.services.identity_resolution.upsert_edge",
+            new_callable=AsyncMock,
+        ) as mock_upsert_edge:
+            from src.services.identity_resolution import resolve_identity_inline
+
+            await resolve_identity_inline(
+                mock_session, workspace_id, entity, entity_node_id
+            )
+
+        mock_upsert_edge.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_non_person_entity_returns_immediately(self, mock_session):
+        """When entity is not a Person, resolve_identity_inline returns immediately."""
+        workspace_id = uuid.uuid4()
+        entity_node_id = uuid.uuid4()
+
+        entity = ExtractedEntity(
+            entity_type="Ticket",
+            external_id="ENG-123",
+            name="ENG-123",
+            properties={"identifier": "ENG-123"},
+            relationship_type="references",
+        )
+
+        with patch(
+            "src.services.identity_resolution.lookup_mapping",
+            new_callable=AsyncMock,
+        ) as mock_lookup:
+            from src.services.identity_resolution import resolve_identity_inline
+
+            await resolve_identity_inline(
+                mock_session, workspace_id, entity, entity_node_id
+            )
+
+        # lookup_mapping should never be called for non-Person entities
+        mock_lookup.assert_not_called()
