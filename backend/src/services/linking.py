@@ -8,6 +8,7 @@ Combines two signals with weighted scores to find and rank related content:
 """
 
 import logging
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from uuid import UUID
 
@@ -324,6 +325,78 @@ async def _lookup_source_summary(
     if record is None:
         return (source_type, "")
     return extract(record)
+
+
+SOURCE_TYPE_MAP = {
+    "slack": ["slack_message"],
+    "github": ["github_pull_request", "github_review", "code_chunk"],
+    "notion": ["notion_page"],
+    "fathom": ["meeting_transcript", "meeting_segment"],
+    "linear": ["linear_comment"],
+}
+
+
+async def find_content_by_source(
+    session: AsyncSession,
+    workspace_id: UUID,
+    ticket: LinearTicket,
+) -> AsyncGenerator[tuple[str, list[LinkedItem], str], None]:
+    """Find related content and yield results grouped by source.
+
+    Yields (source_name, items, detail_string) tuples for each source
+    that has content. Runs all queries upfront, then groups by source.
+    """
+    # Run existing queries
+    explicit = await _find_explicit_refs(session, workspace_id, ticket)
+    hybrid = await _find_hybrid_matches(session, workspace_id, ticket)
+
+    # Merge
+    merged: dict[tuple[str, UUID], LinkedItem] = {}
+    for signal_items in [explicit, hybrid]:
+        for key, item in signal_items.items():
+            if key in merged:
+                merged[key].relevance_score += item.relevance_score
+                merged[key].signals.extend(item.signals)
+            else:
+                merged[key] = item
+
+    # Group by source
+    for source_name, source_types in SOURCE_TYPE_MAP.items():
+        source_items = [
+            item for item in merged.values()
+            if item.source_type in source_types
+        ]
+        source_items.sort(key=lambda x: x.relevance_score, reverse=True)
+
+        # Build detail string
+        if source_name == "github":
+            prs = sum(1 for i in source_items if i.source_type == "github_pull_request")
+            reviews = sum(1 for i in source_items if i.source_type == "github_review")
+            code = sum(1 for i in source_items if i.source_type == "code_chunk")
+            parts = []
+            if prs:
+                parts.append(f"{prs} PR{'s' if prs > 1 else ''}")
+            if reviews:
+                parts.append(f"{reviews} review{'s' if reviews > 1 else ''}")
+            if code:
+                parts.append(f"{code} code file{'s' if code > 1 else ''}")
+            detail = f"Found {', '.join(parts)}" if parts else "No PRs or code found"
+        elif source_name == "slack":
+            n = len(source_items)
+            detail = f"Found {n} message{'s' if n != 1 else ''}" if n else "No messages found"
+        elif source_name == "notion":
+            n = len(source_items)
+            detail = f"Found {n} page{'s' if n != 1 else ''}" if n else "No pages found"
+        elif source_name == "fathom":
+            n = len(source_items)
+            detail = f"Found {n} meeting segment{'s' if n != 1 else ''}" if n else "No meetings found"
+        elif source_name == "linear":
+            n = len(source_items)
+            detail = f"Found {n} comment{'s' if n != 1 else ''}" if n else "No comments found"
+        else:
+            detail = f"Found {len(source_items)} items" if source_items else "No items found"
+
+        yield source_name, source_items, detail
 
 
 async def find_related_content(
