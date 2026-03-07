@@ -181,7 +181,11 @@ Plans:
   3. Bot messages, short messages (<50 chars), and emoji-only content are skipped before LLM extraction -- only substantive content burns API budget
   4. Re-running extraction on already-processed content is skipped via content hash deduplication -- no duplicate entities, no wasted Gemini calls
   5. Extracted entities can be traced back to their source text -- no hallucinated entities that cannot be found in the original message
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 24-01-PLAN.md -- Pydantic extraction schemas, content pre-filter, source text validation, content hash deduplication
+- [ ] 24-02-PLAN.md -- Gemini Flash extraction service with structured output, decision/blocker persistence to graph nodes and edges
+- [ ] 24-03-PLAN.md -- Batch extraction pipeline with rate limiting, person resolution, and backfill integration
 
 ### Phase 25: Graph-Enhanced Retrieval
 **Goal**: The linking engine uses graph traversal as a third retrieval signal alongside explicit refs and hybrid search, finding multi-hop connections that embedding similarity alone cannot surface
@@ -263,7 +267,7 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 |-------|-----------|----------------|--------|-----------|
 | 22. Graph Foundation + Rule-Based Extraction | 3/3 | Complete    | 2026-03-06 | - |
 | 23. Identity Resolution | 2/2 | Complete    | 2026-03-07 | - |
-| 24. LLM Extraction + Decision Extraction | v1.2 | 0/TBD | Not started | - |
+| 24. LLM Extraction + Decision Extraction | v1.2 | 0/3 | Not started | - |
 | 25. Graph-Enhanced Retrieval | v1.2 | 0/TBD | Not started | - |
 | 26. Synthesis + Code-to-Discussion Linking | v1.2 | 0/TBD | Not started | - |
 | 27. Graph Explorer API | v1.2 | 0/TBD | Not started | - |
