@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Copy, RefreshCw, Loader2, ExternalLink } from 'lucide-react'
@@ -8,7 +8,6 @@ import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { toast } from 'sonner'
 import { formatRelativeTime } from '@/lib/utils'
 import {
   fetchContextPageById,
@@ -17,7 +16,9 @@ import {
   STATUS_COLORS,
 } from '@/lib/context-feed'
 import { useContextPagesRealtime } from '@/hooks/use-context-pages-realtime'
-import { generateContextPage } from '@/lib/api'
+import { apiFetchSSE, SOURCE_LABELS, type SSEEventData } from '@/lib/api'
+import { GenerationProgress } from '@/components/generation-progress'
+import type { GenerationState } from '@/lib/context-feed'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
@@ -47,7 +48,8 @@ export default function ContextDetailPage() {
   const [page, setPage] = useState<ContextPageData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [isRegenerating, setIsRegenerating] = useState(false)
+  const [generation, setGeneration] = useState<GenerationState | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const loadPage = useCallback(async () => {
     if (!id) return
@@ -66,21 +68,16 @@ export default function ContextDetailPage() {
     loadPage()
   }, [loadPage])
 
-  // Realtime subscription -- update page when status changes (e.g. during regeneration)
+  // Realtime subscription -- update page when status changes (e.g. fallback if SSE disconnects)
   useContextPagesRealtime({
     onUpdate: useCallback(
       (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
         const updated = payload.new as Record<string, unknown>
         if (updated?.id === id) {
-          // Refresh page data when our page is updated
-          if (updated.status === 'ready' && isRegenerating) {
-            setIsRegenerating(false)
-            toast('Context page regenerated')
-          }
           loadPage()
         }
       },
-      [id, isRegenerating, loadPage]
+      [id, loadPage]
     ),
   })
 
@@ -90,17 +87,115 @@ export default function ContextDetailPage() {
     await copyToClipboard(promptText, 'Prompt copied to clipboard')
   }, [page?.content])
 
-  const handleRegenerate = useCallback(async () => {
+  const startGeneration = useCallback((ticketIdentifier: string) => {
+    abortRef.current?.abort()
+
+    setGeneration({
+      ticket: ticketIdentifier,
+      steps: [],
+      status: 'streaming',
+    })
+
+    const controller = apiFetchSSE(
+      `/api/context/${encodeURIComponent(ticketIdentifier)}/generate-stream`,
+      (event) => {
+        setGeneration((prev) => {
+          if (!prev) return prev
+
+          switch (event.event) {
+            case 'start':
+              return {
+                ...prev,
+                steps: event.steps.map((source) => ({
+                  source,
+                  label: SOURCE_LABELS[source] || source,
+                  status: 'waiting' as const,
+                })),
+              }
+
+            case 'step_start':
+              return {
+                ...prev,
+                steps: prev.steps.map((s) =>
+                  s.source === event.source
+                    ? { ...s, status: 'active' as const, detail: 'Searching...' }
+                    : s
+                ),
+              }
+
+            case 'step_complete':
+              return {
+                ...prev,
+                steps: prev.steps.map((s) =>
+                  s.source === event.source
+                    ? { ...s, status: 'complete' as const, count: event.count, detail: event.detail }
+                    : s
+                ),
+              }
+
+            case 'step_error':
+              return {
+                ...prev,
+                steps: prev.steps.map((s) =>
+                  s.source === event.source
+                    ? { ...s, status: 'error' as const, detail: event.error }
+                    : s
+                ),
+                status: 'error',
+                errorMessage: event.error,
+              }
+
+            case 'complete':
+              return {
+                ...prev,
+                status: 'complete',
+                contextPageId: event.context_page_id,
+              }
+
+            case 'error':
+              return {
+                ...prev,
+                status: 'error',
+                errorMessage: event.message,
+              }
+
+            default:
+              return prev
+          }
+        })
+      },
+      (error) => {
+        setGeneration((prev) =>
+          prev ? { ...prev, status: 'error', errorMessage: error.message } : prev
+        )
+      }
+    )
+
+    abortRef.current = controller
+  }, [])
+
+  const handleRegenerate = useCallback(() => {
     if (!page?.ticket_identifier) return
-    setIsRegenerating(true)
-    try {
-      await generateContextPage(page.ticket_identifier)
-      toast(`Regenerating ${page.ticket_identifier}...`)
-    } catch (err) {
-      setIsRegenerating(false)
-      toast.error(err instanceof Error ? err.message : 'Failed to start regeneration')
+    startGeneration(page.ticket_identifier)
+  }, [page?.ticket_identifier, startGeneration])
+
+  // On generation complete, reload page data after brief delay
+  useEffect(() => {
+    if (generation?.status === 'complete') {
+      const timer = setTimeout(() => {
+        loadPage()
+        setGeneration(null)
+      }, 1500)
+      return () => clearTimeout(timer)
     }
-  }, [page?.ticket_identifier])
+  }, [generation?.status, loadPage])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+    }
+  }, [])
 
   // Loading skeleton
   if (isLoading) {
@@ -198,14 +293,14 @@ export default function ContextDetailPage() {
         <Button
           variant="outline"
           onClick={handleRegenerate}
-          disabled={isRegenerating || !page.ticket_identifier}
+          disabled={generation !== null || !page.ticket_identifier}
         >
-          {isRegenerating ? (
+          {generation ? (
             <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
           ) : (
             <RefreshCw className="h-4 w-4 mr-1.5" />
           )}
-          {isRegenerating ? 'Regenerating...' : 'Regenerate'}
+          {generation ? 'Regenerating...' : 'Regenerate'}
         </Button>
         {page.ticket_identifier && (
           <Button
@@ -223,6 +318,23 @@ export default function ContextDetailPage() {
           </Button>
         )}
       </div>
+
+      {/* Generation progress */}
+      {generation && (
+        <div className="mt-4">
+          <GenerationProgress
+            ticketIdentifier={generation.ticket}
+            steps={generation.steps}
+            status={generation.status}
+            errorMessage={generation.errorMessage}
+            onRetry={() => startGeneration(generation.ticket)}
+            onDismiss={() => {
+              abortRef.current?.abort()
+              setGeneration(null)
+            }}
+          />
+        </div>
+      )}
 
       {/* Content area -- markdown rendering */}
       <div className="mt-8 prose prose-sm prose-invert max-w-none">
