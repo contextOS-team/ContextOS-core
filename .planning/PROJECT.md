@@ -2,9 +2,9 @@
 
 ## What This Is
 
-ContextOS auto-generates rich context pages for engineering tickets by pulling data from Linear (tickets), Slack (conversations), and Notion (docs), then synthesizing everything with AI so engineers get full context before they start coding. The hero feature is an AI-generated implementation prompt that engineers can paste directly into Cursor or Claude Code.
+ContextOS auto-generates rich context pages for engineering tickets by pulling data from Linear (tickets), Slack (conversations), GitHub (PRs/reviews), Notion (docs), and a knowledge graph (entities, decisions, relationships), then synthesizing everything with AI so engineers get full context before they start coding. The hero feature is an AI-generated implementation prompt that engineers can paste directly into Cursor or Claude Code.
 
-First users are the founding team (dogfooding). The product must be reliable enough for daily use within 2-3 weeks.
+First users are the founding team (dogfooding). The product is in daily use with three shipped milestones.
 
 ## Team
 
@@ -14,103 +14,92 @@ First users are the founding team (dogfooding). The product must be reliable eno
 | **Dulat** | AI/ML & Synthesis | Embedding model selection, context generation pipeline (LangGraph + Gemini Flash), synthesis prompt engineering, Slack-to-ticket linking logic, quality evaluation |
 | **Bekbol** | Frontend & Extensions | Next.js web dashboard (feed, detail, settings, integration setup), Chrome extension, frontend auth flows, UI/UX |
 
-## Current Milestone: v1.2 GraphRAG
+## Current State
 
-**Goal:** Add a knowledge graph layer (Apache AGE on Postgres) that captures entities and relationships across all data sources, improving context page quality by enabling multi-hop traversal, cross-source identity resolution, and decision trail extraction -- blended with existing hybrid search, not replacing it.
-
-**Target features:**
-- Knowledge graph schema: Apache AGE graph layer in Supabase Postgres with entity nodes (People, Decisions, Code) and typed relationship edges
-- Entity extraction pipeline: rule-based extractors for structured data (ticket IDs, @mentions, PR numbers, file paths) + LLM extraction for semantic entities (decisions, people identity resolution)
-- Cross-source identity resolution: unify person identities across Linear, Slack, GitHub, and meeting transcripts into single graph nodes
-- Decision extraction: identify and link decisions from Slack messages and meeting transcripts to the tickets they affect
-- Code-to-discussion linking: connect code chunks to the conversations and tickets that motivated them
-- Graph-enhanced retrieval: traverse graph relationships to find multi-hop connections the current hybrid search misses, blend graph signal with existing vector + full-text scores
-- Updated synthesis prompts: context pages include decision trails, relationship paths, and cross-referenced people
-- Graph explorer UI (stretch): visual graph view in the dashboard where users can explore entity connections
+**Shipped:** v1.0 Dogfood (2026-03-03), v1.1 Dashboard & Onboarding (2026-03-06), v1.2 GraphRAG (2026-03-08)
+**Backend LOC:** 35,442 Python
+**Tech stack:** Next.js 15, FastAPI, Supabase (Postgres + Auth + Realtime), Redis, pgvector, knowledge graph (plain PG tables + recursive CTEs)
+**Integrations:** Linear, Slack, GitHub, Notion, Fathom (meeting transcripts)
+**Next milestone:** Planning
 
 ## Core Value
 
-When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, what the business requirements are, and a ready-to-paste AI prompt for their coding assistant. No more hunting through Slack threads and Notion pages.
+When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, what decisions were made and by whom, who's involved across tools, and a ready-to-paste AI prompt for their coding assistant. No more hunting through Slack threads and Notion pages.
 
 ## Requirements
 
 ### Validated
 
-- [x] Project repository initialized with Next.js 15, FastAPI, Supabase, MCP server scaffold
-- [x] Docker Compose configured for Redis
-- [x] Supabase local dev configured (config.toml, seed.sql)
-- [x] Makefile with dev workflow commands
-- [x] CI-ready linting (ESLint, ruff) and type checking (tsc, mypy)
+- ✓ Project repository initialized with Next.js 15, FastAPI, Supabase, MCP server scaffold -- v1.0
+- ✓ Docker Compose configured for Redis -- v1.0
+- ✓ Supabase local dev configured (config.toml, seed.sql) -- v1.0
+- ✓ Makefile with dev workflow commands -- v1.0
+- ✓ CI-ready linting (ESLint, ruff) and type checking (tsc, mypy) -- v1.0
+- ✓ Database schema with pgvector embeddings, RLS multi-tenancy, and all core tables -- v1.0
+- ✓ Supabase Auth (email/password + magic links) with session management -- v1.0
+- ✓ Linear OAuth2, ticket sync, webhooks, token refresh -- v1.0
+- ✓ Slack OAuth2, real-time event ingestion, channel selection -- v1.0
+- ✓ GitHub OAuth, PR/review ingestion, PR-to-Linear linking -- v1.0
+- ✓ Notion OAuth, page ingestion, webhook updates -- v1.0
+- ✓ Context page generation using Gemini Flash (5 sections) -- v1.0
+- ✓ MCP server with get_feature_context, search_context tools -- v1.0
+- ✓ Chrome extension for quick context access -- v1.0
+- ✓ Webhook signature verification (Linear, Slack) -- v1.0
+- ✓ OAuth token storage in Supabase Vault -- v1.0
+- ✓ Sentry error tracking, Laminar LLM observability -- v1.0
+- ✓ Dark theme with brand-tinted OKLCH tokens, JetBrains Mono typography -- v1.1
+- ✓ 4-step onboarding wizard with OAuth state preservation -- v1.1
+- ✓ Activity timeline with real-time updates -- v1.1
+- ✓ Context feed with filtering, search, detail view -- v1.1
+- ✓ Settings page with API key management -- v1.1
+- ✓ Knowledge graph schema with workspace-scoped RLS, fingerprint deduplication, recursive CTE traversal -- v1.2
+- ✓ Rule-based extraction (ticket refs, PRs, @mentions, file paths, URLs) inline at zero LLM cost -- v1.2
+- ✓ Cross-source identity resolution via email-based matching with roster seeding -- v1.2
+- ✓ LLM entity extraction via Gemini Flash with decision/blocker persistence and source validation -- v1.2
+- ✓ Graph-enhanced retrieval as 3rd signal with depth-decay scoring and token budget -- v1.2
+- ✓ Context pages with decision trails, relationship paths, people cross-references, code provenance -- v1.2
+- ✓ Graph Explorer API endpoint for subgraph JSON -- v1.2
 
 ### Active
 
-- [ ] Database schema with pgvector embeddings, RLS multi-tenancy, and all core tables
-- [ ] Supabase Auth (email/password + magic links) with session management
-- [ ] Linear OAuth2 flow handled by Python backend
-- [ ] Linear initial data sync (pull active tickets, generate embeddings)
-- [ ] Linear webhook listener (issue create/update, comment create)
-- [ ] Slack OAuth2 V2 flow (bot + user tokens) handled by Python backend
-- [ ] Slack real-time event ingestion (message.channels, message.groups)
-- [ ] Slack-to-ticket linking (explicit links + keyword match + thread following)
-- [ ] Context page generation using Gemini Flash (5 sections: origin story, business requirements, technical decisions, related work, AI prompt)
-- [ ] Context page auto-regeneration on ticket assignment + on-demand
-- [ ] Auto-post context as Linear comment (update existing + changelog footer)
-- [ ] MCP server with get_feature_context, search_context, get_related_work tools
-- [ ] MCP authentication via user API keys calling cloud backend
-- [ ] Web dashboard: context pages feed with status indicators
-- [ ] Web dashboard: context page detail view with copy AI prompt button
-- [ ] Web dashboard: integration setup page (connect/disconnect Linear, Slack, Notion)
-- [ ] Web dashboard: settings page with API key generation
-- [ ] Web dashboard: auth pages (login, signup, magic link) connecting to Supabase Auth
-- [ ] Chrome extension for quick context access from browser
-- [ ] Fathom API integration for meeting transcript ingestion (Daulet: API, Dulat: linking)
-- [ ] Meeting transcript-to-ticket linking algorithm
-- [ ] Webhook signature verification (Linear HMAC-SHA256, Slack signing secret)
-- [ ] OAuth token storage in Supabase Vault
-- [ ] Sentry error tracking integration
-- [ ] Laminar LLM observability integration
+(No active requirements -- planning next milestone)
 
 ### Out of Scope
 
-- Notion integration (v1) -- Nice-to-have, defer unless time permits. Linear + Slack covers 80% of context.
-- Celery + Redis job queue -- Overkill for MVP. Use FastAPI background tasks instead.
-- Full onboarding wizard (CON-27) -- Team can use integration setup page directly.
-- Usage analytics / PostHog (CON-29) -- Ship first, measure later.
-- Slack historical backfill (CON-13) -- Start with real-time ingestion. Backfill is a v2 optimization.
-- Semantic similarity for Slack linking -- Start with explicit links + keyword match + thread following. Add embeddings-based search in v2.
-- Full context page version history -- Keep current + previous version only.
-- Team invites and role management -- Single team dogfooding, not needed yet.
-- Mobile app / responsive design polish -- Desktop-first internal tool.
+- Full onboarding wizard (CON-27) -- Team can use integration setup page directly
+- Slack historical backfill (CON-13) -- Start with real-time ingestion, backfill is v2 optimization
+- Full context page version history -- Keep current + previous version only
+- Team invites and role management -- Single team dogfooding, not needed yet
+- Mobile app / responsive design polish -- Desktop-first internal tool
+- Apache AGE extension -- Not available on Supabase Cloud, plain PG tables work better
+- Neo4j or separate graph DB -- Doubles operational complexity, graph stays in Supabase Postgres
+- Microsoft GraphRAG Leiden clustering -- Corpus-scale overkill, ContextOS has structured data
+- Real-time LLM extraction on every webhook -- Burns API budget, two-tier (regex inline, LLM batch) is better
+- Person-centric aggregation UI -- Emerges from graph data in context pages, dedicated UI deferred
+- Graph explorer frontend (GAPI-02) -- API ships in v1.2, React visualization deferred
 
 ## Context
 
-**Team:** Three-person founding team dogfooding the product. Daulet owns backend and integrations, Dulat owns AI/ML (embedding model, synthesis optimization, linking logic), Bekbol owns the web dashboard and Chrome extension.
+**Team:** Three-person founding team dogfooding the product. Daulet owns backend and integrations, Dulat owns AI/ML, Bekbol owns frontend.
 
-**Existing codebase:** Scaffold with config files and .gitkeep placeholders. No implementation code. All backend directories (api, agents, ingestion, synthesis, embeddings, workers) are empty. Frontend has Next.js config but no pages or components. MCP server has package.json but no source.
+**Codebase:** 35,442 LOC Python backend, Next.js 15 frontend with dark theme. 27 phases shipped across 3 milestones. 547 backend tests passing.
 
-**Linear tasks:** 24 tasks across 11 epics (CON-5 through CON-32). CON-5 (repo init) is In Review. Everything else is Backlog. Tasks have detailed acceptance criteria and implementation notes.
+**Architecture:** FastAPI + Supabase (Postgres, Auth, Realtime, Vault) + Redis. Knowledge graph uses plain Postgres tables (graph_nodes, graph_edges) with recursive CTEs and SECURITY DEFINER traversal function. Gemini Flash for synthesis and semantic entity extraction. pgvector for embeddings.
 
-**External dependencies:**
-- Linear OAuth app registration required
-- Slack app registration required (api.slack.com/apps)
-- Supabase Cloud project required
-- Railway project for backend deployment
-- Vercel project for frontend deployment
-- Gemini API key for synthesis (Dulat's choice over Claude for cost/speed)
-- Fathom API access for meeting transcript ingestion
+**Known tech debt (from v1.2 audit):**
+- traverse_graph() missing source_type/source_id columns -- graph results have empty snippets in synthesis
+- Decision node snippet reads wrong property keys -- shows "Unknown" for author/source/affects
+- Duplicated _compute_fingerprint() in llm_extractor.py
+- Nyquist validation incomplete across all v1.2 phases
 
 ## Constraints
 
-- **Timeline**: 2-3 weeks to daily-driver quality
-- **AI Model**: Gemini Flash for synthesis (cheap, fast, smart -- Dulat's decision)
-- **Embedding Model**: TBD (Dulat decides)
+- **AI Model**: Gemini Flash for synthesis (cheap, fast, smart)
 - **Auth**: Supabase Auth only (no Clerk, no NextAuth)
 - **Multi-tenancy**: 1:1:1 mapping (one workspace = one Linear org + one Slack workspace + optional Notion workspace)
-- **Token Storage**: Supabase Vault (no custom AES-256 encryption)
-- **Job Queue**: FastAPI background tasks for v1 (no Celery)
-- **Generation Architecture**: Hybrid -- LangGraph for data gathering, single LLM call for synthesis
-- **Context Versioning**: Current + previous version only (not full history)
-- **OAuth Flows**: Python backend handles all OAuth (not Next.js)
+- **Token Storage**: Supabase Vault
+- **Job Queue**: FastAPI background tasks (no Celery)
+- **Graph**: Plain Postgres tables with recursive CTEs (no AGE, no Neo4j)
 - **Frontend-Backend**: Supabase for reads, Python API for actions
 - **MCP Network**: Calls cloud backend (Railway), not localhost
 - **Hosting**: Vercel (frontend), Railway (backend), Supabase Cloud (database)
@@ -119,26 +108,23 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Supabase Auth over Clerk/NextAuth | Already in stack, no extra dependency, built-in magic links | -- Pending |
-| Python handles OAuth flows | Backend makes API calls, avoids cross-service token passing | -- Pending |
-| Supabase Vault for tokens | Managed encryption, less custom code than AES-256 | -- Pending |
-| Gemini Flash for synthesis | Cost-effective at scale, fast response, adequate quality | -- Pending |
-| FastAPI background tasks over Celery | MVP simplicity, Celery is overkill for current scale | -- Pending |
-| 1:1:1 workspace tenancy | Matches real usage (one team = one Linear + one Slack), simplest model | -- Pending |
-| Start Slack linking simple | Explicit links + keywords + thread following. Defer semantic search to v2. | -- Pending |
-| Linear comment bot: update existing | One clean comment per ticket, changelog footer for freshness visibility | -- Pending |
-| Trigger on assignment + on-demand | Auto-generate when ticket assigned, manual regenerate available. Not all new tickets. | -- Pending |
-| Current + previous version only | Simpler schema, "what changed" visibility without full history complexity | -- Pending |
-| Supabase for reads, API for actions | Instant reads via Supabase client, real-time subscriptions, backend for heavy lifting | -- Pending |
-| API key auth for MCP | Standard developer pattern, easy setup (generate key, paste in config) | -- Pending |
-| Defer Notion to v2 | Linear + Slack covers 80% of context. Notion adds complexity for diminishing returns in v1. | -- Pending |
-| Meeting transcripts in v1 | Fathom API ingestion adds meeting context to tickets. Daulet: API, Dulat: linking. | -- Pending |
-| Shared roadmap for all 3 members | Previously Daulet-scoped; expanded to cover Dulat (AI/ML) and Bekbol (frontend) | -- Pending |
-| Bekbol builds auth UI | Login/signup/magic-link pages in Next.js, connecting to Supabase Auth backend | -- Pending |
-| Apache AGE (Postgres) for knowledge graph | Stays in Supabase, no new infrastructure, graph queries via Cypher | -- Pending |
-| Rule-based + LLM entity extraction | Cheap regex for structured data, LLM for semantic entities | -- Pending |
-| Blend graph with existing hybrid search | Additive improvement, not a replacement -- existing retrieval is the fallback | -- Pending |
-| Graph explorer as stretch goal | Backend-first, UI explorer if time permits | -- Pending |
+| Supabase Auth over Clerk/NextAuth | Already in stack, no extra dependency, built-in magic links | ✓ Good |
+| Python handles OAuth flows | Backend makes API calls, avoids cross-service token passing | ✓ Good |
+| Supabase Vault for tokens | Managed encryption, less custom code than AES-256 | ✓ Good |
+| Gemini Flash for synthesis | Cost-effective at scale, fast response, adequate quality | ✓ Good |
+| FastAPI background tasks over Celery | MVP simplicity, Celery is overkill for current scale | ✓ Good |
+| 1:1:1 workspace tenancy | Matches real usage, simplest model | ✓ Good |
+| Linear comment bot: update existing | One clean comment per ticket, changelog footer | ✓ Good |
+| Supabase for reads, API for actions | Instant reads via Supabase client, real-time subscriptions | ✓ Good |
+| Plain PG tables over Apache AGE | AGE not available on Supabase Cloud; recursive CTEs work well | ✓ Good |
+| Two-tier extraction (regex + LLM batch) | Regex inline at zero cost for structured refs, Gemini Flash batch for semantic entities | ✓ Good |
+| Graph blends with existing hybrid search | Additive improvement, not replacement -- existing retrieval is fallback | ✓ Good |
+| Email-based identity resolution, never auto-merge on name | Deterministic matching prevents false merges across platforms | ✓ Good |
+| SHA-256 fingerprint deduplication for graph nodes | Deterministic, prevents duplicates on re-ingestion | ✓ Good |
+| SECURITY DEFINER for traverse_graph() | Validates workspace once, avoids per-row RLS overhead in recursive CTE | ✓ Good |
+| Fail-silent graph extraction pattern | Graph features never break core webhook ingestion | ✓ Good |
+| Graph explorer frontend deferred | API ships now, React visualization later when there's real graph data to explore | ✓ Good |
+| 2,000 token unified budget for retrieval | Signal diversity first trimming prevents graph context flooding | ✓ Good |
 
 ---
-*Last updated: 2026-03-06 -- v1.2 milestone started, GraphRAG focus*
+*Last updated: 2026-03-08 after v1.2 GraphRAG milestone*
