@@ -49,9 +49,9 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 
 ### Code-to-Discussion Linking
 
-- [ ] **CODE-01**: Slack messages mentioning file paths or function names create edges to matching code_chunks
-- [ ] **CODE-02**: PRs implementing tickets create transitive links between changed code and related discussions
-- [ ] **CODE-03**: Context pages show code-to-discussion provenance in the relevant code section
+- [x] **CODE-01**: Slack messages mentioning file paths or function names create edges to matching code_chunks
+- [x] **CODE-02**: PRs implementing tickets create transitive links between changed code and related discussions
+- [x] **CODE-03**: Context pages show code-to-discussion provenance in the relevant code section
 
 ### Graph Explorer API
 
@@ -193,9 +193,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DECIDE-01 | Phase 24 | Complete |
 | DECIDE-02 | Phase 24 | Complete |
 | DECIDE-03 | Phase 24 | Complete |
-| CODE-01 | Phase 26 | Pending |
-| CODE-02 | Phase 26 | Pending |
-| CODE-03 | Phase 26 | Pending |
+| CODE-01 | Phase 26 | Complete |
+| CODE-02 | Phase 26 | Complete |
+| CODE-03 | Phase 26 | Complete |
 | GAPI-01 | Phase 27 | Pending |
 
 **Coverage:**

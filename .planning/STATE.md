@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: GraphRAG
 status: executing
-stopped_at: Completed 26-01-PLAN.md
-last_updated: "2026-03-08T00:44:30.684Z"
-last_activity: 2026-03-08 -- Phase 26 Plan 01 complete
+stopped_at: Completed 26-02-PLAN.md
+last_updated: "2026-03-08T01:03:01.000Z"
+last_activity: 2026-03-08 -- Phase 26 Plan 02 complete (phase complete)
 progress:
   total_phases: 13
-  completed_phases: 10
+  completed_phases: 11
   total_plans: 27
-  completed_plans: 26
+  completed_plans: 27
   percent: 100
 ---
 
@@ -21,27 +21,27 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** v1.2 GraphRAG -- Phase 26 Plan 01 complete, Plan 02 next
+**Current focus:** v1.2 GraphRAG -- Phase 26 complete, Phase 27 next
 
 ## Current Position
 
 Phase: 26 of 27 (Synthesis + Code-to-Discussion Linking)
-Plan: 1 of 2 in current phase
+Plan: 2 of 2 in current phase (COMPLETE)
 Status: Executing
-Last activity: 2026-03-08 -- Phase 26 Plan 01 complete
+Last activity: 2026-03-08 -- Phase 26 Plan 02 complete (phase complete)
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 41 (v1.0: 16, v1.1: 14, v1.2: 11)
+- Total plans completed: 42 (v1.0: 16, v1.1: 14, v1.2: 12)
 - Average duration: ~4min
-- Total execution time: ~2.8 hours
+- Total execution time: ~3.1 hours
 
 **Recent Trend (v1.2):**
-- Last 5 plans: 24-03 (5min), 25-01 (7min), 25-02 (6min), 26-01 (4min)
-- Trend: Stable (4-7min per plan)
+- Last 5 plans: 25-01 (7min), 25-02 (6min), 26-01 (4min), 26-02 (16min)
+- Trend: 26-02 took longer due to TDD test infrastructure debugging
 
 *Updated after each plan completion*
 
@@ -100,6 +100,10 @@ Recent decisions affecting current work:
 - [Phase 26]: Decision trail instructions include confidence level and source citation requirements
 - [Phase 26]: Relationship path instructions explicitly discourage raw path notation in favor of natural language
 - [Phase 26]: Graph enrichment instructions appended within existing sections, maintaining exactly 7 numbered template sections
+- [Phase 26-02]: CodeChunk graph nodes for actual code_chunks use external_id='chunk:{uuid}', distinct from FilePathExtractor's 'path:{filepath}' dangling references
+- [Phase 26-02]: File path matching requires at least one '/' directory separator to avoid false positives from bare filenames
+- [Phase 26-02]: Transitive discussed_in edges created at ingestion time so graph traversal works within depth-2 limit
+- [Phase 26-02]: Code provenance annotation format: "Discussed in: #channel; Meeting: title" with batch graph query
 
 ### Pending Todos
 
@@ -114,6 +118,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-08T00:44:30.682Z
-Stopped at: Completed 26-01-PLAN.md
+Last session: 2026-03-08T01:03:01.000Z
+Stopped at: Completed 26-02-PLAN.md
 Resume file: None
