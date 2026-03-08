@@ -336,8 +336,9 @@ def test_get_graph_neighborhood_query_params(
     # Verify traverse_graph was called with max_depth=1
     # The 4th execute call is traverse_graph (index 3)
     traverse_call = mock_session.execute.call_args_list[3]
-    # The params dict should contain max_depth=1
-    params = traverse_call[1] if len(traverse_call) > 1 and isinstance(traverse_call[1], dict) else traverse_call[0][1] if len(traverse_call[0]) > 1 else {}
+    # call_args_list[n] is call(positional_args...) -- the params dict is the 2nd positional arg
+    call_args = traverse_call[0]  # positional args tuple
+    params = call_args[1] if len(call_args) > 1 else {}
     assert params.get("max_depth") == 1
 
 
