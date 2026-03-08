@@ -4,87 +4,14 @@ CODE-01: Slack file path mentions create 'mentions' edges to matching code_chunk
 CODE-02: PRs linked to tickets create transitive 'discussed_in' edges from CodeChunk to discussion nodes.
 CODE-03: Code provenance annotations in synthesis _format_related_content().
 
-Uses sys.modules pre-population pattern (from Phase 24-02) to avoid sqlmodel import chain.
+Production functions use lazy imports inside function bodies. Tests mock
+session.execute for DB queries and patch graph_ops for graph operations.
 """
 
-import sys
-import types as _types
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
-
-# ============================================================
-# sys.modules pre-population to avoid sqlmodel import chain
-# ============================================================
-
-# The production code uses lazy imports (from src.services import graph_ops,
-# from src.models.code_chunk import CodeChunk, etc.). We pre-populate
-# sys.modules so these imports resolve to lightweight mocks instead of
-# triggering the full sqlmodel/SQLAlchemy dependency chain.
-
-# Ensure src.models is a proper "package" (has __path__) so
-# `from src.models.X import Y` works
-if "src.models" not in sys.modules:
-    _mock_models = _types.ModuleType("src.models")
-    _mock_models.__path__ = []  # type: ignore[attr-defined]
-    sys.modules["src.models"] = _mock_models
-
-# graph_ops mock
-_mock_graph_ops = _types.ModuleType("src.services.graph_ops")
-_mock_graph_ops.upsert_node = AsyncMock()  # type: ignore[attr-defined]
-_mock_graph_ops.upsert_edge = AsyncMock()  # type: ignore[attr-defined]
-_mock_graph_ops.compute_fingerprint = MagicMock(  # type: ignore[attr-defined]
-    side_effect=lambda et, eid: f"fp:{et}:{eid}"
-)
-if "src.services.graph_ops" not in sys.modules:
-    sys.modules["src.services.graph_ops"] = _mock_graph_ops
-    import src.services
-    src.services.graph_ops = _mock_graph_ops  # type: ignore[attr-defined]
-
-
-# Pre-populate model modules used by graph_extractor.py lazy imports.
-# We use MagicMock() classes since the production code's sqlmodel.select()
-# calls are intercepted by patching session.execute. The `select(...).where()`
-# chain is replaced by a mock_select that returns a chainable mock.
-_model_mocks_map = {
-    "src.models.graph_node": {"GraphNode": MagicMock()},
-    "src.models.graph_edge": {"GraphEdge": MagicMock()},
-    "src.models.code_chunk": {"CodeChunk": MagicMock()},
-    "src.models.github": {"GithubPullRequest": MagicMock(), "GithubReview": MagicMock()},
-    "src.models.ticket": {"LinearTicket": MagicMock(), "LinearComment": MagicMock()},
-}
-
-for mod_path, classes in _model_mocks_map.items():
-    if mod_path not in sys.modules:
-        _mod = _types.ModuleType(mod_path)
-        for cls_name, cls_mock in classes.items():
-            cls_mock.__name__ = cls_name
-            setattr(_mod, cls_name, cls_mock)
-        sys.modules[mod_path] = _mod
-        parent_attr = mod_path.rsplit(".", 1)[1]
-        setattr(sys.modules["src.models"], parent_attr, _mod)
-
-# Mock sqlmodel.select to return a chainable mock (avoids SQLAlchemy coercion errors)
-_original_select = None
-if "sqlmodel" in sys.modules:
-    import sqlmodel as _sm
-    _original_select = _sm.select
-
-
-def _mock_select(*args, **kwargs):
-    """A mock select() that returns a chainable mock with .where() etc."""
-    mock_stmt = MagicMock()
-    mock_stmt.where.return_value = mock_stmt  # chainable
-    mock_stmt.union.return_value = mock_stmt
-    return mock_stmt
-
-
-# Patch sqlmodel.select at module level so lazy imports inside production
-# functions get the mock version. This is restored after tests via fixture.
-import sqlmodel as _sqlmodel
-_sqlmodel_original_select = _sqlmodel.select
-_sqlmodel.select = _mock_select  # type: ignore[assignment]
 
 from src.services.graph_extractor import ExtractedEntity
 
@@ -118,6 +45,25 @@ def _make_mock_code_chunk(chunk_id: UUID, file_path: str, symbol_name: str = "fu
     chunk.symbol_type = symbol_type
     chunk.deleted_at = None
     return chunk
+
+
+def _make_linked_item(
+    source_type: str = "slack_message",
+    title: str = "Test",
+    snippet: str = "snippet",
+    relevance_score: float = 0.8,
+    signals: list[str] | None = None,
+    source_id: UUID | None = None,
+) -> MagicMock:
+    """Create a mock LinkedItem for synthesis tests."""
+    item = MagicMock()
+    item.source_type = source_type
+    item.source_id = source_id or uuid4()
+    item.title = title
+    item.snippet = snippet
+    item.relevance_score = relevance_score
+    item.signals = signals or ["hybrid_search"]
+    return item
 
 
 # ============================================================
@@ -281,18 +227,12 @@ class TestLinkPRCodeToDiscussions:
         mock_ticket = MagicMock()
         mock_ticket.identifier = "CON-42"
 
-        # Mock graph queries:
-        # 1. PR record lookup
-        # 2. Ticket record lookup
-        # 3. Ticket graph node lookup (by fingerprint)
-        # 4. CodeChunk neighbors of PR (graph edges where source_node_id == source_node_id, entity_type == CodeChunk)
-        # 5. Discussion neighbors of ticket (graph edges from ticket node, entity_type in SlackThread/Meeting)
         code_chunk_node_id_1 = uuid4()
         code_chunk_node_id_2 = uuid4()
         discussion_node_id_1 = uuid4()
         discussion_node_id_2 = uuid4()
 
-        # Build mock return sequence
+        # Build mock return sequence for session.execute calls
         # Call 1: PR lookup
         mock_pr_result = MagicMock()
         mock_pr_result.scalar_one_or_none.return_value = mock_pr
@@ -307,7 +247,7 @@ class TestLinkPRCodeToDiscussions:
         mock_ticket_node_result = MagicMock()
         mock_ticket_node_result.scalar_one_or_none.return_value = mock_ticket_node
 
-        # Call 4: CodeChunk neighbors of source_node (edges from source node to CodeChunk nodes)
+        # Call 4: CodeChunk neighbors of source_node
         mock_cc_edge_1 = MagicMock()
         mock_cc_edge_1.target_node_id = code_chunk_node_id_1
         mock_cc_edge_2 = MagicMock()
@@ -315,7 +255,7 @@ class TestLinkPRCodeToDiscussions:
         mock_cc_edges_result = MagicMock()
         mock_cc_edges_result.scalars.return_value.all.return_value = [mock_cc_edge_1, mock_cc_edge_2]
 
-        # Call 5: Discussion neighbors of ticket node (edges to SlackThread/Meeting)
+        # Call 5: Discussion neighbors of ticket node
         mock_disc_node_1 = MagicMock()
         mock_disc_node_1.id = discussion_node_id_1
         mock_disc_node_2 = MagicMock()
@@ -366,3 +306,261 @@ class TestLinkPRCodeToDiscussions:
             )
 
         mock_upsert_edge.assert_not_called()
+
+
+# ============================================================
+# CODE-03: Code provenance annotations in synthesis
+# ============================================================
+
+
+class TestFormatRelatedContentProvenance:
+    """Tests for _format_related_content() with code_provenance (CODE-03)."""
+
+    def test_code_chunk_with_provenance_annotated(self):
+        """code_chunk items with code_provenance get 'Discussed in:' annotation."""
+        from src.services.synthesis import _format_related_content
+
+        chunk_id = uuid4()
+        item = _make_linked_item(
+            source_type="code_chunk",
+            title="function: auth (backend:src/auth.py)",
+            snippet="def auth(token): pass",
+            source_id=chunk_id,
+        )
+
+        provenance = {
+            chunk_id: ["#backend-chat by @alex (Jan 15)"]
+        }
+
+        result = _format_related_content([item], code_provenance=provenance)
+
+        assert "```" in result
+        assert "def auth(token): pass" in result
+        assert "Discussed in:" in result
+        assert "#backend-chat by @alex (Jan 15)" in result
+
+    def test_code_chunk_without_provenance_no_annotation(self):
+        """code_chunk items without code_provenance render identically to current behavior."""
+        from src.services.synthesis import _format_related_content
+
+        item = _make_linked_item(
+            source_type="code_chunk",
+            title="function: auth (backend:src/auth.py)",
+            snippet="def auth(token): pass",
+        )
+
+        # No provenance parameter
+        result_no_param = _format_related_content([item])
+        # Provenance=None
+        result_none = _format_related_content([item], code_provenance=None)
+
+        # Neither should contain "Discussed in:"
+        assert "Discussed in:" not in result_no_param
+        assert "Discussed in:" not in result_none
+        # Both should still have fenced code block
+        assert "```" in result_no_param
+        assert "```" in result_none
+
+    def test_code_chunk_not_in_provenance_no_annotation(self):
+        """code_chunk item NOT in the provenance dict renders without annotation."""
+        from src.services.synthesis import _format_related_content
+
+        item = _make_linked_item(
+            source_type="code_chunk",
+            title="function: auth (backend:src/auth.py)",
+            snippet="def auth(token): pass",
+        )
+
+        # Provenance exists but for a different source_id
+        provenance = {uuid4(): ["#other-chat"]}
+
+        result = _format_related_content([item], code_provenance=provenance)
+
+        assert "Discussed in:" not in result
+        assert "```" in result
+
+    def test_multiple_discussions_joined(self):
+        """Multiple discussions for the same code_chunk are joined with semicolons."""
+        from src.services.synthesis import _format_related_content
+
+        chunk_id = uuid4()
+        item = _make_linked_item(
+            source_type="code_chunk",
+            title="fn: foo",
+            snippet="def foo(): pass",
+            source_id=chunk_id,
+        )
+
+        provenance = {
+            chunk_id: ["#backend-chat by @alex", "Meeting: Sprint Review"]
+        }
+
+        result = _format_related_content([item], code_provenance=provenance)
+
+        assert "Discussed in:" in result
+        assert "#backend-chat by @alex" in result
+        assert "Meeting: Sprint Review" in result
+        assert ";" in result  # joined with semicolons
+
+
+class TestGetCodeProvenance:
+    """Tests for _get_code_provenance() helper (CODE-03)."""
+
+    @pytest.mark.asyncio
+    async def test_returns_dict_for_code_chunks(self):
+        """_get_code_provenance() queries graph edges for code_chunk items
+        and returns dict mapping source_id to discussion annotation strings."""
+        from src.services.synthesis import _get_code_provenance
+
+        chunk_id = uuid4()
+        item = _make_linked_item(
+            source_type="code_chunk",
+            title="fn: auth",
+            snippet="def auth(): pass",
+            source_id=chunk_id,
+        )
+
+        session = AsyncMock()
+
+        # Mock 1: GraphNode lookup for CodeChunk fingerprints
+        mock_chunk_node = MagicMock()
+        mock_chunk_node.id = uuid4()
+        mock_chunk_node.entity_type = "CodeChunk"
+        mock_chunk_nodes_result = MagicMock()
+        mock_chunk_nodes_result.scalars.return_value.all.return_value = [mock_chunk_node]
+
+        # Mock 2: GraphEdge lookup for edges from chunk nodes
+        mock_edge = MagicMock()
+        mock_edge.target_node_id = uuid4()
+        mock_edges_result = MagicMock()
+        mock_edges_result.scalars.return_value.all.return_value = [mock_edge]
+
+        # Mock 3: Target GraphNode lookup (the discussion node)
+        mock_disc_node = MagicMock()
+        mock_disc_node.id = mock_edge.target_node_id
+        mock_disc_node.entity_type = "SlackThread"
+        mock_disc_node.name = "#backend-chat"
+        mock_disc_nodes_result = MagicMock()
+        mock_disc_nodes_result.scalars.return_value.all.return_value = [mock_disc_node]
+
+        session.execute.side_effect = [
+            mock_chunk_nodes_result,
+            mock_edges_result,
+            mock_disc_nodes_result,
+        ]
+
+        with patch("src.services.synthesis.compute_fingerprint",
+                    side_effect=lambda et, eid: f"fp:{et}:{eid}"):
+            result = await _get_code_provenance(session, WORKSPACE_ID, [item])
+
+        assert chunk_id in result
+        assert len(result[chunk_id]) == 1
+        assert "#backend-chat" in result[chunk_id][0]
+
+    @pytest.mark.asyncio
+    async def test_no_code_chunks_returns_empty(self):
+        """_get_code_provenance() with no code_chunk items returns empty dict."""
+        from src.services.synthesis import _get_code_provenance
+
+        session = AsyncMock()
+        item = _make_linked_item(source_type="slack_message")
+
+        result = await _get_code_provenance(session, WORKSPACE_ID, [item])
+
+        assert result == {}
+        session.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fail_silent_returns_empty(self):
+        """_get_code_provenance() returns empty dict on error, never raises."""
+        from src.services.synthesis import _get_code_provenance
+
+        session = AsyncMock()
+        session.execute.side_effect = RuntimeError("DB error")
+
+        item = _make_linked_item(
+            source_type="code_chunk",
+            source_id=uuid4(),
+        )
+
+        with patch("src.services.synthesis.compute_fingerprint",
+                    side_effect=lambda et, eid: f"fp:{et}:{eid}"):
+            result = await _get_code_provenance(session, WORKSPACE_ID, [item])
+
+        assert result == {}
+
+
+class TestGenerateContextPageProvenance:
+    """Tests for generate_context_page() passing code provenance to _format_related_content()."""
+
+    @pytest.mark.asyncio
+    async def test_generate_passes_provenance_to_format(self):
+        """generate_context_page() calls _get_code_provenance() and passes
+        the result to _format_related_content() for non-graph code_chunk items."""
+        from tests.conftest import TEST_WORKSPACE_ID
+
+        WS_ID = UUID(TEST_WORKSPACE_ID)
+        mock_session = AsyncMock()
+
+        # Mock ticket
+        ticket = MagicMock()
+        ticket.id = uuid4()
+        ticket.workspace_id = WS_ID
+        ticket.identifier = "CON-16"
+        ticket.title = "Auth refactor"
+        ticket.description = "Refactor the auth module."
+        ticket.status = "In Progress"
+        ticket.assignee_name = "Alice"
+        ticket.priority = 2
+        ticket.labels = ["feature"]
+
+        mock_ticket_result = MagicMock()
+        mock_ticket_result.scalar_one_or_none.return_value = ticket
+        mock_existing_result = MagicMock()
+        mock_existing_result.scalar_one_or_none.return_value = None
+        mock_session.execute.side_effect = [mock_ticket_result, mock_existing_result]
+
+        # Create code_chunk linked item (non-graph)
+        chunk_id = uuid4()
+        code_item = _make_linked_item(
+            source_type="code_chunk",
+            title="fn: auth",
+            snippet="def auth(): pass",
+            source_id=chunk_id,
+            signals=["hybrid_search"],
+        )
+
+        mock_linking_result = MagicMock()
+        mock_linking_result.items = [code_item]
+
+        mock_provenance = {chunk_id: ["#backend-chat by @alex"]}
+
+        mock_llm_response = MagicMock()
+        mock_llm_response.text = "# Context"
+        mock_llm_response.model = "gemini-3-flash-preview"
+        mock_llm_response.total_tokens = 500
+        mock_llm = MagicMock()
+        mock_llm.generate = AsyncMock(return_value=mock_llm_response)
+
+        with (
+            patch("src.services.synthesis.find_related_content",
+                  new_callable=AsyncMock, return_value=mock_linking_result),
+            patch("src.services.synthesis.get_llm_client", return_value=mock_llm),
+            patch("src.services.synthesis._get_code_provenance",
+                  new_callable=AsyncMock, return_value=mock_provenance) as mock_get_prov,
+            patch("src.services.synthesis._format_related_content",
+                  wraps=None) as mock_format,
+        ):
+            # Use the real _format_related_content but spy on it
+            from src.services.synthesis import _format_related_content as real_format
+            mock_format.side_effect = real_format
+
+            from src.services.synthesis import generate_context_page
+            await generate_context_page(mock_session, WS_ID, "CON-16")
+
+        # Verify _get_code_provenance was called
+        mock_get_prov.assert_called_once()
+        # Verify _format_related_content was called with code_provenance
+        mock_format.assert_called_once()
+        call_kwargs = mock_format.call_args
+        assert call_kwargs.kwargs.get("code_provenance") == mock_provenance
