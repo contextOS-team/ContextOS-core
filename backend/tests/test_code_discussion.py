@@ -15,9 +15,22 @@ from uuid import UUID, uuid4
 import pytest
 
 # ============================================================
-# sys.modules pre-population for graph_ops
+# sys.modules pre-population to avoid sqlmodel import chain
 # ============================================================
 
+# The production code uses lazy imports (from src.services import graph_ops,
+# from src.models.code_chunk import CodeChunk, etc.). We pre-populate
+# sys.modules so these imports resolve to lightweight mocks instead of
+# triggering the full sqlmodel/SQLAlchemy dependency chain.
+
+# Ensure src.models is a proper "package" (has __path__) so
+# `from src.models.X import Y` works
+if "src.models" not in sys.modules:
+    _mock_models = _types.ModuleType("src.models")
+    _mock_models.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["src.models"] = _mock_models
+
+# graph_ops mock
 _mock_graph_ops = _types.ModuleType("src.services.graph_ops")
 _mock_graph_ops.upsert_node = AsyncMock()  # type: ignore[attr-defined]
 _mock_graph_ops.upsert_edge = AsyncMock()  # type: ignore[attr-defined]
@@ -29,32 +42,49 @@ if "src.services.graph_ops" not in sys.modules:
     import src.services
     src.services.graph_ops = _mock_graph_ops  # type: ignore[attr-defined]
 
-# Pre-populate graph_node model to avoid sqlmodel chain
-if "src.models.graph_node" not in sys.modules:
-    _mock_gn_mod = _types.ModuleType("src.models.graph_node")
 
-    class _MockGraphNode:
-        """Lightweight stand-in for GraphNode."""
-        pass
+# Pre-populate model modules used by graph_extractor.py lazy imports.
+# We use MagicMock() classes since the production code's sqlmodel.select()
+# calls are intercepted by patching session.execute. The `select(...).where()`
+# chain is replaced by a mock_select that returns a chainable mock.
+_model_mocks_map = {
+    "src.models.graph_node": {"GraphNode": MagicMock()},
+    "src.models.graph_edge": {"GraphEdge": MagicMock()},
+    "src.models.code_chunk": {"CodeChunk": MagicMock()},
+    "src.models.github": {"GithubPullRequest": MagicMock(), "GithubReview": MagicMock()},
+    "src.models.ticket": {"LinearTicket": MagicMock(), "LinearComment": MagicMock()},
+}
 
-    _mock_gn_mod.GraphNode = _MockGraphNode  # type: ignore[attr-defined]
-    sys.modules["src.models.graph_node"] = _mock_gn_mod
-    if "src.models" not in sys.modules:
-        _mock_models = _types.ModuleType("src.models")
-        sys.modules["src.models"] = _mock_models
-    sys.modules["src.models"].graph_node = _mock_gn_mod  # type: ignore[attr-defined]
+for mod_path, classes in _model_mocks_map.items():
+    if mod_path not in sys.modules:
+        _mod = _types.ModuleType(mod_path)
+        for cls_name, cls_mock in classes.items():
+            cls_mock.__name__ = cls_name
+            setattr(_mod, cls_name, cls_mock)
+        sys.modules[mod_path] = _mod
+        parent_attr = mod_path.rsplit(".", 1)[1]
+        setattr(sys.modules["src.models"], parent_attr, _mod)
 
-# Pre-populate graph_edge model
-if "src.models.graph_edge" not in sys.modules:
-    _mock_ge_mod = _types.ModuleType("src.models.graph_edge")
+# Mock sqlmodel.select to return a chainable mock (avoids SQLAlchemy coercion errors)
+_original_select = None
+if "sqlmodel" in sys.modules:
+    import sqlmodel as _sm
+    _original_select = _sm.select
 
-    class _MockGraphEdge:
-        """Lightweight stand-in for GraphEdge."""
-        pass
 
-    _mock_ge_mod.GraphEdge = _MockGraphEdge  # type: ignore[attr-defined]
-    sys.modules["src.models.graph_edge"] = _mock_ge_mod
-    sys.modules["src.models"].graph_edge = _mock_ge_mod  # type: ignore[attr-defined]
+def _mock_select(*args, **kwargs):
+    """A mock select() that returns a chainable mock with .where() etc."""
+    mock_stmt = MagicMock()
+    mock_stmt.where.return_value = mock_stmt  # chainable
+    mock_stmt.union.return_value = mock_stmt
+    return mock_stmt
+
+
+# Patch sqlmodel.select at module level so lazy imports inside production
+# functions get the mock version. This is restored after tests via fixture.
+import sqlmodel as _sqlmodel
+_sqlmodel_original_select = _sqlmodel.select
+_sqlmodel.select = _mock_select  # type: ignore[assignment]
 
 from src.services.graph_extractor import ExtractedEntity
 

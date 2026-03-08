@@ -455,6 +455,224 @@ class URLExtractor:
 
 
 # ============================================================
+# Code-to-discussion linking (CODE-01, CODE-02)
+# ============================================================
+
+# Source types that may mention code files in their content
+_CODE_MENTION_SOURCE_TYPES = frozenset(
+    {
+        "slack_message",
+        "linear_comment",
+        "meeting_transcript",
+        "meeting_segment",
+    }
+)
+
+# Entity types considered "discussion" nodes for transitive linking
+_DISCUSSION_ENTITY_TYPES = frozenset({"SlackThread", "Meeting"})
+
+
+async def link_code_mentions_to_chunks(
+    session: AsyncSession,
+    workspace_id: UUID,
+    source_node_id: UUID,
+    entities: list[ExtractedEntity],
+) -> None:
+    """Match CodeChunk entities against actual code_chunks table records.
+
+    For each CodeChunk entity with at least one directory segment (contains '/'),
+    queries the code_chunks table for matching file paths (suffix match) and creates
+    'mentions' edges from the source node to CodeChunk graph nodes backed by those records.
+
+    This bridges the gap between FilePathExtractor's dangling reference nodes
+    (external_id=path:{filepath}) and actual code_chunks in the database.
+
+    Fail-silent: errors are logged but never raised.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to search code_chunks in.
+        source_node_id: The source node (e.g., SlackThread) to create edges from.
+        entities: Extracted entities from content (filters for CodeChunk only).
+    """
+    from src.services import graph_ops
+
+    try:
+        for entity in entities:
+            if entity.entity_type != "CodeChunk":
+                continue
+
+            file_path = entity.properties.get("file_path", "")
+            if not file_path or "/" not in file_path:
+                continue  # Skip bare filenames to avoid false positives
+
+            # Lazy import to avoid circular dependency at module level
+            from sqlmodel import select
+
+            from src.models.code_chunk import CodeChunk
+
+            # Find matching code_chunks by suffix match
+            stmt = select(CodeChunk).where(
+                CodeChunk.workspace_id == workspace_id,
+                CodeChunk.file_path.endswith(file_path),  # type: ignore[union-attr]
+                CodeChunk.deleted_at.is_(None),  # type: ignore[union-attr]
+            )
+            result = await session.execute(stmt)
+            chunks = result.scalars().all()
+
+            for chunk in chunks:
+                # Create/get the CodeChunk graph node for the actual code_chunk record
+                chunk_node_id = await graph_ops.upsert_node(
+                    session=session,
+                    workspace_id=workspace_id,
+                    entity_type="CodeChunk",
+                    external_id=f"chunk:{chunk.id}",
+                    name=f"{chunk.symbol_type}: {chunk.symbol_name}",
+                    source_type="code_chunk",
+                    source_id=chunk.id,
+                )
+                # Create edge: SourceNode --(mentions)--> CodeChunkNode
+                await graph_ops.upsert_edge(
+                    session=session,
+                    workspace_id=workspace_id,
+                    source_node_id=source_node_id,
+                    target_node_id=chunk_node_id,
+                    relationship_type="mentions",
+                    properties={"matched_path": file_path},
+                )
+
+    except Exception:
+        logger.warning(
+            "Code mention linking failed (workspace=%s, source_node=%s)",
+            workspace_id,
+            source_node_id,
+            exc_info=True,
+        )
+
+
+async def link_pr_code_to_discussions(
+    session: AsyncSession,
+    workspace_id: UUID,
+    source_node_id: UUID,
+    source_id: UUID,
+) -> None:
+    """Create transitive 'discussed_in' edges from PR's CodeChunk neighbors to discussion nodes.
+
+    For PRs linked to a ticket via linear_ticket_id FK:
+    1. Find the ticket's graph node
+    2. Find CodeChunk entity neighbors of the PR source node (from FilePathExtractor)
+    3. Find SlackThread/Meeting discussion neighbors of the ticket node
+    4. Create 'discussed_in' edges from each CodeChunk to each discussion node
+
+    Fail-silent: errors are logged but never raised.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to operate in.
+        source_node_id: The PR source node in the graph.
+        source_id: The GithubPullRequest record UUID.
+    """
+    from src.services import graph_ops
+
+    try:
+        from sqlmodel import select
+
+        from src.models.github import GithubPullRequest
+        from src.models.graph_edge import GraphEdge
+        from src.models.graph_node import GraphNode
+        from src.models.ticket import LinearTicket
+
+        # 1. Look up the PR to get its ticket link
+        pr_stmt = select(GithubPullRequest).where(
+            GithubPullRequest.id == source_id,
+        )
+        pr_result = await session.execute(pr_stmt)
+        pr = pr_result.scalar_one_or_none()
+        if pr is None or pr.linear_ticket_id is None:
+            return  # No ticket link, nothing to do
+
+        # 2. Look up the ticket to get its identifier (for fingerprint)
+        ticket_stmt = select(LinearTicket).where(
+            LinearTicket.id == pr.linear_ticket_id,
+        )
+        ticket_result = await session.execute(ticket_stmt)
+        ticket = ticket_result.scalar_one_or_none()
+        if ticket is None:
+            return
+
+        # 3. Find the ticket's graph node by fingerprint
+        ticket_fingerprint = graph_ops.compute_fingerprint("Ticket", ticket.identifier)
+        ticket_node_stmt = select(GraphNode).where(
+            GraphNode.workspace_id == workspace_id,
+            GraphNode.fingerprint == ticket_fingerprint,
+            GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        ticket_node_result = await session.execute(ticket_node_stmt)
+        ticket_node = ticket_node_result.scalar_one_or_none()
+        if ticket_node is None:
+            return
+
+        # 4. Find CodeChunk neighbors of the PR source node
+        cc_edges_stmt = select(GraphEdge).where(
+            GraphEdge.workspace_id == workspace_id,
+            GraphEdge.source_node_id == source_node_id,
+            GraphEdge.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        cc_edges_result = await session.execute(cc_edges_stmt)
+        cc_edges = cc_edges_result.scalars().all()
+        code_chunk_node_ids = [e.target_node_id for e in cc_edges]
+
+        if not code_chunk_node_ids:
+            return
+
+        # 5. Find discussion neighbors of the ticket node
+        # (nodes connected via edges where ticket_node is source or target)
+        disc_nodes_stmt = select(GraphNode).where(
+            GraphNode.workspace_id == workspace_id,
+            GraphNode.entity_type.in_(_DISCUSSION_ENTITY_TYPES),  # type: ignore[union-attr]
+            GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
+            GraphNode.id.in_(  # type: ignore[union-attr]
+                select(GraphEdge.source_node_id).where(
+                    GraphEdge.target_node_id == ticket_node.id,
+                    GraphEdge.workspace_id == workspace_id,
+                    GraphEdge.deleted_at.is_(None),  # type: ignore[union-attr]
+                ).union(
+                    select(GraphEdge.target_node_id).where(
+                        GraphEdge.source_node_id == ticket_node.id,
+                        GraphEdge.workspace_id == workspace_id,
+                        GraphEdge.deleted_at.is_(None),  # type: ignore[union-attr]
+                    )
+                )
+            ),
+        )
+        disc_result = await session.execute(disc_nodes_stmt)
+        discussion_nodes = disc_result.scalars().all()
+
+        if not discussion_nodes:
+            return
+
+        # 6. Create transitive 'discussed_in' edges: CodeChunk -> Discussion
+        for cc_node_id in code_chunk_node_ids:
+            for disc_node in discussion_nodes:
+                await graph_ops.upsert_edge(
+                    session=session,
+                    workspace_id=workspace_id,
+                    source_node_id=cc_node_id,
+                    target_node_id=disc_node.id,
+                    relationship_type="discussed_in",
+                    properties={"transitive": True, "via": "pr_ticket_link"},
+                )
+
+    except Exception:
+        logger.warning(
+            "PR code-to-discussion linking failed (workspace=%s, source_id=%s)",
+            workspace_id,
+            source_id,
+            exc_info=True,
+        )
+
+
+# ============================================================
 # Orchestrator: extract_and_populate_graph
 # ============================================================
 
@@ -546,6 +764,18 @@ async def extract_and_populate_graph(
                     entity=entity,
                     entity_node_id=entity_node_id,
                 )
+
+        # 5. Link code mentions to actual code_chunks records (CODE-01)
+        if source_type in _CODE_MENTION_SOURCE_TYPES:
+            await link_code_mentions_to_chunks(
+                session, workspace_id, source_node_id, entities
+            )
+
+        # 6. Link PR code to discussions via ticket (CODE-02)
+        if source_type == "github_pull_request":
+            await link_pr_code_to_discussions(
+                session, workspace_id, source_node_id, source_id
+            )
 
         logger.info(
             "Graph extraction complete: source=%s, entities=%d, source_type=%s",
