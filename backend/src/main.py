@@ -24,6 +24,7 @@ from src.routers.integrations import router as integrations_router
 from src.routers.linear import router as linear_router
 from src.routers.slack import router as slack_router
 from src.routers.context import router as context_router
+from src.routers.graph import router as graph_router
 from src.routers.webhooks import router as webhooks_router
 from src.routers.workspaces import router as workspaces_router
 
@@ -153,5 +154,6 @@ app.include_router(fathom_router)
 app.include_router(github_router)
 app.include_router(notion_router)
 app.include_router(context_router)
+app.include_router(graph_router)
 app.include_router(workspaces_router)
 app.include_router(webhooks_router)
