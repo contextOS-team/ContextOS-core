@@ -422,22 +422,28 @@ class TestGetCodeProvenance:
 
         session = AsyncMock()
 
+        # The fingerprint computed for this chunk
+        chunk_fp = f"fp:CodeChunk:chunk:{chunk_id}"
+
         # Mock 1: GraphNode lookup for CodeChunk fingerprints
         mock_chunk_node = MagicMock()
         mock_chunk_node.id = uuid4()
         mock_chunk_node.entity_type = "CodeChunk"
+        mock_chunk_node.fingerprint = chunk_fp  # Must match computed fingerprint
         mock_chunk_nodes_result = MagicMock()
         mock_chunk_nodes_result.scalars.return_value.all.return_value = [mock_chunk_node]
 
-        # Mock 2: GraphEdge lookup for edges from chunk nodes
+        # Mock 2: GraphEdge lookup for edges pointing TO the chunk node
+        disc_source_node_id = uuid4()
         mock_edge = MagicMock()
-        mock_edge.target_node_id = uuid4()
+        mock_edge.source_node_id = disc_source_node_id
+        mock_edge.target_node_id = mock_chunk_node.id  # edge points TO chunk
         mock_edges_result = MagicMock()
         mock_edges_result.scalars.return_value.all.return_value = [mock_edge]
 
-        # Mock 3: Target GraphNode lookup (the discussion node)
+        # Mock 3: Discussion source node lookup
         mock_disc_node = MagicMock()
-        mock_disc_node.id = mock_edge.target_node_id
+        mock_disc_node.id = disc_source_node_id
         mock_disc_node.entity_type = "SlackThread"
         mock_disc_node.name = "#backend-chat"
         mock_disc_nodes_result = MagicMock()
@@ -542,6 +548,15 @@ class TestGenerateContextPageProvenance:
         mock_llm = MagicMock()
         mock_llm.generate = AsyncMock(return_value=mock_llm_response)
 
+        # Capture calls to _format_related_content by replacing it with
+        # a recording wrapper that calls the real function
+        format_calls = []
+        from src.services.synthesis import _format_related_content as real_format
+
+        def _recording_format(*args, **kwargs):
+            format_calls.append((args, kwargs))
+            return real_format(*args, **kwargs)
+
         with (
             patch("src.services.synthesis.find_related_content",
                   new_callable=AsyncMock, return_value=mock_linking_result),
@@ -549,18 +564,14 @@ class TestGenerateContextPageProvenance:
             patch("src.services.synthesis._get_code_provenance",
                   new_callable=AsyncMock, return_value=mock_provenance) as mock_get_prov,
             patch("src.services.synthesis._format_related_content",
-                  wraps=None) as mock_format,
+                  side_effect=_recording_format),
         ):
-            # Use the real _format_related_content but spy on it
-            from src.services.synthesis import _format_related_content as real_format
-            mock_format.side_effect = real_format
-
             from src.services.synthesis import generate_context_page
             await generate_context_page(mock_session, WS_ID, "CON-16")
 
         # Verify _get_code_provenance was called
         mock_get_prov.assert_called_once()
         # Verify _format_related_content was called with code_provenance
-        mock_format.assert_called_once()
-        call_kwargs = mock_format.call_args
-        assert call_kwargs.kwargs.get("code_provenance") == mock_provenance
+        assert len(format_calls) == 1
+        _, kwargs = format_calls[0]
+        assert kwargs.get("code_provenance") == mock_provenance

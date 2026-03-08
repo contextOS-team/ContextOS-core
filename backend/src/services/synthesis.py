@@ -13,6 +13,7 @@ from sqlmodel import select
 
 from src.models.context_page import ContextPage
 from src.models.ticket import LinearTicket
+from src.services.graph_ops import compute_fingerprint
 from src.services.linking import find_related_content
 from src.services.llm_client import get_llm_client
 
@@ -114,18 +115,37 @@ def _format_graph_section(items: list) -> str:
     return GRAPH_SECTION_TEMPLATE.format(graph_content="\n\n---\n\n".join(sections))
 
 
-def _format_related_content(items: list) -> str:
-    """Format linked items into a structured text block for the LLM prompt."""
+def _format_related_content(
+    items: list,
+    code_provenance: dict[UUID, list[str]] | None = None,
+) -> str:
+    """Format linked items into a structured text block for the LLM prompt.
+
+    Args:
+        items: List of LinkedItems to format.
+        code_provenance: Optional dict mapping code_chunk source_id to list of
+            discussion annotation strings. When provided, code_chunk items with
+            matching source_ids get 'Discussed in:' annotations appended.
+
+    Returns:
+        Formatted markdown text block for the synthesis prompt.
+    """
     if not items:
         return "No related content found."
 
     sections = []
     for item in items:
         if item.source_type == "code_chunk":
+            # Build optional provenance annotation
+            annotation = ""
+            if code_provenance and item.source_id in code_provenance:
+                discussions = code_provenance[item.source_id]
+                annotation = f"\nDiscussed in: {'; '.join(discussions)}"
+
             section = (
                 f"#### [{item.source_type}] {item.title}\n"
                 f"**Relevance:** {item.relevance_score:.2f} | **Signals:** {', '.join(item.signals)}\n\n"
-                f"```\n{item.snippet}\n```"
+                f"```\n{item.snippet}\n```{annotation}"
             )
         else:
             section = (
@@ -142,6 +162,139 @@ def _priority_label(priority: int | None) -> str:
     """Convert priority int to human-readable label."""
     labels = {0: "None", 1: "Urgent", 2: "High", 3: "Normal", 4: "Low"}
     return labels.get(priority, "Unknown") if priority is not None else "None"
+
+
+# Entity types considered "discussion" sources for provenance annotations
+_DISCUSSION_ENTITY_TYPES = frozenset({"SlackThread", "Meeting"})
+
+# Relationship types that indicate code-to-discussion provenance
+_PROVENANCE_RELATIONSHIP_TYPES = frozenset({"mentions", "discussed_in"})
+
+
+async def _get_code_provenance(
+    session: AsyncSession,
+    workspace_id: UUID,
+    items: list,
+) -> dict[UUID, list[str]]:
+    """Query graph edges to find discussion provenance for code_chunk items.
+
+    For each code_chunk LinkedItem, looks up the corresponding CodeChunk graph
+    node (by fingerprint), finds connected discussion nodes (SlackThread, Meeting)
+    via 'mentions' or 'discussed_in' edges, and builds annotation strings.
+
+    Fail-silent: returns empty dict on any error.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to query graph in.
+        items: List of LinkedItems (filters for code_chunk source_type).
+
+    Returns:
+        Dict mapping code_chunk source_id to list of discussion annotation strings
+        (e.g., ["#backend-chat", "Meeting: Sprint Review"]).
+    """
+    try:
+        # Filter for code_chunk items only
+        code_items = [item for item in items if item.source_type == "code_chunk"]
+        if not code_items:
+            return {}
+
+        from src.models.graph_edge import GraphEdge
+        from src.models.graph_node import GraphNode
+
+        # Build fingerprint -> source_id mapping for batch lookup
+        fp_to_source_id: dict[str, UUID] = {}
+        for item in code_items:
+            fp = compute_fingerprint("CodeChunk", f"chunk:{item.source_id}")
+            fp_to_source_id[fp] = item.source_id
+
+        # Batch query: find GraphNode records matching those fingerprints
+        fingerprints = list(fp_to_source_id.keys())
+        node_stmt = select(GraphNode).where(
+            GraphNode.workspace_id == workspace_id,
+            GraphNode.fingerprint.in_(fingerprints),  # type: ignore[union-attr]
+            GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        node_result = await session.execute(node_stmt)
+        chunk_nodes = node_result.scalars().all()
+
+        if not chunk_nodes:
+            return {}
+
+        # Map node_id -> source_id for result building
+        node_id_to_source_id: dict[UUID, UUID] = {}
+        chunk_node_ids = []
+        for node in chunk_nodes:
+            chunk_node_ids.append(node.id)
+            # Reverse lookup: node fingerprint -> original source_id
+            fp = compute_fingerprint(node.entity_type, f"chunk:{fp_to_source_id.get(node.fingerprint, '')}")
+            # Direct lookup via fingerprint
+            if node.fingerprint in fp_to_source_id:
+                node_id_to_source_id[node.id] = fp_to_source_id[node.fingerprint]
+
+        # Batch query: find edges where these chunk nodes are the TARGET
+        # (source_node --(mentions/discussed_in)--> chunk_node)
+        # We want to find what SOURCE nodes point to our code chunks
+        edge_stmt = select(GraphEdge).where(
+            GraphEdge.workspace_id == workspace_id,
+            GraphEdge.target_node_id.in_(chunk_node_ids),  # type: ignore[union-attr]
+            GraphEdge.relationship_type.in_(_PROVENANCE_RELATIONSHIP_TYPES),  # type: ignore[union-attr]
+            GraphEdge.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        edge_result = await session.execute(edge_stmt)
+        edges = edge_result.scalars().all()
+
+        if not edges:
+            return {}
+
+        # Collect source node IDs (the discussion nodes) and map to chunk node IDs
+        source_node_ids = set()
+        chunk_to_sources: dict[UUID, list[UUID]] = {}  # chunk_node_id -> [source_node_ids]
+        for edge in edges:
+            source_node_ids.add(edge.source_node_id)
+            chunk_to_sources.setdefault(edge.target_node_id, []).append(edge.source_node_id)
+
+        # Look up the source nodes to get their entity types and names
+        disc_stmt = select(GraphNode).where(
+            GraphNode.id.in_(list(source_node_ids)),  # type: ignore[union-attr]
+            GraphNode.entity_type.in_(_DISCUSSION_ENTITY_TYPES),  # type: ignore[union-attr]
+            GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        disc_result = await session.execute(disc_stmt)
+        disc_nodes = disc_result.scalars().all()
+
+        # Build node_id -> annotation string map
+        disc_annotations: dict[UUID, str] = {}
+        for node in disc_nodes:
+            if node.entity_type == "SlackThread":
+                disc_annotations[node.id] = f"#{node.name}" if not node.name.startswith("#") else node.name
+            elif node.entity_type == "Meeting":
+                disc_annotations[node.id] = f"Meeting: {node.name}"
+            else:
+                disc_annotations[node.id] = node.name
+
+        # Build final result: source_id -> list of annotation strings
+        result: dict[UUID, list[str]] = {}
+        for chunk_node_id, source_ids in chunk_to_sources.items():
+            source_id = node_id_to_source_id.get(chunk_node_id)
+            if source_id is None:
+                continue
+            annotations = []
+            for sid in source_ids:
+                if sid in disc_annotations:
+                    annotations.append(disc_annotations[sid])
+            if annotations:
+                result[source_id] = annotations
+
+        return result
+
+    except Exception:
+        logger.warning(
+            "Code provenance query failed (workspace=%s)",
+            workspace_id,
+            exc_info=True,
+        )
+        return {}
 
 
 async def generate_context_page(
@@ -207,8 +360,11 @@ async def generate_context_page(
         if not any(s.startswith("graph:") for s in item.signals)
     ]
 
+    # Query code provenance for non-graph code_chunk items (CODE-03)
+    code_provenance = await _get_code_provenance(session, workspace_id, non_graph_items)
+
     # Build prompt with both sections
-    related_text = _format_related_content(non_graph_items)
+    related_text = _format_related_content(non_graph_items, code_provenance=code_provenance)
     graph_text = _format_graph_section(graph_items)
 
     prompt = SYNTHESIS_TEMPLATE.format(
