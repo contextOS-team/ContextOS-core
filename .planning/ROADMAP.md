@@ -207,7 +207,11 @@ Plans:
   3. Context pages cross-reference people showing their involvement across sources (e.g., "@alex: authored ticket, discussed in Slack, reviewed PR")
   4. For a ticket with no graph data, the context page renders identically to pre-graph behavior -- graceful degradation with no errors or empty sections
   5. When a Slack message discusses a file path or function name that exists in code_chunks, context pages show code-to-discussion provenance in the relevant code section
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 26-01-PLAN.md -- Enrich SYNTHESIS_TEMPLATE section instructions for decision trails, relationship paths, people cross-references, and code provenance
+- [ ] 26-02-PLAN.md -- Code-to-discussion edge creation (Slack file paths, PR transitive links) and code provenance annotations in synthesis
 
 ### Phase 27: Graph Explorer API
 **Goal**: An API endpoint exposes the graph neighborhood for any ticket as structured JSON, enabling future frontend visualization and external tool consumption
@@ -269,7 +273,7 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 | 23. Identity Resolution | 2/2 | Complete    | 2026-03-07 | - |
 | 24. LLM Extraction + Decision Extraction | 3/3 | Complete    | 2026-03-07 | - |
 | 25. Graph-Enhanced Retrieval | 2/2 | Complete    | 2026-03-07 | - |
-| 26. Synthesis + Code-to-Discussion Linking | v1.2 | 0/TBD | Not started | - |
+| 26. Synthesis + Code-to-Discussion Linking | v1.2 | 0/2 | Not started | - |
 | 27. Graph Explorer API | v1.2 | 0/TBD | Not started | - |
 
 ### Phase 25: Graph-Enhanced Retrieval
