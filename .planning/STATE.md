@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 
 ## Current Position
 
-Phase: 23 of 23 (Remotion Animated Hero)
-Plan: 2 of 2 (23-02 complete)
-Status: Complete
-Last activity: 2026-03-07 -- Completed Phase 23 Plan 02 (Player Integration & Hero Replacement)
+Phase: 21 of 23 (Auth Redesign & Social OAuth)
+Plan: 1 of 2 (21-01 complete)
+Status: In Progress
+Last activity: 2026-03-08 -- Completed Phase 21 Plan 01 (Social OAuth Buttons & Auth Page Polish)
 
 Progress: [██████████] 100%
 
@@ -76,6 +76,7 @@ Progress: [██████████] 100%
 | Phase 22 P01 | 3min | 2 tasks | 5 files |
 | Phase 23 P01 | 3min | 2 tasks | 9 files |
 | Phase 23 P02 | 10min | 2 tasks | 9 files |
+| Phase 21 P01 | 3min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -133,6 +134,9 @@ Recent decisions affecting current work:
 - [Phase 23]: All Remotion styles inline only -- iframe-like context without external stylesheets
 - [Phase 23]: next/dynamic with ssr:false for Remotion Player -- avoids window-is-not-defined SSR errors
 - [Phase 23]: Real brand SVG logos (Slack, GitHub, Linear) chosen over minimal placeholders after visual review
+- [Phase 21]: Native button elements for social OAuth (not shadcn Button) for full style control
+- [Phase 21]: Auth pages follow social -> divider -> form -> CTA layout order
+- [Phase 21]: Focus ring uses oklch primary token (0.75 0.18 170) with 0.4 alpha ring + 0.15 glow
 
 ### Roadmap Evolution
 
@@ -151,6 +155,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-08T09:43:12.416Z
-Stopped at: Phase 21 context gathered
-Resume file: .planning/phases/21-auth-redesign-and-social-oauth/21-CONTEXT.md
+Last session: 2026-03-08T10:38:45Z
+Stopped at: Completed 21-01-PLAN.md
+Resume file: .planning/phases/21-auth-redesign-and-social-oauth/21-01-SUMMARY.md
