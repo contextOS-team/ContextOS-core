@@ -168,3 +168,81 @@ async def test_generate_includes_graph() -> None:
     prompt = call_kwargs["prompt"]
     assert "### Related Content" in prompt
     assert "### Graph Connections" in prompt
+
+
+@pytest.mark.asyncio
+async def test_no_graph_data_graceful_degradation() -> None:
+    """SYNTH-04 regression: When find_related_content returns items with
+    NO graph signals, the prompt passed to the LLM does NOT contain
+    '### Graph Connections' -- verifying graceful degradation is not
+    regressed by enriched template instructions."""
+    mock_session = AsyncMock()
+
+    # Mock ticket
+    ticket = MagicMock()
+    ticket.id = uuid4()
+    ticket.workspace_id = WORKSPACE_ID
+    ticket.identifier = "CON-99"
+    ticket.title = "No graph data ticket"
+    ticket.description = "A ticket with no graph connections at all."
+    ticket.status = "Todo"
+    ticket.assignee_name = "Bob"
+    ticket.priority = 3
+    ticket.labels = ["bug"]
+
+    mock_ticket_result = MagicMock()
+    mock_ticket_result.scalar_one_or_none.return_value = ticket
+
+    mock_existing_result = MagicMock()
+    mock_existing_result.scalar_one_or_none.return_value = None
+
+    mock_session.execute.side_effect = [
+        mock_ticket_result,
+        mock_existing_result,
+    ]
+
+    # Create linked items with NO graph signals
+    non_graph_item_1 = _make_linked_item(
+        source_type="slack_message",
+        title="Slack by Bob in #bugs",
+        snippet="Found a bug in the auth flow",
+        relevance_score=0.9,
+        signals=["hybrid_search"],
+    )
+    non_graph_item_2 = _make_linked_item(
+        source_type="code_chunk",
+        title="function: auth (backend:src/auth.py)",
+        snippet="def auth(token): pass",
+        relevance_score=0.7,
+        signals=["hybrid_search"],
+    )
+
+    mock_linking_result = MagicMock()
+    mock_linking_result.items = [non_graph_item_1, non_graph_item_2]
+
+    mock_llm_response = MagicMock()
+    mock_llm_response.text = "# Context page content for no-graph ticket"
+    mock_llm_response.model = "gemini-3-flash-preview"
+    mock_llm_response.total_tokens = 800
+
+    mock_llm = MagicMock()
+    mock_llm.generate = AsyncMock(return_value=mock_llm_response)
+
+    with (
+        patch(
+            "src.services.synthesis.find_related_content",
+            new_callable=AsyncMock,
+            return_value=mock_linking_result,
+        ),
+        patch("src.services.synthesis.get_llm_client", return_value=mock_llm),
+    ):
+        from src.services.synthesis import generate_context_page
+
+        await generate_context_page(mock_session, WORKSPACE_ID, "CON-99")
+
+    # Verify the prompt does NOT contain graph section
+    call_kwargs = mock_llm.generate.call_args.kwargs
+    prompt = call_kwargs["prompt"]
+    assert "### Graph Connections" not in prompt, (
+        "Prompt should NOT contain Graph Connections when no graph data exists"
+    )

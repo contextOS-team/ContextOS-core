@@ -6,13 +6,44 @@ Covers:
 3. _format_related_content renders non-code items as plain text
 4. _format_related_content returns fallback for empty items
 5. Golden snapshot: code_chunk formatting matches expected output
+6. Enriched section instructions for graph data integration (SYNTH-01/02/03)
 """
 
+import re
 from unittest.mock import MagicMock
 
 import pytest
 
 from src.services.synthesis import SYNTHESIS_TEMPLATE, _format_related_content
+
+
+def _extract_section_text(template: str, section_number: int) -> str:
+    """Extract the instruction text for a specific numbered section.
+
+    Splits SYNTHESIS_TEMPLATE by numbered section markers (e.g. '2. **')
+    and returns the text belonging to the requested section number.
+    """
+    lines = template.splitlines()
+    section_start = None
+    section_end = None
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped and stripped[0].isdigit() and ". **" in stripped:
+            num = int(stripped.split(".")[0])
+            if num == section_number:
+                section_start = i
+            elif section_start is not None:
+                section_end = i
+                break
+
+    if section_start is None:
+        raise ValueError(f"Section {section_number} not found in template")
+
+    if section_end is None:
+        section_end = len(lines)
+
+    return "\n".join(lines[section_start:section_end])
 
 
 class TestSynthesisTemplateSections:
@@ -131,3 +162,87 @@ class TestFormatRelatedContent:
         assert "hybrid_search" in lines[1]
         assert "```" in lines[2] or "```" in lines[3]
         assert "calculate_score" in result
+
+
+class TestEnrichedSectionInstructions:
+    """Verify SYNTHESIS_TEMPLATE sections contain conditional graph enrichment instructions.
+
+    These tests verify SYNTH-01/02/03 requirements: the synthesis prompt
+    tells the LLM how to weave graph data into narrative sections.
+    """
+
+    def test_section_two_includes_decision_trail(self):
+        """Section 2 (Background & Decisions) must contain conditional
+        decision trail instruction referencing [DECISION] items from
+        Graph Connections, mentioning weaving into narrative, citing
+        confidence level, and citing source."""
+        section = _extract_section_text(SYNTHESIS_TEMPLATE, 2)
+
+        assert "[DECISION]" in section, (
+            "Section 2 must reference [DECISION] items from Graph Connections"
+        )
+        assert "confidence" in section.lower(), (
+            "Section 2 must mention confidence level for decisions"
+        )
+        assert "source" in section.lower(), (
+            "Section 2 must instruct citing the source of decisions"
+        )
+
+    def test_section_four_includes_relationship_paths(self):
+        """Section 4 (Related Work) must contain conditional relationship
+        path instruction mentioning natural language explanation of
+        connections, NOT raw path notation."""
+        section = _extract_section_text(SYNTHESIS_TEMPLATE, 4)
+
+        assert "natural language" in section.lower() or "explain" in section.lower(), (
+            "Section 4 must instruct natural language explanation of relationships"
+        )
+        # Must NOT tell the LLM to use raw path notation
+        assert "raw" in section.lower() or "rather than" in section.lower(), (
+            "Section 4 must discourage raw path notation"
+        )
+
+    def test_section_five_includes_discussion_provenance(self):
+        """Section 5 (Relevant Code) must contain instruction about
+        discussion provenance annotations ('Discussed in:')."""
+        section = _extract_section_text(SYNTHESIS_TEMPLATE, 5)
+
+        assert "Discussed in" in section or "discussion provenance" in section.lower(), (
+            "Section 5 must mention discussion provenance annotations"
+        )
+
+    def test_section_seven_includes_cross_source_involvement(self):
+        """Section 7 (Key People) must contain cross-source involvement
+        instruction mentioning graph data for multi-source engagement."""
+        section = _extract_section_text(SYNTHESIS_TEMPLATE, 7)
+
+        assert "cross-source" in section.lower() or "multiple sources" in section.lower(), (
+            "Section 7 must instruct cross-source involvement display"
+        )
+
+    def test_all_new_instructions_are_conditional(self):
+        """All new graph-referencing instructions must be conditional,
+        containing 'If' referring to Graph Connections section or graph data,
+        so empty graph_section produces no hallucinated content."""
+        # Check sections 2, 4, 7 have conditional phrasing
+        for section_num in [2, 4, 7]:
+            section = _extract_section_text(SYNTHESIS_TEMPLATE, section_num)
+            has_conditional = (
+                "If the Graph Connections" in section
+                or "If graph data" in section
+            )
+            assert has_conditional, (
+                f"Section {section_num} must contain conditional phrasing "
+                f"('If the Graph Connections...' or 'If graph data...')"
+            )
+
+    def test_template_still_has_seven_sections(self):
+        """Regression: enriched instructions do NOT add new sections."""
+        section_lines = [
+            line for line in SYNTHESIS_TEMPLATE.splitlines()
+            if line.strip() and line.strip()[0].isdigit() and "**" in line
+        ]
+        assert len(section_lines) == 7, (
+            f"Expected 7 sections, found {len(section_lines)}: "
+            f"{[l.strip()[:40] for l in section_lines]}"
+        )
