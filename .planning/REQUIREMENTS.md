@@ -55,7 +55,7 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 
 ### Graph Explorer API
 
-- [ ] **GAPI-01**: GET endpoint returns subgraph JSON (nodes + edges) for a ticket's graph neighborhood
+- [x] **GAPI-01**: GET endpoint returns subgraph JSON (nodes + edges) for a ticket's graph neighborhood
 
 ## v1.1 Requirements (Complete)
 
@@ -196,7 +196,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CODE-01 | Phase 26 | Complete |
 | CODE-02 | Phase 26 | Complete |
 | CODE-03 | Phase 26 | Complete |
-| GAPI-01 | Phase 27 | Pending |
+| GAPI-01 | Phase 27 | Complete |
 
 **Coverage:**
 - v1.2 requirements: 26 total

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: GraphRAG
 status: executing
-stopped_at: Phase 27 context gathered
-last_updated: "2026-03-08T06:21:42.262Z"
-last_activity: 2026-03-08 -- Phase 26 Plan 02 complete (phase complete)
+stopped_at: Completed 27-01-PLAN.md
+last_updated: "2026-03-08T06:39:52Z"
+last_activity: 2026-03-08 -- Phase 27 Plan 01 complete (phase complete, v1.2 GraphRAG complete)
 progress:
   total_phases: 13
-  completed_phases: 11
-  total_plans: 27
-  completed_plans: 27
+  completed_phases: 12
+  total_plans: 28
+  completed_plans: 28
   percent: 100
 ---
 
@@ -21,27 +21,27 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-07)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** v1.2 GraphRAG -- Phase 26 complete, Phase 27 next
+**Current focus:** v1.2 GraphRAG -- Phase 27 complete, v1.2 milestone complete
 
 ## Current Position
 
-Phase: 26 of 27 (Synthesis + Code-to-Discussion Linking)
-Plan: 2 of 2 in current phase (COMPLETE)
+Phase: 27 of 27 (Graph Explorer API)
+Plan: 1 of 1 in current phase (COMPLETE)
 Status: Executing
-Last activity: 2026-03-08 -- Phase 26 Plan 02 complete (phase complete)
+Last activity: 2026-03-08 -- Phase 27 Plan 01 complete (phase complete, v1.2 GraphRAG complete)
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 42 (v1.0: 16, v1.1: 14, v1.2: 12)
+- Total plans completed: 43 (v1.0: 16, v1.1: 14, v1.2: 13)
 - Average duration: ~4min
-- Total execution time: ~3.1 hours
+- Total execution time: ~3.2 hours
 
 **Recent Trend (v1.2):**
-- Last 5 plans: 25-01 (7min), 25-02 (6min), 26-01 (4min), 26-02 (16min)
-- Trend: 26-02 took longer due to TDD test infrastructure debugging
+- Last 5 plans: 25-02 (6min), 26-01 (4min), 26-02 (16min), 27-01 (5min)
+- Trend: 27-01 clean TDD execution in 5min
 
 *Updated after each plan completion*
 
@@ -104,6 +104,10 @@ Recent decisions affecting current work:
 - [Phase 26-02]: File path matching requires at least one '/' directory separator to avoid false positives from bare filenames
 - [Phase 26-02]: Transitive discussed_in edges created at ingestion time so graph traversal works within depth-2 limit
 - [Phase 26-02]: Code provenance annotation format: "Discussed in: #channel; Meeting: title" with batch graph query
+- [Phase 27-01]: Root ticket is a regular node with depth=0, no separate root field in graph neighborhood response
+- [Phase 27-01]: Pydantic response models for type-safe graph JSON serialization (not dict)
+- [Phase 27-01]: Sort priority: depth ascending then edge count descending before limit cap
+- [Phase 27-01]: Edges re-filtered after node cap to only reference nodes in capped set
 
 ### Pending Todos
 
@@ -118,6 +122,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-08T06:21:42.253Z
-Stopped at: Phase 27 context gathered
-Resume file: .planning/phases/27-graph-explorer-api/27-CONTEXT.md
+Last session: 2026-03-08T06:39:52Z
+Stopped at: Completed 27-01-PLAN.md
+Resume file: .planning/phases/27-graph-explorer-api/27-01-SUMMARY.md

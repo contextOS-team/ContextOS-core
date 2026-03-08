@@ -60,7 +60,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 24: LLM Extraction + Decision Extraction** - Semantic entity extraction via Gemini Flash batch pipeline with decision nodes as highest-value entity (completed 2026-03-07)
 - [x] **Phase 25: Graph-Enhanced Retrieval** - Graph traversal as third retrieval signal with depth-decay scoring blended into existing search (completed 2026-03-08)
 - [x] **Phase 26: Synthesis + Code-to-Discussion Linking** - Context pages enhanced with decision trails, relationship paths, people cross-references, and code provenance (completed 2026-03-08)
-- [ ] **Phase 27: Graph Explorer API** - Subgraph JSON endpoint for a ticket's graph neighborhood
+- [x] **Phase 27: Graph Explorer API** - Subgraph JSON endpoint for a ticket's graph neighborhood (completed 2026-03-08)
 
 ## Phase Details
 
@@ -280,7 +280,7 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 | 24. LLM Extraction + Decision Extraction | 3/3 | Complete    | 2026-03-07 | - |
 | 25. Graph-Enhanced Retrieval | 2/2 | Complete    | 2026-03-07 | - |
 | 26. Synthesis + Code-to-Discussion Linking | 2/2 | Complete    | 2026-03-08 | - |
-| 27. Graph Explorer API | v1.2 | 0/1 | Not started | - |
+| 27. Graph Explorer API | 1/1 | Complete   | 2026-03-08 | - |
 
 ### Phase 25: Graph-Enhanced Retrieval
 
