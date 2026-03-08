@@ -36,9 +36,9 @@ Requirements for the GraphRAG knowledge graph layer. Each maps to roadmap phases
 
 ### Synthesis
 
-- [ ] **SYNTH-01**: Context pages include decision trails showing what was decided, by whom, where discussed, and which tickets affected
-- [ ] **SYNTH-02**: Context pages include relationship paths explaining why things are connected
-- [ ] **SYNTH-03**: Context pages include cross-referenced people showing involvement across sources
+- [x] **SYNTH-01**: Context pages include decision trails showing what was decided, by whom, where discussed, and which tickets affected
+- [x] **SYNTH-02**: Context pages include relationship paths explaining why things are connected
+- [x] **SYNTH-03**: Context pages include cross-referenced people showing involvement across sources
 - [x] **SYNTH-04**: Synthesis gracefully degrades when no graph data exists for a ticket
 
 ### Decision Extraction
@@ -186,9 +186,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RETR-01 | Phase 25 | Complete |
 | RETR-02 | Phase 25 | Complete |
 | RETR-03 | Phase 25 | Complete |
-| SYNTH-01 | Phase 26 | Pending |
-| SYNTH-02 | Phase 26 | Pending |
-| SYNTH-03 | Phase 26 | Pending |
+| SYNTH-01 | Phase 26 | Complete |
+| SYNTH-02 | Phase 26 | Complete |
+| SYNTH-03 | Phase 26 | Complete |
 | SYNTH-04 | Phase 26 | Complete |
 | DECIDE-01 | Phase 24 | Complete |
 | DECIDE-02 | Phase 24 | Complete |

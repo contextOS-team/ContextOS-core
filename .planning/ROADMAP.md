@@ -273,7 +273,7 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 | 23. Identity Resolution | 2/2 | Complete    | 2026-03-07 | - |
 | 24. LLM Extraction + Decision Extraction | 3/3 | Complete    | 2026-03-07 | - |
 | 25. Graph-Enhanced Retrieval | 2/2 | Complete    | 2026-03-07 | - |
-| 26. Synthesis + Code-to-Discussion Linking | v1.2 | 0/2 | Not started | - |
+| 26. Synthesis + Code-to-Discussion Linking | 1/2 | In Progress|  | - |
 | 27. Graph Explorer API | v1.2 | 0/TBD | Not started | - |
 
 ### Phase 25: Graph-Enhanced Retrieval
