@@ -280,7 +280,7 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 | 24. LLM Extraction + Decision Extraction | 3/3 | Complete    | 2026-03-07 | - |
 | 25. Graph-Enhanced Retrieval | 2/2 | Complete    | 2026-03-07 | - |
 | 26. Synthesis + Code-to-Discussion Linking | 2/2 | Complete    | 2026-03-08 | - |
-| 27. Graph Explorer API | 1/1 | Complete   | 2026-03-08 | - |
+| 27. Graph Explorer API | 1/1 | Complete    | 2026-03-08 | - |
 
 ### Phase 25: Graph-Enhanced Retrieval
 
