@@ -352,3 +352,11 @@
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
+
+/* Auth input focus rings */
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px oklch(0.75 0.18 170 / 0.4), 0 0 12px oklch(0.75 0.18 170 / 0.15);
+  border-color: oklch(0.75 0.18 170 / 0.6);
+}

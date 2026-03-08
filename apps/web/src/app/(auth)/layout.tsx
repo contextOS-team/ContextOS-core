@@ -48,16 +48,16 @@ export default function AuthLayout({
       </div>
 
       {/* Right: Form panel on elevated surface with left divider */}
-      <div className="flex w-full lg:w-1/2 flex-col bg-overlay lg:border-l lg:border-border p-8">
+      <div className="flex w-full lg:w-1/2 flex-col bg-elevated lg:border-l lg:border-border p-8">
         <div className="flex flex-1 justify-center pt-24 lg:pt-32">
           <div className="w-full max-w-md">{children}</div>
         </div>
         <footer className="text-center text-xs text-muted-foreground/50 pb-6">
           &copy; {new Date().getFullYear()} ContextOS
           {' '}&middot;{' '}
-          <Link href="/login" className="hover:text-muted-foreground transition-colors">Terms</Link>
+          <Link href="/terms" className="hover:text-muted-foreground transition-colors">Terms</Link>
           {' '}&middot;{' '}
-          <Link href="/login" className="hover:text-muted-foreground transition-colors">Privacy</Link>
+          <Link href="/privacy" className="hover:text-muted-foreground transition-colors">Privacy</Link>
         </footer>
       </div>
     </div>

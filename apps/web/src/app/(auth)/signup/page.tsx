@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SocialButtons } from '@/components/auth/social-buttons'
 
 export default function SignupPage() {
   const router = useRouter()
@@ -94,6 +95,18 @@ export default function SignupPage() {
           {error}
         </div>
       )}
+
+      <SocialButtons />
+
+      {/* Separator */}
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-elevated px-2 text-muted-foreground">or</span>
+        </div>
+      </div>
 
       <form onSubmit={handleSignUp} className="space-y-4">
         <div className="space-y-2">
