@@ -195,7 +195,10 @@ Plans:
   1. find_related_content() returns results from graph traversal alongside explicit ref and hybrid search results -- three distinct retrieval signals
   2. Graph results are scored with depth decay (1-hop scores highest, decaying per hop) and blended with existing signal scores so graph evidence ranks naturally alongside text similarity
   3. Graph context passed to synthesis prompts is capped at a fixed token budget -- adding graph data never causes context overflow or degrades synthesis quality
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 27-01-PLAN.md -- TDD: Graph explorer GET endpoint with Pydantic response models, workspace-scoped auth, node cap, and 7 test behaviors
 
 ### Phase 26: Synthesis + Code-to-Discussion Linking
 **Goal**: Context pages visibly improve with decision trails, relationship paths, cross-referenced people, and code-to-discussion provenance -- the user-facing payoff of the entire graph layer
@@ -220,7 +223,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. GET request for a ticket's graph neighborhood returns a JSON response containing nodes (with entity types, names, properties) and edges (with relationship types, weights) for the surrounding subgraph
   2. The endpoint respects workspace scoping -- users can only see graph data for their own workspace
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 27-01-PLAN.md -- TDD: Graph explorer GET endpoint with Pydantic response models, workspace-scoped auth, node cap, and 7 test behaviors
 
 ## Coverage
 
@@ -274,7 +280,7 @@ Phase 22 (schema + regex) --> Phase 23 + Phase 24 (can parallelize after 22) -->
 | 24. LLM Extraction + Decision Extraction | 3/3 | Complete    | 2026-03-07 | - |
 | 25. Graph-Enhanced Retrieval | 2/2 | Complete    | 2026-03-07 | - |
 | 26. Synthesis + Code-to-Discussion Linking | 2/2 | Complete    | 2026-03-08 | - |
-| 27. Graph Explorer API | v1.2 | 0/TBD | Not started | - |
+| 27. Graph Explorer API | v1.2 | 0/1 | Not started | - |
 
 ### Phase 25: Graph-Enhanced Retrieval
 
