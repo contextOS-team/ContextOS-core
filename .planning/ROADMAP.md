@@ -145,50 +145,23 @@ Plans:
 - [ ] 20-01-PLAN.md — Database migration (api_keys table + RLS), API key model/service, backend endpoints (CRUD api-keys, PATCH workspace, GET members)
 - [ ] 20-02-PLAN.md — AlertDialog component, API client functions, settings page with General/API Keys/Team/Integrations sections
 
-## Coverage
+### Phase 21: Auth Redesign and Social OAuth
 
-### v1.1 Coverage
-
-**36/36 v1.1 requirements mapped.**
-
-| Category | Requirements | Phase |
-|----------|-------------|-------|
-| Design System | DS-01, DS-02, DS-03, DS-04, DS-05, DS-06, DS-07, DS-08, DS-09 (9) | Phase 15 |
-| Navigation | NAV-01 (1) | Phase 15 |
-| Auth Redesign | AUTH-01, AUTH-02 (2) | Phase 16 |
-| Activity Schema | ACT-04 (1) | Phase 16 |
-| Onboarding Infra | ONB-07, ONB-09 (2) | Phase 16 |
-| Onboarding Wizard | ONB-01, ONB-02, ONB-03, ONB-04, ONB-05, ONB-06, ONB-08 (7) | Phase 17 |
-| Activity Timeline | ACT-01, ACT-02, ACT-03 (3) | Phase 18 |
-| Context Feed | FEED-01, FEED-02, FEED-03, FEED-04, FEED-05, FEED-06 (6) | Phase 19 |
-| Dashboard Home | HOME-01 (1) | Phase 19 |
-| Settings & Team | SET-01, SET-02, SET-03, SET-04 (4) | Phase 20 |
-
-No orphaned requirements. No duplicate mappings.
-
-## Progress
-
-**Execution Order:**
-Phase 15 (tokens) --> Phase 16 (auth + schema) --> Phases 17, 18, 19 (can parallelize after 16) --> Phase 20 (independent after 15)
-
-| Phase | Milestone | Plans Complete | Status | Completed |
-|-------|-----------|----------------|--------|-----------|
-| 15. Dark Theme Token Foundation | 3/3 | Complete    | 2026-03-04 | - |
-| 16. Auth Redesign + Schema Foundation | 3/3 | Complete    | 2026-03-04 | - |
-| 17. Onboarding Wizard | 2/2 | Complete    | 2026-03-04 | - |
-| 18. Activity Timeline | 2/2 | Complete    | 2026-03-04 | - |
-| 19. Context Feed + Dashboard Home | 3/3 | Complete    | 2026-03-04 | - |
-| 20. Settings Page | 2/2 | Complete    | 2026-03-06 | - |
-
-### Phase 21: Auth redesign and social OAuth
-
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Add Google and GitHub social OAuth login, remove magic link authentication, polish auth form styling, add password reset flow, and refresh the brand panel -- making auth pages feel premium and offering fast social login
+**Requirements**: OAUTH-01, OAUTH-02, AUTH-POLISH-01, AUTH-POLISH-02, AUTH-POLISH-03
 **Depends on:** Phase 20
-**Plans:** 2/2 plans complete
+**Success Criteria** (what must be TRUE):
+  1. Google and GitHub social login buttons appear on both login and signup pages above the email/password form
+  2. Magic link authentication is completely removed
+  3. Social OAuth integrates with existing onboarding flow (new social users go through wizard)
+  4. Password reset flow works via "Forgot password?" link
+  5. Auth brand panel feels alive with animated elements and product-focused content
+  6. Input fields have teal-accented focus rings
+**Plans**: 2 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 21 to break down)
+- [ ] 21-01-PLAN.md — Social OAuth buttons component, provider SVG icons, rewrite login/signup pages (remove magic link, add social buttons, focus rings, fix footer)
+- [ ] 21-02-PLAN.md — Database migration for multi-provider name extraction, password reset page, brand panel refresh, visual verification
 
 ### Phase 22: Real-time Context Generation Progress UI
 
