@@ -46,12 +46,12 @@ SYNTHESIS_TEMPLATE = """\
 Based on the ticket and all related content above, produce a context page with these sections:
 
 1. **Summary** — 2-3 sentence overview of what this ticket is about and why it matters
-2. **Background & Decisions** — Key decisions, discussions, and context from Slack, meetings, and comments
+2. **Background & Decisions** — Key decisions, discussions, and context from Slack, meetings, and comments. If the Graph Connections section above contains [DECISION] items, weave each into the narrative as a decision trail: state what was decided, who decided it (citing the person), where it was discussed (citing the source like Slack thread name or meeting title), and which tickets it affects. Include the confidence level (e.g., "confirmed" for high confidence, "likely decided" for lower). Always cite the source so engineers can verify. Show all decisions regardless of confidence.
 3. **Requirements** — What needs to be built or fixed, extracted from the ticket and discussions
-4. **Related Work** — PRs, linked tickets, and other relevant engineering artifacts
-5. **Relevant Code** — Code snippets from across the codebase that are relevant to this ticket. Include function signatures, class definitions, and route handlers with file paths and repo names. This helps engineers understand existing implementations even from repos they have never worked in.
+4. **Related Work** — PRs, linked tickets, and other relevant engineering artifacts. If the Graph Connections section above shows relationships between items, explain WHY they are connected in natural language (e.g., "This PR was discussed in Slack thread #deploy-v2 by @alex, who also authored the spec in Notion") rather than listing raw connections. Focus on the most important relationship paths and skip mechanical hops.
+5. **Relevant Code** — Code snippets from across the codebase that are relevant to this ticket. Include function signatures, class definitions, and route handlers with file paths and repo names. This helps engineers understand existing implementations even from repos they have never worked in. If any code snippets have associated discussion provenance (noted as "Discussed in:" annotations in the Related Content), include that context so engineers know where this code was talked about.
 6. **Open Questions** — Unresolved questions or ambiguities that need clarification
-7. **Key People** — Who is involved and their roles (assignee, reviewers, participants in discussions)"""
+7. **Key People** — Who is involved and their roles (assignee, reviewers, participants in discussions). If graph data shows a person's involvement across multiple sources (e.g., authored ticket, discussed in Slack, reviewed PR), list their cross-source involvement to show the full picture of their engagement."""
 
 
 def _format_decision_node(name: str, properties: dict) -> str:
