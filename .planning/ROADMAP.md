@@ -231,12 +231,20 @@ Plans:
 ### Phase 26: Telegram Chat Integration
 
 **Goal:** Add Telegram as a chat source alongside Slack -- Telegram Bot API integration, group/channel message ingestion, message-to-ticket linking, and Telegram source in onboarding wizard sources grid
-**Requirements**: TBD
+**Requirements**: TG-01, TG-02, TG-03, TG-04, TG-05, TG-06, TG-07
 **Depends on:** Phase 23 (parallel with 24, 25)
-**Plans:** 0 plans
+**Success Criteria** (what must be TRUE):
+  1. User can connect a Telegram bot via token entry (Fathom-style, no OAuth) from onboarding wizard and settings page
+  2. Webhook endpoint receives Telegram updates with secret_token verification and stores messages
+  3. Telegram messages appear in the linking engine for message-to-ticket matching
+  4. Integration status endpoint includes Telegram
+  5. Onboarding sources grid and settings integrations section show Telegram card
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 26 to break down)
+- [ ] 26-01-PLAN.md — Database migration (telegram_messages table, CHECK constraint updates), TelegramMessage model, Provider enum, config, bot service, event processing
+- [ ] 26-02-PLAN.md — Telegram router (connect/disconnect/webhook endpoints), main.py registration, integrations status update, linking engine integration
+- [ ] 26-03-PLAN.md — Frontend: TelegramLogo SVG, API client functions, onboarding wizard card, settings page card with bot token form
 
 ### Phase 27: Dashboard Homepage Intelligence Widgets
 
