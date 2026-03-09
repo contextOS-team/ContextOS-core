@@ -29,6 +29,7 @@ from sqlmodel import select
 from src.models.integration import Provider, WorkspaceIntegration
 from src.models.slack import SlackMessage
 from src.services import embedding
+from src.services.slack_channels import resolve_channel_name
 
 logger = logging.getLogger(__name__)
 
@@ -227,12 +228,15 @@ async def _handle_message(
     # Convert Slack timestamp to datetime
     slack_created_at = _ts_to_datetime(slack_ts)
 
+    # Resolve channel name from cached channel list
+    channel_name = await resolve_channel_name(session, workspace_id, channel_id)
+
     # Upsert using PostgreSQL INSERT ... ON CONFLICT DO UPDATE
     values = {
         "workspace_id": workspace_id,
         "slack_ts": slack_ts,
         "channel_id": channel_id,
-        "channel_name": None,  # Can be enriched later
+        "channel_name": channel_name,
         "user_id": event.get("user"),
         "user_name": None,  # Can be enriched later via users.info
         "text": event.get("text", ""),
@@ -248,6 +252,7 @@ async def _handle_message(
         constraint="uq_slack_msg",
         set_={
             "text": stmt.excluded.text,
+            "channel_name": stmt.excluded.channel_name,
             "user_id": stmt.excluded.user_id,
             "thread_ts": stmt.excluded.thread_ts,
             "parent_ts": stmt.excluded.parent_ts,
@@ -379,6 +384,6 @@ def _ts_to_datetime(slack_ts: str) -> datetime | None:
     """
     try:
         epoch = float(slack_ts)
-        return datetime.fromtimestamp(epoch, tz=timezone.utc)
+        return datetime.fromtimestamp(epoch, tz=timezone.utc).replace(tzinfo=None)
     except (ValueError, TypeError, OSError):
         return None

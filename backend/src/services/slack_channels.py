@@ -125,6 +125,28 @@ async def list_channels(
     return all_channels
 
 
+async def resolve_channel_name(
+    session: AsyncSession,
+    workspace_id: UUID,
+    channel_id: str,
+) -> str | None:
+    """Look up a channel name from the cached available_channels list.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to look up.
+        channel_id: Slack channel ID to resolve.
+
+    Returns:
+        Channel name string, or None if not found in cache.
+    """
+    channels = await get_cached_channels(session, workspace_id)
+    for ch in channels:
+        if ch.get("id") == channel_id:
+            return ch.get("name")
+    return None
+
+
 async def get_cached_channels(
     session: AsyncSession,
     workspace_id: UUID,
