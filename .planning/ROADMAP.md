@@ -199,6 +199,55 @@ Plans:
 - [ ] 23-01-PLAN.md — Install Remotion, create constants/shared components, build 3 scene compositions and root HeroComposition
 - [ ] 23-02-PLAN.md — Create RemotionPlayer wrapper, integrate into Hero.tsx replacing video, visual verification checkpoint
 
+### Phase 24: GitLab Integration
+
+**Goal:** Add GitLab as an alternative code hosting integration alongside GitHub -- GitLab OAuth, MR/review ingestion, MR-to-Linear linking, webhook sync, and GitLab source in onboarding wizard sources grid
+**Requirements**: TBD
+**Depends on:** Phase 23
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 24 to break down)
+
+### Phase 25: Jira Integration
+
+**Goal:** Add Jira as an alternative task tracker alongside Linear -- Jira OAuth 2.0 (3LO), issue sync via JQL with token-based pagination, Jira-to-context linking, webhook updates with 30-day refresh, and Jira source in onboarding wizard sources grid
+**Requirements**: JIRA-01, JIRA-02, JIRA-03, JIRA-04, JIRA-05, JIRA-06
+**Depends on:** Phase 23 (parallel with 24, 26)
+**Success Criteria** (what must be TRUE):
+  1. Jira OAuth connect/disconnect flow works via auth.atlassian.com with cloudId resolution
+  2. Jira issues sync via /search/jql endpoint with nextPageToken pagination
+  3. Jira issues can be linked to context pages via jira_issue_id FK
+  4. Jira webhooks process issue/comment CRUD events with HMAC verification
+  5. Jira appears as a source in onboarding wizard step 3 and settings integrations
+  6. Integration status API includes Jira connection state
+**Plans**: 3 plans
+
+Plans:
+- [ ] 25-01-PLAN.md — Database migration (jira_issues/jira_comments tables, constraint updates, context_pages FK), SQLModel classes, Provider enum, Settings config
+- [ ] 25-02-PLAN.md — Backend services (OAuth 3LO with cloudId, JQL sync, webhook handler) and router with /api/jira/* endpoints
+- [ ] 25-03-PLAN.md — Frontend: JiraLogo icon, API functions, onboarding source card, settings integration card
+
+### Phase 26: Telegram Chat Integration
+
+**Goal:** Add Telegram as a chat source alongside Slack -- Telegram Bot API integration, group/channel message ingestion, message-to-ticket linking, and Telegram source in onboarding wizard sources grid
+**Requirements**: TBD
+**Depends on:** Phase 23 (parallel with 24, 25)
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 26 to break down)
+
+### Phase 27: Dashboard Homepage Intelligence Widgets
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 26
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 27 to break down)
+
 ---
 *Roadmap created: 2026-02-24*
 *v1.1 milestone added: 2026-03-04*
