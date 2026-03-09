@@ -202,12 +202,21 @@ Plans:
 ### Phase 24: GitLab Integration
 
 **Goal:** Add GitLab as an alternative code hosting integration alongside GitHub -- GitLab OAuth, MR/review ingestion, MR-to-Linear linking, webhook sync, and GitLab source in onboarding wizard sources grid
-**Requirements**: TBD
+**Requirements**: GL-01, GL-02, GL-03, GL-04, GL-05, GL-06, GL-07, GL-08
 **Depends on:** Phase 23
-**Plans:** 0 plans
+**Success Criteria** (what must be TRUE):
+  1. GitLab OAuth connect/disconnect flow works with standard OAuth2 authorization code + refresh tokens
+  2. GitLab merge requests and reviews sync from selected projects into gitlab_merge_requests/gitlab_reviews tables
+  3. MRs are linked to Linear tickets via source branch name parsing
+  4. GitLab webhooks process MR and note events with X-Gitlab-Token verification
+  5. GitLab appears as a source in onboarding wizard step 3 and settings integrations
+  6. Users can select which GitLab projects to monitor
+**Plans**: 3 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 24 to break down)
+- [ ] 24-01-PLAN.md — Database migration (gitlab_merge_requests/gitlab_reviews tables, constraint updates), SQLModel classes, Provider enum, Settings config
+- [ ] 24-02-PLAN.md — Backend services (OAuth2, MR sync, webhook handler, project selection, Linear linking) and router with /api/gitlab/* endpoints
+- [ ] 24-03-PLAN.md — Frontend: GitLabLogo icon, API functions, onboarding source card, settings integration card
 
 ### Phase 25: Jira Integration
 
