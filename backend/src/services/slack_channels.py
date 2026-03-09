@@ -188,11 +188,11 @@ async def save_channel_selection(
     workspace_id: UUID,
     channel_ids: list[str],
 ) -> None:
-    """Save the user's channel selection to workspace_integrations.config.
+    """Save the user's channel selection and auto-join selected channels.
 
-    Updates the 'selected_channels' key in the JSONB config column.
-    Only messages from selected channels will be ingested by the
-    event processor.
+    Updates the 'selected_channels' key in the JSONB config column,
+    then calls conversations.join for each selected public channel
+    so the bot receives message events.
 
     Args:
         session: Async database session.
@@ -213,6 +213,27 @@ async def save_channel_selection(
     config["selected_channels"] = channel_ids
     integration.config = config
     await session.commit()
+
+    # Auto-join selected channels so the bot receives message events
+    try:
+        bot_token = await get_bot_token(session, workspace_id)
+        async with httpx.AsyncClient() as client:
+            for channel_id in channel_ids:
+                resp = await client.post(
+                    f"{SLACK_API_BASE}/conversations.join",
+                    headers={"Authorization": f"Bearer {bot_token}"},
+                    json={"channel": channel_id},
+                )
+                data = resp.json()
+                if data.get("ok"):
+                    logger.info("Bot joined channel %s", channel_id)
+                elif data.get("error") != "already_in_channel":
+                    logger.warning(
+                        "Failed to join channel %s: %s",
+                        channel_id, data.get("error"),
+                    )
+    except Exception:
+        logger.exception("Auto-join channels failed for workspace %s", workspace_id)
 
 
 async def is_channel_monitored(
