@@ -24,6 +24,7 @@ from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
 from src.models.telegram import TelegramMessage
+from src.models.jira import JiraComment, JiraIssue
 from src.models.ticket import LinearComment, LinearTicket
 from src.utils.hashing import compute_content_hash
 
@@ -87,6 +88,14 @@ SOURCE_TYPE_MAP: dict[str, tuple[type, callable]] = {
     "telegram_message": (
         TelegramMessage,
         lambda r: r.text,
+    ),
+    "jira_issue": (
+        JiraIssue,
+        lambda r: f"{r.jira_key}: {r.summary}\n\n{r.description or ''}".strip(),
+    ),
+    "jira_comment": (
+        JiraComment,
+        lambda r: r.body or "",
     ),
 }
 

@@ -22,6 +22,7 @@ from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
 from src.models.telegram import TelegramMessage
+from src.models.jira import JiraComment, JiraIssue
 from src.models.ticket import LinearComment, LinearTicket
 from src.services.embedding import generate_embedding
 
@@ -274,6 +275,14 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
             r.text[:200],
         ),
     ),
+    "jira_issue": (
+        JiraIssue,
+        lambda r: (f"{r.jira_key}: {r.summary}", (r.description or "")[:200]),
+    ),
+    "jira_comment": (
+        JiraComment,
+        lambda r: (f"Jira comment by {r.author_name or 'Unknown'}", (r.body or "")[:200]),
+    ),
 }
 
 
@@ -347,6 +356,7 @@ SOURCE_TYPE_MAP = {
     "fathom": ["meeting_transcript", "meeting_segment"],
     "linear": ["linear_comment"],
     "telegram": ["telegram_message"],
+    "jira": ["jira_issue", "jira_comment"],
 }
 
 
