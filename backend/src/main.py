@@ -21,6 +21,7 @@ from src.routers.github import router as github_router
 from src.routers.gitlab import router as gitlab_router
 from src.routers.health import router as health_router
 from src.routers.notion import router as notion_router
+from src.routers.telegram import router as telegram_router
 from src.routers.integrations import router as integrations_router
 from src.routers.linear import router as linear_router
 from src.routers.slack import router as slack_router
@@ -165,6 +166,7 @@ app.include_router(fathom_router)
 app.include_router(github_router)
 app.include_router(gitlab_router)
 app.include_router(notion_router)
+app.include_router(telegram_router)
 app.include_router(context_router)
 app.include_router(workspaces_router)
 app.include_router(webhooks_router)
