@@ -250,7 +250,8 @@ async def search_jira_issues(
     """
     access_token, cloud_id = await get_valid_token(session, workspace_id, settings)
 
-    jql = f'text ~ "{query}" ORDER BY updated DESC'
+    safe_query = query.replace('\\', '\\\\').replace('"', '\\"')
+    jql = f'text ~ "{safe_query}" ORDER BY updated DESC'
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
