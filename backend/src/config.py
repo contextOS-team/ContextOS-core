@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
 
+    # Telegram integration webhook secret
+    # Per-workspace bot tokens stored in Vault. This secret verifies webhook authenticity.
+    TELEGRAM_WEBHOOK_SECRET: str = ""
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 
