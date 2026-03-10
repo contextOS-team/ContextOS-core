@@ -67,6 +67,7 @@ export interface IntegrationStatusResponse {
   gitlab: ProviderStatus
   notion: ProviderStatus
   telegram: ProviderStatus
+  jira: ProviderStatus
 }
 
 export function getIntegrationStatus(): Promise<IntegrationStatusResponse> {
@@ -349,6 +350,20 @@ export function connectTelegram(
 
 export function disconnectTelegram(): Promise<{ status: string }> {
   return apiFetch<{ status: string }>('/api/telegram/disconnect', {
+    method: 'POST',
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Jira
+// ---------------------------------------------------------------------------
+
+export function connectJira(): Promise<{ authorization_url: string }> {
+  return apiFetch<{ authorization_url: string }>('/api/jira/connect')
+}
+
+export function disconnectJira(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/jira/disconnect', {
     method: 'POST',
   })
 }

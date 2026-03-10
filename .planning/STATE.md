@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 
 ## Current Position
 
-Phase: 24 of 27 (GitLab Integration)
-Plan: 3 of 3 (24-03 complete)
+Phase: 26 of 27 (Telegram Chat Integration)
+Plan: 3 of 3 (26-03 complete)
 Status: Phase Complete
-Last activity: 2026-03-10 -- Completed Phase 24 Plan 03 (Frontend Integration)
+Last activity: 2026-03-10 -- Completed Phase 26 (Telegram Chat Integration)
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -80,6 +80,9 @@ Progress: [█████████░] 88%
 | Phase 24 P01 | 2min | 2 tasks | 4 files |
 | Phase 24 P02 | 5min | 2 tasks | 8 files |
 | Phase 24 P03 | 2min | 2 tasks | 4 files |
+| Phase 25 P01 | 3min | 2 tasks | 4 files |
+| Phase 25 P02 | 5min | 2 tasks | 6 files |
+| Phase 25 P03 | 3min | 2 tasks | 5 files |
 | Phase 26 P01 | 3min | 2 tasks | 7 files |
 | Phase 26 P02 | 4min | 2 tasks | 7 files |
 | Phase 26 P03 | 4min | 2 tasks | 4 files |
@@ -151,6 +154,14 @@ Recent decisions affecting current work:
 - [Phase 24]: Reuse github_linking extract_linear_issue_id -- branch name patterns are provider-agnostic
 - [Phase 24]: Numeric project IDs for selection -- avoids URL encoding issues with paths
 - [Phase 24]: GitLab uses authorization_url pattern (like Slack/Linear), not installation_url (like GitHub)
+- [Phase 25]: Embeddings source_type CHECK constraint already removed in migration 00017 -- no Jira-specific update needed
+- [Phase 25]: JiraComment.body nullable (unlike LinearComment) -- Jira allows empty comments with attachments
+- [Phase 25]: Jira token exchange uses JSON body (not form data) -- critical Atlassian API difference
+- [Phase 25]: Jira sync uses /search/jql POST with nextPageToken pagination (not deprecated startAt)
+- [Phase 25]: ADF text extraction helper converts Jira API v3 document format to plain text
+- [Phase 25]: get_valid_token returns (access_token, cloud_id) tuple since cloud_id needed for all Jira API calls
+- [Phase 25]: Added Jira to dashboard page INTEGRATIONS array for quick-connect from homepage
+- [Phase 25]: Jira positioned as 6th integration across all UI surfaces, updated counts from /5 to /6
 - [Phase 26]: Followed SlackMessage pattern for TelegramMessage (no BaseModel, no updated_at)
 - [Phase 26]: Webhook endpoint uses hmac.compare_digest for X-Telegram-Bot-Api-Secret-Token verification
 - [Phase 26]: Background task pattern for webhook processing (same as Fathom _poll_background)

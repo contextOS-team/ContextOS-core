@@ -12,6 +12,7 @@ import {
   GitHubLogo,
   FathomLogo,
   NotionLogo,
+  JiraLogo,
 } from '@/components/icons/brand-logos'
 import {
   getIntegrationStatus,
@@ -19,6 +20,7 @@ import {
   connectSlack,
   connectGithub,
   connectNotion,
+  connectJira,
   type IntegrationStatusResponse,
 } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -65,6 +67,14 @@ const INTEGRATIONS = [
     brandColor: 'bg-foreground',
     brandBorder: 'border-l-foreground',
     logoClass: 'text-foreground dark:text-foreground',
+  },
+  {
+    key: 'jira' as const,
+    name: 'Jira',
+    logo: JiraLogo,
+    brandColor: 'bg-blue-600',
+    brandBorder: 'border-l-blue-600',
+    logoClass: '',
   },
 ]
 
@@ -125,6 +135,9 @@ export default function DashboardPage() {
           window.location.href = installation_url
         } else if (key === 'notion') {
           const { authorization_url } = await connectNotion()
+          window.location.href = authorization_url
+        } else if (key === 'jira') {
+          const { authorization_url } = await connectJira()
           window.location.href = authorization_url
         } else {
           router.push('/dashboard/settings?tab=integrations')
@@ -198,7 +211,7 @@ export default function DashboardPage() {
           {getGreeting()}{firstName ? `, ${firstName}` : ''}
         </p>
         <span className="text-xs text-muted-foreground font-mono tabular-nums">
-          {connectedCount}/5 connected
+          {connectedCount}/6 connected
         </span>
       </div>
 

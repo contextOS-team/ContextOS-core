@@ -49,6 +49,8 @@ import {
   disconnectGitlab,
   connectNotion,
   disconnectNotion,
+  connectJira,
+  disconnectJira,
   resyncNotion,
   getNotionSyncStatus,
   type WorkspaceResponse,
@@ -66,6 +68,7 @@ import {
   FathomLogo,
   NotionLogo,
   TelegramLogo,
+  JiraLogo,
 } from '@/components/icons/brand-logos'
 import { IntegrationCard } from '../integrations/integration-card'
 import { SlackChannels } from '../integrations/slack-channels'
@@ -520,14 +523,14 @@ function IntegrationsTab() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    for (const provider of ['github', 'gitlab', 'notion'] as const) {
+    for (const provider of ['github', 'gitlab', 'notion', 'jira'] as const) {
       const status = searchParams.get(provider)
       if (status === 'connected') {
         setError(null)
         window.history.replaceState({}, '', '/dashboard/settings?tab=integrations')
       } else if (status === 'error') {
         const reason = searchParams.get('reason') || 'unknown'
-        const label = provider === 'github' ? 'GitHub' : provider === 'gitlab' ? 'GitLab' : 'Notion'
+        const label = provider === 'github' ? 'GitHub' : provider === 'gitlab' ? 'GitLab' : provider === 'jira' ? 'Jira' : 'Notion'
         const messages: Record<string, string> = {
           invalid_state: `${label} connection failed: invalid or expired session.`,
           callback_failed: `${label} connection failed. Please try again.`,
@@ -594,6 +597,8 @@ function IntegrationsTab() {
   const handleDisconnectGitlab = makeDisconnectHandler(disconnectGitlab, 'GitLab')
   const handleConnectNotion = makeConnectHandler(connectNotion, 'authorization_url')
   const handleDisconnectNotion = makeDisconnectHandler(disconnectNotion, 'Notion')
+  const handleConnectJira = makeConnectHandler(connectJira, 'authorization_url')
+  const handleDisconnectJira = makeDisconnectHandler(disconnectJira, 'Jira')
 
   const [isResyncing, setIsResyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<number | null>(null)
@@ -681,8 +686,9 @@ function IntegrationsTab() {
   const gitlab = statuses?.gitlab ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const notion = statuses?.notion ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const telegram = statuses?.telegram ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
+  const jira = statuses?.jira ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
 
-  const connectedCount = [linear, slack, fathom, github, gitlab, notion, telegram].filter(
+  const connectedCount = [linear, slack, fathom, github, gitlab, notion, telegram, jira].filter(
     (s) => s.status === 'connected'
   ).length
 
@@ -694,7 +700,7 @@ function IntegrationsTab() {
           Manage your tool connections
         </p>
         <span className="text-xs font-mono text-muted-foreground/60">
-          {connectedCount}/7
+          {connectedCount}/8
         </span>
       </div>
 
@@ -799,6 +805,15 @@ function IntegrationsTab() {
             connectedAt={gitlab.connected_at}
             onConnect={handleConnectGitlab}
             onDisconnect={handleDisconnectGitlab}
+          />
+          <IntegrationCard
+            name="Jira"
+            icon={<JiraLogo width={20} height={20} />}
+            status={jira.status}
+            externalName={jira.external_name}
+            connectedAt={jira.connected_at}
+            onConnect={handleConnectJira}
+            onDisconnect={handleDisconnectJira}
           />
           <IntegrationCard
             name="Telegram"
