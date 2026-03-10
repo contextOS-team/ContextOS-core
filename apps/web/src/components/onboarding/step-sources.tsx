@@ -8,6 +8,7 @@ import {
   connectGithub,
   connectNotion,
   connectFathom,
+  connectJira,
   type IntegrationStatusResponse,
 } from '@/lib/api'
 import {
@@ -15,6 +16,7 @@ import {
   GitHubLogo,
   NotionLogo,
   FathomLogo,
+  JiraLogo,
 } from '@/components/icons/brand-logos'
 import { SourceCard } from './source-card'
 import { toast } from 'sonner'
@@ -36,6 +38,18 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
   const githubConnected = integrations?.github.status === 'connected'
   const notionConnected = integrations?.notion.status === 'connected'
   const fathomConnected = integrations?.fathom.status === 'connected'
+  const jiraConnected = integrations?.jira?.status === 'connected'
+
+  async function handleJira() {
+    setConnecting('jira')
+    try {
+      const { authorization_url } = await connectJira()
+      window.location.href = authorization_url
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to connect Jira')
+      setConnecting(null)
+    }
+  }
 
   async function handleSlack() {
     setConnecting('slack')
@@ -129,6 +143,13 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
           logo={<FathomLogo width={32} height={32} />}
           connected={fathomConnected}
           onClick={handleFathomClick}
+        />
+        <SourceCard
+          name="Jira"
+          logo={<JiraLogo width={32} height={32} />}
+          connected={jiraConnected}
+          onClick={handleJira}
+          disabled={connecting === 'jira'}
         />
       </div>
 

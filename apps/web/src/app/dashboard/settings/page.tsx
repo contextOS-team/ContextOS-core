@@ -45,6 +45,8 @@ import {
   disconnectGithub,
   connectNotion,
   disconnectNotion,
+  connectJira,
+  disconnectJira,
   resyncNotion,
   getNotionSyncStatus,
   type WorkspaceResponse,
@@ -60,6 +62,7 @@ import {
   GitHubLogo,
   FathomLogo,
   NotionLogo,
+  JiraLogo,
 } from '@/components/icons/brand-logos'
 import { IntegrationCard } from '../integrations/integration-card'
 import { SlackChannels } from '../integrations/slack-channels'
@@ -445,14 +448,14 @@ function IntegrationsTab() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    for (const provider of ['github', 'notion'] as const) {
+    for (const provider of ['github', 'notion', 'jira'] as const) {
       const status = searchParams.get(provider)
       if (status === 'connected') {
         setError(null)
         window.history.replaceState({}, '', '/dashboard/settings?tab=integrations')
       } else if (status === 'error') {
         const reason = searchParams.get('reason') || 'unknown'
-        const label = provider === 'github' ? 'GitHub' : 'Notion'
+        const label = provider === 'github' ? 'GitHub' : provider === 'jira' ? 'Jira' : 'Notion'
         const messages: Record<string, string> = {
           invalid_state: `${label} connection failed: invalid or expired session.`,
           callback_failed: `${label} connection failed. Please try again.`,
@@ -516,6 +519,8 @@ function IntegrationsTab() {
   const handleDisconnectGithub = makeDisconnectHandler(disconnectGithub, 'GitHub')
   const handleConnectNotion = makeConnectHandler(connectNotion, 'authorization_url')
   const handleDisconnectNotion = makeDisconnectHandler(disconnectNotion, 'Notion')
+  const handleConnectJira = makeConnectHandler(connectJira, 'authorization_url')
+  const handleDisconnectJira = makeDisconnectHandler(disconnectJira, 'Jira')
 
   const [isResyncing, setIsResyncing] = useState(false)
   const [syncProgress, setSyncProgress] = useState<number | null>(null)
@@ -582,7 +587,7 @@ function IntegrationsTab() {
   if (isLoading) {
     return (
       <div className="grid gap-3 md:grid-cols-2 items-start">
-        {[1, 2, 3, 4, 5].map((i) => (
+        {[1, 2, 3, 4, 5, 6].map((i) => (
           <div key={i} className="rounded-2xl border border-border p-4 space-y-3">
             <div className="flex items-center gap-3">
               <Skeleton className="h-5 w-5 rounded shrink-0" />
@@ -601,8 +606,9 @@ function IntegrationsTab() {
   const fathom = statuses?.fathom ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const github = statuses?.github ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const notion = statuses?.notion ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
+  const jira = statuses?.jira ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
 
-  const connectedCount = [linear, slack, fathom, github, notion].filter(
+  const connectedCount = [linear, slack, fathom, github, notion, jira].filter(
     (s) => s.status === 'connected'
   ).length
 
@@ -614,7 +620,7 @@ function IntegrationsTab() {
           Manage your tool connections
         </p>
         <span className="text-xs font-mono text-muted-foreground/60">
-          {connectedCount}/5
+          {connectedCount}/6
         </span>
       </div>
 
@@ -711,6 +717,15 @@ function IntegrationsTab() {
           >
             <GithubRepos onSaved={fetchStatuses} />
           </IntegrationCard>
+          <IntegrationCard
+            name="Jira"
+            icon={<JiraLogo width={20} height={20} />}
+            status={jira.status}
+            externalName={jira.external_name}
+            connectedAt={jira.connected_at}
+            onConnect={handleConnectJira}
+            onDisconnect={handleDisconnectJira}
+          />
         </div>
       </div>
     </div>
