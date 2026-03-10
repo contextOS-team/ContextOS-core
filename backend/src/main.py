@@ -18,6 +18,7 @@ from src.observability.sentry import SentryContextMiddleware, init_sentry
 from src.routers.auth import router as auth_router
 from src.routers.fathom import router as fathom_router
 from src.routers.github import router as github_router
+from src.routers.gitlab import router as gitlab_router
 from src.routers.health import router as health_router
 from src.routers.notion import router as notion_router
 from src.routers.integrations import router as integrations_router
@@ -162,6 +163,7 @@ app.include_router(linear_router)
 app.include_router(slack_router)
 app.include_router(fathom_router)
 app.include_router(github_router)
+app.include_router(gitlab_router)
 app.include_router(notion_router)
 app.include_router(context_router)
 app.include_router(workspaces_router)
