@@ -7,6 +7,7 @@ directly from Telegram (no auth) and verifies via secret_token header.
 
 import hmac
 import logging
+import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,12 +95,12 @@ async def webhook(
 
     payload = await request.json()
 
-    # Dispatch to background for fast response
-    background_tasks.add_task(_process_update_background, payload, workspace_id)
+    # Process synchronously for debugging (TODO: move back to background_tasks)
+    await _process_update_background(payload, workspace_id)
     return {"status": "ok"}
 
 
-async def _process_update_background(payload: dict, workspace_id: str) -> None:
+async def _process_update_background(payload: dict, workspace_id: str | uuid.UUID) -> None:
     """Process a Telegram update in the background.
 
     Creates its own database session for isolation (same pattern as
@@ -108,12 +109,14 @@ async def _process_update_background(payload: dict, workspace_id: str) -> None:
     from src.db import async_session
     from src.services.telegram_events import process_telegram_update
 
+    ws_uuid = workspace_id if isinstance(workspace_id, uuid.UUID) else uuid.UUID(workspace_id)
     async with async_session() as session:
         try:
-            await process_telegram_update(session, workspace_id, payload)
+            await process_telegram_update(session, ws_uuid, payload)
         except Exception:
             logger.exception(
-                "Error processing Telegram update for workspace %s",
+                "telegram_bg_error workspace=%s payload_keys=%s",
                 workspace_id,
+                list(payload.keys()),
             )
             await session.rollback()
