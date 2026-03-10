@@ -8,6 +8,7 @@ import {
   connectGithub,
   connectNotion,
   connectFathom,
+  connectTelegram,
   type IntegrationStatusResponse,
 } from '@/lib/api'
 import {
@@ -15,6 +16,7 @@ import {
   GitHubLogo,
   NotionLogo,
   FathomLogo,
+  TelegramLogo,
 } from '@/components/icons/brand-logos'
 import { SourceCard } from './source-card'
 import { toast } from 'sonner'
@@ -31,11 +33,15 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
   const [showFathomForm, setShowFathomForm] = useState(false)
   const [fathomKey, setFathomKey] = useState('')
   const [fathomLoading, setFathomLoading] = useState(false)
+  const [showTelegramForm, setShowTelegramForm] = useState(false)
+  const [telegramToken, setTelegramToken] = useState('')
+  const [telegramLoading, setTelegramLoading] = useState(false)
 
   const slackConnected = integrations?.slack.status === 'connected'
   const githubConnected = integrations?.github.status === 'connected'
   const notionConnected = integrations?.notion.status === 'connected'
   const fathomConnected = integrations?.fathom.status === 'connected'
+  const telegramConnected = integrations?.telegram.status === 'connected'
 
   async function handleSlack() {
     setConnecting('slack')
@@ -73,6 +79,29 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
   function handleFathomClick() {
     if (fathomConnected) return
     setShowFathomForm(true)
+  }
+
+  function handleTelegramClick() {
+    if (telegramConnected) return
+    setShowTelegramForm(true)
+  }
+
+  async function handleTelegramSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!telegramToken.trim()) return
+
+    setTelegramLoading(true)
+    try {
+      await connectTelegram(telegramToken.trim())
+      setShowTelegramForm(false)
+      setTelegramToken('')
+      onSourceConnected()
+      toast.success('Telegram connected')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to connect Telegram')
+    } finally {
+      setTelegramLoading(false)
+    }
   }
 
   async function handleFathomSubmit(e: React.FormEvent) {
@@ -130,6 +159,12 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
           connected={fathomConnected}
           onClick={handleFathomClick}
         />
+        <SourceCard
+          name="Telegram"
+          logo={<TelegramLogo width={32} height={32} />}
+          connected={telegramConnected}
+          onClick={handleTelegramClick}
+        />
       </div>
 
       {showFathomForm && !fathomConnected && (
@@ -175,6 +210,49 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
               onClick={() => {
                 setShowFathomForm(false)
                 setFathomKey('')
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {showTelegramForm && !telegramConnected && (
+        <form onSubmit={handleTelegramSubmit} className="space-y-3 rounded-lg border border-border p-4">
+          <div className="space-y-1.5">
+            <label htmlFor="telegram-bot-token-onboarding" className="text-xs font-medium">
+              Telegram Bot Token
+            </label>
+            <Input
+              id="telegram-bot-token-onboarding"
+              type="password"
+              placeholder="Enter your bot token from @BotFather"
+              value={telegramToken}
+              onChange={(e) => setTelegramToken(e.target.value)}
+              className="h-8 text-xs"
+              autoComplete="off"
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">
+              Create a bot via @BotFather on Telegram. Disable Group Privacy, then paste the token here.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              type="submit"
+              disabled={telegramLoading || !telegramToken.trim()}
+            >
+              {telegramLoading ? 'Connecting...' : 'Connect'}
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setShowTelegramForm(false)
+                setTelegramToken('')
               }}
             >
               Cancel

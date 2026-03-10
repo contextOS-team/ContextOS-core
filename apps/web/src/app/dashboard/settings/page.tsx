@@ -41,6 +41,8 @@ import {
   disconnectSlack,
   connectFathom,
   disconnectFathom,
+  connectTelegram,
+  disconnectTelegram,
   connectGithub,
   disconnectGithub,
   connectNotion,
@@ -60,6 +62,7 @@ import {
   GitHubLogo,
   FathomLogo,
   NotionLogo,
+  TelegramLogo,
 } from '@/components/icons/brand-logos'
 import { IntegrationCard } from '../integrations/integration-card'
 import { SlackChannels } from '../integrations/slack-channels'
@@ -435,6 +438,75 @@ function TeamTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Telegram Connect Form
+// ---------------------------------------------------------------------------
+
+function TelegramConnect({ onConnected }: { onConnected?: () => void }) {
+  const [token, setToken] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+
+    if (!token.trim()) {
+      setError('Bot token is required')
+      return
+    }
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      await connectTelegram(token.trim())
+      setToken('')
+      onConnected?.()
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to connect. Check your bot token.'
+      )
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <div className="space-y-1.5">
+        <Label htmlFor="telegram-bot-token" className="text-xs">
+          Bot Token
+        </Label>
+        <Input
+          id="telegram-bot-token"
+          type="password"
+          placeholder="Bot token from @BotFather"
+          value={token}
+          onChange={(e) => {
+            setToken(e.target.value)
+            setError(null)
+          }}
+          className="h-8 text-xs"
+          autoComplete="off"
+        />
+        <p className="text-xs text-muted-foreground">
+          Create a bot via @BotFather on Telegram. Disable Group Privacy, then paste the token here.
+        </p>
+      </div>
+
+      {error && (
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {error}
+        </p>
+      )}
+
+      <Button size="sm" type="submit" disabled={isLoading || !token.trim()}>
+        {isLoading ? 'Connecting...' : 'Connect'}
+      </Button>
+    </form>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Tab: Integrations
 // ---------------------------------------------------------------------------
 
@@ -512,6 +584,7 @@ function IntegrationsTab() {
   const handleConnectSlack = makeConnectHandler(connectSlack, 'authorization_url')
   const handleDisconnectSlack = makeDisconnectHandler(disconnectSlack, 'Slack')
   const handleDisconnectFathom = makeDisconnectHandler(disconnectFathom, 'Fathom')
+  const handleDisconnectTelegram = makeDisconnectHandler(disconnectTelegram, 'Telegram')
   const handleConnectGithub = makeConnectHandler(connectGithub, 'installation_url')
   const handleDisconnectGithub = makeDisconnectHandler(disconnectGithub, 'GitHub')
   const handleConnectNotion = makeConnectHandler(connectNotion, 'authorization_url')
@@ -582,7 +655,7 @@ function IntegrationsTab() {
   if (isLoading) {
     return (
       <div className="grid gap-3 md:grid-cols-2 items-start">
-        {[1, 2, 3, 4, 5].map((i) => (
+        {[1, 2, 3, 4, 5, 6].map((i) => (
           <div key={i} className="rounded-2xl border border-border p-4 space-y-3">
             <div className="flex items-center gap-3">
               <Skeleton className="h-5 w-5 rounded shrink-0" />
@@ -601,8 +674,9 @@ function IntegrationsTab() {
   const fathom = statuses?.fathom ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const github = statuses?.github ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const notion = statuses?.notion ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
+  const telegram = statuses?.telegram ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
 
-  const connectedCount = [linear, slack, fathom, github, notion].filter(
+  const connectedCount = [linear, slack, fathom, github, notion, telegram].filter(
     (s) => s.status === 'connected'
   ).length
 
@@ -614,7 +688,7 @@ function IntegrationsTab() {
           Manage your tool connections
         </p>
         <span className="text-xs font-mono text-muted-foreground/60">
-          {connectedCount}/5
+          {connectedCount}/6
         </span>
       </div>
 
@@ -711,6 +785,16 @@ function IntegrationsTab() {
           >
             <GithubRepos onSaved={fetchStatuses} />
           </IntegrationCard>
+          <IntegrationCard
+            name="Telegram"
+            icon={<TelegramLogo width={20} height={20} className="text-[#26A5E4]" />}
+            status={telegram.status}
+            externalName={telegram.external_name}
+            connectedAt={telegram.connected_at}
+            onConnect={() => {}}
+            onDisconnect={handleDisconnectTelegram}
+            connectForm={<TelegramConnect onConnected={fetchStatuses} />}
+          />
         </div>
       </div>
     </div>
