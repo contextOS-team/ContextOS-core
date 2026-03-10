@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     NOTION_REDIRECT_URI: str = ""
     NOTION_WEBHOOK_SECRET: str = ""
 
+    # Jira
+    JIRA_CLIENT_ID: str = ""
+    JIRA_CLIENT_SECRET: str = ""
+    JIRA_REDIRECT_URI: str = ""
+    JIRA_WEBHOOK_SECRET: str = ""
+
     # Fathom
     FATHOM_API_KEY: str = ""
     FATHOM_API_BASE_URL: str = "https://api.fathom.ai/external/v1"
@@ -134,6 +140,12 @@ class Settings(BaseSettings):
         if self.SLACK_REDIRECT_URI:
             return self.SLACK_REDIRECT_URI
         return f"{self._public_base_url}/api/slack/callback"
+
+    @property
+    def jira_redirect_uri(self) -> str:
+        if self.JIRA_REDIRECT_URI:
+            return self.JIRA_REDIRECT_URI
+        return f"{self._public_base_url}/api/jira/callback"
 
     model_config = {
         "env_file": "../.env",
