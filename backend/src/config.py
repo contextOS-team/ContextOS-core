@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     NOTION_REDIRECT_URI: str = ""
     NOTION_WEBHOOK_SECRET: str = ""
 
+    # GitLab
+    GITLAB_CLIENT_ID: str = ""
+    GITLAB_CLIENT_SECRET: str = ""
+    GITLAB_REDIRECT_URI: str = ""
+    GITLAB_WEBHOOK_SECRET: str = ""
+
     # Fathom
     FATHOM_API_KEY: str = ""
     FATHOM_API_BASE_URL: str = "https://api.fathom.ai/external/v1"
@@ -128,6 +134,12 @@ class Settings(BaseSettings):
         if self.NOTION_REDIRECT_URI:
             return self.NOTION_REDIRECT_URI
         return f"{self._public_base_url}/api/notion/callback"
+
+    @property
+    def gitlab_redirect_uri(self) -> str:
+        if self.GITLAB_REDIRECT_URI:
+            return self.GITLAB_REDIRECT_URI
+        return f"{self._public_base_url}/api/gitlab/callback"
 
     @property
     def slack_redirect_uri(self) -> str:
