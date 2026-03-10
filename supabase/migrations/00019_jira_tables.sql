@@ -10,17 +10,22 @@
 -- oauth_tokens: add 'jira' to provider check
 alter table public.oauth_tokens drop constraint if exists oauth_tokens_provider_check;
 alter table public.oauth_tokens add constraint oauth_tokens_provider_check
-  check (provider in ('linear', 'slack', 'notion', 'google', 'fathom', 'github', 'jira'));
+  check (provider in ('linear', 'slack', 'notion', 'google', 'fathom', 'github', 'gitlab', 'telegram', 'jira'));
 
 -- workspace_integrations: add 'jira' to provider check
 alter table public.workspace_integrations drop constraint if exists workspace_integrations_provider_check;
 alter table public.workspace_integrations add constraint workspace_integrations_provider_check
-  check (provider in ('linear', 'slack', 'fathom', 'notion', 'github', 'jira'));
+  check (provider in ('linear', 'slack', 'fathom', 'notion', 'github', 'gitlab', 'telegram', 'jira'));
 
 -- sync_cursors: add 'jira' to provider check
 alter table public.sync_cursors drop constraint if exists sync_cursors_provider_check;
 alter table public.sync_cursors add constraint sync_cursors_provider_check
-  check (provider in ('linear', 'slack', 'github', 'notion', 'fathom', 'jira'));
+  check (provider in ('linear', 'slack', 'github', 'notion', 'fathom', 'gitlab', 'telegram', 'jira'));
+
+-- webhook_deliveries: add 'jira' to provider check
+alter table public.webhook_deliveries drop constraint if exists webhook_deliveries_provider_check;
+alter table public.webhook_deliveries add constraint webhook_deliveries_provider_check
+  check (provider in ('linear', 'slack', 'github', 'gitlab', 'telegram', 'jira'));
 
 -- ============================================================
 -- JIRA ISSUES

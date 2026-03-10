@@ -734,6 +734,15 @@ function IntegrationsTab() {
             onDisconnect={handleDisconnectLinear}
           />
           <IntegrationCard
+            name="Jira"
+            icon={<JiraLogo width={20} height={20} />}
+            status={jira.status}
+            externalName={jira.external_name}
+            connectedAt={jira.connected_at}
+            onConnect={handleConnectJira}
+            onDisconnect={handleDisconnectJira}
+          />
+          <IntegrationCard
             name="Fathom"
             icon={<FathomLogo width={20} height={20} />}
             status={fathom.status}
@@ -787,6 +796,16 @@ function IntegrationsTab() {
             <SlackChannels onSaved={fetchStatuses} />
           </IntegrationCard>
           <IntegrationCard
+            name="Telegram"
+            icon={<TelegramLogo width={20} height={20} className="text-[#26A5E4]" />}
+            status={telegram.status}
+            externalName={telegram.external_name}
+            connectedAt={telegram.connected_at}
+            onConnect={() => {}}
+            onDisconnect={handleDisconnectTelegram}
+            connectForm={<TelegramConnect onConnected={fetchStatuses} />}
+          />
+          <IntegrationCard
             name="GitHub"
             icon={<GitHubLogo width={20} height={20} className="text-foreground" />}
             status={github.status}
@@ -805,25 +824,6 @@ function IntegrationsTab() {
             connectedAt={gitlab.connected_at}
             onConnect={handleConnectGitlab}
             onDisconnect={handleDisconnectGitlab}
-          />
-          <IntegrationCard
-            name="Jira"
-            icon={<JiraLogo width={20} height={20} />}
-            status={jira.status}
-            externalName={jira.external_name}
-            connectedAt={jira.connected_at}
-            onConnect={handleConnectJira}
-            onDisconnect={handleDisconnectJira}
-          />
-          <IntegrationCard
-            name="Telegram"
-            icon={<TelegramLogo width={20} height={20} className="text-[#26A5E4]" />}
-            status={telegram.status}
-            externalName={telegram.external_name}
-            connectedAt={telegram.connected_at}
-            onConnect={() => {}}
-            onDisconnect={handleDisconnectTelegram}
-            connectForm={<TelegramConnect onConnected={fetchStatuses} />}
           />
         </div>
       </div>
