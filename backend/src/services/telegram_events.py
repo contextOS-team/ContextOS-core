@@ -6,7 +6,7 @@ support for edited messages.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -25,7 +25,6 @@ def _should_filter_telegram(update: dict) -> bool:
     - Updates without message or edited_message
     - Messages without text (photos, stickers, etc.)
     - Messages from bots
-    - Messages shorter than 10 characters
     """
     message = update.get("message") or update.get("edited_message")
     if not message:
@@ -37,9 +36,6 @@ def _should_filter_telegram(update: dict) -> bool:
 
     from_user = message.get("from", {})
     if from_user.get("is_bot", False):
-        return True
-
-    if len(text) < 10:
         return True
 
     return False
@@ -77,7 +73,7 @@ async def process_telegram_update(
     # Parse telegram_date
     telegram_date = None
     if message.get("date"):
-        telegram_date = datetime.fromtimestamp(message["date"], tz=timezone.utc)
+        telegram_date = datetime.utcfromtimestamp(message["date"])
 
     # Check if this is a reply
     reply_to = message.get("reply_to_message")
@@ -107,19 +103,9 @@ async def process_telegram_update(
         },
     )
 
+    stmt = stmt.returning(TelegramMessage.__table__.c.id)
     result = await session.execute(stmt)
-
-    # Get the message ID for embedding generation
-    # Fetch the row to get the UUID
-    from sqlmodel import select
-
-    fetch_stmt = select(TelegramMessage.id).where(
-        TelegramMessage.workspace_id == workspace_id,
-        TelegramMessage.chat_id == chat_id,
-        TelegramMessage.message_id == message_id,
-    )
-    row = await session.execute(fetch_stmt)
-    msg_uuid = row.scalar_one()
+    msg_uuid = result.scalar_one()
 
     # Queue embedding generation
     await embedding.queue_embedding_generation(
