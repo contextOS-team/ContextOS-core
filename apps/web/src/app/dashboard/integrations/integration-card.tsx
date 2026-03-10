@@ -110,7 +110,7 @@ export function IntegrationCard({
 
       <CardContent className="px-5 pb-4 pt-0">
         {/* Actions */}
-        <div className="flex items-center gap-2 h-8">
+        <div className={`flex items-center gap-2 ${showConnectForm ? '' : 'h-8'}`}>
           {status === 'connected' ? (
             <>
               {children && (

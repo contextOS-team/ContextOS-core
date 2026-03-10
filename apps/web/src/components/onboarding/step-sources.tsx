@@ -256,7 +256,7 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
               autoFocus
             />
             <p className="text-xs text-muted-foreground">
-              Create a bot via @BotFather on Telegram. Disable Group Privacy, then paste the token here.
+              Create a bot via @BotFather on Telegram. In Bot Settings, turn Group Privacy OFF so the bot can read all messages.
             </p>
           </div>
           <div className="flex gap-2">
