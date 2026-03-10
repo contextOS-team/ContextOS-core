@@ -277,6 +277,33 @@ export function LoomLogo({
 }
 
 /**
+ * GitLab tanuki logo mark.
+ * Official SVG from gitlab.com brand assets.
+ * Default fill: currentColor (parent-controlled).
+ */
+export function GitLabLogo({
+  width = 20,
+  height = 20,
+  ...props
+}: LogoProps) {
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox="0 0 380 380"
+      fill="none"
+      aria-hidden="true"
+      {...props}
+    >
+      <path
+        d="M282.83 170.73l-.27-.69-26.14-68.22a6.81 6.81 0 00-2.69-3.24 7 7 0 00-8 .43 7 7 0 00-2.32 3.52l-17.65 54h-71.47l-17.65-54a6.86 6.86 0 00-2.32-3.53 7 7 0 00-8-.43 6.87 6.87 0 00-2.69 3.24L97.44 170l-.26.69a48.54 48.54 0 0016.1 56.1l.09.07.24.17 39.82 29.82 19.7 14.91 12 9.06a8.07 8.07 0 009.76 0l12-9.06 19.7-14.91 40.06-30 .1-.08a48.56 48.56 0 0016.08-56.04Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+/**
  * Notion logo mark -- the "N" letterform.
  * Official SVG from notion.so brand assets.
  * Default fill: currentColor (parent-controlled).

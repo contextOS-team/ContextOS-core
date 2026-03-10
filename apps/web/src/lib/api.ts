@@ -64,6 +64,7 @@ export interface IntegrationStatusResponse {
   slack: ProviderStatus
   fathom: ProviderStatus
   github: ProviderStatus
+  gitlab: ProviderStatus
   notion: ProviderStatus
 }
 
@@ -248,6 +249,20 @@ export interface GithubIndexStatus {
 
 export function getGithubIndexStatus(): Promise<GithubIndexStatus> {
   return apiFetch<GithubIndexStatus>('/api/github/index/status')
+}
+
+// ---------------------------------------------------------------------------
+// GitLab
+// ---------------------------------------------------------------------------
+
+export function connectGitlab(): Promise<{ authorization_url: string }> {
+  return apiFetch<{ authorization_url: string }>('/api/gitlab/connect')
+}
+
+export function disconnectGitlab(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/gitlab/disconnect', {
+    method: 'POST',
+  })
 }
 
 // ---------------------------------------------------------------------------
