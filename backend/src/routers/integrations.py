@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
-PROVIDERS = [Provider.LINEAR, Provider.SLACK, Provider.FATHOM, Provider.GITHUB, Provider.NOTION]
+PROVIDERS = [Provider.LINEAR, Provider.SLACK, Provider.FATHOM, Provider.GITHUB, Provider.NOTION, Provider.JIRA]
 
 
 def _disconnected_status() -> dict:
@@ -55,6 +55,12 @@ def _build_provider_status(integration: WorkspaceIntegration) -> dict:
     if integration.provider == Provider.NOTION:
         config = integration.config or {}
         result["pages_synced"] = config.get("pages_synced", 0)
+        result["last_sync_at"] = config.get("last_sync_at")
+
+    # For Jira, include issues_synced and last_sync_at from config
+    if integration.provider == Provider.JIRA:
+        config = integration.config or {}
+        result["issues_synced"] = config.get("issues_synced", 0)
         result["last_sync_at"] = config.get("last_sync_at")
 
     return result
