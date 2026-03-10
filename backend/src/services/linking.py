@@ -21,6 +21,7 @@ from src.models.github import GithubPullRequest, GithubReview
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
+from src.models.telegram import TelegramMessage
 from src.models.ticket import LinearComment, LinearTicket
 from src.services.embedding import generate_embedding
 
@@ -266,6 +267,13 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
             r.content[:200],
         ),
     ),
+    "telegram_message": (
+        TelegramMessage,
+        lambda r: (
+            f"Telegram by {r.from_first_name or r.from_username or 'Unknown'} in {r.chat_title or 'DM'}",
+            r.text[:200],
+        ),
+    ),
 }
 
 
@@ -338,6 +346,7 @@ SOURCE_TYPE_MAP = {
     "notion": ["notion_page"],
     "fathom": ["meeting_transcript", "meeting_segment"],
     "linear": ["linear_comment"],
+    "telegram": ["telegram_message"],
 }
 
 
@@ -398,6 +407,9 @@ async def find_content_by_source(
         elif source_name == "linear":
             n = len(source_items)
             detail = f"Found {n} comment{'s' if n != 1 else ''}" if n else "No comments found"
+        elif source_name == "telegram":
+            n = len(source_items)
+            detail = f"Found {n} message{'s' if n != 1 else ''}" if n else "No messages found"
         else:
             detail = f"Found {len(source_items)} items" if source_items else "No items found"
 
