@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import {
   connectSlack,
   connectGithub,
+  connectGitlab,
   connectNotion,
   connectFathom,
   type IntegrationStatusResponse,
@@ -13,6 +14,7 @@ import {
 import {
   SlackLogo,
   GitHubLogo,
+  GitLabLogo,
   NotionLogo,
   FathomLogo,
 } from '@/components/icons/brand-logos'
@@ -34,6 +36,7 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
 
   const slackConnected = integrations?.slack.status === 'connected'
   const githubConnected = integrations?.github.status === 'connected'
+  const gitlabConnected = integrations?.gitlab?.status === 'connected'
   const notionConnected = integrations?.notion.status === 'connected'
   const fathomConnected = integrations?.fathom.status === 'connected'
 
@@ -55,6 +58,17 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
       window.location.href = installation_url
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to connect GitHub')
+      setConnecting(null)
+    }
+  }
+
+  async function handleGitlab() {
+    setConnecting('gitlab')
+    try {
+      const { authorization_url } = await connectGitlab()
+      window.location.href = authorization_url
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to connect GitLab')
       setConnecting(null)
     }
   }
@@ -116,6 +130,13 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
           connected={githubConnected}
           onClick={handleGithub}
           disabled={connecting === 'github'}
+        />
+        <SourceCard
+          name="GitLab"
+          logo={<GitLabLogo width={32} height={32} />}
+          connected={gitlabConnected}
+          onClick={handleGitlab}
+          disabled={connecting === 'gitlab'}
         />
         <SourceCard
           name="Notion"

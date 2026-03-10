@@ -43,6 +43,8 @@ import {
   disconnectFathom,
   connectGithub,
   disconnectGithub,
+  connectGitlab,
+  disconnectGitlab,
   connectNotion,
   disconnectNotion,
   resyncNotion,
@@ -58,6 +60,7 @@ import {
   LinearLogo,
   SlackLogo,
   GitHubLogo,
+  GitLabLogo,
   FathomLogo,
   NotionLogo,
 } from '@/components/icons/brand-logos'
@@ -445,14 +448,14 @@ function IntegrationsTab() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    for (const provider of ['github', 'notion'] as const) {
+    for (const provider of ['github', 'gitlab', 'notion'] as const) {
       const status = searchParams.get(provider)
       if (status === 'connected') {
         setError(null)
         window.history.replaceState({}, '', '/dashboard/settings?tab=integrations')
       } else if (status === 'error') {
         const reason = searchParams.get('reason') || 'unknown'
-        const label = provider === 'github' ? 'GitHub' : 'Notion'
+        const label = provider === 'github' ? 'GitHub' : provider === 'gitlab' ? 'GitLab' : 'Notion'
         const messages: Record<string, string> = {
           invalid_state: `${label} connection failed: invalid or expired session.`,
           callback_failed: `${label} connection failed. Please try again.`,
@@ -514,6 +517,8 @@ function IntegrationsTab() {
   const handleDisconnectFathom = makeDisconnectHandler(disconnectFathom, 'Fathom')
   const handleConnectGithub = makeConnectHandler(connectGithub, 'installation_url')
   const handleDisconnectGithub = makeDisconnectHandler(disconnectGithub, 'GitHub')
+  const handleConnectGitlab = makeConnectHandler(connectGitlab, 'authorization_url')
+  const handleDisconnectGitlab = makeDisconnectHandler(disconnectGitlab, 'GitLab')
   const handleConnectNotion = makeConnectHandler(connectNotion, 'authorization_url')
   const handleDisconnectNotion = makeDisconnectHandler(disconnectNotion, 'Notion')
 
@@ -582,7 +587,7 @@ function IntegrationsTab() {
   if (isLoading) {
     return (
       <div className="grid gap-3 md:grid-cols-2 items-start">
-        {[1, 2, 3, 4, 5].map((i) => (
+        {[1, 2, 3, 4, 5, 6].map((i) => (
           <div key={i} className="rounded-2xl border border-border p-4 space-y-3">
             <div className="flex items-center gap-3">
               <Skeleton className="h-5 w-5 rounded shrink-0" />
@@ -600,9 +605,10 @@ function IntegrationsTab() {
   const slack = statuses?.slack ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const fathom = statuses?.fathom ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const github = statuses?.github ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
+  const gitlab = statuses?.gitlab ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const notion = statuses?.notion ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
 
-  const connectedCount = [linear, slack, fathom, github, notion].filter(
+  const connectedCount = [linear, slack, fathom, github, gitlab, notion].filter(
     (s) => s.status === 'connected'
   ).length
 
@@ -614,7 +620,7 @@ function IntegrationsTab() {
           Manage your tool connections
         </p>
         <span className="text-xs font-mono text-muted-foreground/60">
-          {connectedCount}/5
+          {connectedCount}/6
         </span>
       </div>
 
@@ -711,6 +717,15 @@ function IntegrationsTab() {
           >
             <GithubRepos onSaved={fetchStatuses} />
           </IntegrationCard>
+          <IntegrationCard
+            name="GitLab"
+            icon={<GitLabLogo width={20} height={20} className="text-foreground" />}
+            status={gitlab.status}
+            externalName={gitlab.external_name}
+            connectedAt={gitlab.connected_at}
+            onConnect={handleConnectGitlab}
+            onDisconnect={handleDisconnectGitlab}
+          />
         </div>
       </div>
     </div>
