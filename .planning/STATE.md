@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: completed
-stopped_at: Phase 21 context gathered
-last_updated: "2026-03-08T09:43:12.425Z"
-last_activity: 2026-03-07 -- Completed Phase 23 Plan 02 (Player Integration & Hero Replacement)
+stopped_at: Completed 25-03-PLAN.md
+last_updated: "2026-03-10T00:59:46.143Z"
+last_activity: 2026-03-10 -- Completed Phase 25 Plan 03 (Frontend Jira Integration)
 progress:
-  total_phases: 9
-  completed_phases: 7
-  total_plans: 20
-  completed_plans: 19
-  percent: 100
+  total_phases: 13
+  completed_phases: 8
+  total_plans: 28
+  completed_plans: 23
+  percent: 92
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 ## Current Position
 
 Phase: 25 of 26 (Jira Integration)
-Plan: 2 of 3 (25-02 complete)
-Status: In Progress
-Last activity: 2026-03-10 -- Completed Phase 25 Plan 02 (Backend Services & Router)
+Plan: 3 of 3 (25-03 complete)
+Status: Phase Complete
+Last activity: 2026-03-10 -- Completed Phase 25 Plan 03 (Frontend Jira Integration)
 
-Progress: [██████████] 100%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -79,6 +79,7 @@ Progress: [██████████] 100%
 | Phase 21 P01 | 3min | 2 tasks | 6 files |
 | Phase 25 P01 | 3min | 2 tasks | 4 files |
 | Phase 25 P02 | 5min | 2 tasks | 6 files |
+| Phase 25 P03 | 3min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -145,6 +146,8 @@ Recent decisions affecting current work:
 - [Phase 25]: Jira sync uses /search/jql POST with nextPageToken pagination (not deprecated startAt)
 - [Phase 25]: ADF text extraction helper converts Jira API v3 document format to plain text
 - [Phase 25]: get_valid_token returns (access_token, cloud_id) tuple since cloud_id needed for all Jira API calls
+- [Phase 25]: Added Jira to dashboard page INTEGRATIONS array for quick-connect from homepage
+- [Phase 25]: Jira positioned as 6th integration across all UI surfaces, updated counts from /5 to /6
 
 ### Roadmap Evolution
 
@@ -163,6 +166,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T00:53:17Z
-Stopped at: Completed 25-02-PLAN.md
-Resume file: .planning/phases/25-jira-integration/25-02-SUMMARY.md
+Last session: 2026-03-10T00:59:46.141Z
+Stopped at: Completed 25-03-PLAN.md
+Resume file: None
