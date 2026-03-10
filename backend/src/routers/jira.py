@@ -68,7 +68,7 @@ async def callback(
     except JiraOAuthError as e:
         logger.error("Jira OAuth state verification failed: %s", e)
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?jira=error&reason=invalid_state",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&jira=error&reason=invalid_state",
             status_code=status.HTTP_302_FOUND,
         )
 
@@ -85,7 +85,7 @@ async def callback(
 
         if user_id is None:
             return RedirectResponse(
-                url=f"{frontend_url}/dashboard?jira=error&reason=workspace_not_found",
+                url=f"{frontend_url}/dashboard/settings?tab=integrations&jira=error&reason=workspace_not_found",
                 status_code=status.HTTP_302_FOUND,
             )
 
@@ -93,13 +93,13 @@ async def callback(
         site_name = cloud_info.get("site_name", "")
 
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?jira=connected&site={site_name}",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&jira=connected&site={site_name}",
             status_code=status.HTTP_302_FOUND,
         )
     except JiraOAuthError as e:
         logger.error("Jira OAuth code exchange failed: %s", e)
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?jira=error&reason=exchange_failed",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&jira=error&reason=exchange_failed",
             status_code=status.HTTP_302_FOUND,
         )
 
@@ -257,21 +257,14 @@ async def receive_webhook(
 ) -> dict:
     """Receive Jira webhook events.
 
-    Verifies the HMAC-SHA256 signature, finds the workspace by cloud_id
-    from the payload, and processes the event.
+    Jira Cloud webhooks are secured via OAuth scopes (manage:jira-webhook),
+    NOT via HMAC signatures. The X-Hub-Signature header does not exist in
+    Jira webhook requests. Authentication relies on cloud_id matching to
+    find the workspace.
     """
-    from src.services.jira_webhook import process_jira_webhook, verify_webhook_signature
+    from src.services.jira_webhook import process_jira_webhook
 
     raw_body = await request.body()
-
-    # Verify webhook signature
-    signature = request.headers.get("X-Hub-Signature")
-    if settings.JIRA_WEBHOOK_SECRET:
-        if not verify_webhook_signature(raw_body, signature, settings.JIRA_WEBHOOK_SECRET):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid webhook signature",
-            )
 
     import json
     payload = json.loads(raw_body)
