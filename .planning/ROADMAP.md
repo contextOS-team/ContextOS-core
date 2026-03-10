@@ -239,7 +239,7 @@ Plans:
   3. Telegram messages appear in the linking engine for message-to-ticket matching
   4. Integration status endpoint includes Telegram
   5. Onboarding sources grid and settings integrations section show Telegram card
-**Plans:** 3 plans
+**Plans:** 2/3 plans executed
 
 Plans:
 - [ ] 26-01-PLAN.md — Database migration (telegram_messages table, CHECK constraint updates), TelegramMessage model, Provider enum, config, bot service, event processing

@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 ## Current Position
 
 Phase: 25 of 26 (Jira Integration)
-Plan: 1 of 3 (25-01 complete)
+Plan: 2 of 3 (25-02 complete)
 Status: In Progress
-Last activity: 2026-03-10 -- Completed Phase 25 Plan 01 (Database Schema & Backend Models)
+Last activity: 2026-03-10 -- Completed Phase 25 Plan 02 (Backend Services & Router)
 
 Progress: [██████████] 100%
 
@@ -78,6 +78,7 @@ Progress: [██████████] 100%
 | Phase 23 P02 | 10min | 2 tasks | 9 files |
 | Phase 21 P01 | 3min | 2 tasks | 6 files |
 | Phase 25 P01 | 3min | 2 tasks | 4 files |
+| Phase 25 P02 | 5min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -140,6 +141,10 @@ Recent decisions affecting current work:
 - [Phase 21]: Focus ring uses oklch primary token (0.75 0.18 170) with 0.4 alpha ring + 0.15 glow
 - [Phase 25]: Embeddings source_type CHECK constraint already removed in migration 00017 -- no Jira-specific update needed
 - [Phase 25]: JiraComment.body nullable (unlike LinearComment) -- Jira allows empty comments with attachments
+- [Phase 25]: Jira token exchange uses JSON body (not form data) -- critical Atlassian API difference
+- [Phase 25]: Jira sync uses /search/jql POST with nextPageToken pagination (not deprecated startAt)
+- [Phase 25]: ADF text extraction helper converts Jira API v3 document format to plain text
+- [Phase 25]: get_valid_token returns (access_token, cloud_id) tuple since cloud_id needed for all Jira API calls
 
 ### Roadmap Evolution
 
@@ -158,6 +163,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T00:00:00Z
-Stopped at: Completed 25-01-PLAN.md
-Resume file: .planning/phases/25-jira-integration/25-01-SUMMARY.md
+Last session: 2026-03-10T00:53:17Z
+Stopped at: Completed 25-02-PLAN.md
+Resume file: .planning/phases/25-jira-integration/25-02-SUMMARY.md
