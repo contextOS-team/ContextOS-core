@@ -65,6 +65,7 @@ export interface IntegrationStatusResponse {
   fathom: ProviderStatus
   github: ProviderStatus
   notion: ProviderStatus
+  telegram: ProviderStatus
 }
 
 export function getIntegrationStatus(): Promise<IntegrationStatusResponse> {
@@ -313,6 +314,28 @@ export function getNotionPages(
   return apiFetch<NotionPagesResponse>(
     `/api/notion/pages?page=${page}&page_size=${pageSize}`
   )
+}
+
+// ---------------------------------------------------------------------------
+// Telegram
+// ---------------------------------------------------------------------------
+
+export function connectTelegram(
+  botToken: string
+): Promise<{ status: string; bot_username?: string }> {
+  return apiFetch<{ status: string; bot_username?: string }>(
+    '/api/telegram/connect',
+    {
+      method: 'POST',
+      body: JSON.stringify({ bot_token: botToken }),
+    }
+  )
+}
+
+export function disconnectTelegram(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/telegram/disconnect', {
+    method: 'POST',
+  })
 }
 
 // ---------------------------------------------------------------------------
