@@ -96,7 +96,7 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Feature | Reason |
 |---------|--------|
-| Jira integration | Only Linear is supported as task tracker in v1. Add when Jira support is built |
+| ~~Jira integration~~ | Moved to Phase 25 |
 | Email onboarding drip | Marketing infrastructure overhead for a dogfooding team |
 | Video tutorials in onboarding | Developers skip them; goes stale on every UI change |
 | Onboarding checklist widget in dashboard | Visual noise once setup is complete |
