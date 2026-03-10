@@ -90,7 +90,7 @@ async def exchange_code(
         JiraOAuthError: If code exchange or resource fetch fails.
     """
     # Exchange code for tokens -- Jira requires JSON body, not form data
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             JIRA_TOKEN_URL,
             json={
@@ -168,7 +168,7 @@ async def _fetch_accessible_resources(access_token: str) -> dict:
     Raises:
         JiraOAuthError: If the request fails or no resources are found.
     """
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(
             JIRA_ACCESSIBLE_RESOURCES_URL,
             headers={"Authorization": f"Bearer {access_token}"},
@@ -251,7 +251,7 @@ async def refresh_access_token(
 
     # Call Jira token refresh endpoint -- JSON body (not form data)
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 JIRA_TOKEN_URL,
                 json={
