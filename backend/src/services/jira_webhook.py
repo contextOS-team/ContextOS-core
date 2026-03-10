@@ -20,6 +20,7 @@ from sqlmodel import select
 from src.models.integration import Provider, WorkspaceIntegration
 from src.models.jira import JiraComment, JiraIssue
 from src.services import embedding
+from src.services.jira_sync import _parse_iso
 
 logger = logging.getLogger(__name__)
 
@@ -324,17 +325,6 @@ async def _upsert_issue_from_webhook(
         session.add(new_issue)
         await session.flush()
         return new_issue
-
-
-def _parse_iso(iso_str: str | None) -> datetime | None:
-    """Parse ISO-8601 string to naive UTC datetime."""
-    if not iso_str:
-        return None
-    try:
-        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
-        return dt.replace(tzinfo=None)
-    except (ValueError, TypeError):
-        return None
 
 
 async def _upsert_comment_from_webhook(
