@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 ## Current Position
 
 Phase: 24 of 27 (GitLab Integration)
-Plan: 1 of 3 (24-01 complete)
+Plan: 2 of 3 (24-02 complete)
 Status: In Progress
-Last activity: 2026-03-10 -- Completed Phase 24 Plan 01 (Database & Models)
+Last activity: 2026-03-10 -- Completed Phase 24 Plan 02 (Backend Services)
 
 Progress: [██████████] 100%
 
@@ -78,6 +78,7 @@ Progress: [██████████] 100%
 | Phase 23 P02 | 10min | 2 tasks | 9 files |
 | Phase 21 P01 | 3min | 2 tasks | 6 files |
 | Phase 24 P01 | 2min | 2 tasks | 4 files |
+| Phase 24 P02 | 5min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -141,6 +142,10 @@ Recent decisions affecting current work:
 - [Phase 24]: GitLab tables mirror GitHub table pattern exactly for consistency
 - [Phase 24]: GitLab MR uses project_id + project_path instead of single repo_full_name
 - [Phase 24]: GitLab review states: approved/commented/note (notes, not formal reviews)
+- [Phase 24]: Standard OAuth2 authorization code flow for GitLab (not App JWT like GitHub)
+- [Phase 24]: X-Gitlab-Token header comparison for webhook verification (not HMAC body signature)
+- [Phase 24]: Reuse github_linking extract_linear_issue_id -- branch name patterns are provider-agnostic
+- [Phase 24]: Numeric project IDs for selection -- avoids URL encoding issues with paths
 
 ### Roadmap Evolution
 
@@ -163,6 +168,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T00:46:22Z
-Stopped at: Completed 24-01-PLAN.md
-Resume file: .planning/phases/24-gitlab-integration/24-01-SUMMARY.md
+Last session: 2026-03-10T00:54:07Z
+Stopped at: Completed 24-02-PLAN.md
+Resume file: .planning/phases/24-gitlab-integration/24-02-SUMMARY.md
