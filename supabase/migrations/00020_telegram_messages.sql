@@ -67,22 +67,22 @@ CREATE POLICY "workspace_member_insert" ON public.telegram_messages
 -- oauth_tokens: add 'telegram'
 ALTER TABLE public.oauth_tokens DROP CONSTRAINT IF EXISTS oauth_tokens_provider_check;
 ALTER TABLE public.oauth_tokens ADD CONSTRAINT oauth_tokens_provider_check
-    CHECK (provider IN ('linear', 'slack', 'notion', 'google', 'fathom', 'github', 'telegram'));
+    CHECK (provider IN ('linear', 'slack', 'notion', 'google', 'fathom', 'github', 'gitlab', 'telegram'));
 
 -- workspace_integrations: add 'telegram'
 ALTER TABLE public.workspace_integrations DROP CONSTRAINT IF EXISTS workspace_integrations_provider_check;
 ALTER TABLE public.workspace_integrations ADD CONSTRAINT workspace_integrations_provider_check
-    CHECK (provider IN ('linear', 'slack', 'fathom', 'notion', 'github', 'telegram'));
+    CHECK (provider IN ('linear', 'slack', 'fathom', 'notion', 'github', 'gitlab', 'telegram'));
 
 -- webhook_deliveries: add 'telegram'
 ALTER TABLE public.webhook_deliveries DROP CONSTRAINT IF EXISTS webhook_deliveries_provider_check;
 ALTER TABLE public.webhook_deliveries ADD CONSTRAINT webhook_deliveries_provider_check
-    CHECK (provider IN ('linear', 'slack', 'github', 'telegram'));
+    CHECK (provider IN ('linear', 'slack', 'github', 'gitlab', 'telegram'));
 
 -- sync_cursors: add 'telegram'
 ALTER TABLE public.sync_cursors DROP CONSTRAINT IF EXISTS sync_cursors_provider_check;
 ALTER TABLE public.sync_cursors ADD CONSTRAINT sync_cursors_provider_check
-    CHECK (provider IN ('linear', 'slack', 'github', 'notion', 'fathom', 'telegram'));
+    CHECK (provider IN ('linear', 'slack', 'github', 'notion', 'fathom', 'gitlab', 'telegram'));
 
 -- Note: embeddings source_type CHECK was removed in 00017_embeddings_code_chunk_type.sql.
 -- Valid source types are enforced by SOURCE_TYPE_MAP in embedding.py.
