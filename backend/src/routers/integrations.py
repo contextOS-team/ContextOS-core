@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
-PROVIDERS = [Provider.LINEAR, Provider.SLACK, Provider.FATHOM, Provider.GITHUB, Provider.NOTION, Provider.TELEGRAM]
+PROVIDERS = [Provider.LINEAR, Provider.SLACK, Provider.FATHOM, Provider.GITHUB, Provider.NOTION, Provider.GITLAB, Provider.TELEGRAM]
 
 
 def _disconnected_status() -> dict:

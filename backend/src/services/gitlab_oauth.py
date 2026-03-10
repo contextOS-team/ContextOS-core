@@ -60,7 +60,7 @@ def build_auth_url(state: str, settings: Settings) -> str:
         f"&redirect_uri={redirect_uri}"
         f"&response_type=code"
         f"&state={state}"
-        f"&scope=read_api"
+        f"&scope=api+read_user"
     )
 
 
@@ -183,7 +183,7 @@ async def handle_callback(
         access_token_name=access_name,
         refresh_token_name=refresh_name if refresh_token_value else None,
         token_expires_at=token_expires_at,
-        scopes=["read_api"],
+        scopes=["api", "read_user"],
         metadata={"username": username, "name": username, "gitlab_user_id": gitlab_user_id},
     )
 
@@ -192,8 +192,8 @@ async def handle_callback(
         session,
         workspace_id,
         Provider.GITLAB,
-        external_id=gitlab_user_id or username,
-        config={"username": username, "gitlab_user_id": gitlab_user_id},
+        external_id=username or gitlab_user_id,
+        config={"username": username, "gitlab_user_id": gitlab_user_id, "external_name": username},
     )
 
     await session.commit()

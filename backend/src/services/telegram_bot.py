@@ -84,18 +84,22 @@ async def connect_telegram_bot(
         raise TelegramError(f"Failed to validate bot token: {e}")
 
     # Store token in Vault
-    vault_name = token_name(Provider.TELEGRAM, workspace_id, "bot_token")
+    vault_name = token_name(Provider.TELEGRAM.value, workspace_id, "bot_token")
     await store_token(session, vault_name, bot_token)
 
-    # Set webhook
-    webhook_url = f"{settings.BACKEND_URL}/api/telegram/webhook/{workspace_id}"
-    await telegram_api_call(
-        bot_token,
-        "setWebhook",
-        url=webhook_url,
-        secret_token=settings.TELEGRAM_WEBHOOK_SECRET,
-        allowed_updates=["message", "edited_message"],
-    )
+    # Set webhook — use NGROK_DOMAIN or BACKEND_URL, must be HTTPS
+    base_url = f"https://{settings.NGROK_DOMAIN}" if settings.NGROK_DOMAIN else settings.BACKEND_URL
+    webhook_url = f"{base_url}/api/telegram/webhook/{workspace_id}"
+    if webhook_url.startswith("https://"):
+        await telegram_api_call(
+            bot_token,
+            "setWebhook",
+            url=webhook_url,
+            secret_token=settings.TELEGRAM_WEBHOOK_SECRET,
+            allowed_updates=["message", "edited_message"],
+        )
+    else:
+        logger.warning("Skipping Telegram webhook setup — no HTTPS URL available")
 
     # Create integration records
     await upsert_oauth_token(
@@ -135,7 +139,7 @@ async def disconnect_telegram_bot(
         session: Async database session.
         workspace_id: Workspace to disconnect.
     """
-    vault_name = token_name(Provider.TELEGRAM, workspace_id, "bot_token")
+    vault_name = token_name(Provider.TELEGRAM.value, workspace_id, "bot_token")
     bot_token = await read_token(session, vault_name)
 
     # Unregister webhook if we still have the token

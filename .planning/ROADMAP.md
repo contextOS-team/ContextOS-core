@@ -266,5 +266,17 @@ Plans:
 - [ ] TBD (run /gsd:plan-phase 27 to break down)
 
 ---
+
+### Phase 28: GitLab Project Selection & Code Indexing
+
+**Goal:** Add project selection UI and code indexing for GitLab, mirroring the GitHub experience — browse projects, select which to monitor, clone and index code using the existing provider-agnostic pipeline (tree-sitter parsing, embeddings).
+**Requirements**: GL-09, GL-10, GL-11
+**Depends on:** Phase 24
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 28 to break down)
+
+---
 *Roadmap created: 2026-02-24*
 *v1.1 milestone added: 2026-03-04*
