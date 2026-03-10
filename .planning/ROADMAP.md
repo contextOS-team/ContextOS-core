@@ -224,7 +224,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 25-01-PLAN.md — Database migration (jira_issues/jira_comments tables, constraint updates, context_pages FK), SQLModel classes, Provider enum, Settings config
+- [x] 25-01-PLAN.md — Database migration (jira_issues/jira_comments tables, constraint updates, context_pages FK), SQLModel classes, Provider enum, Settings config
 - [ ] 25-02-PLAN.md — Backend services (OAuth 3LO with cloudId, JQL sync, webhook handler) and router with /api/jira/* endpoints
 - [ ] 25-03-PLAN.md — Frontend: JiraLogo icon, API functions, onboarding source card, settings integration card
 

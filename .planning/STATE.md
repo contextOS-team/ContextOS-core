@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 
 ## Current Position
 
-Phase: 21 of 23 (Auth Redesign & Social OAuth)
-Plan: 1 of 2 (21-01 complete)
+Phase: 25 of 26 (Jira Integration)
+Plan: 1 of 3 (25-01 complete)
 Status: In Progress
-Last activity: 2026-03-08 -- Completed Phase 21 Plan 01 (Social OAuth Buttons & Auth Page Polish)
+Last activity: 2026-03-10 -- Completed Phase 25 Plan 01 (Database Schema & Backend Models)
 
 Progress: [██████████] 100%
 
@@ -77,6 +77,7 @@ Progress: [██████████] 100%
 | Phase 23 P01 | 3min | 2 tasks | 9 files |
 | Phase 23 P02 | 10min | 2 tasks | 9 files |
 | Phase 21 P01 | 3min | 2 tasks | 6 files |
+| Phase 25 P01 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -137,6 +138,8 @@ Recent decisions affecting current work:
 - [Phase 21]: Native button elements for social OAuth (not shadcn Button) for full style control
 - [Phase 21]: Auth pages follow social -> divider -> form -> CTA layout order
 - [Phase 21]: Focus ring uses oklch primary token (0.75 0.18 170) with 0.4 alpha ring + 0.15 glow
+- [Phase 25]: Embeddings source_type CHECK constraint already removed in migration 00017 -- no Jira-specific update needed
+- [Phase 25]: JiraComment.body nullable (unlike LinearComment) -- Jira allows empty comments with attachments
 
 ### Roadmap Evolution
 
@@ -155,6 +158,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-08T10:38:45Z
-Stopped at: Completed 21-01-PLAN.md
-Resume file: .planning/phases/21-auth-redesign-and-social-oauth/21-01-SUMMARY.md
+Last session: 2026-03-10T00:00:00Z
+Stopped at: Completed 25-01-PLAN.md
+Resume file: .planning/phases/25-jira-integration/25-01-SUMMARY.md
