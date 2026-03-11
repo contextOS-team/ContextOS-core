@@ -25,7 +25,6 @@ from sqlmodel import select
 from src.config import Settings
 from src.models.gitlab import GitlabMergeRequest, GitlabReview
 from src.models.integration import Provider, WorkspaceIntegration
-from src.services.embedding_worker import enqueue_embedding_job
 from src.services.gitlab_common import (
     GITLAB_API_BASE,
     GitLabOAuthError,
@@ -202,29 +201,14 @@ async def sync_single_project(
                     workspace_id, mr_data.get("source_branch", ""), mr_record.id, session
                 )
 
-                # Update progress
-                await _update_project_sync_status(
-                    session, workspace_id, project_id,
-                    "syncing", mr_count, 0
-                )
-
             # Parse Link header for next page
             url = parse_link_next(response.headers.get("link"))
 
     await session.flush()
 
-    # Queue embedding generation for MR descriptions
-    if mr_count > 0:
-        stmt = select(GitlabMergeRequest.id).where(
-            GitlabMergeRequest.workspace_id == workspace_id,
-            GitlabMergeRequest.project_id == project_id,
-        )
-        result = await session.execute(stmt)
-        mr_ids = [row[0] for row in result.fetchall()]
-        if mr_ids:
-            await enqueue_embedding_job(
-                workspace_id, "gitlab_merge_request", mr_ids
-            )
+    # NOTE: Embedding generation for gitlab_merge_request is not yet supported
+    # (source type not registered in SOURCE_TYPE_MAP). Will be added in Phase 28
+    # when code indexing is built with proper text extraction for MR content.
 
     return mr_count, review_count
 
@@ -360,7 +344,7 @@ async def _upsert_review(
     # Determine state: regular notes vs approval notes
     body = note_data.get("body", "")
     state = "note"
-    if body and ("approved this merge request" in body.lower()):
+    if body and body.strip().lower() == "approved this merge request":
         state = "approved"
 
     # Extract file context if available (from diff notes)

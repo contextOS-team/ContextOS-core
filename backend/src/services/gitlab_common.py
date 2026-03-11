@@ -80,16 +80,26 @@ def parse_gitlab_timestamp(ts: str | None) -> datetime | None:
 def is_bot_user(user_data: dict) -> bool:
     """Check if a GitLab user is a bot account.
 
-    GitLab uses a 'bot' field on user objects, unlike GitHub which
-    uses name suffixes like [bot].
+    Checks the ``bot`` field (present on full user objects from /user endpoint),
+    then falls back to username pattern matching for project access tokens
+    (``project_*_bot``) and other bot accounts (``*_bot``, ``*[bot]``).
 
     Args:
-        user_data: GitLab user dict from the API.
+        user_data: GitLab user dict from the API or webhook payload.
 
     Returns:
         True if the user is a bot.
     """
-    return user_data.get("bot", False)
+    if user_data.get("bot", False):
+        return True
+    username = user_data.get("username", "")
+    if not username:
+        return False
+    return (
+        username.endswith("_bot")
+        or username.endswith("[bot]")
+        or re.match(r"^project_\d+_bot\d*$", username) is not None
+    )
 
 
 def map_mr_state(gitlab_state: str) -> str:

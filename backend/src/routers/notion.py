@@ -76,7 +76,7 @@ async def callback(
     except NotionOAuthError as e:
         logger.error("Notion OAuth state verification failed: %s", e)
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?notion=error&reason=invalid_state",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&notion=error&reason=invalid_state",
             status_code=status.HTTP_302_FOUND,
         )
 
@@ -97,7 +97,7 @@ async def callback(
 
         if user_id is None:
             return RedirectResponse(
-                url=f"{frontend_url}/dashboard?notion=error&reason=workspace_not_found",
+                url=f"{frontend_url}/dashboard/settings?tab=integrations&notion=error&reason=workspace_not_found",
                 status_code=status.HTTP_302_FOUND,
             )
 
@@ -105,13 +105,13 @@ async def callback(
         ws_name = ws_info.get("workspace_name", "")
 
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?notion=connected&workspace={ws_name}",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&notion=connected&workspace={ws_name}",
             status_code=status.HTTP_302_FOUND,
         )
     except NotionOAuthError as e:
         logger.error("Notion OAuth code exchange failed: %s", e)
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?notion=error&reason=exchange_failed",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&notion=error&reason=exchange_failed",
             status_code=status.HTTP_302_FOUND,
         )
 

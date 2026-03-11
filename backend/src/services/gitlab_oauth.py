@@ -15,6 +15,7 @@ Uses httpx for all GitLab API calls (consistent with project pattern).
 
 import logging
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 from uuid import UUID
 
 import httpx
@@ -53,15 +54,14 @@ def build_auth_url(state: str, settings: Settings) -> str:
     Returns:
         Full authorization URL to redirect the user to.
     """
-    redirect_uri = settings.gitlab_redirect_uri
-    return (
-        f"{GITLAB_AUTH_URL}"
-        f"?client_id={settings.GITLAB_CLIENT_ID}"
-        f"&redirect_uri={redirect_uri}"
-        f"&response_type=code"
-        f"&state={state}"
-        f"&scope=api+read_user"
-    )
+    params = urlencode({
+        "client_id": settings.GITLAB_CLIENT_ID,
+        "redirect_uri": settings.gitlab_redirect_uri,
+        "response_type": "code",
+        "state": state,
+        "scope": "api read_user",
+    })
+    return f"{GITLAB_AUTH_URL}?{params}"
 
 
 async def _exchange_code(code: str, settings: Settings) -> dict:

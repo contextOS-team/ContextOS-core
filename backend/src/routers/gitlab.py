@@ -84,20 +84,20 @@ async def callback(
         )
         account = result.get("account", "")
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard/integrations?gitlab=connected&account={account}",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&gitlab=connected&account={account}",
             status_code=status.HTTP_302_FOUND,
         )
     except GitLabOAuthError as e:
         logger.error("GitLab OAuth callback failed: %s", e)
         reason = "invalid_state" if "state" in str(e).lower() else "callback_failed"
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard/integrations?gitlab=error&reason={reason}",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&gitlab=error&reason={reason}",
             status_code=status.HTTP_302_FOUND,
         )
     except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError) as e:
         logger.exception("Unexpected error in GitLab callback: %s", e)
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard/integrations?gitlab=error&reason=internal_error",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&gitlab=error&reason=internal_error",
             status_code=status.HTTP_302_FOUND,
         )
 
@@ -265,6 +265,9 @@ async def trigger_sync(
                 user.workspace_id, selected_projects, bg_session, settings
             )
 
+    # TODO(Phase 28): Replace BackgroundTasks with Redis queue for durability.
+    # FastAPI BackgroundTasks are lost on server restart, unlike the GitHub
+    # integration which uses Redis Streams for reliable background processing.
     background_tasks.add_task(_run_sync)
 
     return {"status": "sync_started", "projects": selected_projects}

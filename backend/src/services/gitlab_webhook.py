@@ -71,22 +71,19 @@ async def _lookup_workspace_from_gitlab(
     Returns:
         The workspace UUID, or None if not found.
     """
+    from sqlalchemy import text
+
     from src.models.integration import WorkspaceIntegration
 
-    stmt = select(WorkspaceIntegration).where(
+    # Use PostgreSQL JSONB containment operator to filter at SQL level
+    # instead of loading all rows and iterating in Python
+    stmt = select(WorkspaceIntegration.workspace_id).where(
         WorkspaceIntegration.provider == Provider.GITLAB,
         WorkspaceIntegration.status == "connected",
-    )
+        text("config->'selected_projects' @> :proj_json"),
+    ).params(proj_json=f"[{project_id}]").limit(1)
     result = await session.execute(stmt)
-    integrations = result.scalars().all()
-
-    for integration in integrations:
-        config = integration.config or {}
-        selected = config.get("selected_projects", [])
-        if project_id in selected:
-            return integration.workspace_id
-
-    return None
+    return result.scalar_one_or_none()
 
 
 async def process_gitlab_event(
@@ -179,8 +176,8 @@ async def _handle_merge_request_event(
         logger.debug("Project %s not monitored, skipping MR event", project_id)
         return
 
-    # Filter bot authors
-    author_data = obj_attrs.get("author", payload.get("user", {}))
+    # Filter bot authors — webhook payload has author in payload["user"], not obj_attrs
+    author_data = payload.get("user", {})
     if is_bot_user(author_data):
         logger.debug("Skipping bot MR author")
         return
@@ -226,7 +223,7 @@ async def _handle_merge_request_event(
             title=obj_attrs.get("title", ""),
             description=obj_attrs.get("description"),
             state=state,
-            author=obj_attrs.get("author_id", payload.get("user", {}).get("username", "unknown")),
+            author=payload.get("user", {}).get("username", "unknown"),
             source_branch=obj_attrs.get("source_branch", ""),
             target_branch=obj_attrs.get("target_branch", ""),
             reviewers=reviewers,
@@ -312,7 +309,7 @@ async def _handle_note_event(
     # Determine state
     body = obj_attrs.get("note", "")
     note_state = "note"
-    if body and "approved this merge request" in body.lower():
+    if body and body.strip().lower() == "approved this merge request":
         note_state = "approved"
 
     # Extract file context from diff notes
@@ -334,8 +331,9 @@ async def _handle_note_event(
     existing_result = await session.execute(existing_stmt)
     existing_review = existing_result.scalar_one_or_none()
 
-    note_author = obj_attrs.get("author", payload.get("user", {}))
-    author_username = note_author.get("username", "") if isinstance(note_author, dict) else str(note_author)
+    # Webhook payload has author info in payload["user"], not obj_attrs
+    note_author = payload.get("user", {})
+    author_username = note_author.get("username", "unknown")
     submitted_at = parse_gitlab_timestamp(obj_attrs.get("created_at"))
 
     if existing_review:
