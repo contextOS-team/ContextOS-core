@@ -94,6 +94,25 @@ def verify_state_or_raise(state: str, secret: str, error_cls: type[Exception]) -
         raise error_cls(str(e)) from e
 
 
+async def is_user_onboarding(session: AsyncSession, user_id: UUID) -> bool:
+    """Check if user is still in onboarding (not completed).
+
+    Returns True if the user has an onboarding row with completed_at = NULL.
+    Returns False if no row exists (legacy user) or onboarding is complete.
+    """
+    from sqlalchemy import text
+
+    result = await session.execute(
+        text(
+            "SELECT completed_at FROM user_onboarding_state WHERE user_id = :uid"
+        ),
+        {"uid": user_id},
+    )
+    row = result.first()
+    # No row = legacy user (skip onboarding); row with completed_at = done
+    return row is not None and row.completed_at is None
+
+
 async def upsert_oauth_token(
     session: AsyncSession,
     workspace_id: UUID,

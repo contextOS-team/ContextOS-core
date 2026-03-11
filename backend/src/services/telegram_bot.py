@@ -87,8 +87,8 @@ async def connect_telegram_bot(
     vault_name = token_name(Provider.TELEGRAM.value, workspace_id, "bot_token")
     await store_token(session, vault_name, bot_token)
 
-    # Set webhook — use NGROK_DOMAIN or BACKEND_URL, must be HTTPS
-    base_url = f"https://{settings.NGROK_DOMAIN}" if settings.NGROK_DOMAIN else settings.BACKEND_URL
+    # Set webhook — needs a public HTTPS URL (use TELEGRAM_WEBHOOK_BASE_URL in dev)
+    base_url = settings.TELEGRAM_WEBHOOK_BASE_URL or settings.BACKEND_URL
     webhook_url = f"{base_url}/api/telegram/webhook/{workspace_id}"
     if webhook_url.startswith("https://"):
         await telegram_api_call(

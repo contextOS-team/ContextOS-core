@@ -4,19 +4,58 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   searchLinearTickets,
+  searchJiraIssues,
   apiFetchSSE,
   SOURCE_LABELS,
   type LinearTicketSearchResult,
+  type JiraIssueSearchResult,
 } from '@/lib/api'
+import type { TicketProvider } from '@/lib/ticket-provider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { GenerationProgress } from '@/components/generation-progress'
 import type { GenerationState } from '@/lib/context-feed'
 
+/** Normalized ticket shape used within this component. */
+interface NormalizedTicket {
+  id: string              // provider-specific ID
+  identifier: string      // display key (e.g. "ENG-123" or "PROJ-456")
+  title: string
+  state: string | null
+  assignee: string | null
+  priority: number | null
+  provider: 'linear' | 'jira'
+}
+
+function normalizeLinear(t: LinearTicketSearchResult): NormalizedTicket {
+  return {
+    id: t.id,
+    identifier: t.identifier,
+    title: t.title,
+    state: t.state,
+    assignee: t.assignee,
+    priority: t.priority,
+    provider: 'linear',
+  }
+}
+
+function normalizeJira(t: JiraIssueSearchResult): NormalizedTicket {
+  return {
+    id: t.jira_id,
+    identifier: t.key,
+    title: t.summary,
+    state: t.status,
+    assignee: t.assignee,
+    priority: null,
+    provider: 'jira',
+  }
+}
+
 interface StepContextProps {
   onComplete: () => void
   onMarkComplete?: () => Promise<void>
+  ticketProvider: TicketProvider | null
 }
 
 type StepState = 'intro' | 'picking' | 'generating' | 'ready' | 'error'
@@ -29,19 +68,19 @@ const PRIORITY_LABELS: Record<number, string> = {
   4: 'Low',
 }
 
-export function StepContext({ onComplete, onMarkComplete }: StepContextProps) {
+export function StepContext({ onComplete, onMarkComplete, ticketProvider }: StepContextProps) {
   const router = useRouter()
   const [state, setState] = useState<StepState>('intro')
   const [generation, setGeneration] = useState<GenerationState | null>(null)
 
   // Ticket picker state
-  const [tickets, setTickets] = useState<LinearTicketSearchResult[]>([])
+  const [tickets, setTickets] = useState<NormalizedTicket[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [loadingTickets, setLoadingTickets] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [endCursor, setEndCursor] = useState<string | null>(null)
   const [hasNextPage, setHasNextPage] = useState(false)
-  const [selectedTicket, setSelectedTicket] = useState<LinearTicketSearchResult | null>(null)
+  const [selectedTicket, setSelectedTicket] = useState<NormalizedTicket | null>(null)
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const observerRef = useRef<IntersectionObserver | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -66,27 +105,42 @@ export function StepContext({ onComplete, onMarkComplete }: StepContextProps) {
 
   // Load assigned tickets when entering picker
   const loadTickets = useCallback(async (query?: string, cursor?: string) => {
+    if (!ticketProvider) return
     if (cursor) {
       setLoadingMore(true)
     } else {
       setLoadingTickets(true)
     }
     try {
-      const result = await searchLinearTickets(query, 20, cursor)
-      if (cursor) {
-        setTickets((prev) => [...prev, ...result.tickets])
+      if (ticketProvider === 'linear') {
+        const result = await searchLinearTickets(query, 20, cursor)
+        const normalized = result.tickets.map(normalizeLinear)
+        if (cursor) {
+          setTickets((prev) => [...prev, ...normalized])
+        } else {
+          setTickets(normalized)
+        }
+        setHasNextPage(result.has_next_page)
+        setEndCursor(result.end_cursor)
       } else {
-        setTickets(result.tickets)
+        const result = await searchJiraIssues(query)
+        const normalized = result.issues.map(normalizeJira)
+        if (cursor) {
+          setTickets((prev) => [...prev, ...normalized])
+        } else {
+          setTickets(normalized)
+        }
+        // Jira search API doesn't support cursor pagination
+        setHasNextPage(false)
+        setEndCursor(null)
       }
-      setHasNextPage(result.has_next_page)
-      setEndCursor(result.end_cursor)
     } catch {
       if (!cursor) setTickets([])
     } finally {
       setLoadingTickets(false)
       setLoadingMore(false)
     }
-  }, [])
+  }, [ticketProvider])
 
   const enterPicker = useCallback(() => {
     setState('picking')
@@ -143,7 +197,7 @@ export function StepContext({ onComplete, onMarkComplete }: StepContextProps) {
     [loadTickets]
   )
 
-  const generateForTicket = useCallback((ticket: LinearTicketSearchResult) => {
+  const generateForTicket = useCallback((ticket: NormalizedTicket) => {
     abortRef.current?.abort()
     setSelectedTicket(ticket)
     setState('generating')
@@ -155,7 +209,10 @@ export function StepContext({ onComplete, onMarkComplete }: StepContextProps) {
     }
     setGeneration(gen)
 
-    const streamPath = `/api/context/${encodeURIComponent(ticket.identifier)}/generate-stream?linear_issue_id=${encodeURIComponent(ticket.id)}`
+    const idParam = ticket.provider === 'jira'
+      ? `jira_issue_id=${encodeURIComponent(ticket.id)}`
+      : `linear_issue_id=${encodeURIComponent(ticket.id)}`
+    const streamPath = `/api/context/${encodeURIComponent(ticket.identifier)}/generate-stream?${idParam}`
 
     const controller = apiFetchSSE(
       streamPath,
@@ -231,21 +288,23 @@ export function StepContext({ onComplete, onMarkComplete }: StepContextProps) {
             Generate your first context page
           </h2>
           <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-            ContextOS pulls context from your tickets, discussions, and docs to
-            generate a rich prompt for every task. Pick a ticket to see it in
-            action.
+            {ticketProvider
+              ? 'ContextOS pulls context from your tickets, discussions, and docs to generate a rich prompt for every task. Pick a ticket to see it in action.'
+              : 'Connect a ticket provider from Settings to generate context pages. For now, you can explore the dashboard.'}
           </p>
         </div>
 
         <div className="space-y-3">
-          <Button onClick={enterPicker} className="w-full">
-            Choose a ticket
-          </Button>
+          {ticketProvider ? (
+            <Button onClick={enterPicker} className="w-full">
+              Choose a ticket
+            </Button>
+          ) : null}
           <button
             onClick={onComplete}
             className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            Skip for now
+            {ticketProvider ? 'Skip for now' : 'Continue to dashboard'}
           </button>
         </div>
       </div>
@@ -261,7 +320,9 @@ export function StepContext({ onComplete, onMarkComplete }: StepContextProps) {
             Pick a ticket
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Search your Linear tickets or pick from your assigned issues
+            {ticketProvider === 'jira'
+              ? 'Search your Jira issues or pick from your assigned work'
+              : 'Search your Linear tickets or pick from your assigned issues'}
           </p>
         </div>
 

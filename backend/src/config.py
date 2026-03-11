@@ -45,7 +45,6 @@ class Settings(BaseSettings):
     LINEAR_CLIENT_ID: str = ""
     LINEAR_CLIENT_SECRET: str = ""
     LINEAR_WEBHOOK_SECRET: str = ""
-    LINEAR_REDIRECT_URI: str = ""
 
     # Slack
     SLACK_CLIENT_ID: str = ""
@@ -61,24 +60,20 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: str = ""
     GITHUB_WEBHOOK_SECRET: str = ""
     GITHUB_APP_PRIVATE_KEY: str = ""
-    GITHUB_REDIRECT_URI: str = ""
 
     # Notion
     NOTION_CLIENT_ID: str = ""
     NOTION_CLIENT_SECRET: str = ""
-    NOTION_REDIRECT_URI: str = ""
     NOTION_WEBHOOK_SECRET: str = ""
 
     # GitLab
     GITLAB_CLIENT_ID: str = ""
     GITLAB_CLIENT_SECRET: str = ""
-    GITLAB_REDIRECT_URI: str = ""
     GITLAB_WEBHOOK_SECRET: str = ""
 
     # Jira
     JIRA_CLIENT_ID: str = ""
     JIRA_CLIENT_SECRET: str = ""
-    JIRA_REDIRECT_URI: str = ""
     JIRA_WEBHOOK_SECRET: str = ""
 
     # Fathom
@@ -101,6 +96,8 @@ class Settings(BaseSettings):
     # Telegram integration webhook secret
     # Per-workspace bot tokens stored in Vault. This secret verifies webhook authenticity.
     TELEGRAM_WEBHOOK_SECRET: str = ""
+    # Public HTTPS base URL for Telegram webhooks (e.g. ngrok URL in dev)
+    TELEGRAM_WEBHOOK_BASE_URL: str = ""
 
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
@@ -108,60 +105,37 @@ class Settings(BaseSettings):
     # Backend URL
     BACKEND_URL: str = "http://localhost:8000"
 
-    # ngrok (optional — used to build OAuth redirect URIs in local dev)
-    NGROK_DOMAIN: str = ""
-
     @property
     def cors_origin_list(self) -> list[str]:
         """Split CORS_ORIGINS by comma into a list."""
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     @property
-    def _public_base_url(self) -> str:
-        """Return the public-facing base URL.
-
-        Uses NGROK_DOMAIN if set (for OAuth callbacks that need a public URL),
-        otherwise falls back to BACKEND_URL.
-        """
-        if self.NGROK_DOMAIN:
-            return f"https://{self.NGROK_DOMAIN}"
-        return self.BACKEND_URL
-
-    @property
     def linear_redirect_uri(self) -> str:
-        if self.LINEAR_REDIRECT_URI:
-            return self.LINEAR_REDIRECT_URI
-        return f"{self._public_base_url}/api/linear/callback"
+        return f"{self.BACKEND_URL}/api/linear/callback"
 
     @property
     def github_redirect_uri(self) -> str:
-        if self.GITHUB_REDIRECT_URI:
-            return self.GITHUB_REDIRECT_URI
-        return f"{self._public_base_url}/api/github/callback"
+        return f"{self.BACKEND_URL}/api/github/callback"
 
     @property
     def notion_redirect_uri(self) -> str:
-        if self.NOTION_REDIRECT_URI:
-            return self.NOTION_REDIRECT_URI
-        return f"{self._public_base_url}/api/notion/callback"
+        return f"{self.BACKEND_URL}/api/notion/callback"
 
     @property
     def gitlab_redirect_uri(self) -> str:
-        if self.GITLAB_REDIRECT_URI:
-            return self.GITLAB_REDIRECT_URI
-        return f"{self._public_base_url}/api/gitlab/callback"
+        return f"{self.BACKEND_URL}/api/gitlab/callback"
 
     @property
     def slack_redirect_uri(self) -> str:
+        """Slack requires HTTPS — must be overridden via SLACK_REDIRECT_URI in dev."""
         if self.SLACK_REDIRECT_URI:
             return self.SLACK_REDIRECT_URI
-        return f"{self._public_base_url}/api/slack/callback"
+        return f"{self.BACKEND_URL}/api/slack/callback"
 
     @property
     def jira_redirect_uri(self) -> str:
-        if self.JIRA_REDIRECT_URI:
-            return self.JIRA_REDIRECT_URI
-        return f"{self._public_base_url}/api/jira/callback"
+        return f"{self.BACKEND_URL}/api/jira/callback"
 
     model_config = {
         "env_file": "../.env",
@@ -175,24 +149,12 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT != Environment.DEV:
             return
 
-        # Slack requires HTTPS — warn if credentials are set but no redirect override or ngrok
-        if (
-            self.SLACK_CLIENT_ID
-            and not self.SLACK_REDIRECT_URI
-            and not self.NGROK_DOMAIN
-        ):
+        # Slack requires HTTPS — warn if credentials are set but no redirect override
+        if self.SLACK_CLIENT_ID and not self.SLACK_REDIRECT_URI:
             logger.warning(
-                "Slack OAuth credentials set but neither SLACK_REDIRECT_URI nor "
-                "NGROK_DOMAIN is configured. Slack requires HTTPS redirect URIs. "
-                "Set SLACK_REDIRECT_URI to an ngrok URL or set NGROK_DOMAIN in .env."
-            )
-
-        # Other providers work with localhost — just log the redirect URIs for clarity
-        if self.NGROK_DOMAIN:
-            logger.info(
-                "NGROK_DOMAIN is set — all OAuth redirect URIs will use "
-                "https://%s unless overridden per-provider.",
-                self.NGROK_DOMAIN,
+                "Slack OAuth credentials set but SLACK_REDIRECT_URI is not configured. "
+                "Slack requires HTTPS redirect URIs. "
+                "Set SLACK_REDIRECT_URI to an HTTPS URL in .env."
             )
 
     def validate_for_production(self) -> None:
@@ -207,6 +169,9 @@ class Settings(BaseSettings):
             missing.append("SUPABASE_JWT_SECRET")
         if not self.SENTRY_DSN:
             missing.append("SENTRY_DSN")
+
+        if not self.BACKEND_URL.startswith("https://"):
+            missing.append("BACKEND_URL (must be HTTPS in production)")
 
         # Check each individual origin, not a substring of the whole string
         origins = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]

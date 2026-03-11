@@ -1,48 +1,97 @@
-"""Tests proving .env cleanup correctness.
+"""Tests proving config correctness.
 
 These tests verify that:
-- Test settings don't leak real .env values into OAuth redirect URIs
+- Redirect URIs derive from BACKEND_URL for all providers
+- Slack override takes precedence when set
+- BACKEND_URL propagates correctly to all redirect properties
+- Production validation catches missing HTTPS
 - SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are distinct fields
-- _make_test_settings produces deterministic, .env-independent results
 """
+
+import pytest
 
 from tests.conftest import _make_test_settings
 
 
-class TestSettingsIsolation:
-    """Prove that _make_test_settings doesn't leak real .env values."""
+class TestRedirectUris:
+    """Prove redirect URI derivation logic is correct."""
 
-    def test_redirect_uris_use_localhost_not_ngrok(self):
-        """OAuth redirect URIs must resolve to localhost, never a real ngrok domain."""
+    def test_all_providers_derive_from_backend_url(self):
+        """Every provider must build its redirect URI from BACKEND_URL."""
+        settings = _make_test_settings(BACKEND_URL="http://myhost:9999")
+        assert settings.linear_redirect_uri == "http://myhost:9999/api/linear/callback"
+        assert settings.github_redirect_uri == "http://myhost:9999/api/github/callback"
+        assert settings.notion_redirect_uri == "http://myhost:9999/api/notion/callback"
+        assert settings.gitlab_redirect_uri == "http://myhost:9999/api/gitlab/callback"
+        assert settings.jira_redirect_uri == "http://myhost:9999/api/jira/callback"
+        # Slack falls back to BACKEND_URL when no override
+        assert settings.slack_redirect_uri == "http://myhost:9999/api/slack/callback"
+
+    def test_slack_override_wins_over_backend_url(self):
+        """SLACK_REDIRECT_URI must take precedence over BACKEND_URL."""
         settings = _make_test_settings(
-            LINEAR_CLIENT_ID="test-client",
-            LINEAR_CLIENT_SECRET="test-secret",
+            BACKEND_URL="http://localhost:8000",
+            SLACK_REDIRECT_URI="https://my-ngrok.dev/api/slack/callback",
+        )
+        assert settings.slack_redirect_uri == "https://my-ngrok.dev/api/slack/callback"
+
+    def test_slack_override_does_not_affect_other_providers(self):
+        """Setting SLACK_REDIRECT_URI must not change any other provider."""
+        settings = _make_test_settings(
+            BACKEND_URL="http://localhost:8000",
+            SLACK_REDIRECT_URI="https://ngrok.dev/api/slack/callback",
         )
         assert "ngrok" not in settings.linear_redirect_uri
-        assert "localhost" in settings.linear_redirect_uri
+        assert "ngrok" not in settings.gitlab_redirect_uri
+        assert "ngrok" not in settings.jira_redirect_uri
 
-    def test_all_providers_redirect_to_localhost(self):
-        """Every provider's redirect URI must be deterministic and local."""
-        settings = _make_test_settings()
-        for uri in [
-            settings.linear_redirect_uri,
-            settings.github_redirect_uri,
-            settings.notion_redirect_uri,
-            settings.slack_redirect_uri,
+    def test_only_slack_has_override_field(self):
+        """No other provider should have a redirect URI override field."""
+        from src.config import Settings
+
+        # These fields must not exist — if someone adds them back, this catches it
+        for field in [
+            "LINEAR_REDIRECT_URI",
+            "GITHUB_REDIRECT_URI",
+            "NOTION_REDIRECT_URI",
+            "GITLAB_REDIRECT_URI",
+            "JIRA_REDIRECT_URI",
         ]:
-            assert uri.startswith("http://localhost:8000/api/"), (
-                f"Expected localhost redirect, got: {uri}"
+            assert field not in Settings.model_fields, (
+                f"{field} should not exist on Settings — use BACKEND_URL"
             )
+        # Slack override must exist
+        assert "SLACK_REDIRECT_URI" in Settings.model_fields
 
-    def test_ngrok_domain_is_blank_in_test_settings(self):
-        """NGROK_DOMAIN must be empty so _public_base_url falls back to BACKEND_URL."""
-        settings = _make_test_settings()
-        assert settings.NGROK_DOMAIN == ""
 
-    def test_explicit_ngrok_overrides_when_passed(self):
-        """When a test explicitly passes NGROK_DOMAIN, it should be used."""
-        settings = _make_test_settings(NGROK_DOMAIN="test.ngrok.dev")
-        assert settings.linear_redirect_uri == "https://test.ngrok.dev/api/linear/callback"
+class TestProductionValidation:
+    """Prove production validation catches misconfigurations."""
+
+    def test_http_backend_url_rejected_in_prod(self):
+        """BACKEND_URL must be HTTPS in production."""
+        settings = _make_test_settings(
+            ENVIRONMENT="prod",
+            DATABASE_URL="postgresql+asyncpg://x:x@db:5432/x",
+            SUPABASE_JWT_SECRET="secret",
+            SENTRY_DSN="https://sentry.io/123",
+            CORS_ORIGINS="https://app.example.com",
+            BACKEND_URL="http://localhost:8000",
+        )
+        with pytest.raises(RuntimeError, match="BACKEND_URL"):
+            settings.validate_for_production()
+
+    def test_https_backend_url_passes_in_prod(self):
+        """HTTPS BACKEND_URL must pass production validation."""
+        settings = _make_test_settings(
+            ENVIRONMENT="prod",
+            DATABASE_URL="postgresql+asyncpg://x:x@db:5432/x",
+            SUPABASE_JWT_SECRET="secret",
+            SENTRY_DSN="https://sentry.io/123",
+            CORS_ORIGINS="https://app.example.com",
+            BACKEND_URL="https://api.example.com",
+        )
+        # Should not raise
+        settings.validate_for_production()
 
 
 class TestSupabaseKeySeparation:

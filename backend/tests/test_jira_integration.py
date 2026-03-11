@@ -54,7 +54,6 @@ def jira_settings() -> Settings:
     return _make_test_settings(
         JIRA_CLIENT_ID=JIRA_CLIENT_ID,
         JIRA_CLIENT_SECRET=JIRA_CLIENT_SECRET,
-        JIRA_REDIRECT_URI="http://localhost:8000/api/jira/callback",
         CORS_ORIGINS="http://localhost:3000",
     )
 

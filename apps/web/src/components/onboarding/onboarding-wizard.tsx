@@ -7,9 +7,10 @@ import { getIntegrationStatus, type IntegrationStatusResponse } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StepIndicator } from './step-indicator'
 import { StepWorkspace } from './step-workspace'
-import { StepLinear } from './step-linear'
+import { StepTicketProvider } from './step-ticket-provider'
 import { StepSources } from './step-sources'
 import { StepContext } from './step-context'
+import { detectTicketProvider } from '@/lib/ticket-provider'
 
 type WizardStep = 1 | 2 | 3 | 4
 type WizardState = 'loading' | 'active' | 'completing'
@@ -199,9 +200,9 @@ export function OnboardingWizard() {
             )}
 
             {step === 2 && (
-              <StepLinear
+              <StepTicketProvider
                 onNext={() => advanceStep(3)}
-                isConnected={integrations?.linear.status === 'connected'}
+                isLinearConnected={integrations?.linear.status === 'connected'}
                 isJiraConnected={integrations?.jira?.status === 'connected'}
                 showSuccess={showSuccess}
               />
@@ -220,6 +221,7 @@ export function OnboardingWizard() {
               <StepContext
                 onComplete={handleComplete}
                 onMarkComplete={markOnboardingComplete}
+                ticketProvider={integrations ? detectTicketProvider(integrations) : null}
               />
             )}
           </div>

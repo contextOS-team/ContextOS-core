@@ -24,7 +24,7 @@ from src.services.jira_oauth import (
     exchange_code,
     get_valid_token,
 )
-from src.services.oauth_common import sign_oauth_state, verify_state_or_raise
+from src.services.oauth_common import sign_oauth_state, verify_state_or_raise, is_user_onboarding
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +96,11 @@ async def callback(
         )
         linear_result = await session.execute(linear_stmt)
         if linear_result.scalar_one_or_none() is not None:
+            if await is_user_onboarding(session, user_id):
+                return RedirectResponse(
+                    url=f"{frontend_url}/onboarding?oauth_error=jira&reason=provider_conflict",
+                    status_code=status.HTTP_302_FOUND,
+                )
             return RedirectResponse(
                 url=f"{frontend_url}/dashboard/settings?tab=integrations&jira=error&reason=provider_conflict",
                 status_code=status.HTTP_302_FOUND,
@@ -104,12 +109,25 @@ async def callback(
         cloud_info = await exchange_code(code, session, workspace_id, user_id, settings)
         site_name = cloud_info.get("site_name", "")
 
+        if await is_user_onboarding(session, user_id):
+            return RedirectResponse(
+                url=f"{frontend_url}/onboarding",
+                status_code=status.HTTP_302_FOUND,
+            )
+
         return RedirectResponse(
             url=f"{frontend_url}/dashboard/settings?tab=integrations&jira=connected&site={site_name}",
             status_code=status.HTTP_302_FOUND,
         )
     except JiraOAuthError as e:
         logger.error("Jira OAuth code exchange failed: %s", e)
+
+        if user_id and await is_user_onboarding(session, user_id):
+            return RedirectResponse(
+                url=f"{frontend_url}/onboarding?oauth_error=jira&reason=exchange_failed",
+                status_code=status.HTTP_302_FOUND,
+            )
+
         return RedirectResponse(
             url=f"{frontend_url}/dashboard/settings?tab=integrations&jira=error&reason=exchange_failed",
             status_code=status.HTTP_302_FOUND,
