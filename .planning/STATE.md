@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: in-progress
-stopped_at: Completed 29-03-PLAN.md
-last_updated: "2026-03-12T20:05:41.000Z"
-last_activity: 2026-03-12 -- Completed 29-03 (Quick Bug Fixes and Architecture Cleanup)
+stopped_at: Completed 29-01-PLAN.md
+last_updated: "2026-03-11T20:08:24.000Z"
+last_activity: 2026-03-12 -- Completed 29-01 (Backend Security Hardening)
 progress:
   total_phases: 13
   completed_phases: 8
   total_plans: 31
-  completed_plans: 26
-  percent: 94
+  completed_plans: 27
+  percent: 95
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 ## Current Position
 
 Phase: 29 of 29 (Codebase Hardening)
-Plan: 3 of 4 (29-03 complete)
+Plan: 4 of 4 (29-01 complete, 29-03 complete)
 Status: In Progress
-Last activity: 2026-03-12 -- Completed 29-03 (Quick Bug Fixes and Architecture Cleanup)
+Last activity: 2026-03-12 -- Completed 29-01 (Backend Security Hardening)
 
-Progress: [█████████░] 92%
+Progress: [█████████░] 95%
 
 ## Performance Metrics
 
@@ -86,6 +86,7 @@ Progress: [█████████░] 92%
 | Phase 26 P01 | 3min | 2 tasks | 7 files |
 | Phase 26 P02 | 4min | 2 tasks | 7 files |
 | Phase 26 P03 | 4min | 2 tasks | 4 files |
+| Phase 29 P01 | 5min | 2 tasks | 11 files |
 | Phase 29 P03 | 3min | 2 tasks | 8 files |
 
 ## Accumulated Context
@@ -170,6 +171,11 @@ Recent decisions affecting current work:
 - [Phase 26]: Telegram brand color #26A5E4 for settings icon, no external BotFather link
 - [Phase 29]: Renamed jira migration to 00019b (not 00020) because 00020 is occupied by telegram_messages
 - [Phase 29]: Kept backward-compatible _parse_notion_datetime alias in notion.py router
+- [Phase 29]: Redis rate limiter fails open on Redis errors -- never blocks API due to Redis outage
+- [Phase 29]: OAUTH_STATE_SECRET falls back to provider client_secret for backward compatibility
+- [Phase 29]: Legacy API keys with NULL salt verify via unsalted hash path -- no migration needed
+- [Phase 29]: TICKET_ID_PATTERN strict allowlist (^[A-Z][A-Z0-9]+-\d+$) for JQL injection prevention
+- [Phase 29]: X-Forwarded-For trusted only from loopback/private IPs via ipaddress module
 
 ### Roadmap Evolution
 
@@ -193,6 +199,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-12T20:05:41.000Z
-Stopped at: Completed 29-03-PLAN.md
+Last session: 2026-03-11T20:08:24.000Z
+Stopped at: Completed 29-01-PLAN.md
 Resume file: None
