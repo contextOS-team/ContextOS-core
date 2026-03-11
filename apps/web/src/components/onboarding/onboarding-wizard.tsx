@@ -91,12 +91,15 @@ export function OnboardingWizard() {
     }
   }, [])
 
-  // OAuth return detection: if on step 2 and Linear is connected, show success then advance
-  const linearAdvanced = useRef(false)
+  // OAuth return detection: if on step 2 and a ticket provider is connected, show success then advance
+  const ticketProviderAdvanced = useRef(false)
   useEffect(() => {
     if (wizardState !== 'active') return
-    if (step === 2 && integrations?.linear.status === 'connected' && !linearAdvanced.current) {
-      linearAdvanced.current = true
+    const hasTicketProvider =
+      integrations?.linear.status === 'connected' ||
+      integrations?.jira?.status === 'connected'
+    if (step === 2 && hasTicketProvider && !ticketProviderAdvanced.current) {
+      ticketProviderAdvanced.current = true
       setShowSuccess(true)
       const timer = setTimeout(() => {
         setShowSuccess(false)
@@ -199,6 +202,7 @@ export function OnboardingWizard() {
               <StepLinear
                 onNext={() => advanceStep(3)}
                 isConnected={integrations?.linear.status === 'connected'}
+                isJiraConnected={integrations?.jira?.status === 'connected'}
                 showSuccess={showSuccess}
               />
             )}

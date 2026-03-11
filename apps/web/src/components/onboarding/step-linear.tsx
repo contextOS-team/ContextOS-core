@@ -11,10 +11,11 @@ import { toast } from 'sonner'
 interface StepLinearProps {
   onNext: () => void
   isConnected: boolean
+  isJiraConnected?: boolean
   showSuccess: boolean
 }
 
-export function StepLinear({ onNext, isConnected, showSuccess }: StepLinearProps) {
+export function StepLinear({ onNext, isConnected, isJiraConnected, showSuccess }: StepLinearProps) {
   const [connecting, setConnecting] = useState(false)
 
   async function handleConnect() {
@@ -28,12 +29,35 @@ export function StepLinear({ onNext, isConnected, showSuccess }: StepLinearProps
     }
   }
 
+  // If Jira is already connected, skip Linear — user chose Jira as their ticket provider
+  if (isJiraConnected && !isConnected) {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <h2 className="text-xl font-semibold">Ticket provider</h2>
+          <p className="text-sm text-muted-foreground">
+            Jira is already connected as your ticket provider.
+          </p>
+        </div>
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
+            <Check className="h-4 w-4 text-primary" strokeWidth={3} />
+            <span className="text-sm font-medium">Jira connected</span>
+          </div>
+          <Button onClick={onNext} className="w-full">
+            Continue
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="space-y-2">
         <h2 className="text-xl font-semibold">Connect Linear</h2>
         <p className="text-sm text-muted-foreground">
-          ContextOS generates context from your Linear tickets. This connection is required.
+          ContextOS generates context from your tickets. Connect Linear to get started.
         </p>
       </div>
 
@@ -61,6 +85,9 @@ export function StepLinear({ onNext, isConnected, showSuccess }: StepLinearProps
           >
             {connecting ? 'Redirecting...' : 'Connect Linear'}
           </Button>
+          <p className="text-xs text-center text-muted-foreground">
+            Using Jira instead? Skip this step and connect Jira on the next page.
+          </p>
         </div>
       )}
     </div>

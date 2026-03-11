@@ -47,6 +47,7 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
   const notionConnected = integrations?.notion.status === 'connected'
   const fathomConnected = integrations?.fathom.status === 'connected'
   const telegramConnected = integrations?.telegram.status === 'connected'
+  const linearConnected = integrations?.linear?.status === 'connected'
   const jiraConnected = integrations?.jira?.status === 'connected'
 
   async function handleJira() {
@@ -199,7 +200,8 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
           logo={<JiraLogo width={32} height={32} />}
           connected={jiraConnected}
           onClick={handleJira}
-          disabled={connecting === 'jira'}
+          disabled={connecting === 'jira' || (linearConnected && !jiraConnected)}
+          disabledHint={linearConnected && !jiraConnected ? 'Linear is active' : undefined}
         />
         <SourceCard
           name="Telegram"
