@@ -89,6 +89,18 @@ async def callback(
                 status_code=status.HTTP_302_FOUND,
             )
 
+        # Mutual exclusion: reject if Linear is already connected
+        linear_stmt = select(WorkspaceIntegration).where(
+            WorkspaceIntegration.workspace_id == workspace_id,
+            WorkspaceIntegration.provider == Provider.LINEAR,
+        )
+        linear_result = await session.execute(linear_stmt)
+        if linear_result.scalar_one_or_none() is not None:
+            return RedirectResponse(
+                url=f"{frontend_url}/dashboard/settings?tab=integrations&jira=error&reason=provider_conflict",
+                status_code=status.HTTP_302_FOUND,
+            )
+
         cloud_info = await exchange_code(code, session, workspace_id, user_id, settings)
         site_name = cloud_info.get("site_name", "")
 
@@ -331,15 +343,17 @@ async def search_issues(
 ) -> dict:
     """Search Jira issues for UI autocomplete.
 
-    Proxies search to Jira's API via JQL text search.
+    When q is empty, returns locally-synced issues assigned to the
+    current user (or all recent issues if assignee is unknown).
+    When q is provided, proxies search to Jira's API via JQL text search.
     """
-    if not q.strip():
-        return {"issues": [], "count": 0}
-
-    from src.services.jira_sync import search_jira_issues
+    from src.services.jira_sync import list_my_jira_issues, search_jira_issues
 
     try:
-        results = await search_jira_issues(session, user.workspace_id, settings, q.strip())
+        if not q.strip():
+            results = await list_my_jira_issues(session, user.workspace_id, settings)
+        else:
+            results = await search_jira_issues(session, user.workspace_id, settings, q.strip())
     except JiraOAuthError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
