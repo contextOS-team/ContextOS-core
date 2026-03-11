@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: completed
-stopped_at: Completed 29-06-PLAN.md
-last_updated: "2026-03-11T20:45:39.674Z"
+stopped_at: Completed 29-05-PLAN.md
+last_updated: "2026-03-11T20:46:22.744Z"
 last_activity: 2026-03-12 -- Completed 29-04 (Synthesis Pipeline Overhaul)
 progress:
   total_phases: 15
-  completed_phases: 10
+  completed_phases: 11
   total_plans: 37
-  completed_plans: 34
+  completed_plans: 35
   percent: 97
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 ## Current Position
 
 Phase: 29 of 29 (Codebase Hardening)
-Plan: 4 of 4 (all complete)
-Status: Phase Complete
-Last activity: 2026-03-12 -- Completed 29-04 (Synthesis Pipeline Overhaul)
+Plan: 5 of 6
+Status: Executing
+Last activity: 2026-03-12 -- Completed 29-05 (PERF-02 Gap Closure)
 
 Progress: [██████████] 97%
 
@@ -91,6 +91,7 @@ Progress: [██████████] 97%
 | Phase 29 P02 | 8min | 2 tasks | 10 files |
 | Phase 29 P04 | 5min | 2 tasks | 3 files |
 | Phase 29 P06 | 3min | 2 tasks | 4 files |
+| Phase 29 P05 | 4min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -186,6 +187,7 @@ Recent decisions affecting current work:
 - [Phase 29]: _lookup_ticket returns 3-tuple (ticket, fk_id, is_linear) for mock-friendly ticket type detection
 - [Phase 29]: NotionSyncSection receives isPageLoading prop to gate mount-effect sync resume
 - [Phase 29]: makeConnectHandler/makeDisconnectHandler moved into integration-cards.tsx as module-level helpers
+- [Phase 29]: connected_sources guard pattern: None means query all (backward compat), hybrid search post-filters results
 
 ### Roadmap Evolution
 
@@ -209,6 +211,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T20:45:39.671Z
-Stopped at: Completed 29-06-PLAN.md
+Last session: 2026-03-11T20:46:22.741Z
+Stopped at: Completed 29-05-PLAN.md
 Resume file: None
