@@ -71,6 +71,7 @@ import {
   JiraLogo,
 } from '@/components/icons/brand-logos'
 import { IntegrationCard } from '../integrations/integration-card'
+import { ticketProviderDisabledReason } from '@/lib/ticket-provider'
 import { SlackChannels } from '../integrations/slack-channels'
 import { FathomConnect } from '../integrations/fathom-connect'
 import { GithubRepos } from '../integrations/github-repos'
@@ -523,19 +524,23 @@ function IntegrationsTab() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    for (const provider of ['github', 'gitlab', 'notion', 'jira'] as const) {
+    const PROVIDER_LABELS: Record<string, string> = {
+      github: 'GitHub', gitlab: 'GitLab', notion: 'Notion', jira: 'Jira', linear: 'Linear',
+    }
+    for (const provider of ['github', 'gitlab', 'notion', 'jira', 'linear'] as const) {
       const status = searchParams.get(provider)
       if (status === 'connected') {
         setError(null)
         window.history.replaceState({}, '', '/dashboard/settings?tab=integrations')
       } else if (status === 'error') {
         const reason = searchParams.get('reason') || 'unknown'
-        const label = provider === 'github' ? 'GitHub' : provider === 'gitlab' ? 'GitLab' : provider === 'jira' ? 'Jira' : 'Notion'
+        const label = PROVIDER_LABELS[provider] ?? provider
         const messages: Record<string, string> = {
           invalid_state: `${label} connection failed: invalid or expired session.`,
           callback_failed: `${label} connection failed. Please try again.`,
           exchange_failed: `${label} connection failed. Please try again.`,
           internal_error: `An internal error occurred during ${label} connection.`,
+          provider_conflict: `Cannot connect ${label}: disconnect your current ticket provider first.`,
         }
         setError(messages[reason] || `${label} connection failed: ${reason}`)
         window.history.replaceState({}, '', '/dashboard/settings?tab=integrations')
@@ -692,6 +697,10 @@ function IntegrationsTab() {
     (s) => s.status === 'connected'
   ).length
 
+  // Ticket provider mutual exclusion
+  const linearDisabledReason = statuses ? ticketProviderDisabledReason('linear', statuses) : null
+  const jiraDisabledReason = statuses ? ticketProviderDisabledReason('jira', statuses) : null
+
   return (
     <div className="space-y-4">
       {/* Status line */}
@@ -732,6 +741,8 @@ function IntegrationsTab() {
             connectedAt={linear.connected_at}
             onConnect={handleConnectLinear}
             onDisconnect={handleDisconnectLinear}
+            disabled={!!linearDisabledReason}
+            disabledReason={linearDisabledReason ?? undefined}
           />
           <IntegrationCard
             name="Jira"
@@ -741,6 +752,8 @@ function IntegrationsTab() {
             connectedAt={jira.connected_at}
             onConnect={handleConnectJira}
             onDisconnect={handleDisconnectJira}
+            disabled={!!jiraDisabledReason}
+            disabledReason={jiraDisabledReason ?? undefined}
           />
           <IntegrationCard
             name="Fathom"
