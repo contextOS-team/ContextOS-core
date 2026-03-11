@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
-status: completed
-stopped_at: Completed 26-03-PLAN.md
-last_updated: "2026-03-10T10:35:00.000Z"
-last_activity: 2026-03-10 -- Completed Phase 26 (Telegram Chat Integration)
+status: in-progress
+stopped_at: Completed 29-03-PLAN.md
+last_updated: "2026-03-12T20:05:41.000Z"
+last_activity: 2026-03-12 -- Completed 29-03 (Quick Bug Fixes and Architecture Cleanup)
 progress:
   total_phases: 13
   completed_phases: 8
   total_plans: 31
-  completed_plans: 23
-  percent: 92
+  completed_plans: 26
+  percent: 94
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 
 ## Current Position
 
-Phase: 26 of 27 (Telegram Chat Integration)
-Plan: 3 of 3 (26-03 complete)
-Status: Phase Complete
-Last activity: 2026-03-10 -- Completed Phase 26 (Telegram Chat Integration)
+Phase: 29 of 29 (Codebase Hardening)
+Plan: 3 of 4 (29-03 complete)
+Status: In Progress
+Last activity: 2026-03-12 -- Completed 29-03 (Quick Bug Fixes and Architecture Cleanup)
 
 Progress: [█████████░] 92%
 
@@ -86,6 +86,7 @@ Progress: [█████████░] 92%
 | Phase 26 P01 | 3min | 2 tasks | 7 files |
 | Phase 26 P02 | 4min | 2 tasks | 7 files |
 | Phase 26 P03 | 4min | 2 tasks | 4 files |
+| Phase 29 P03 | 3min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -167,6 +168,8 @@ Recent decisions affecting current work:
 - [Phase 26]: Background task pattern for webhook processing (same as Fathom _poll_background)
 - [Phase 26]: TelegramConnect mirrors FathomConnect pattern for consistency
 - [Phase 26]: Telegram brand color #26A5E4 for settings icon, no external BotFather link
+- [Phase 29]: Renamed jira migration to 00019b (not 00020) because 00020 is occupied by telegram_messages
+- [Phase 29]: Kept backward-compatible _parse_notion_datetime alias in notion.py router
 
 ### Roadmap Evolution
 
@@ -176,6 +179,7 @@ Recent decisions affecting current work:
 - Phase 25 added: Jira Integration
 - Phase 26 added: Telegram Chat Integration
 - Phase 27 added: Dashboard Homepage Intelligence Widgets
+- Phase 29 added: Codebase Hardening - Security, Bug Fixes, Architecture, and UI/UX Polish
 
 ### Pending Todos
 
@@ -189,6 +193,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T10:35:00.000Z
-Stopped at: Completed 26-03-PLAN.md
+Last session: 2026-03-12T20:05:41.000Z
+Stopped at: Completed 29-03-PLAN.md
 Resume file: None
