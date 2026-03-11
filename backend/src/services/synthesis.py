@@ -464,8 +464,9 @@ async def generate_context_page_stream(
         all_items: list[LinkedItem] = []
 
         async for source_name, items, detail in find_content_by_source(
-            session, workspace_id, ticket
+            session, workspace_id, ticket, connected_sources=set(connected_sources)
         ):
+            # Belt-and-suspenders: find_content_by_source also filters internally
             if source_name not in connected_sources:
                 continue
 
