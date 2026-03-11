@@ -22,6 +22,7 @@ class ApiKey(SQLModel, table=True):
     name: str = Field(nullable=False)
     key_prefix: str = Field(nullable=False)
     key_hash: str = Field(nullable=False)
+    salt: str | None = Field(default=None)
     revoked_at: datetime | None = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
