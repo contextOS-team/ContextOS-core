@@ -277,6 +277,25 @@ Plans:
 Plans:
 - [ ] TBD (run /gsd:plan-phase 28 to break down)
 
+### Phase 29: Codebase Hardening - Security, Bug Fixes, Architecture, and UI/UX Polish
+
+**Goal:** Eliminate all identified security vulnerabilities, fix production bugs, refactor duplicated synthesis logic, decompose the settings monolith, and polish frontend UX -- hardening the codebase for production readiness
+**Requirements**: SEC-01, SEC-02, SEC-03, SEC-04, SEC-05, SEC-06, BUG-01, BUG-02, BUG-03, BUG-04, ARCH-01, ARCH-02, ARCH-03, ARCH-04, ARCH-05, UI-01, UI-02, UI-03, PERF-01, PERF-02, PERF-03, REL-01, REL-02
+**Depends on:** Phase 28
+**Success Criteria** (what must be TRUE):
+  1. All security vulnerabilities (JQL injection, IP spoofing, OAuth state, API key hashing, rate limiter) are patched
+  2. No context pages get stuck in "generating" status on LLM failure
+  3. Synthesis pipeline uses shared helpers with zero duplication
+  4. Settings page is decomposed into focused tab components
+  5. Frontend uses AlertDialog for confirmations and shows user-friendly error messages
+**Plans:** 4 plans
+
+Plans:
+- [ ] 29-01-PLAN.md — Security hardening: JQL injection, IP spoofing, OAuth state signing, API key salt, Redis rate limiter, consumer names, workspace safety
+- [ ] 29-02-PLAN.md — UI/UX polish: AlertDialog disconnect, friendly error messages, eslint-disable fixes, settings page decomposition
+- [ ] 29-03-PLAN.md — Quick fixes: Telegram background processing, migration renumber, shared datetime utility, deferred imports
+- [ ] 29-04-PLAN.md — Synthesis pipeline overhaul: error status propagation, shared helpers, token limit, dead code removal, linking optimization
+
 ---
 *Roadmap created: 2026-02-24*
 *v1.1 milestone added: 2026-03-04*
