@@ -56,20 +56,20 @@ async def _reset_stale_sync_locks() -> None:
             result = await session.execute(
                 text("""
                     UPDATE workspace_integrations
-                    SET config = jsonb_set(config, '{sync_status}', '"idle"')
+                    SET config = config || '{"sync_status": "error", "sync_started_at": null}'::jsonb
                     WHERE config->>'sync_status' = 'syncing'
                 """)
             )
             await session.execute(
                 text("""
                     UPDATE sync_cursors
-                    SET sync_status = 'idle'
+                    SET sync_status = 'error'
                     WHERE sync_status = 'syncing'
                 """)
             )
             await session.commit()
             if result.rowcount:
-                logger.info("Reset %d stale sync lock(s) to idle", result.rowcount)
+                logger.info("Reset %d stale sync lock(s) to error", result.rowcount)
     except Exception:
         logger.exception("Failed to reset stale sync locks")
 
