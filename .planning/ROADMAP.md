@@ -286,15 +286,17 @@ Plans:
   1. All security vulnerabilities (JQL injection, IP spoofing, OAuth state, API key hashing, rate limiter) are patched
   2. No context pages get stuck in "generating" status on LLM failure
   3. Synthesis pipeline uses shared helpers with zero duplication
-  4. Settings page is decomposed into focused tab components
+  4. Settings page is decomposed into focused tab components (each under 200 lines)
   5. Frontend uses AlertDialog for confirmations and shows user-friendly error messages
-**Plans:** 4/4 plans complete
+**Plans:** 6 plans
 
 Plans:
-- [ ] 29-01-PLAN.md — Security hardening: JQL injection, IP spoofing, OAuth state signing, API key salt, Redis rate limiter, consumer names, workspace safety
-- [ ] 29-02-PLAN.md — UI/UX polish: AlertDialog disconnect, friendly error messages, eslint-disable fixes, settings page decomposition
-- [ ] 29-03-PLAN.md — Quick fixes: Telegram background processing, migration renumber, shared datetime utility, deferred imports
-- [ ] 29-04-PLAN.md — Synthesis pipeline overhaul: error status propagation, shared helpers, token limit, dead code removal, linking optimization
+- [x] 29-01-PLAN.md — Security hardening: JQL injection, IP spoofing, OAuth state signing, API key salt, Redis rate limiter, consumer names, workspace safety
+- [x] 29-02-PLAN.md — UI/UX polish: AlertDialog disconnect, friendly error messages, eslint-disable fixes, settings page decomposition
+- [x] 29-03-PLAN.md — Quick fixes: Telegram background processing, migration renumber, shared datetime utility, deferred imports
+- [x] 29-04-PLAN.md — Synthesis pipeline overhaul: error status propagation, shared helpers, token limit, dead code removal, linking optimization
+- [ ] 29-05-PLAN.md — Gap closure: PERF-02 fix -- pass connected_sources into DB query functions, wire from synthesis stream path
+- [ ] 29-06-PLAN.md — Gap closure: Decompose integrations-tab.tsx from 548 lines to under 200 via sub-component extraction
 
 ---
 *Roadmap created: 2026-02-24*
