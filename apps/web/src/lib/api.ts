@@ -368,6 +368,31 @@ export function disconnectJira(): Promise<{ status: string }> {
   })
 }
 
+export interface JiraIssueSearchResult {
+  jira_id: string
+  key: string
+  summary: string
+  status: string | null
+  assignee: string | null
+  issue_type: string | null
+}
+
+export type JiraIssueSearchResponse = {
+  issues: JiraIssueSearchResult[]
+  count: number
+}
+
+export function searchJiraIssues(
+  query?: string
+): Promise<JiraIssueSearchResponse> {
+  const params = new URLSearchParams()
+  if (query) params.set('q', query)
+  const qs = params.toString()
+  return apiFetch<JiraIssueSearchResponse>(
+    `/api/jira/search${qs ? `?${qs}` : ''}`
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Context Pages
 // ---------------------------------------------------------------------------
@@ -540,6 +565,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   notion: 'Notion',
   fathom: 'Fathom',
   linear: 'Linear',
+  jira: 'Jira',
   synthesize: 'Synthesize',
 }
 

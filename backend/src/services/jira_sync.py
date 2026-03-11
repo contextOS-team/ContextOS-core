@@ -229,30 +229,18 @@ async def sync_jira_issues(
     }
 
 
-async def search_jira_issues(
-    session: AsyncSession,
-    workspace_id: UUID,
-    settings: Settings,
-    query: str,
+async def _jql_search(
+    access_token: str,
+    cloud_id: str,
+    jql: str,
+    *,
+    max_results: int = 50,
 ) -> list[dict]:
-    """Quick search for UI autocomplete.
+    """Execute a JQL search and return normalised issue dicts.
 
-    Uses Jira's /search/jql with a text-based JQL query.
-
-    Args:
-        session: Async database session.
-        workspace_id: Workspace to search in.
-        settings: Application settings.
-        query: Search text.
-
-    Returns:
-        List of issue dicts with key, summary, status, assignee.
+    Single place that owns the Jira ``/search/jql`` HTTP call, header
+    construction, response parsing, and error handling.
     """
-    access_token, cloud_id = await get_valid_token(session, workspace_id, settings)
-
-    safe_query = query.replace('\\', '\\\\').replace('"', '\\"')
-    jql = f'text ~ "{safe_query}" ORDER BY updated DESC'
-
     async with httpx.AsyncClient() as client:
         response = await client.post(
             _api_url(cloud_id, "search/jql"),
@@ -263,17 +251,17 @@ async def search_jira_issues(
             json={
                 "jql": jql,
                 "fields": ["summary", "status", "assignee", "issuetype"],
-                "maxResults": 20,
+                "maxResults": max_results,
             },
             timeout=15.0,
         )
 
     if response.status_code != 200:
-        logger.error("Jira search failed: %s", response.text)
+        logger.error("Jira JQL search failed (%s): %s", response.status_code, response.text)
         return []
 
     data = response.json()
-    results = []
+    results: list[dict] = []
     for issue in data.get("issues", []):
         fields = issue.get("fields", {})
         results.append({
@@ -284,8 +272,37 @@ async def search_jira_issues(
             "assignee": fields.get("assignee", {}).get("displayName") if fields.get("assignee") else None,
             "issue_type": fields.get("issuetype", {}).get("name") if fields.get("issuetype") else None,
         })
-
     return results
+
+
+async def list_my_jira_issues(
+    session: AsyncSession,
+    workspace_id: UUID,
+    settings: Settings,
+) -> list[dict]:
+    """Return issues assigned to the current user, most recently updated first."""
+    access_token, cloud_id = await get_valid_token(session, workspace_id, settings)
+    return await _jql_search(
+        access_token, cloud_id,
+        "assignee = currentUser() ORDER BY updated DESC",
+        max_results=50,
+    )
+
+
+async def search_jira_issues(
+    session: AsyncSession,
+    workspace_id: UUID,
+    settings: Settings,
+    query: str,
+) -> list[dict]:
+    """Search Jira issues by text for UI autocomplete."""
+    access_token, cloud_id = await get_valid_token(session, workspace_id, settings)
+    safe_query = query.replace('\\', '\\\\').replace('"', '\\"')
+    return await _jql_search(
+        access_token, cloud_id,
+        f'text ~ "{safe_query}" ORDER BY updated DESC',
+        max_results=20,
+    )
 
 
 async def _upsert_issues(
