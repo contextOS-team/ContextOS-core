@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
-status: in-progress
-stopped_at: Completed 29-01-PLAN.md
-last_updated: "2026-03-11T20:08:24.000Z"
-last_activity: 2026-03-12 -- Completed 29-01 (Backend Security Hardening)
+status: executing
+stopped_at: Completed 29-02-PLAN.md
+last_updated: "2026-03-11T20:14:11.954Z"
+last_activity: 2026-03-12 -- Completed 29-02 (Frontend UI/UX Polish)
 progress:
-  total_phases: 13
-  completed_phases: 8
-  total_plans: 31
-  completed_plans: 27
-  percent: 95
+  total_phases: 15
+  completed_phases: 10
+  total_plans: 35
+  completed_plans: 32
+  percent: 96
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 ## Current Position
 
 Phase: 29 of 29 (Codebase Hardening)
-Plan: 4 of 4 (29-01 complete, 29-03 complete)
+Plan: 4 of 4 (29-01 complete, 29-02 complete, 29-03 complete)
 Status: In Progress
-Last activity: 2026-03-12 -- Completed 29-01 (Backend Security Hardening)
+Last activity: 2026-03-12 -- Completed 29-02 (Frontend UI/UX Polish)
 
-Progress: [█████████░] 95%
+Progress: [█████████░] 96%
 
 ## Performance Metrics
 
@@ -88,6 +88,7 @@ Progress: [█████████░] 95%
 | Phase 26 P03 | 4min | 2 tasks | 4 files |
 | Phase 29 P01 | 5min | 2 tasks | 11 files |
 | Phase 29 P03 | 3min | 2 tasks | 8 files |
+| Phase 29 P02 | 8min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -169,6 +170,10 @@ Recent decisions affecting current work:
 - [Phase 26]: Background task pattern for webhook processing (same as Fathom _poll_background)
 - [Phase 26]: TelegramConnect mirrors FathomConnect pattern for consistency
 - [Phase 26]: Telegram brand color #26A5E4 for settings icon, no external BotFather link
+- [Phase 29]: AlertDialog uses controlled state for disconnect confirmation (not AlertDialogTrigger wrapper)
+- [Phase 29]: friendlyError maps known error substrings to user-friendly messages with generic fallback
+- [Phase 29]: isResyncingRef pattern resolves eslint-disable in integrations tab without re-triggering effects
+- [Phase 29]: Settings page decomposed from 1,030 lines to 112-line shell + 4 tab components
 - [Phase 29]: Renamed jira migration to 00019b (not 00020) because 00020 is occupied by telegram_messages
 - [Phase 29]: Kept backward-compatible _parse_notion_datetime alias in notion.py router
 - [Phase 29]: Redis rate limiter fails open on Redis errors -- never blocks API due to Redis outage
@@ -199,6 +204,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T20:08:24.000Z
-Stopped at: Completed 29-01-PLAN.md
+Last session: 2026-03-12T20:10:00.000Z
+Stopped at: Completed 29-02-PLAN.md
 Resume file: None
