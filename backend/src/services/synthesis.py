@@ -4,6 +4,7 @@ Generates AI-powered context pages for Linear tickets (and Jira issues)
 by combining linked content from multiple sources into a structured document.
 """
 
+import json
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from sqlmodel import select
 from src.models.context_page import ContextPage
 from src.models.integration import OAuthToken, WorkspaceIntegration
 from src.models.jira import JiraIssue
+from src.models.sync import SyncCursor
 from src.models.ticket import LinearTicket
 from src.services.linking import LinkedItem, find_content_by_source, find_related_content
 from src.services.llm_client import get_llm_client
@@ -251,7 +253,6 @@ async def generate_context_page(
     )
 
     # Build sources list for the context page
-    import json
     sources_list = [
         {
             "type": item.source_type,
@@ -355,11 +356,32 @@ async def generate_context_page_stream(
         integration_result = await session.execute(integration_stmt)
         connected_providers.update(row[0] for row in integration_result.fetchall())
 
-        # linear is always connected (required by onboarding)
-        connected_sources = ["linear"]
-        for provider in ["slack", "github", "notion", "fathom", "jira"]:
+        # Build connected sources from actual OAuth tokens / integrations.
+        # The ticket provider (linear or jira) is determined by which one the
+        # ticket was found in, NOT by hardcoding.
+        connected_sources: list[str] = []
+
+        # Add the ticket provider based on the ticket type
+        if linear_ticket:
+            connected_sources.append("linear")
+        elif ticket is not None:
+            # Jira ticket — only show Jira, not Linear
+            connected_sources.append("jira")
+
+        for provider in ["slack", "github", "gitlab", "notion", "fathom", "telegram"]:
             if provider in connected_providers:
                 connected_sources.append(provider)
+
+        # 2b. Check sync status for connected providers
+        syncing_providers: set[str] = set()
+        if connected_sources:
+            sync_stmt = select(SyncCursor.provider, SyncCursor.sync_status).where(
+                SyncCursor.workspace_id == workspace_id,
+                SyncCursor.provider.in_(connected_sources),
+                SyncCursor.sync_status == "syncing",
+            )
+            sync_result = await session.execute(sync_stmt)
+            syncing_providers = {row[0] for row in sync_result.fetchall()}
 
         # 3. Create/update context page with status="generating"
         existing_stmt = select(ContextPage).where(
@@ -400,12 +422,22 @@ async def generate_context_page_stream(
 
             yield {"event": "step_start", "source": source_name}
             all_items.extend(items)
-            yield {
+
+            # Append sync warning if provider is still syncing
+            step_detail = detail
+            is_syncing = source_name in syncing_providers
+            if is_syncing and len(items) == 0:
+                step_detail = "Sync in progress — data not yet available"
+
+            event: dict = {
                 "event": "step_complete",
                 "source": source_name,
                 "count": len(items),
-                "detail": detail,
+                "detail": step_detail,
             }
+            if is_syncing:
+                event["syncing"] = True
+            yield event
 
         # 6. Synthesize
         yield {"event": "step_start", "source": "synthesize"}

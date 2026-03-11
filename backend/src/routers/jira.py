@@ -4,6 +4,7 @@ Provides connect, callback, disconnect, status, sync, webhook, and
 search endpoints for managing the Jira workspace integration.
 """
 
+import json
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
@@ -295,8 +296,6 @@ async def receive_webhook(
     from src.services.jira_webhook import process_jira_webhook
 
     raw_body = await request.body()
-
-    import json
     payload = json.loads(raw_body)
 
     # Determine workspace from payload

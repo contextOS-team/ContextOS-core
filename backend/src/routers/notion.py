@@ -31,6 +31,7 @@ from src.services.notion_oauth import (
 )
 from src.services.oauth_common import sign_oauth_state, verify_state_or_raise
 from src.services.sync_adapter import SyncRunLogger, update_cursor_status
+from src.utils.datetime import parse_notion_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -172,14 +173,22 @@ async def get_status(
         "pages_count": pages_count,
         "sync_progress": config.get("sync_progress"),
         "sync_total": config.get("sync_total"),
+        "sync_started_at": config.get("sync_started_at"),
         "last_sync_at": config.get("last_sync_at"),
     }
+
+
+STALE_SYNC_THRESHOLD_SECONDS = 660  # 11 min — slightly more than SYNC_GLOBAL_TIMEOUT_SECONDS
 
 
 async def _check_sync_preconditions(
     session: AsyncSession, workspace_id: UUID
 ) -> WorkspaceIntegration:
     """Validate integration is connected and not already syncing.
+
+    If a sync has been stuck in "syncing" for longer than the stale
+    threshold, automatically resets it to "error" so the user can retry
+    instead of being permanently blocked.
 
     Returns the integration record on success.
     Raises HTTPException on failure.
@@ -199,10 +208,44 @@ async def _check_sync_preconditions(
 
     config = integration.config or {}
     if config.get("sync_status") == "syncing":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A sync is already in progress.",
-        )
+        # Check if the sync is stale (stuck longer than the global timeout).
+        # Missing sync_started_at means this is a legacy sync from before we
+        # tracked start time — treat as stale since we can't vouch for it.
+        sync_started = config.get("sync_started_at")
+        is_stale = False
+        if not sync_started:
+            is_stale = True
+        else:
+            try:
+                started_dt = datetime.fromisoformat(sync_started.replace("Z", "+00:00"))
+                elapsed = (datetime.now(timezone.utc) - started_dt).total_seconds()
+                is_stale = elapsed > STALE_SYNC_THRESHOLD_SECONDS
+            except (ValueError, TypeError):
+                is_stale = True  # Can't parse timestamp — treat as stale
+
+        if is_stale:
+            logger.warning(
+                "Resetting stale Notion sync for workspace %s",
+                workspace_id,
+            )
+            await _update_sync_config(
+                session, workspace_id, {"sync_status": "error"}
+            )
+            await session.flush()
+            # Don't allow starting a new sync in this same request.
+            # The old background task may still be running — letting the
+            # caller proceed would create two concurrent syncs racing on
+            # the same workspace. Force a retry so the next request sees
+            # "error" status and proceeds cleanly.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Previous sync was stuck and has been reset. Please try again.",
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A sync is already in progress.",
+            )
 
     return integration
 
@@ -222,7 +265,13 @@ async def start_sync(
     """
     await _check_sync_preconditions(session, user.workspace_id)
 
-    await _update_sync_config(session, user.workspace_id, {"sync_status": "syncing"})
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    await _update_sync_config(session, user.workspace_id, {
+        "sync_status": "syncing",
+        "sync_progress": 0,
+        "sync_total": None,
+        "sync_started_at": now_iso,
+    })
     await session.commit()
 
     background_tasks.add_task(
@@ -245,8 +294,15 @@ async def resync(
     """
     await _check_sync_preconditions(session, user.workspace_id)
 
-    # Set sync_status immediately so the frontend can start polling
-    await _update_sync_config(session, user.workspace_id, {"sync_status": "syncing"})
+    # Set sync_status immediately so the frontend can start polling.
+    # Clear progress fields so the UI knows we're in the metadata-fetch phase.
+    now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    await _update_sync_config(session, user.workspace_id, {
+        "sync_status": "syncing",
+        "sync_progress": 0,
+        "sync_total": None,
+        "sync_started_at": now_iso,
+    })
     await session.commit()
 
     background_tasks.add_task(
@@ -337,6 +393,8 @@ async def list_pages(
 
 CONTENT_BATCH_SIZE = 10
 PAGE_FETCH_TIMEOUT_SECONDS = 15
+CONCURRENT_FETCH_LIMIT = 3  # Notion API rate limit: 3 requests/second
+SYNC_GLOBAL_TIMEOUT_SECONDS = 600  # 10 minutes — abort entire sync if exceeded
 
 
 async def _run_sync(
@@ -348,6 +406,9 @@ async def _run_sync(
     block other requests. Also writes to sync_cursors for structured
     state tracking alongside the existing JSONB config updates.
 
+    Wrapped in a global timeout to prevent indefinite hangs that leave
+    sync_status stuck at "syncing" and block the frontend UI.
+
     Phase 1 (fast): Fetch page metadata from the Search API and upsert
     all pages without content. Soft-delete pages no longer in Notion.
 
@@ -356,6 +417,35 @@ async def _run_sync(
 
     Phase 3: Mark sync complete.
     """
+    try:
+        await asyncio.wait_for(
+            _run_sync_inner(workspace_id, user_id, settings),
+            timeout=SYNC_GLOBAL_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.error(
+            "Notion sync timed out after %ds for workspace %s",
+            SYNC_GLOBAL_TIMEOUT_SECONDS, workspace_id,
+        )
+        try:
+            async with async_session() as session:
+                await _update_sync_config(
+                    session, workspace_id, {"sync_status": "error"}
+                )
+                await update_cursor_status(
+                    session, workspace_id, "notion", "default",
+                    sync_status="error",
+                    error_message="sync timed out",
+                )
+                await session.commit()
+        except Exception:
+            logger.exception("Failed to update sync timeout status")
+
+
+async def _run_sync_inner(
+    workspace_id: UUID, user_id: UUID, settings: Settings
+) -> None:
+    """Inner sync logic, called by _run_sync with a global timeout."""
     async with SyncRunLogger("notion", workspace_id) as srl:
         try:
             # Get access token (short session)
@@ -419,89 +509,127 @@ async def _run_sync(
                 batch_contents: list[tuple[str, str | None]] = []
                 batch_db_ids: list[UUID] = []
 
+                # Pre-check which pages need content refetch in one query
+                async with async_session() as check_session:
+                    check_stmt = select(
+                        NotionPage.notion_id,
+                        NotionPage.notion_updated_at,
+                        NotionPage.content,
+                    ).where(
+                        NotionPage.workspace_id == workspace_id,
+                        NotionPage.deleted_at.is_(None),
+                    )
+                    check_result = await check_session.execute(check_stmt)
+                    existing_pages = {
+                        row.notion_id: (row.notion_updated_at, row.content)
+                        for row in check_result.all()
+                    }
+
+                # Split pages into those needing fetch vs skippable
+                pages_to_fetch: list[tuple[int, str]] = []  # (index, notion_id)
+                skip_indices: list[int] = []
                 for i, page_data in enumerate(all_pages):
                     notion_id = page_data.get("id", "")
                     notion_last_edited = page_data.get("last_edited_time")
-
-                    # Check if content needs refetching by comparing last_edited_time
-                    should_refetch_content = True
-                    if notion_last_edited:
-                        async with async_session() as check_session:
-                            check_stmt = select(
-                                NotionPage.notion_updated_at, NotionPage.content
-                            ).where(
-                                NotionPage.workspace_id == workspace_id,
-                                NotionPage.notion_id == notion_id,
-                            )
-                            check_result = await check_session.execute(check_stmt)
-                            row = check_result.one_or_none()
-                            if row and row.content is not None:
-                                stored_updated = row.notion_updated_at
-                                new_updated = _parse_notion_datetime(notion_last_edited)
-                                # Normalize both to naive UTC for comparison
-                                if stored_updated and stored_updated.tzinfo is not None:
-                                    stored_updated = stored_updated.replace(tzinfo=None)
-                                if stored_updated and new_updated and stored_updated >= new_updated:
-                                    should_refetch_content = False
-                                    srl.info(
-                                        "Skipping content refetch for page %s (unchanged since %s)"
-                                        % (notion_id, stored_updated),
-                                    )
-
-                    if should_refetch_content:
-                        try:
-                            content_md = await asyncio.wait_for(
-                                client.get_page_markdown(notion_id), timeout=PAGE_FETCH_TIMEOUT_SECONDS
-                            )
-                        except asyncio.TimeoutError:
-                            srl.warning(
-                                "Timeout fetching content for page %s" % notion_id,
-                            )
-                            content_md = None
-                        except Exception:
-                            srl.warning(
-                                "Failed to fetch content for page %s" % notion_id,
-                            )
-                            content_md = None
+                    skip = False
+                    if notion_last_edited and notion_id in existing_pages:
+                        stored_updated, stored_content = existing_pages[notion_id]
+                        if stored_content is not None:
+                            new_updated = _parse_notion_datetime(notion_last_edited)
+                            if stored_updated and stored_updated.tzinfo is not None:
+                                stored_updated = stored_updated.replace(tzinfo=None)
+                            if stored_updated and new_updated and stored_updated >= new_updated:
+                                skip = True
+                    if skip:
+                        skip_indices.append(i)
                     else:
-                        content_md = None  # Keep existing content
+                        pages_to_fetch.append((i, notion_id))
 
-                    batch_contents.append((notion_id, content_md))
-                    batch_db_ids.append(page_ids[i])
+                srl.info(
+                    "Phase 2: %d pages need content fetch, %d unchanged"
+                    % (len(pages_to_fetch), len(skip_indices)),
+                )
 
-                    is_batch_full = len(batch_contents) >= CONTENT_BATCH_SIZE
-                    is_last = i == len(all_pages) - 1
+                # Fetch content concurrently with a semaphore
+                sem = asyncio.Semaphore(CONCURRENT_FETCH_LIMIT)
+                fetched_content: dict[str, str | None] = {}
 
-                    if is_batch_full or is_last:
-                        async with async_session() as session:
-                            for nid, content in batch_contents:
-                                if content is not None:
-                                    stmt = select(NotionPage).where(
-                                        NotionPage.workspace_id == workspace_id,
-                                        NotionPage.notion_id == nid,
-                                    )
-                                    row = (
-                                        await session.execute(stmt)
-                                    ).scalar_one_or_none()
-                                    if row:
-                                        row.content = content
-
-                            if batch_db_ids:
-                                await enqueue_embedding_job(
-                                    workspace_id,
-                                    "notion_page",
-                                    batch_db_ids,
-                                )
-                            await _update_sync_config(
-                                session, workspace_id, {"sync_progress": i + 1},
+                async def _fetch_one(nid: str) -> None:
+                    async with sem:
+                        try:
+                            md = await asyncio.wait_for(
+                                client.get_page_markdown(nid),
+                                timeout=PAGE_FETCH_TIMEOUT_SECONDS,
                             )
-                            await session.commit()
+                            fetched_content[nid] = md
+                        except asyncio.TimeoutError:
+                            srl.warning("Timeout fetching content for page %s" % nid)
+                            fetched_content[nid] = None
+                        except Exception:
+                            srl.warning("Failed to fetch content for page %s" % nid)
+                            fetched_content[nid] = None
 
-                        srl.info(
-                            "Phase 2: %d/%d pages" % (i + 1, len(all_pages)),
+                # Launch all fetches, update progress as they complete
+                pending = [
+                    asyncio.create_task(_fetch_one(nid), name=nid)
+                    for _, nid in pages_to_fetch
+                ]
+                # Also count skipped pages toward progress
+                done_count = len(skip_indices)
+
+                # Update progress for skipped pages immediately
+                if done_count > 0:
+                    async with async_session() as prog_session:
+                        await _update_sync_config(
+                            prog_session, workspace_id,
+                            {"sync_progress": done_count},
                         )
-                        batch_contents = []
-                        batch_db_ids = []
+                        await prog_session.commit()
+
+                for coro in asyncio.as_completed(pending):
+                    await coro
+                    done_count += 1
+                    # Update progress every few completions to avoid DB spam
+                    if done_count % 5 == 0 or done_count == len(all_pages):
+                        async with async_session() as prog_session:
+                            await _update_sync_config(
+                                prog_session, workspace_id,
+                                {"sync_progress": done_count},
+                            )
+                            await prog_session.commit()
+
+                # Write content and enqueue embeddings in batches
+                for batch_start in range(0, len(all_pages), CONTENT_BATCH_SIZE):
+                    batch_end = min(batch_start + CONTENT_BATCH_SIZE, len(all_pages))
+                    batch_slice = all_pages[batch_start:batch_end]
+                    batch_ids = page_ids[batch_start:batch_end]
+
+                    async with async_session() as session:
+                        for page_data, db_id in zip(batch_slice, batch_ids):
+                            nid = page_data.get("id", "")
+                            content = fetched_content.get(nid)
+                            if content is not None:
+                                stmt = select(NotionPage).where(
+                                    NotionPage.workspace_id == workspace_id,
+                                    NotionPage.notion_id == nid,
+                                )
+                                row = (
+                                    await session.execute(stmt)
+                                ).scalar_one_or_none()
+                                if row:
+                                    row.content = content
+
+                        await enqueue_embedding_job(
+                            workspace_id,
+                            "notion_page",
+                            list(batch_ids),
+                        )
+                        await session.commit()
+
+                    srl.info(
+                        "Phase 2: wrote batch %d-%d/%d"
+                        % (batch_start + 1, batch_end, len(all_pages)),
+                    )
 
             # ── Phase 3: mark complete (both JSONB and sync_cursors) ──
             async with async_session() as session:
@@ -531,7 +659,7 @@ async def _run_sync(
             try:
                 async with async_session() as session:
                     await _update_sync_config(
-                        session, workspace_id, {"sync_status": "idle"}
+                        session, workspace_id, {"sync_status": "error"}
                     )
                     await update_cursor_status(
                         session, workspace_id, "notion", "default",
@@ -578,22 +706,8 @@ async def _upsert_page_metadata(
     )
 
 
-def _parse_notion_datetime(value: str | None) -> datetime | None:
-    """Parse an ISO 8601 datetime string from the Notion API.
-
-    Notion returns timestamps like '2025-06-03T05:29:00.000Z'.
-    asyncpg requires actual datetime objects, not raw strings.
-    Returns naive UTC datetime for SQLModel compatibility.
-
-    Returns:
-        Parsed naive datetime (UTC), or None if value is falsy.
-    """
-    if not value:
-        return None
-    # Replace only trailing 'Z' (Zulu time) with an explicit UTC offset
-    if value.endswith("Z"):
-        value = value[:-1] + "+00:00"
-    return datetime.fromisoformat(value).replace(tzinfo=None)
+# Alias for backward compatibility -- canonical location is src.utils.datetime
+_parse_notion_datetime = parse_notion_datetime
 
 
 def _extract_title(page_data: dict) -> str:
