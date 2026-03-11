@@ -1,200 +1,174 @@
 # Architecture
 
-**Analysis Date:** 2026-02-24
+**Analysis Date:** 2026-03-12
 
 ## Pattern Overview
 
-**Overall:** Distributed multi-tenant service with integrated AI synthesis and background job processing.
+**Overall:** Multi-tier monorepo with a Next.js frontend, FastAPI backend, Supabase (PostgreSQL) as the primary datastore, Redis for async job queues, and an MCP server package for AI assistant integrations.
 
 **Key Characteristics:**
-- Multi-tenant architecture with workspace isolation enforced at database level (Row Level Security)
-- API-first design with async job processing (Celery)
-- AI-driven context generation using LangGraph and Claude
-- Real-time integration with Linear, Slack, and Notion
-- Vector similarity search for semantic retrieval via pgvector
+- Workspace-scoped multi-tenancy: every DB query is filtered by `workspace_id`
+- Webhook-first sync with polling fallback (15-min reconciliation loop per provider)
+- Async background workers (embedding, code indexing) consuming Redis Streams
+- SSE streaming for real-time context generation progress in the UI
+- JWT auth via Supabase; backend validates tokens with `decode_supabase_jwt`
 
 ## Layers
 
-**Frontend (Next.js 15 & React 19):**
-- Purpose: Dashboard, settings, onboarding, and context page display
-- Location: `apps/web/`
-- Contains: React components, Next.js app router pages, Tailwind CSS, shadcn/ui
-- Depends on: Supabase Auth (via `@supabase/ssr`), Backend API, Supabase client SDK
-- Used by: End users accessing web interface
+**Frontend (Next.js App Router):**
+- Purpose: Server-rendered React UI with client-side data fetching
+- Location: `apps/web/src/`
+- Contains: Pages (App Router), React components, typed API client, Supabase client wrappers
+- Depends on: Supabase for auth session + direct DB reads (context pages feed), Backend API for all business operations
+- Used by: End users via browser
 
 **Backend API (FastAPI):**
-- Purpose: REST API for context operations, webhook handlers, ticket management
-- Location: `backend/src/api/`
-- Contains: Route definitions, request/response models, business logic
-- Depends on: Configuration, database clients, external service integrations
-- Used by: Frontend, webhooks from Linear/Slack/Notion, MCP server
+- Purpose: Business logic, OAuth flows, sync orchestration, context generation
+- Location: `backend/src/`
+- Contains: Routers, services, models, middleware, observability wiring
+- Depends on: Supabase/PostgreSQL (via SQLAlchemy async), Redis (job queues), OpenAI (embeddings + LLM), Laminar (LLM tracing), Sentry (error tracking)
+- Used by: Frontend (JWT-authenticated), MCP server (API-key authenticated), webhooks (HMAC-verified)
 
-**Agent Layer (LangGraph):**
-- Purpose: Multi-step agentic workflows for context synthesis
-- Location: `backend/src/agents/`
-- Contains: LangGraph graph definitions, tool definitions, decision logic
-- Depends on: Anthropic Claude API, embedding store, ingestion layers
-- Used by: API endpoints, background workers
+**Data Layer (PostgreSQL via Supabase):**
+- Purpose: Persistent storage with RLS, real-time subscriptions, vector search
+- Location: `supabase/migrations/`
+- Contains: Schema migrations, hybrid vector+full-text search function (`hybrid_search`), RLS policies, moddatetime triggers
+- Depends on: pgvector extension, pg_trgm
+- Used by: Backend (SQLAlchemy async), Frontend (Supabase JS client for direct reads)
 
-**Ingestion Layer:**
-- Purpose: Ingest and normalize data from external sources (Linear, Slack, Notion, meeting transcripts)
-- Location: `backend/src/ingestion/`
-- Contains: Service-specific ingestion logic, OAuth token management, data normalization
-- Depends on: External service SDKs/APIs, database
-- Used by: Background workers (Celery tasks), webhook handlers
+**Background Workers:**
+- Purpose: Async embedding generation and code indexing, decoupled from sync hot-path
+- Location: `backend/src/services/embedding_worker.py`, `backend/src/services/code_index_worker.py`
+- Contains: Redis Stream consumers using `XREADGROUP`
+- Depends on: Redis Stream (`embedding:jobs`, `code_index:jobs`), PostgreSQL
+- Used by: Launched as supervised asyncio tasks from `backend/src/main.py` lifespan
 
-**Embeddings Layer:**
-- Purpose: Generate and manage vector embeddings for semantic search
-- Location: `backend/src/embeddings/`
-- Contains: Embedding generation (Claude API), storage in pgvector, similarity search
-- Depends on: Anthropic Embeddings API, Supabase database
-- Used by: Synthesis agent (for retrieval), search endpoints
+**Sync Scheduler:**
+- Purpose: Polling fallback that runs reconciliation for all providers every 15 minutes
+- Location: `backend/src/services/sync_scheduler.py`
+- Contains: `run_polling_fallback()` loop, per-provider reconcile functions
+- Depends on: Provider sync services, `SyncAdapter` protocol
+- Used by: Launched as supervised asyncio task in app lifespan
 
-**Synthesis Layer:**
-- Purpose: Generate markdown context pages by combining retrieved sources
-- Location: `backend/src/synthesis/`
-- Contains: Context page generation, markdown formatting, token tracking
-- Depends on: Anthropic Claude API, embeddings layer, agent orchestration
-- Used by: Agents, API endpoints
-
-**Worker Layer (Celery + Redis):**
-- Purpose: Execute async background jobs for ingestion and synthesis
-- Location: `backend/src/workers/`
-- Contains: Celery task definitions, job scheduling
-- Depends on: Redis, all other backend layers
-- Used by: API (for async operations), webhooks (for async processing)
-
-**MCP Server (Model Context Protocol):**
-- Purpose: Provide context tools to AI coding assistants (Claude Code, Cursor, etc.)
-- Location: `packages/mcp-server/`
-- Contains: MCP protocol implementation, resource definitions, tool handlers
-- Depends on: @modelcontextprotocol/sdk, Zod for validation
-- Used by: AI coding assistants via stdio
-
-**Database (Supabase PostgreSQL + pgvector):**
-- Purpose: Multi-tenant data storage with RLS, vector similarity search
-- Location: `supabase/migrations/00001_initial_schema.sql`
-- Contains: All tables (workspaces, profiles, oauth_tokens, tickets, embeddings, context_pages)
-- Depends on: PostgreSQL extensions (pgvector, pg_trgm)
-- Used by: All backend layers
+**MCP Server:**
+- Purpose: Model Context Protocol server exposing ContextOS to AI coding assistants
+- Location: `packages/mcp-server/src/`
+- Contains: Tools (`get_feature_context`, `search_context`, `get_related_work`), resources
+- Depends on: ContextOS backend API (API-key auth via `CONTEXTOS_API_KEY`)
+- Used by: AI coding assistants (Cursor, Claude, etc.)
 
 ## Data Flow
 
-**Context Generation Flow:**
+**Context Page Generation (SSE streaming):**
 
-1. User triggers context generation for a Linear ticket via frontend
-2. Frontend calls `POST /api/context/{ticket_id}/generate`
-3. Backend API queues async Celery task for synthesis
-4. Celery worker invokes agent with ticket context
-5. Agent queries embeddings store for related Slack messages, Notion pages, meeting transcripts
-6. Agent calls Claude API to synthesize context page
-7. Generated content + metadata written to `context_pages` table
-8. Frontend polls or subscribes for status updates
-9. User views generated context page
+1. Frontend calls `GET /api/context/{identifier}/generate-stream` with Supabase JWT
+2. Backend decodes JWT → resolves `workspace_id` via `WorkspaceMember` lookup
+3. If ticket missing locally, syncs it from Linear or Jira before proceeding
+4. Creates a `ContextPage` row with `status="generating"` immediately (visible in feed)
+5. Yields SSE `start` event listing connected providers as steps
+6. `find_content_by_source()` iterates providers; yields `step_start`/`step_complete` events per source
+7. Linking engine (`linking.py`) combines explicit FK references (weight 1.0) + hybrid vector+FTS search (weight 0.8)
+8. `synthesis.py` builds a structured prompt and calls `LLMClient.generate()` (OpenAI GPT-4o-mini, Laminar-traced)
+9. `ContextPage` row updated to `status="ready"` with markdown content and sources list
+10. Frontend receives `complete` event with `context_page_id`; navigates to detail view
 
-**Ingestion Flow:**
+**Integration Sync Flow:**
 
-1. External service webhook arrives (e.g., Linear ticket update, Slack message)
-2. Backend webhook handler normalizes data and stores in appropriate table (linear_tickets, slack_messages, etc.)
-3. Async task queued to generate/update embeddings for new content
-4. Celery worker calls Claude Embeddings API
-5. Vector stored in `embeddings` table with source reference
+1. OAuth callback hits `/api/{provider}/callback` → exchanges code for token → stores `OAuthToken` in DB
+2. Webhook arrives at `/api/webhooks/{provider}` → HMAC verified → dispatched to background task
+3. Background task calls provider-specific sync service (e.g. `github_sync.py`, `notion_sync.py`)
+4. Sync service upserts records and calls `enqueue_embedding_job()` → pushes to Redis Stream `embedding:jobs`
+5. `embedding_worker.py` consumes job → calls `queue_embedding_generation()` → writes to `embeddings` table
+6. Polling fallback (`sync_scheduler.py`) reconciles every 15 min as safety net
 
-**Search/Retrieval Flow:**
+**Frontend Auth + DB Direct Read:**
 
-1. Query text from agent or search endpoint
-2. Generate embedding for query text
-3. Call PostgreSQL `match_embeddings()` function for vector similarity search
-4. Returns top-K most similar source documents (by cosine distance threshold 0.7)
-5. Retrieved sources enriched with full content from source tables
-6. Sent to synthesis layer for context generation
+1. `middleware.ts` calls `updateSession()` on every request to refresh Supabase cookie
+2. Dashboard layout checks `user_onboarding_state` directly via Supabase client
+3. Context feed (`context-feed.ts`) reads `context_pages` table directly via Supabase JS client
+4. All backend API calls go through `apiFetch()` in `apps/web/src/lib/api.ts` which attaches Supabase JWT as `Bearer` token
 
 **State Management:**
-- Multi-tenant isolation: `workspace_id` present in all queries via RLS policies
-- User identity: `auth.uid()` from Supabase Auth in RLS predicates
-- Context page status: `status` field tracks (draft → generating → ready → stale)
-- OAuth tokens: Stored per workspace + user + provider for renewal on expiry
+- No global client-side state manager (no Redux/Zustand). Each page/component fetches its own data.
+- Realtime feed updates use Supabase Realtime subscriptions (`use-context-pages-realtime.ts`)
 
 ## Key Abstractions
 
-**Workspace:**
-- Purpose: Multi-tenant boundary; isolates teams and their data
-- Examples: `public.workspaces` table, workspace_id foreign keys throughout schema
-- Pattern: All data queries filtered by workspace membership via RLS
+**SyncAdapter Protocol:**
+- Purpose: Common interface all provider sync services must implement
+- Examples: `backend/src/services/github_sync.py`, `backend/src/services/notion_sync.py`, `backend/src/services/linear_sync.py`
+- Pattern: `full_sync()`, `handle_webhook()`, `reconcile()` methods; tracked via `SyncCursor` model
 
-**Context Page:**
-- Purpose: Generated knowledge artifact for a Linear ticket
-- Examples: `public.context_pages` table with markdown content and source tracking
-- Pattern: Immutable output; new versions create new rows; old pages marked stale
+**LinkedItem / LinkingResult:**
+- Purpose: Unified container for content items found for a ticket, with source type and relevance score
+- Examples: `backend/src/services/linking.py`
+- Pattern: Dataclass; populated by explicit FK lookups + hybrid search; consumed by synthesis
 
-**OAuth Token:**
-- Purpose: Store and manage third-party integration credentials per user per workspace
-- Examples: `public.oauth_tokens` table with provider, access_token, refresh_token
-- Pattern: Encrypted at rest by Supabase; refresh logic handles expiration
+**TicketProxy:**
+- Purpose: Duck-typed adapter so Jira issues pass through the Linear-centric linking and synthesis code
+- Examples: `backend/src/services/synthesis.py`
+- Pattern: Dataclass with `from_jira()` factory; maps JiraIssue fields to LinearTicket interface
 
-**Embedding:**
-- Purpose: Vector representation of source content for semantic search
-- Examples: `public.embeddings` table with vector(1536) and source_type discriminator
-- Pattern: 1 embedding per source item; updated on content change (via content_hash)
+**BaseModel / TimestampMixin:**
+- Purpose: UUID primary key + `created_at`, `updated_at`, `deleted_at` on every model
+- Examples: `backend/src/models/base.py`
+- Pattern: SQLModel inheritance; soft-delete via `deleted_at IS NULL` filter everywhere
 
-**Source:**
-- Purpose: Any ingestible content (ticket, message, page, transcript, generated context)
-- Examples: linear_ticket, slack_message, notion_page, meeting_transcript, context_page
-- Pattern: Discriminated union (source_type field in embeddings); enables polymorphic search
+**UserContext:**
+- Purpose: Injected into every authenticated route handler via `Depends(get_current_user)`
+- Examples: `backend/src/dependencies.py`
+- Pattern: Pydantic model with `user_id`, `email`, `workspace_id`; decoded from Supabase JWT
+
+**apiFetch / apiFetchSSE:**
+- Purpose: Typed frontend API client with Supabase JWT injection
+- Examples: `apps/web/src/lib/api.ts`
+- Pattern: Generic fetch wrapper; SSE variant uses fetch + ReadableStream (EventSource cannot send auth headers)
 
 ## Entry Points
 
-**Frontend Entry Point:**
-- Location: `apps/web/src/app/`
-- Triggers: Browser navigation to Next.js app
-- Responsibilities: Render dashboard, handle auth redirects, display context pages
+**Backend Application:**
+- Location: `backend/src/main.py`
+- Triggers: `uvicorn src.main:app`
+- Responsibilities: Registers all routers, configures middleware stack, launches supervised background workers (embedding_worker, polling_fallback, code_index_worker) via asyncio tasks in `lifespan()`
 
-**API Entry Point:**
-- Location: `backend/src/api/` (future implementation)
-- Triggers: HTTP requests from frontend, webhooks from external services
-- Responsibilities: Route requests, validate payloads, orchestrate backend layers
+**Frontend Application:**
+- Location: `apps/web/src/app/layout.tsx`
+- Triggers: Next.js App Router server boot
+- Responsibilities: Root HTML shell, font loading, Sentry init, dark mode applier, Toaster
 
-**Worker Entry Point:**
-- Location: `backend/src/workers/` (future implementation)
-- Triggers: Celery task queue messages from Redis
-- Responsibilities: Execute background jobs (ingestion, embeddings, synthesis)
+**Frontend Middleware:**
+- Location: `apps/web/src/middleware.ts`
+- Triggers: Every incoming Next.js request
+- Responsibilities: Refreshes Supabase auth cookie session
 
-**Webhook Entry Point:**
-- Location: `backend/src/api/routes/` (future implementation)
-- Triggers: Linear webhook, Slack event subscriptions, etc.
-- Responsibilities: Validate signatures, normalize payloads, queue background tasks
+**Auth Callback:**
+- Location: `apps/web/src/app/(auth)/auth/callback/route.ts`
+- Triggers: OAuth PKCE code exchange redirect
+- Responsibilities: Exchanges code for session, checks onboarding state, redirects to `/dashboard` or `/onboarding`
 
-**MCP Entry Point:**
+**MCP Server:**
 - Location: `packages/mcp-server/src/index.ts`
-- Triggers: AI coding assistant (Claude Code, Cursor) starts MCP server
-- Responsibilities: Expose context tools/resources, serve requests over stdio
+- Triggers: `node index.js` (stdio transport)
+- Responsibilities: Registers MCP tools, proxies calls to ContextOS backend API
 
 ## Error Handling
 
-**Strategy:** Graceful degradation with observability.
+**Strategy:** Exceptions propagate to FastAPI exception handlers; Sentry captures all unhandled errors. Sync workers log and continue (no crash propagation to API layer).
 
 **Patterns:**
-- API errors wrapped in structured exception format (future implementation)
-- Unhandled errors captured by Sentry for monitoring
-- LLM call failures queue for retry via Celery
-- Invalid OAuth tokens trigger re-auth flow
-- Database constraint violations surface as semantic errors (e.g., "ticket not found")
-- RLS violations return 403 Forbidden at PostgreSQL level
+- All routes raise `HTTPException` with explicit status codes
+- Sync services catch exceptions per-item and log, not per-batch (partial success)
+- SSE stream catches all exceptions and yields `{"event": "error", "message": "..."}` before closing
+- Background worker tasks use `_supervised()` wrapper: logs crash, sleeps 5s, restarts
 
 ## Cross-Cutting Concerns
 
-**Logging:** Print to stdout (captured by Docker/Railway logs); structured logs via Sentry on error
+**Logging:** Structured logging via `configure_logging()` (`backend/src/observability/logging.py`). Correlation IDs injected by `CorrelationIdMiddleware`. `SyncRunLogger` context manager adds run-scoped log context for all sync operations.
 
-**Validation:** Pydantic models for request payloads (backend); Zod for MCP payloads; database constraints as final validation layer
+**Validation:** Pydantic/pydantic-settings for config and request models. SQLModel for DB models. Frontend uses TypeScript interfaces matching backend response shapes.
 
-**Authentication:** Supabase Auth with JWT; verified via `auth.uid()` in RLS policies; frontend uses `@supabase/ssr` for middleware auth
-
-**Authorization:** Row Level Security at PostgreSQL level ensures workspace isolation; no app-level permission checks needed (RLS is authoritative)
-
-**Rate Limiting:** Not yet implemented; candidates: FastAPI SlowAPI, Redis-backed token bucket
-
-**Observability:** Laminar for LLM tracing, Sentry for errors, PostHog for frontend analytics (env vars present in `.env.example`)
+**Authentication:** Supabase JWT on all user-facing endpoints (decoded in `backend/src/dependencies.py`). HMAC-SHA256 verification on all webhook endpoints. API-key auth (hashed with bcrypt) for MCP server access. Rate limiting via `RateLimitMiddleware`.
 
 ---
 
-*Architecture analysis: 2026-02-24*
+*Architecture analysis: 2026-03-12*

@@ -1,189 +1,302 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-02-24
-
-## Tech Debt
-
-**Incomplete Backend Implementation:**
-- Issue: 13 placeholder directories exist with only `.gitkeep` files. Most business logic is missing (agents, API routes, embeddings, ingestion, synthesis, workers).
-- Files: `backend/src/agents/`, `backend/src/api/routes/`, `backend/src/embeddings/`, `backend/src/ingestion/`, `backend/src/synthesis/`, `backend/src/workers/`
-- Impact: Backend cannot serve any API requests, process background jobs, or generate context pages. Current state is skeleton-only.
-- Fix approach: Implement core handlers in these directories: agents (LangGraph workflows), routes (FastAPI endpoints for context generation), embeddings (vector operations), ingestion (data collection), synthesis (Claude calls), workers (Celery tasks).
-
-**Frontend Application Structure Removed:**
-- Issue: All React page components were stripped in recent commit. Only directory structure remains (`app/.gitkeep`, `components/.gitkeep`, `lib/.gitkeep`).
-- Files: `apps/web/src/app/`, `apps/web/src/components/`, `apps/web/src/lib/`
-- Impact: Next.js app cannot render any pages. No authentication UI, dashboard, or settings UI exists.
-- Fix approach: Rebuild page templates in `apps/web/src/app/` (layout, authentication pages, dashboard), add Supabase client utilities in `lib/`, build UI components in `components/`.
-
-**Database Schema Without Application Usage:**
-- Issue: Full Supabase schema exists (`supabase/migrations/00001_initial_schema.sql`) with 10 tables, RLS policies, pgvector integration, and complex functions. However, no backend code references these tables.
-- Files: `supabase/migrations/00001_initial_schema.sql`
-- Impact: Database layer is disconnected from application. ORM models, queries, and migrations are missing. Risk of schema drift when implementation begins.
-- Fix approach: Add Supabase ORM/client layer in backend (SQLAlchemy or direct async client), verify schema matches API contracts before adding data access code.
-
-**MCP Server Without Implementation:**
-- Issue: MCP server scaffold exists with only `.gitkeep` files in resources and tools directories.
-- Files: `packages/mcp-server/src/resources/`, `packages/mcp-server/src/tools/`
-- Impact: MCP server cannot serve Claude Code or other AI assistants with any tools or resources.
-- Fix approach: Implement MCP resources (workspace context) and tools (ticket search, context generation).
-
-## Known Configuration Issues
-
-**Dependency Version Mismatches:**
-- Issue: Recently fixed PyPI package name (`laminai` → `lmnr`), but no error handling if older wheels cached in Docker.
-- Files: `backend/pyproject.toml`
-- Impact: Docker builds may fail silently if old cached wheels are used.
-- Workaround: Docker image rebuilds with `--no-cache` or `docker system prune`.
-
-**Environment Variable Inconsistency:**
-- Issue: Backend config (`backend/src/config.py`) defines 9 env vars but `.env.example` documents 12+. Some frontend-only vars (NEXT_PUBLIC_POSTHOG_KEY) may cause confusion about where they're used.
-- Files: `backend/src/config.py`, `.env.example`
-- Impact: New developers may not know which vars are required vs optional, leading to setup failures.
-- Fix approach: Add comments in config.py to document which vars are required (SUPABASE_URL, ANTHROPIC_API_KEY) vs optional (observability tools).
-
-**Dockerfile Complexity with Missing Source:**
-- Issue: Builder stage creates stub `src/__init__.py` to resolve dependencies, but build assumes `src/` structure. If module structure changes, Docker build breaks.
-- Files: `backend/Dockerfile`
-- Impact: Docker builds are fragile to refactoring. Developer must rebuild image if structure changes.
-- Fix approach: Use direct dependency installation without creating stub structure, or document the constraint.
-
-## Security Considerations
-
-**SQL Injection Risk in RLS Policies:**
-- Issue: All RLS policies use subqueries checking `auth.uid()` against `workspace_members`. If auth system is compromised, workspace isolation is lost.
-- Files: `supabase/migrations/00001_initial_schema.sql` (lines 214-267)
-- Current mitigation: Supabase's built-in `auth.uid()` function is secure. Policies are correctly scoped.
-- Recommendations: Add audit logging for workspace membership changes. Test RLS policies in integration tests before deployment.
-
-**Exposed Secrets in Environment Configuration:**
-- Issue: `.env.example` includes placeholders for all secrets (LINEAR_API_KEY, SLACK_BOT_TOKEN, NOTION_TOKEN, ANTHROPIC_API_KEY). Developers may accidentally commit `.env` with real values.
-- Files: `.env.example`, `.gitignore`
-- Current mitigation: `.gitignore` includes `.env*` and `secrets/` patterns.
-- Recommendations: Add pre-commit hook to check for .env commits, use Supabase vault or backend secrets manager instead of .env in production.
-
-**OAuth Token Storage Without Encryption:**
-- Issue: Database schema stores `access_token` and `refresh_token` as plaintext in `oauth_tokens` table.
-- Files: `supabase/migrations/00001_initial_schema.sql` (line 46-47)
-- Impact: If database is compromised, all integration credentials are exposed. Critical for Linear, Slack, Notion integrations.
-- Fix approach: Implement encryption at rest (pgcrypto) or use Supabase vault. Add field-level encryption for sensitive tokens.
-
-**Sentry DSN Exposed to Frontend:**
-- Issue: `.env.example` includes NEXT_PUBLIC_SENTRY_DSN, which means error tracking can be poisoned from browser.
-- Files: `.env.example` (line 41)
-- Impact: Low risk for this specific app, but best practice is to use separate backend-only Sentry project.
-- Recommendations: Use separate Sentry DSN for frontend (restricted) and backend (full access).
-
-## Performance Bottlenecks
-
-**Vector Search Without Connection Pooling:**
-- Issue: Backend will use Supabase Python client without connection pooling configuration. With many concurrent requests for embeddings, database connections may exhaust.
-- Files: `backend/src/config.py`, `supabase/migrations/00001_initial_schema.sql` (match_embeddings function)
-- Impact: Under load, 429/503 errors from database connection exhaustion.
-- Improvement path: Configure Supabase connection pooling, implement client-side caching with Redis for frequent queries.
-
-**HNSW Index Without Maintenance:**
-- Issue: pgvector HNSW index created without maintenance schedule. As embeddings table grows, index performance degrades without VACUUM ANALYZE.
-- Files: `supabase/migrations/00001_initial_schema.sql` (line 179)
-- Impact: Vector searches slow down over months without explicit reindexing.
-- Improvement path: Add monthly VACUUM ANALYZE task via pg_cron, monitor vector search latency.
-
-**Missing API Rate Limiting:**
-- Issue: FastAPI backend structure exists but no rate limiting middleware defined. Celery background jobs also have no rate limits.
-- Files: `backend/src/api/`
-- Impact: Backend can be DOS'ed by rapid requests or Celery can be overwhelmed by malicious task queuing.
-- Improvement path: Add `slowapi` rate limiter to FastAPI, implement Celery task rate limits per user.
-
-**Embedding Generation Without Batching:**
-- Issue: No evidence of batch embedding operations. If context synthesis calls Claude 100+ times per page, latency is high.
-- Files: `backend/src/synthesis/`
-- Impact: Context page generation slow for complex tickets with many sources.
-- Improvement path: Batch Claude API calls, implement request queuing.
-
-## Fragile Areas
-
-**Row-Level Security Policy Complexity:**
-- Files: `supabase/migrations/00001_initial_schema.sql` (lines 199-267)
-- Why fragile: 9 tables have RLS policies with recursive subqueries. If workspace_members table is modified, all policies could silently break.
-- Safe modification: Always test RLS policies in Supabase local dev after schema changes. Add integration tests verifying users cannot see other workspace data.
-- Test coverage: No test data or RLS-specific tests exist.
-
-**Monolithic Migration File:**
-- Files: `supabase/migrations/00001_initial_schema.sql` (321 lines)
-- Why fragile: All schema is in one migration. If deployment fails mid-way, rollback loses everything. No intermediate migrations exist for incremental changes.
-- Safe modification: Split into multiple migrations (one per table type: users, integrations, data, search).
-- Test coverage: Seed data exists but no migration rollback tests.
-
-**Docker Build Dependent on Source Structure:**
-- Files: `backend/Dockerfile`
-- Why fragile: Dockerfile assumes `src/` directory exists before pip install. Refactoring module structure breaks builds.
-- Safe modification: Document the src/ requirement or make it configurable via BUILD_ARG.
-- Test coverage: No Docker build tests in CI.
-
-**Supabase Config Hardcoded for Local Development:**
-- Files: `supabase/config.toml`
-- Why fragile: `site_url = "http://localhost:3000"` hardcoded. Production deploys require manual config changes.
-- Safe modification: Use env substitution in config.toml (e.g., `site_url = "env(SUPABASE_SITE_URL)"`).
-
-## Missing Critical Features
-
-**No Main Application Entry Point:**
-- Problem: Backend has no `src/main.py` file. Makefile references `uvicorn src.main:app` but file does not exist.
-- Blocks: Any backend development, local testing, deployment.
-- Priority: Critical — must exist before any backend code can run.
-
-**No Celery Worker Configuration:**
-- Problem: `docker-compose.yml` references `src.workers.celery_app` but no worker file exists.
-- Blocks: Background job processing (ingestion, embedding generation).
-- Priority: Critical for async processing to work.
-
-**No Database Connection Handling:**
-- Problem: No ORM configuration (SQLAlchemy, Tortoise, Piccolo). Supabase client initialization missing.
-- Blocks: Any database operation.
-- Priority: Critical for entire application.
-
-**No API Route Handlers:**
-- Problem: `backend/src/api/routes/` exists but empty. No endpoints for context generation, ticket search, workspace management.
-- Blocks: Frontend cannot communicate with backend.
-- Priority: Critical for MVP.
-
-**No Authentication Middleware:**
-- Problem: No JWT verification or Supabase Auth integration in backend. All endpoints are unauthenticated.
-- Blocks: Multi-tenant isolation, user-specific operations.
-- Priority: High — critical for security.
-
-## Test Coverage Gaps
-
-**No Backend Tests:**
-- What's not tested: Database models, API endpoints, Celery tasks, agent workflows, embedding operations.
-- Files: `backend/` (no test directory)
-- Risk: Regressions in core logic go undetected. Schema changes break queries silently.
-- Priority: High — critical before production.
-
-**No Frontend Tests:**
-- What's not tested: Component rendering, form validation, API client interactions, auth flow.
-- Files: `apps/web/src/` (no test files)
-- Risk: UI bugs in critical paths (login, workspace creation) reach production.
-- Priority: Medium — less critical for API-first product.
-
-**No MCP Integration Tests:**
-- What's not tested: MCP resource/tool schemas, Claude Code integration, error handling.
-- Files: `packages/mcp-server/` (no tests)
-- Risk: AI assistants cannot use tools/resources correctly.
-- Priority: Medium.
-
-**No RLS Policy Tests:**
-- What's not tested: Row-level security enforcement, workspace isolation, membership checks.
-- Files: `supabase/migrations/` (no test data)
-- Risk: Users can access data from other workspaces.
-- Priority: Critical.
-
-**No Docker Build Tests:**
-- What's not tested: Docker image builds, Dockerfile logic, dependency installation.
-- Files: `backend/Dockerfile`
-- Risk: Silent build failures in CI/CD.
-- Priority: Medium.
+**Analysis Date:** 2026-03-12
 
 ---
 
-*Concerns audit: 2026-02-24*
+## Tech Debt
+
+**Telegram webhook runs synchronously (production blocker):**
+- Issue: Telegram webhook processing runs synchronously instead of via background task. The TODO comment explicitly acknowledges this: "Process synchronously for debugging (TODO: move back to background_tasks)". This blocks the Telegram HTTP response for the full event processing time, risking Telegram retrying events.
+- Files: `backend/src/routers/telegram.py:98-99`
+- Impact: Webhook response time directly equals processing time. Telegram may retry, causing duplicate processing. Production reliability issue.
+- Fix approach: Restore `background_tasks.add_task(_process_update_background, payload, workspace_id)` pattern.
+
+**`_parse_notion_datetime` imported from router layer into service layer:**
+- Issue: `notion_sync.py` and `sync_scheduler.py` import a private helper `_parse_notion_datetime` directly from `src.routers.notion`. This inverts the dependency direction — services should never import from routers.
+- Files: `backend/src/services/notion_sync.py:83`, `backend/src/services/sync_scheduler.py:101`
+- Impact: Creates a circular dependency risk and couples the service to router internals. The function cannot be moved or renamed without breaking the service layer.
+- Fix approach: Move `_parse_notion_datetime` to a shared utility module (e.g., `backend/src/utils/datetime.py`) and update all importers.
+
+**Duplicate `generate_context_page` + `generate_context_page_stream` logic:**
+- Issue: Both functions in `backend/src/services/synthesis.py` duplicate the ticket lookup logic (Linear-first, then Jira), the context page placeholder creation/status-update logic, and the prompt building logic. If one is changed, the other must also be updated.
+- Files: `backend/src/services/synthesis.py:146-289` (non-stream), `backend/src/services/synthesis.py:292-500` (stream)
+- Impact: Bug fixes in one path may not be applied to the other. Already observed inconsistency: non-stream does `flush + commit` twice; stream does `flush` without intermediate commit.
+- Fix approach: Extract shared logic (ticket lookup, placeholder upsert, prompt build) into private helpers that both paths call.
+
+**`import json` inside functions (deferred imports scattered throughout):**
+- Issue: `json` is imported inside a function body in `synthesis.py:255` and `jira.py:299`. This is a non-standard pattern that obscures module dependencies.
+- Files: `backend/src/services/synthesis.py:255`, `backend/src/routers/jira.py:299`
+- Impact: Minor — deferred imports work, but violate Python convention and make dependency tracking harder.
+- Fix approach: Move `import json` to module top-level.
+
+**GitLab sync uses `BackgroundTasks` (not Redis), acknowledged as tech debt:**
+- Issue: GitLab sync trigger uses FastAPI `BackgroundTasks`, which are lost on server restart. The TODO comment explicitly calls for migration to Redis Streams (same pattern as GitHub/embedding workers).
+- Files: `backend/src/routers/gitlab.py:268-271`
+- Impact: Any server restart during a GitLab sync silently drops the sync job. Users won't see updated data and won't be notified.
+- Fix approach: Implement a Redis Stream job for GitLab sync following the pattern in `backend/src/services/embedding_worker.py`.
+
+**Linear, Notion, Fathom, Context, and Jira also use `BackgroundTasks` (same issue):**
+- Issue: Multiple routers still use `BackgroundTasks` rather than Redis Streams for sync jobs, making sync unreliable across restarts.
+- Files: `backend/src/routers/linear.py:269`, `backend/src/routers/notion.py:276,307`, `backend/src/routers/fathom.py:100`, `backend/src/routers/context.py:262`, `backend/src/routers/jira.py:238`
+- Impact: Any sync job in flight during a deployment/restart is silently lost.
+- Fix approach: Phase-by-phase migration to Redis Streams using the existing `embedding_worker.py` pattern.
+
+**Hardcoded Redis consumer name prevents horizontal scaling:**
+- Issue: Both worker files use `CONSUMER_NAME = "worker-1"` as a module-level constant. With multiple replicas, all workers compete on the same consumer identity, which prevents proper consumer-group fan-out in Redis Streams.
+- Files: `backend/src/services/embedding_worker.py:30`, `backend/src/services/code_index_worker.py:34`
+- Impact: Consumer group delivery becomes unreliable with >1 replica.
+- Fix approach: Generate the consumer name from hostname + PID: `f"worker-{socket.gethostname()}-{os.getpid()}"`.
+
+**Single-workspace assumption in `get_current_user`:**
+- Issue: `get_current_user` queries `workspace_members` and returns the first workspace membership found. If a user is ever a member of multiple workspaces, the wrong workspace may be selected non-deterministically (SQLAlchemy's `scalar_one_or_none` with no `ORDER BY`).
+- Files: `backend/src/dependencies.py:44-49`
+- Impact: For current single-workspace-per-user design, no immediate issue. Any future multi-workspace feature would cause silent workspace misrouting.
+- Fix approach: Add `ORDER BY created_at ASC LIMIT 1` or implement explicit workspace selection header.
+
+**`settings.py` loads `.env` from `../` (parent directory relative path):**
+- Issue: `model_config = { "env_file": "../.env" }` uses a relative path from the `backend/` directory. This works only when the server is started from `backend/`, not from the repo root or via Docker without explicit WORKDIR.
+- Files: `backend/src/config.py:141`
+- Impact: Silent missing-env-var failures when started from unexpected working directories.
+- Fix approach: Use an absolute path based on `__file__` or rely solely on real environment variables in production.
+
+---
+
+## Known Bugs
+
+**Non-stream `generate_context_page` does a second flush+commit after the session may already be committed:**
+- Symptoms: The non-stream path calls `flush + commit` twice (line 211-226 for placeholder, then `flush` at line 280). The session remains open across the commit, which is correct, but the final `flush` without a corresponding `commit` means the page status change to `"ready"` is only persisted when the caller commits.
+- Files: `backend/src/services/synthesis.py:209-226`, `backend/src/services/synthesis.py:280`
+- Trigger: Any caller that doesn't commit after `generate_context_page` returns will leave the context page in `"generating"` status permanently.
+- Workaround: The background task caller at `backend/src/routers/context.py:232` does `await session.commit()` after the call.
+
+**Duplicate migration number 00019:**
+- Symptoms: Two files named `00019_*.sql` exist: `00019_gitlab_tables.sql` and `00019_jira_tables.sql`. Migration tools that order by filename will have non-deterministic behavior for which runs first.
+- Files: `supabase/migrations/00019_gitlab_tables.sql`, `supabase/migrations/00019_jira_tables.sql`
+- Trigger: Running `supabase db push` or `supabase db reset` in any environment.
+- Workaround: Neither migration exists in production yet based on git status showing `00021` as newest applied.
+
+**JQL injection sanitization is incomplete:**
+- Symptoms: The Jira sync JQL query only strips backslashes and double-quotes from `ticket_identifier`, but does not validate that the remaining string matches the expected `KEY-123` format.
+- Files: `backend/src/routers/context.py:139-142`, `backend/src/routers/context.py:220-223`
+- Trigger: A `ticket_identifier` containing characters like `;`, `OR`, `AND` could manipulate the JQL query.
+- Workaround: Pattern-match `ticket_identifier` against `^[A-Z]+-\d+$` before building the JQL string.
+
+**`X-Forwarded-For` trusted unconditionally in rate limiter:**
+- Symptoms: `_get_client_ip` uses the first value in `X-Forwarded-For` header without verifying the request came through a trusted proxy. Any client can spoof their IP to bypass rate limits.
+- Files: `backend/src/middleware/rate_limit.py:67-73`
+- Trigger: Sending `X-Forwarded-For: 1.2.3.4` bypasses per-IP rate limits entirely.
+- Workaround: In production behind nginx, the real client IP is set correctly by nginx. Risk is low if the backend port is not directly exposed.
+
+---
+
+## Security Considerations
+
+**Bot token sent as plain JSON to `/api/telegram/connect`:**
+- Risk: Telegram bot tokens are sent in request body JSON, logged by default middleware if request bodies are logged.
+- Files: `backend/src/routers/telegram.py:37-44`
+- Current mitigation: Structured logging is configured; the token is not explicitly logged.
+- Recommendations: Ensure request body logging is never enabled in production. Treat the bot token like a password in all logging contexts.
+
+**OAuth state signed with client secret, not a dedicated signing key:**
+- Risk: The HMAC signature for OAuth CSRF state uses the provider's client secret (e.g., `NOTION_CLIENT_SECRET`, `GITLAB_CLIENT_SECRET`). If a client secret rotates, all in-flight OAuth flows break silently with no error message distinguishing rotation from CSRF.
+- Files: `backend/src/services/oauth_common.py:25-41`, `backend/src/routers/notion.py:50`, `backend/src/routers/gitlab.py:56`
+- Current mitigation: State expires with the OAuth flow TTL (browser redirect).
+- Recommendations: Use a dedicated `OAUTH_STATE_SECRET` for signing; separate concerns.
+
+**`CORS_ORIGINS` used as redirect base in OAuth callbacks:**
+- Risk: `frontend_url = settings.CORS_ORIGINS.split(",")[0].strip()` is used to build OAuth redirect URLs. If `CORS_ORIGINS` contains multiple origins, only the first is used, which is fragile. A misconfigured env var can redirect users to an unintended domain.
+- Files: `backend/src/routers/notion.py:70`, `backend/src/routers/gitlab.py` (same pattern)
+- Current mitigation: Production validation checks `CORS_ORIGINS` doesn't contain localhost.
+- Recommendations: Add a dedicated `FRONTEND_URL` config variable used only for OAuth redirects.
+
+**API key stored with only SHA-256 hash, no salt:**
+- Risk: API keys are hashed for storage. Without per-key salts, rainbow table attacks against the hash column are feasible if the DB is compromised.
+- Files: `backend/src/services/api_key.py`, `backend/src/utils/hashing.py`
+- Current mitigation: Keys are long random strings, making rainbow tables impractical in practice.
+- Recommendations: Add per-key salt stored alongside the hash.
+
+**In-memory rate limiter does not survive process restarts:**
+- Risk: Rate limit state is lost on every restart/deploy, allowing burst attacks immediately after a deployment.
+- Files: `backend/src/middleware/rate_limit.py:62-65`
+- Current mitigation: Webhook endpoints have 120 req/min limits.
+- Recommendations: Move rate limit state to Redis for persistence across restarts (already have Redis available).
+
+---
+
+## Performance Bottlenecks
+
+**No LLM token limit guard on synthesis prompt:**
+- Problem: The synthesis prompt concatenates all related content from `linking_result.items` without a cap. A ticket with many PRs, Slack messages, and code chunks can produce prompts exceeding the model's context window.
+- Files: `backend/src/services/synthesis.py:232-243`
+- Cause: `_format_related_content` joins all items with `---` separators but has no token budget enforcement.
+- Improvement path: Count approximate tokens (chars/4) and truncate `all_items` to fit the model's context window minus system prompt + response buffer.
+
+**N+1 eliminated in `_bulk_lookup_source_summaries` but `find_content_by_source` still executes all source queries upfront:**
+- Problem: `find_content_by_source` runs `_find_explicit_refs` and `_find_hybrid_matches` for every generation request, even for sources not connected to the workspace.
+- Files: `backend/src/services/linking.py:461-462`
+- Cause: Both query functions run regardless of which integrations are connected, then `generate_context_page_stream` filters afterward.
+- Improvement path: Pass `connected_sources` into `find_content_by_source` to skip queries for disconnected providers.
+
+**Slack message linking does ILIKE scan on entire workspace messages:**
+- Problem: Finding Slack messages that reference a ticket identifier uses `SlackMessage.text.ilike(f"%{ticket.identifier}%")` — a full table scan with no index support on the `text` column.
+- Files: `backend/src/services/linking.py:199-202`
+- Cause: `ILIKE '%...'` prevents index use; scales linearly with workspace message count.
+- Improvement path: Add a GIN text search index on `slack_messages.text` and use `@@` full-text operator, or rely on the hybrid search path for Slack messages instead.
+
+**Code indexer clones full repos to disk for every re-index:**
+- Problem: `index_repo` clones the entire repository to a temp directory using `git clone`, even for incremental re-indexes where only a few files changed.
+- Files: `backend/src/services/code_indexer.py`
+- Cause: No shallow clone (`--depth 1`) or sparse checkout. Large repos (>100MB) block the code index worker for extended periods.
+- Improvement path: Use `git clone --depth 1` or `git archive` to fetch only current state without full history.
+
+**Notion reconciliation fetches only the first 100 pages:**
+- Problem: `reconcile_notion` calls `client.search_pages(page_size=100)` and only processes that single page of results, missing any updates beyond the first 100 pages.
+- Files: `backend/src/services/sync_scheduler.py:80-82`
+- Cause: No pagination loop in the reconciliation function.
+- Improvement path: Paginate through all results using the Notion API cursor, matching the behavior of the full sync path.
+
+---
+
+## Fragile Areas
+
+**`generate_context_page_stream` SSE generator has no timeout:**
+- Files: `backend/src/routers/context.py:87-168`
+- Why fragile: If `llm.generate()` hangs (e.g., OpenAI quota, network issue), the SSE stream will stay open indefinitely, holding the DB session open and consuming a connection pool slot.
+- Safe modification: Add `asyncio.wait_for(..., timeout=120)` around the LLM call and emit an error event on timeout.
+- Test coverage: `backend/tests/test_synthesis_stream.py` mocks the LLM call; timeout behavior is untested.
+
+**Realtime subscription uses hardcoded channel name `context-pages-changes`:**
+- Files: `apps/web/src/hooks/use-context-pages-realtime.ts:39`
+- Why fragile: If two instances of `useContextPagesRealtime` are mounted (e.g., under React StrictMode double-invoke race), they both attempt to subscribe to the same channel name. The hook handles cleanup via `removeChannel`, but a brief window exists where two subscriptions may be active.
+- Safe modification: Append a unique suffix to the channel name, e.g., using `useId()`.
+- Test coverage: None (realtime hook is not tested).
+
+**`scalar_one()` calls will throw `NoResultFound` on empty upsert results:**
+- Files: `backend/src/services/linear_sync.py:324`, `backend/src/services/github_sync.py:308,314`, `backend/src/services/jira_sync.py:373`, `backend/src/services/notion_sync.py:145`, `backend/src/services/gitlab_sync.py:283,289`, `backend/src/services/telegram_events.py:108`
+- Why fragile: These calls follow `INSERT ... ON CONFLICT DO UPDATE ... RETURNING id` patterns. If the upsert produces no row (e.g., RLS blocks the insert, or a DB trigger fails silently), `scalar_one()` raises `sqlalchemy.exc.NoResultFound`, which propagates as an unhandled 500.
+- Safe modification: Replace with `scalar_one_or_none()` followed by explicit handling for `None`.
+- Test coverage: Upsert failure paths are not tested.
+
+**Activity timeline loads `workspaceId` from URL search params without validation:**
+- Files: `apps/web/src/app/dashboard/activity/activity-timeline.tsx:160-174`
+- Why fragile: Direct Supabase queries using `workspaceId` from props. If `workspaceId` is ever `undefined` or null, the query returns data for all workspaces (or errors silently).
+- Safe modification: Validate `workspaceId` is a valid UUID before executing the query, redirect to error page if invalid.
+
+**`LLMClient.generate_context_page` method is a dead code stub:**
+- Files: `backend/src/services/llm_client.py:120-168`
+- Why fragile: The `LLMClient.generate_context_page` method builds its own prompt independently of the main `SYNTHESIS_TEMPLATE` in `synthesis.py`. It is never called in production. If `synthesis.py` prompt is updated, this stub will silently diverge.
+- Safe modification: Remove the dead method or mark it `@deprecated`.
+
+---
+
+## Scaling Limits
+
+**In-memory rate limiter:**
+- Current capacity: Single-process memory, unbounded growth up to `_CLEANUP_THRESHOLD`.
+- Limit: With horizontal scaling (multiple FastAPI replicas), each replica maintains its own rate limit counter. An attacker can bypass limits by distributing requests across replicas.
+- Scaling path: Move counters to Redis using an atomic increment + expiry pattern.
+
+**Redis consumer group with single fixed consumer name:**
+- Current capacity: Single consumer (`worker-1`) processes all embedding and code index jobs.
+- Limit: Cannot scale to multiple embedding/code-index workers without consumer name collisions.
+- Scaling path: Dynamic consumer names from hostname/PID as described above.
+
+**Code indexer writes full repo clone to local disk:**
+- Current capacity: Limited by available disk on the single host.
+- Limit: Large monorepos (>1GB) or many concurrent index jobs will exhaust disk.
+- Scaling path: Use object storage (S3) as temporary staging or stream content without full clone.
+
+---
+
+## Dependencies at Risk
+
+**`BackgroundTasks` for sync jobs (architectural risk, not a package):**
+- Risk: FastAPI `BackgroundTasks` are process-local and lost on crash/restart. Only embedding/code-index use Redis Streams for durability.
+- Impact: Linear, Notion, Fathom, Jira, GitLab, and context generation syncs are dropped on any restart.
+- Migration plan: Extend the Redis Stream pattern from `embedding_worker.py` to all sync job types.
+
+---
+
+## Missing Critical Features
+
+**No LLM error status propagation to context page on synthesis failure:**
+- Problem: If `llm.generate()` throws (rate limit, invalid API key, quota exceeded), the exception propagates out of `generate_context_page_stream`, which catches it and yields `{"event": "error"}`. However, the `context_page` record in the DB remains with `status="generating"` forever — no `status="error"` is written.
+- Files: `backend/src/services/synthesis.py:498-500`, `backend/src/routers/context.py:160-165`
+- Blocks: Users see a spinning "generating" state forever after an LLM failure. No retry is possible from the UI since the page appears in-progress.
+
+**No GitLab sync tests:**
+- Problem: There are no dedicated test files for GitLab OAuth (`gitlab_oauth.py`), GitLab sync (`gitlab_sync.py`), or GitLab webhook (`gitlab_webhook.py`). Only synthesis stream tests incidentally mention GitLab.
+- Files: `backend/src/services/gitlab_oauth.py`, `backend/src/services/gitlab_sync.py`, `backend/src/services/gitlab_webhook.py`
+- Blocks: GitLab integration regressions will be invisible until production.
+
+**No per-workspace LLM cost tracking:**
+- Problem: `generation_tokens_used` is stored on the `context_page` record, but there is no aggregation, alerting, or billing guard. A single workspace could generate unlimited context pages consuming unbounded LLM tokens.
+- Files: `backend/src/models/context_page.py`, `backend/src/services/synthesis.py:277`
+- Blocks: Cost runaway is undetectable without querying each context page individually.
+
+---
+
+## Test Coverage Gaps
+
+**GitLab integration services:**
+- What's not tested: OAuth flow, token refresh, MR sync, webhook event routing, MR-to-ticket linking for GitLab.
+- Files: `backend/src/services/gitlab_oauth.py`, `backend/src/services/gitlab_sync.py`, `backend/src/services/gitlab_webhook.py`, `backend/src/services/gitlab_linking.py`
+- Risk: Regressions in GitLab sync go undetected.
+- Priority: High (recently added, production-facing)
+
+**SSE stream error paths (LLM failure, DB failure during generation):**
+- What's not tested: What happens when `llm.generate()` raises an exception mid-stream, or when the DB session fails after the SSE stream has started. The `status="generating"` stuck-state bug is in this untested path.
+- Files: `backend/src/services/synthesis.py:498-500`, `backend/tests/test_synthesis_stream.py`
+- Risk: LLM quota errors leave context pages permanently stuck in `"generating"` status.
+- Priority: High
+
+**Frontend API client token expiry behavior:**
+- What's not tested: `apiFetch` and `apiFetchSSE` both call `supabase.auth.getSession()` to get the token. If the session is expired or null, `accessToken` silently becomes `""` and the request is sent with `Authorization: Bearer ` (empty), resulting in a 401 that is not specially handled.
+- Files: `apps/web/src/lib/api.ts:27-29`, `apps/web/src/lib/api.ts:597-600`
+- Risk: Silent 401 errors appear to the user as generic API errors with no prompt to re-authenticate.
+- Priority: Medium
+
+**Realtime hook under React StrictMode / unmount races:**
+- What's not tested: The `useContextPagesRealtime` hook is not tested. Supabase realtime channel cleanup under React StrictMode (double-invoke of effects) is not verified.
+- Files: `apps/web/src/hooks/use-context-pages-realtime.ts`
+- Risk: Duplicate realtime subscriptions or missing cleanup leads to stale event callbacks.
+- Priority: Medium
+
+**Telegram integration end-to-end webhook processing:**
+- What's not tested: The synchronous webhook processing path (currently forced sync for debugging — see TODOs) has no integration tests verifying message persistence, de-duplication, or error rollback.
+- Files: `backend/src/routers/telegram.py:98-99`, `backend/src/services/telegram_events.py`
+- Risk: Silent message loss or duplicate message storage on re-delivery.
+- Priority: Medium
+
+---
+
+## UI/UX Issues
+
+**`window.confirm()` used for disconnect confirmation:**
+- Issue: The integration card disconnect flow uses the browser's native `window.confirm()` dialog, which is unstyled, cannot be customized, and is blocked in some browser contexts (iframes, certain security policies).
+- Files: `apps/web/src/app/dashboard/integrations/integration-card.tsx:96-99`
+- Impact: Inconsistent UX; blocked in embedded contexts.
+- Fix approach: Replace with the existing `AlertDialog` component already imported in `settings/page.tsx`.
+
+**Settings page is a 1,018-line monolith:**
+- Issue: `apps/web/src/app/dashboard/settings/page.tsx` is a 1,018-line file containing all tab content (General, API Keys, Team, Integrations) inline.
+- Files: `apps/web/src/app/dashboard/settings/page.tsx`
+- Impact: Hard to maintain; slow to parse for readers; adding new settings sections compounds the issue.
+- Fix approach: Extract each tab into its own component file, e.g., `settings/tabs/GeneralTab.tsx`, `settings/tabs/ApiKeysTab.tsx`.
+
+**Context generation page does not surface the full error message from the backend:**
+- Issue: When context generation fails, the `errorMessage` shown in `GenerationProgress` comes from the SSE `{"event": "error", "message": "..."}` payload, which includes raw Python exception text (e.g., "Ticket CON-99 not found"). This exposes internal implementation details to users.
+- Files: `apps/web/src/components/generation-progress.tsx:196-199`, `backend/src/services/synthesis.py:499`
+- Impact: Users see Python stack trace-like messages; poor UX; potential security-adjacent info leakage.
+- Fix approach: Map known error types to user-friendly messages in the SSE event handler.
+
+**`eslint-disable react-hooks/exhaustive-deps` comments indicate stale closure risks:**
+- Issue: Four places suppress exhaustive-deps warnings by disabling the ESLint rule, indicating potential stale closure bugs where hooks capture outdated values.
+- Files: `apps/web/src/hooks/use-context-pages-realtime.ts:61`, `apps/web/src/app/dashboard/activity/activity-timeline.tsx:147`, `apps/web/src/app/dashboard/settings/page.tsx:688`, `apps/web/src/app/dashboard/context/generate/page.tsx:139`
+- Impact: Each suppression is a potential bug that may surface as missed re-renders or outdated data being used after state changes.
+- Fix approach: Audit each suppression individually; prefer using `useCallback` with correct deps or `useRef` for stable callbacks.
+
+---
+
+*Concerns audit: 2026-03-12*

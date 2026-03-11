@@ -1,583 +1,381 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-02-24
-
-## Current State
-
-Testing infrastructure is configured but implementation is minimal. This document establishes patterns for new tests as the project evolves.
+**Analysis Date:** 2026-03-12
 
 ## Test Frameworks
+
+### Frontend (TypeScript)
+
+**Runner:**
+- Vitest 4.x
+- Config: `/Users/dauletashikbayev/Developer/ContextOS-core/apps/web/vitest.config.ts`
+- Environment: `node` (no jsdom — DOM rendering is not tested)
+- Path alias: `@/` resolved to `src/`
+
+**Assertion Library:**
+- Vitest built-in (`expect`, matchers from `vitest`)
+
+**Run Commands:**
+```bash
+# From apps/web/
+npx vitest              # Run all tests (watch mode)
+npx vitest run          # Single run (CI)
+npx vitest run --coverage  # With coverage
+```
 
 ### Backend (Python)
 
 **Runner:**
-- pytest
-- Config: Not yet created (uses pytest defaults)
+- pytest with pytest-asyncio
+- Config: `[tool.pytest.ini_options]` in `/Users/dauletashikbayev/Developer/ContextOS-core/backend/pyproject.toml`
+- `asyncio_mode = "auto"` — all async test functions run automatically without `@pytest.mark.asyncio` in most files
+- `testpaths = ["tests"]`
 
-**Async Testing:**
-- pytest-asyncio for async function testing
-- Installed as dev dependency in `backend/pyproject.toml`
+**Coverage:**
+- pytest-cov available as dev dependency
 
 **Run Commands:**
 ```bash
-cd backend && . .venv/bin/activate
-pytest                           # Run all tests
-pytest -v                        # Verbose output
-pytest -k test_name              # Run specific test
-pytest --cov=src                 # With coverage
-pytest -x                        # Stop on first failure
-pytest -s                        # Show print statements
+# From backend/
+pytest                     # Run all tests
+pytest tests/test_linking.py  # Run single file
+pytest -k "test_synthesis"    # Run matching tests
+pytest --cov=src              # With coverage
 ```
-
-### Frontend (TypeScript/React)
-
-**Not yet configured** - Framework decision pending. When implemented, likely options:
-- Vitest (fast, ESM-native, Vite-like syntax)
-- Jest (traditional, broad ecosystem)
-
-**Type Testing:**
-```bash
-cd apps/web && pnpm typecheck   # TypeScript compilation
-```
-
-### MCP Server (TypeScript)
-
-**Not yet configured** - Tests can be added to `packages/mcp-server/`.
 
 ## Test File Organization
 
+### Frontend
+
+**Location:** Co-located in `__tests__/` subdirectories next to the source code:
+```
+apps/web/src/
+├── app/dashboard/activity/
+│   └── __tests__/
+│       └── formatters.test.ts
+├── components/onboarding/
+│   └── __tests__/
+│       └── step-ticket-provider-logic.test.ts
+└── lib/
+    └── __tests__/
+        ├── sync-progress.test.ts
+        └── ticket-provider.test.ts
+```
+
+**Naming:** `<module-name>.test.ts` matching the source file name.
+
 ### Backend
 
-**Location Pattern:**
+**Location:** All tests in `/Users/dauletashikbayev/Developer/ContextOS-core/backend/tests/`
+**Naming:** `test_<module>.py` matching the source module (e.g., `test_linking.py` for `src/services/linking.py`)
+**Shared fixtures:** `/Users/dauletashikbayev/Developer/ContextOS-core/backend/tests/conftest.py`
+
 ```
 backend/
 ├── src/
-│   ├── api/
-│   │   ├── routes.py
-│   │   └── test_routes.py          # Co-located with source
-│   ├── agents/
-│   │   ├── ticket_agent.py
-│   │   └── test_ticket_agent.py
-│   └── config.py
-└── tests/                           # Alternative: integration tests
-    ├── conftest.py                  # Shared fixtures
-    └── test_integration.py
+│   └── services/linking.py
+└── tests/
+    ├── conftest.py          # Shared fixtures (auth, settings, session, client)
+    ├── test_linking.py
+    ├── test_synthesis.py
+    └── test_auth.py
 ```
 
-**Naming:**
-- Test files: `test_*.py` or `*_test.py`
-- Test functions: `test_<function_or_behavior_name>`
-- Test classes: `Test<ClassName>`
+## Test Structure
 
-### Frontend
-
-**Location Pattern (proposed):**
-```
-apps/web/src/
-├── components/
-│   ├── Button.tsx
-│   ├── Button.test.ts              # Co-located unit tests
-│   └── __tests__/
-│       └── Button.integration.test.ts
-├── lib/
-│   ├── utils.ts
-│   └── utils.test.ts
-└── __tests__/
-    └── setup.ts                    # Shared test utilities
-```
-
-**Naming:**
-- Unit tests: `Component.test.ts` (co-located)
-- Integration tests: `__tests__/Feature.integration.test.ts`
-- E2E tests: `e2e/` directory (when Playwright/Cypress added)
-
-## Backend Test Structure
-
-### Basic Test Pattern
-
-**File: `backend/src/api/test_routes.py`**
-
-```python
-import pytest
-from httpx import AsyncClient
-from fastapi.testclient import TestClient
-
-from src.main import app
-from src.config import Settings
-
-
-@pytest.fixture
-def client():
-    """Create a test client."""
-    return TestClient(app)
-
-
-@pytest.fixture
-async def async_client():
-    """Create an async test client."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
-        yield client
-
-
-class TestHealthEndpoint:
-    """Test health check endpoint."""
-
-    def test_health_returns_ok(self, client):
-        """Health endpoint should return 200 OK."""
-        response = client.get("/health")
-        assert response.status_code == 200
-        assert response.json() == {"status": "ok"}
-
-
-class TestAsyncEndpoint:
-    """Test endpoints with async operations."""
-
-    @pytest.mark.asyncio
-    async def test_context_synthesis(self, async_client):
-        """Synthesizing context should return generated page."""
-        response = await async_client.post(
-            "/api/context/synthesize",
-            json={"ticket_id": "123", "workspace_id": "ws-1"}
-        )
-        assert response.status_code == 200
-        assert "content" in response.json()
-```
-
-### Fixture Patterns
-
-**File: `backend/tests/conftest.py`**
-
-```python
-import pytest
-from unittest.mock import Mock, patch
-
-from src.config import Settings
-
-
-@pytest.fixture
-def mock_settings():
-    """Provide mock settings."""
-    settings = Mock(spec=Settings)
-    settings.ENVIRONMENT = "test"
-    settings.ANTHROPIC_API_KEY = "test-key"
-    return settings
-
-
-@pytest.fixture
-def mock_supabase_client():
-    """Mock Supabase client for testing."""
-    with patch("src.api.routes.supabase") as mock:
-        yield mock
-
-
-@pytest.fixture
-def mock_anthropic():
-    """Mock Anthropic Claude client."""
-    with patch("src.synthesis.client.Anthropic") as mock:
-        yield mock
-```
-
-### Database Testing
-
-**Pattern: Use test database or fixtures**
-
-```python
-import pytest
-from supabase import create_client
-
-# Option 1: Mock database operations
-@pytest.fixture
-def mock_db():
-    """Mock database client."""
-    from unittest.mock import Mock
-    return Mock()
-
-
-# Option 2: Real test database (for integration tests)
-@pytest.fixture
-def supabase_test_client():
-    """Connect to test Supabase instance."""
-    return create_client(
-        url="http://localhost:54321",  # Local Supabase
-        key="test-key"
-    )
-```
-
-### Async Test Pattern
-
-```python
-import pytest
-
-class TestAsyncSynthesis:
-    """Tests for async synthesis operations."""
-
-    @pytest.mark.asyncio
-    async def test_synthesis_generates_summary(self):
-        """Should generate context summary for ticket."""
-        from src.synthesis import synthesize_context
-
-        result = await synthesize_context(
-            ticket_id="linear-123",
-            workspace_id="ws-1"
-        )
-        assert result is not None
-        assert result.title is not None
-        assert result.content is not None
-
-    @pytest.mark.asyncio
-    async def test_synthesis_handles_missing_ticket(self):
-        """Should raise error for missing ticket."""
-        from src.synthesis import synthesize_context
-
-        with pytest.raises(ValueError):
-            await synthesize_context(
-                ticket_id="nonexistent",
-                workspace_id="ws-1"
-            )
-```
-
-## Frontend Test Structure
-
-### Unit Test Pattern (Proposed)
-
-**File: `apps/web/src/components/Button.test.ts`**
+### Frontend Suite Organization
 
 ```typescript
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { Button } from "./Button";
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { ActivityEvent } from '../types'
+import { formatEventDescription } from '../formatters'
 
-describe("Button Component", () => {
-  it("renders with label", () => {
-    render(<Button>Click me</Button>);
-    expect(screen.getByRole("button", { name: /click me/i })).toBeInTheDocument();
-  });
+// Helper factory function (NOT a test fixture)
+function mockEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
+  return {
+    id: 'evt-1',
+    workspace_id: 'ws-1',
+    ...overrides,
+  }
+}
 
-  it("handles click events", async () => {
-    const onClick = vi.fn();
-    render(<Button onClick={onClick}>Click</Button>);
+// ---------------------------------------------------------------------------
+// Section grouping with comment banners
+// ---------------------------------------------------------------------------
 
-    const button = screen.getByRole("button");
-    await userEvent.click(button);
-
-    expect(onClick).toHaveBeenCalledOnce();
-  });
-
-  it("supports disabled state", () => {
-    render(<Button disabled>Disabled</Button>);
-    expect(screen.getByRole("button")).toBeDisabled();
-  });
-});
+describe('formatEventDescription', () => {
+  it('sync_started with integration metadata returns "{integration} sync started"', () => {
+    const event = mockEvent({ event_type: 'sync_started', metadata: { integration: 'Linear' } })
+    expect(formatEventDescription(event)).toBe('Linear sync started')
+  })
+})
 ```
 
-### Hook Test Pattern (Proposed)
+**Patterns:**
+- `describe` blocks named after the function being tested
+- `it` descriptions are full sentences describing input and expected output
+- `beforeEach`/`afterEach` used for `vi.useFakeTimers()` / `vi.useRealTimers()` pairs
+- Factory helper functions (`mockEvent`, `makeStatuses`) defined at module scope, not inside tests
 
-**File: `apps/web/src/hooks/useWorkspace.test.ts`**
-
-```typescript
-import { renderHook, act } from "@testing-library/react";
-import { useWorkspace } from "./useWorkspace";
-
-describe("useWorkspace Hook", () => {
-  it("loads workspace data", async () => {
-    const { result } = renderHook(() => useWorkspace("ws-1"));
-
-    expect(result.current.loading).toBe(true);
-
-    // Wait for async load
-    await act(async () => {
-      await vi.waitFor(() => expect(result.current.loading).toBe(false));
-    });
-
-    expect(result.current.workspace).toBeDefined();
-  });
-
-  it("handles fetch errors", async () => {
-    const { result } = renderHook(() => useWorkspace("invalid"));
-
-    await act(async () => {
-      await vi.waitFor(() => expect(result.current.loading).toBe(false));
-    });
-
-    expect(result.current.error).toBeDefined();
-  });
-});
-```
-
-## Mocking Patterns
-
-### Backend Mocking
-
-**Mock External APIs:**
+### Backend Test Organization
 
 ```python
+"""Tests for the context page synthesis service.
+
+Covers:
+- Context page generation with mocked LLM
+- Stale marking
+- Prompt building from ticket and sources
+- Upsert behavior (create and update)
+"""
+
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
-from unittest.mock import patch, AsyncMock
+from tests.conftest import TEST_WORKSPACE_ID
+
+
+def _make_mock_ticket() -> MagicMock:
+    """Create a mock LinearTicket."""
+    ticket = MagicMock()
+    ticket.id = uuid4()
+    ...
+    return ticket
+
 
 @pytest.mark.asyncio
-async def test_sync_linear_tickets():
-    """Test Linear API sync without making real requests."""
-    with patch("src.ingestion.linear.LinearClient") as mock_client:
-        mock_client.return_value.get_tickets = AsyncMock(
-            return_value=[
-                {
-                    "id": "ticket-1",
-                    "title": "Fix auth bug",
-                    "status": "In Progress"
-                }
-            ]
-        )
-
-        from src.ingestion.linear import sync_linear_tickets
-
-        tickets = await sync_linear_tickets(workspace_id="ws-1")
-        assert len(tickets) == 1
-        assert tickets[0]["title"] == "Fix auth bug"
+async def test_generate_context_page_creates_new() -> None:
+    """Should create a new context page when none exists."""
+    mock_session = AsyncMock()
+    ...
+    assert result.status == "ready"
 ```
 
-**Mock Database:**
+**Patterns:**
+- Module docstring listing what is covered
+- Private `_make_*` factory functions for test data (prefix `_`)
+- `@pytest.mark.asyncio` used explicitly in some files; `asyncio_mode = "auto"` handles most cases
+- All test functions have return type annotation `-> None`
+- Test function docstrings in "Should ..." form
 
-```python
-@pytest.fixture
-def mock_supabase():
-    """Mock Supabase operations."""
-    from unittest.mock import Mock
-    mock = Mock()
-    mock.table.return_value.select.return_value.execute.return_value.data = []
-    return mock
-```
-
-### Frontend Mocking
-
-**Mock API Calls:**
-
-```typescript
-import { vi } from "vitest";
-import * as api from "@/lib/api";
-
-describe("Context Synthesis", () => {
-  it("fetches context data", async () => {
-    vi.spyOn(api, "fetchContext").mockResolvedValueOnce({
-      id: "ctx-1",
-      title: "Bug Fix Context",
-      content: "...",
-    });
-
-    // Test component that uses fetchContext
-    // ...
-  });
-});
-```
-
-**Mock Supabase:**
-
-```typescript
-import { createClient } from "@supabase/supabase-js";
-import { vi } from "vitest";
-
-vi.mock("@supabase/supabase-js", () => ({
-  createClient: vi.fn(() => ({
-    auth: {
-      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
-    },
-    from: vi.fn(() => ({
-      select: vi.fn().mockResolvedValue({ data: [] }),
-    })),
-  })),
-}));
-```
-
-## What to Mock / What NOT to Mock
-
-### Backend
-
-**DO Mock:**
-- External API calls (Linear, Slack, Notion)
-- Anthropic Claude API (expensive)
-- Redis operations (test in isolation)
-- Email/notification services
-
-**DO NOT Mock:**
-- Pydantic validation
-- Local business logic
-- Database schema validation (use test DB fixtures)
-- Configuration/Settings
+## Mocking
 
 ### Frontend
 
-**DO Mock:**
-- API calls to backend
-- Supabase auth and data operations
-- Analytics (PostHog, Sentry)
-- Browser APIs (localStorage, fetch)
+**Framework:** Vitest's `vi` object
 
-**DO NOT Mock:**
-- Component rendering
-- React hooks internals
-- Built-in browser events
-- TypeScript types
+```typescript
+import { vi, beforeEach, afterEach } from 'vitest'
 
-## Coverage Goals
+// Fake timers for time-dependent logic
+beforeEach(() => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-02-28T15:42:00Z'))
+})
+afterEach(() => {
+  vi.useRealTimers()
+})
+```
+
+**What to Mock:** Time-dependent behavior (`Date.now()`, `new Date()`); external API calls (via `vi.fn()` or module mocking).
+
+**What NOT to Mock:** Pure functions, data transformations, business logic — these are tested directly with real implementations.
+
+**Key approach:** Since `vitest.config.ts` uses `environment: 'node'`, UI tests extract pure logic into helper functions that can be tested without React rendering. See `/Users/dauletashikbayev/Developer/ContextOS-core/apps/web/src/components/onboarding/__tests__/step-ticket-provider-logic.test.ts` for the pattern of replicating component decision logic as pure functions for testing.
 
 ### Backend
 
-**Current Target:** Not enforced yet
+**Framework:** `unittest.mock` — `MagicMock`, `AsyncMock`, `patch`
 
-**Recommended:**
-- Critical paths (API routes, synthesis): 80%+
-- Utilities: 70%+
-- Integration tests: Critical workflows only
+**Session mocking pattern (used in almost all tests):**
+```python
+mock_session = AsyncMock()
 
-**Generate Coverage:**
+# Single query returning a scalar
+mock_result = MagicMock()
+mock_result.scalar_one_or_none.return_value = some_object
+
+# Query returning multiple rows
+mock_list_result = MagicMock()
+mock_list_result.scalars.return_value.all.return_value = [item1, item2]
+
+# Raw SQL returning tuples
+mock_raw_result = MagicMock()
+mock_raw_result.fetchall.return_value = [(uuid4(), "slack_message", ...)]
+
+# Chain multiple queries in order
+mock_session.execute.side_effect = [
+    mock_result,       # 1st call
+    mock_list_result,  # 2nd call
+    mock_raw_result,   # 3rd call
+]
+```
+
+**Context manager patching:**
+```python
+with patch(
+    "src.services.linking.generate_embedding",
+    new_callable=AsyncMock,
+    return_value=[0.1] * 768,
+):
+    items = await _find_hybrid_matches(mock_session, WORKSPACE_ID, ticket)
+```
+
+**Model mocking:**
+```python
+def _make_ticket(identifier: str = "CON-16") -> MagicMock:
+    """Create a mock LinearTicket that passes isinstance checks."""
+    ticket = MagicMock(spec=LinearTicket)  # spec= ensures isinstance works
+    ticket.id = uuid4()
+    ticket.workspace_id = WORKSPACE_ID
+    ticket.identifier = identifier
+    return ticket
+```
+
+**FastAPI dependency override pattern (HTTP tests):**
+```python
+@pytest.fixture()
+def app(mock_settings, mock_session):
+    from src.db import get_session
+    from src.main import app as fastapi_app
+
+    async def _mock_get_session():
+        yield mock_session
+
+    fastapi_app.dependency_overrides[get_session] = _mock_get_session
+    yield fastapi_app
+    fastapi_app.dependency_overrides.clear()
+```
+
+**What to Mock:** Database sessions, external API calls, LLM clients, embedding generation, OAuth HTTP calls.
+
+**What NOT to Mock:** Business logic functions, Pydantic model validation, pure data transformations.
+
+## Fixtures and Factories
+
+### Frontend
+
+**Test Data:** Module-scope factory functions returning typed objects with safe defaults:
+```typescript
+// Minimal factory with overrides pattern
+const DISCONNECTED: ProviderStatus = {
+  status: 'disconnected',
+  external_name: null,
+  connected_at: null,
+}
+
+function makeStatuses(
+  overrides: Partial<IntegrationStatusResponse> = {},
+): IntegrationStatusResponse {
+  return {
+    linear: DISCONNECTED,
+    jira: DISCONNECTED,
+    ...overrides,
+  }
+}
+```
+
+**Location:** Defined at the top of each test file; not shared across test files.
+
+### Backend
+
+**Shared Fixtures:** `/Users/dauletashikbayev/Developer/ContextOS-core/backend/tests/conftest.py` provides:
+- `mock_settings` — injects test `Settings` instance into config singleton
+- `mock_session` — `AsyncMock(spec=AsyncSession)` for DB calls
+- `app` — FastAPI app with `get_session` overridden
+- `client` — sync `TestClient`
+- `async_client` — async `httpx.AsyncClient`
+- `valid_token`, `expired_token` — pre-signed JWT strings
+- `valid_auth_header`, `expired_auth_header` — ready-to-use header dicts
+- `_reset_settings` — `autouse=True` fixture that clears settings singleton before/after every test
+
+**Per-file fixtures:** Individual test files define additional `@pytest.fixture()` for module-specific context (e.g., `slack_settings`, `slack_app`, `mock_context_page`).
+
+**Test constants (conftest):**
+```python
+TEST_JWT_SECRET = "test-jwt-secret-for-unit-tests-only"
+TEST_USER_ID = "11111111-1111-1111-1111-111111111111"
+TEST_WORKSPACE_ID = "22222222-2222-2222-2222-222222222222"
+TEST_EMAIL = "test@example.com"
+```
+
+## Coverage
+
+**Requirements:** No enforced coverage threshold detected.
+
+**View Coverage:**
 ```bash
-cd backend && . .venv/bin/activate
+# Backend
 pytest --cov=src --cov-report=html
-open htmlcov/index.html
+
+# Frontend
+npx vitest run --coverage
 ```
 
-### Frontend
+## Test Types
 
-**Current Target:** Not configured
+**Unit Tests (Frontend):**
+- Scope: Pure functions — formatters, state machines, URL builders
+- No DOM, no React, no external calls
+- Files: `apps/web/src/lib/__tests__/`, `apps/web/src/app/dashboard/activity/__tests__/`
 
-**Recommended:**
-- Components: 60%+ (focus on user interactions)
-- Hooks: 70%+ (critical to app behavior)
-- Utils: 80%+
+**Unit Tests (Backend):**
+- Scope: Service functions with fully mocked DB sessions and external services
+- No real database or HTTP calls
+- Files: `backend/tests/test_linking.py`, `backend/tests/test_synthesis.py`, most test files
 
-**Note:** Code coverage is a guide, not a goal. Prioritize testing critical paths and error cases.
+**Integration Tests (Backend):**
+- Scope: FastAPI route handlers tested via `TestClient` / `AsyncClient`
+- DB session mocked; HTTP layer (FastAPI middleware, routing, auth) is real
+- Files: `backend/tests/test_auth.py`, `backend/tests/test_context_api.py`, `backend/tests/test_slack.py`
 
-## Common Test Patterns
+**E2E Tests:** Not present.
 
-### Testing API Endpoints
+## Common Patterns
+
+### Async Testing (Backend)
 
 ```python
-class TestCreateContext:
-    """Test context creation endpoint."""
-
-    def test_create_requires_auth(self, client):
-        """Unauthenticated requests should fail."""
-        response = client.post("/api/context", json={})
-        assert response.status_code == 401
-
-    def test_create_with_ticket(self, client, mock_auth_header):
-        """Should create context for valid ticket."""
-        response = client.post(
-            "/api/context",
-            json={"ticket_id": "linear-123"},
-            headers=mock_auth_header
-        )
-        assert response.status_code == 201
-        data = response.json()
-        assert "id" in data
-        assert data["status"] == "generating"
+# pytest-asyncio with asyncio_mode = "auto" — decorator optional
+@pytest.mark.asyncio
+async def test_find_explicit_refs_linked_prs() -> None:
+    mock_session = AsyncMock()
+    # ... setup ...
+    items = await _find_explicit_refs(mock_session, WORKSPACE_ID, ticket)
+    assert len(items) == 1
 ```
 
-### Testing Pydantic Models
+### Error / Exception Testing
 
 ```python
-from pydantic import ValidationError
-import pytest
+# Backend: pytest.raises
+def test_jwt_decode_invalid_token(mock_settings) -> None:
+    from src.auth import decode_supabase_jwt
+    with pytest.raises(JWTError):
+        decode_supabase_jwt("not-a-valid-jwt")
 
-from src.models import ContextPageData
-
-def test_context_page_validation():
-    """Valid context page should pass validation."""
-    data = {
-        "title": "Bug fix",
-        "content": "Fix login bug",
-        "status": "ready"
-    }
-    page = ContextPageData(**data)
-    assert page.title == "Bug fix"
-
-def test_context_page_invalid_status():
-    """Invalid status should raise validation error."""
-    data = {
-        "title": "Bug fix",
-        "content": "...",
-        "status": "invalid"
-    }
-    with pytest.raises(ValidationError):
-        ContextPageData(**data)
+# Backend: HTTP error via TestClient
+def test_get_context_page_not_found(client, valid_auth_header, mock_session) -> None:
+    mock_session.execute.return_value.scalar_one_or_none.return_value = None
+    resp = client.get("/api/context/MISSING-1", headers=valid_auth_header)
+    assert resp.status_code == 404
 ```
 
-### Testing Error Cases
+### Collecting SSE Stream Events (Backend)
 
 ```python
-import pytest
-
-def test_synthesis_with_empty_context(self):
-    """Synthesis should handle empty source data gracefully."""
-    result = synthesize_context(
-        sources=[],
-        ticket_title="Test"
-    )
-    # Should return minimal valid output, not crash
-    assert result is not None
-    assert result.content is not None
-
-def test_api_timeout_handling(self, client, mock_linear_timeout):
-    """Should handle Linear API timeout gracefully."""
-    response = client.post("/api/sync/linear")
-    assert response.status_code == 504  # Gateway Timeout
-    assert "timeout" in response.json()["error"].lower()
+async def _collect_events(stream) -> list[dict]:
+    """Drain an async SSE generator into a list."""
+    events = []
+    async for event in stream:
+        if event.data:
+            events.append(json.loads(event.data))
+    return events
 ```
 
-## Test Execution
+### Test Isolation
 
-### Run All Tests
-
-**Backend:**
-```bash
-cd backend && . .venv/bin/activate && pytest
-```
-
-**Frontend (when configured):**
-```bash
-cd apps/web && pnpm test
-```
-
-### Run Specific Tests
-
-**By file:**
-```bash
-pytest backend/src/api/test_routes.py
-```
-
-**By test name:**
-```bash
-pytest -k test_create_context
-```
-
-**By marker:**
-```bash
-pytest -m asyncio          # Only async tests
-pytest -m slow -v          # Only slow tests (if marked)
-```
-
-### Watch Mode (Development)
-
-**Backend:**
-```bash
-cd backend && . .venv/bin/activate
-pytest-watch -- -x --tb=short
-```
-
-**Frontend (when configured):**
-```bash
-cd apps/web && pnpm test --watch
-```
-
-## CI/CD Integration
-
-**Not yet configured** - Will be added when CI pipeline is set up.
-
-Recommended:
-- Run tests on PR and main branch
-- Fail if coverage drops
-- Test matrix: Python 3.12, Node.js 22+
-- Separate fast (unit) and slow (integration) test runs
+Backend tests use `autouse=True` fixture `_reset_settings` in `conftest.py` to reset the settings singleton between every test, preventing `.env` values from leaking into tests. Per-test fixtures that override `dependency_overrides` always call `.clear()` in teardown.
 
 ---
 
-*Testing analysis: 2026-02-24*
+*Testing analysis: 2026-03-12*

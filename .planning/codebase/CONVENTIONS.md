@@ -1,368 +1,166 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-02-24
-
-## Overview
-
-ContextOS is a multi-language monorepo with three main codebases:
-- **Frontend**: TypeScript/React (Next.js 15)
-- **Backend**: Python (FastAPI)
-- **MCP Server**: TypeScript (Node.js)
-
-Each follows its language's established best practices with unified principles around naming, structure, and error handling.
+**Analysis Date:** 2026-03-12
 
 ## Naming Patterns
 
-### TypeScript/JavaScript (Frontend & MCP Server)
-
 **Files:**
-- Components: PascalCase (e.g., `UserProfile.tsx`, `ContextCard.tsx`)
-- Utils/Helpers: camelCase (e.g., `formatDate.ts`, `parseMarkdown.ts`)
-- Hooks: camelCase with `use` prefix (e.g., `useWorkspace.ts`, `useAuth.ts`)
-- Pages: Match Next.js conventions (e.g., `app/page.tsx`, `app/settings/page.tsx`)
+- Frontend: `kebab-case.tsx` for components (`generation-progress.tsx`, `integration-card.tsx`), `kebab-case.ts` for modules (`sync-progress.ts`, `ticket-provider.ts`, `context-feed.ts`)
+- Backend Python: `snake_case.py` for all files (`github_linking.py`, `synthesis.py`, `linking.py`)
+- Test files: Frontend uses `__tests__/kebab-case.test.ts`; backend uses `tests/test_<module>.py`
 
-**Functions/Variables:**
-- camelCase for functions and variables
-- UPPER_SNAKE_CASE for constants
-- Descriptive names that reflect intent
+**Functions:**
+- Frontend TypeScript: `camelCase` for all functions (`computeSyncState`, `detectTicketProvider`, `apiFetch`, `formatRelativeTime`)
+- Backend Python: `snake_case` for all functions (`find_related_content`, `generate_context_page`, `decode_supabase_jwt`)
+- Private/internal Python helpers are prefixed with `_` (`_find_explicit_refs`, `_find_hybrid_matches`, `_make_test_settings`)
 
-**Types/Interfaces:**
-- PascalCase (e.g., `interface UserProfile`, `type ContextPageData`)
-- Suffix with `Type` or `Props` for clarity when needed (e.g., `UserProfileProps`)
+**Variables:**
+- Frontend: `camelCase` (`accessToken`, `ticketIdentifier`, `syncProgress`)
+- Backend: `snake_case` (`mock_session`, `workspace_id`, `ticket_identifier`)
+- Module-level constants: `UPPER_SNAKE_CASE` in both Python (`WEIGHT_EXPLICIT`, `HYBRID_SEARCH_LIMIT`, `TEST_JWT_SECRET`, `TEST_WORKSPACE_ID`) and TypeScript (`BACKEND_URL`, `SOURCE_LABELS`)
 
-**Path Aliases:**
-- Frontend: `@/*` resolves to `apps/web/src/*` (defined in `tsconfig.json`)
-- Enables clean imports: `import Button from '@/components/Button'`
+**Types/Classes/Interfaces:**
+- Frontend TypeScript interfaces: `PascalCase` (`GenerationProgressProps`, `SyncState`, `ComputedSync`, `ProviderStatus`)
+- Frontend type literals: `PascalCase` for types, `camelCase` for `type` keyword aliases
+- Backend Python dataclasses and Pydantic models: `PascalCase` (`LinkedItem`, `LinkingResult`, `TicketProxy`, `UserContext`)
+- SQLModel table classes: `PascalCase` (`GithubPullRequest`, `LinearTicket`, `ContextPage`)
 
-### Python (Backend)
-
-**Files:**
-- Modules: snake_case (e.g., `config.py`, `api_handler.py`)
-- Classes: PascalCase (e.g., `Settings`, `LinearClient`)
-- Private modules: Leading underscore (e.g., `_internal.py`)
-
-**Functions/Variables:**
-- snake_case for functions and variables
-- UPPER_SNAKE_CASE for constants
-- Descriptive, explicit names
-
-**Classes:**
-- PascalCase following Python conventions
-- Inherit from appropriate base classes (e.g., `BaseSettings` from pydantic)
-
-**Pydantic Models:**
-- PascalCase class names
-- Field validation with validators if needed
-
-### SQL (Database Schema)
-
-**Tables:**
-- snake_case, plural form (e.g., `workspaces`, `linear_tickets`, `slack_messages`)
-- Schema-prefixed: `public.table_name`
-
-**Columns:**
-- snake_case
-- Meaningful names that indicate content type
-- Use suffixes for clarity:
-  - `_at` for timestamps (e.g., `created_at`, `updated_at`, `slack_created_at`)
-  - `_id` for foreign/external IDs (e.g., `slack_ts`, `linear_id`, `notion_id`)
-  - `_url` for URIs (e.g., `avatar_url`, `url`)
-
-**Constraints:**
-- Primary keys: `id` (UUID with `default gen_random_uuid()`)
-- Foreign keys: `{table}_id`
-- Check constraints: `check (column in ('value1', 'value2'))`
-
-**Indexes:**
-- Implicit naming via Supabase (platform-generated)
-- Create indexes on:
-  - Vector similarity searches (HNSW algorithm for pgvector)
-  - Text search columns (GIN indexes with `gin_trgm_ops`)
-  - Foreign key lookups
-  - Frequently filtered columns
+**React Components:**
+- Named exports (not default) for feature components: `export function GenerationProgress(...)`, `export function StepIcon(...)`
+- `'use client'` directive at top of client components
 
 ## Code Style
 
-### TypeScript/JavaScript
-
 **Formatting:**
-- Tool: ESLint (via Next.js config)
-- Extends: `next/core-web-vitals`, `next/typescript`
-- Config: `apps/web/eslint.config.mjs`
-- Strict TypeScript mode enabled (`strict: true` in `tsconfig.json`)
+- Frontend: No `.prettierrc` detected — relies on ESLint/editor defaults. Single quotes for strings in TypeScript (`'use client'`, import paths use single quotes).
+- Backend: Ruff with `line-length = 100`, `target-version = "py312"` (`/Users/dauletashikbayev/Developer/ContextOS-core/backend/pyproject.toml`)
 
-**Key Settings:**
-- Target: ES2017 for frontend, ES2022 for MCP server
-- Module resolution: bundler (Next.js), Node16 (MCP)
-- No implicit any
-- Isolated modules for better build performance
+**Linting:**
+- Frontend: ESLint extending `next/core-web-vitals` and `next/typescript` (`/Users/dauletashikbayev/Developer/ContextOS-core/apps/web/eslint.config.mjs`)
+- Backend: Ruff (linting + formatting) and mypy with `strict = true` (`/Users/dauletashikbayev/Developer/ContextOS-core/backend/pyproject.toml`)
 
-**Import Organization:**
-1. External dependencies (React, Next.js, libraries)
-2. Type imports from external packages
-3. Absolute path aliases (`@/`)
-4. Relative imports
-5. Side effects (styles, polyfills)
+**TypeScript:**
+- Strict mode enabled (`"strict": true` in `/Users/dauletashikbayev/Developer/ContextOS-core/apps/web/tsconfig.json`)
+- `type` imports are used for type-only symbols: `import type { ActivityEvent } from '../types'`
+- Path alias `@/` maps to `src/`; always use it for cross-directory imports
 
-Example:
-```typescript
-import type { NextConfig } from "next";
-import React from "react";
+## Import Organization
 
-import { Button } from "@/components/ui/Button";
-import { parseMetadata } from "@/lib/parsers";
+**Frontend TypeScript order (observed pattern):**
+1. React/Next.js framework imports (`'react'`, `'next/navigation'`)
+2. Third-party packages (`'lucide-react'`, `'sonner'`)
+3. Internal `@/components/ui/*` (shadcn components)
+4. Internal `@/components/*` (feature components)
+5. Internal `@/lib/*` (utilities, API client)
+6. Relative path imports (same-directory types/helpers)
 
-import styles from "./page.module.css";
-```
+**Backend Python order:**
+1. Standard library (`logging`, `uuid`, `dataclasses`, `datetime`)
+2. Third-party (`fastapi`, `sqlalchemy`, `pydantic`, `pytest`)
+3. Internal `src.*` imports
+4. Test-only: `from tests.conftest import TEST_*`
 
-**Error Handling:**
-- Use try-catch for async operations
-- Return error objects or union types instead of throwing from utilities
-- Pass errors through with context
+**Path Aliases:**
+- Frontend: `@/*` → `src/*` (configured in `tsconfig.json` and `vitest.config.ts`)
 
-### Python
+## Error Handling
 
-**Formatting:**
-- Tool: Ruff (linter and formatter)
-- Config: `backend/ruff.toml`
-- Settings:
-  - Line length: 88 characters
-  - Target version: Python 3.12
-  - Rules: E (errors), F (pyflakes), I (imports), UP (upgrades)
+**Frontend:**
+- `apiFetch` throws `Error` with message `"API error {status}: {text}"` on non-ok responses (`/Users/dauletashikbayev/Developer/ContextOS-core/apps/web/src/lib/api.ts`)
+- SSE stream errors are surfaced via `setGeneration({ status: 'error', ... })` — no thrown exceptions in UI components
+- Toast notifications via `sonner` for user-facing errors
 
-**Key Settings:**
-- Strict type checking with mypy
-- Pydantic v2 for data validation
-- UPPER_SNAKE_CASE for env variables in Settings class
-- snake_case for function and variable names
+**Backend:**
+- Auth errors raise `HTTPException(status_code=401)` via `get_current_user` in `/Users/dauletashikbayev/Developer/ContextOS-core/backend/src/dependencies.py`
+- Route-level 404s use `raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=...)`
+- JWT decode errors are caught (`except JWTError`) and re-raised as `HTTPException`
+- Low-level services do not raise HTTP exceptions — they raise domain exceptions; routers translate to HTTP
+- `try/except` used narrowly around external API calls; errors logged before raising
 
-**Import Organization:**
-1. Standard library imports
-2. Third-party imports (FastAPI, Pydantic, etc.)
-3. Local imports (relative with `.`)
-4. Blank line between groups
+## Logging
 
-Example:
-```python
-from typing import Optional
-from datetime import datetime
+**Backend:**
+- Each module declares its own logger: `logger = logging.getLogger(__name__)`
+- Standard Python `logging` module used throughout (structlog is a dependency but stdlib `logging` is the active pattern in most modules)
+- Logger is always module-level, never passed as argument
 
-from fastapi import FastAPI
-from pydantic import BaseModel
-from pydantic_settings import BaseSettings
-
-from .config import get_settings
-```
-
-**Error Handling:**
-- Use Pydantic validators for input validation
-- Raise appropriate HTTP exceptions in FastAPI routes
-- Log errors with context (use logging module)
-- Return meaningful error messages to clients
-
-### SQL
-
-**Style:**
-- UPPERCASE keywords (CREATE TABLE, SELECT, INSERT, etc.)
-- Lowercase identifiers (table names, column names)
-- Spaces around operators
-- Consistent indentation (2 spaces)
-- Comments above logical sections (`-- ============================================================`)
-- Functions: `plpgsql` language for Postgres functions
-
-**Migrations:**
-- File format: `NNNNN_description.sql` (e.g., `00001_initial_schema.sql`)
-- Idempotent: Use `create table if not exists`, `drop if exists`
-- Include comments explaining the schema
-- Apply auto-update triggers for `updated_at` columns
+**Frontend:**
+- No structured logging — `console.error` / `console.log` used sparingly in error paths
 
 ## Comments
 
-### When to Comment
+**When to Comment:**
+- Module-level docstrings on all Python files summarizing purpose and coverage (e.g., `"""Tests for the linking engine.\n\nCovers:\n- ...`"""`)
+- Function-level docstrings on all public Python functions, one-line summary style
+- JSDoc on exported TypeScript functions (`apiFetch`, `computeSyncState`, `formatRelativeTime`)
+- Inline comments explain non-obvious logic: scoring weights, edge cases, bug fixes
 
-**TypeScript/JavaScript:**
-- Complex algorithms or non-obvious logic
-- TSDoc/JSDoc for public APIs and components
-- Avoid obvious comments (e.g., `// increment counter`)
-- Explain the "why" not the "what"
-
-Example:
-```typescript
-/**
- * Synthesizes context for a Linear ticket by querying embeddings
- * and generating a summary via Claude.
- *
- * @param ticketId - Linear ticket UUID
- * @param workspaceId - Workspace context
- * @returns Generated context page with sources
- */
-async function synthesizeContext(ticketId: string, workspaceId: string) {
-  // ...
-}
-```
-
-**Python:**
-- Docstrings for modules, classes, and functions
-- Use triple-quoted strings (""" """)
-- Follow NumPy or Google docstring style
-- Comment non-obvious logic
-
-Example:
+**Docstring style (Python):**
 ```python
-def handle_updated_at():
+def get_current_user(...) -> UserContext:
+    """Decode JWT, look up user profile and workspace membership.
+
+    Returns UserContext with user_id, email, workspace_id.
+    Raises 401 if token is invalid or user not found.
     """
-    Trigger function that automatically updates the updated_at timestamp
-    when a row is modified.
-    """
-    pass
 ```
 
-**SQL:**
-- Section headers for logical groupings
-- Explain complex constraints or indexes
-- Document custom functions
+**Section separators:**
+Both Python tests and TypeScript files use dashed comment banners to group related blocks:
+```python
+# ---------------------------------------------------------------------------
+# Unit tests for decode_supabase_jwt
+# ---------------------------------------------------------------------------
+```
+```typescript
+// ---------------------------------------------------------------------------
+// detectTicketProvider
+// ---------------------------------------------------------------------------
+```
 
 ## Function Design
 
-### TypeScript/JavaScript
-
-**Size:**
-- Prefer functions under 50 lines
-- Extract complex logic into separate functions
-- One responsibility per function
+**Size:** Functions are small and single-purpose. Pure computation logic is extracted into separate utility modules (`sync-progress.ts`, `ticket-provider.ts`) to allow unit testing without framework dependencies.
 
 **Parameters:**
-- Maximum 3-4 parameters
-- Use object destructuring for multiple related params
-- Use optional chaining and nullish coalescing
+- Python: named parameters with type annotations; functions avoid `**kwargs` except in test helpers
+- TypeScript: single `Props` interface for React components; plain object params for utility functions
 
 **Return Values:**
-- Type-annotate return values
-- Use union types or discriminated unions for multiple outcomes
-- Prefer returning data over void
-
-### Python
-
-**Size:**
-- Prefer functions under 40 lines
-- Use comprehensions for simple iterations
-- Extract helper functions for complex logic
-
-**Parameters:**
-- Type hints required (PEP 484)
-- Use `Optional[T]` for nullable values
-- Default values for optional parameters
-
-**Return Values:**
-- Always include return type hints
-- Use `Optional[T]` for nullable returns
-- Use tuples for multiple return values (sparingly)
+- TypeScript: explicit return types on exported functions
+- Python: all public functions annotated with `-> ReturnType`; `-> None` is explicit
 
 ## Module Design
 
-### TypeScript/JavaScript
+**Frontend Exports:**
+- Named exports only; no default exports for feature code
+- `@/lib/api.ts` exports both functions and interfaces from a single file (flat API client pattern)
+- Barrel files: not used for `@/lib`; UI components use individual imports
 
-**Exports:**
-- Export interfaces/types for public APIs
-- Use named exports for functions and components
-- Default exports for pages (Next.js convention)
-- Re-export common utilities in barrel files (`index.ts`)
-
-Example barrel file (`src/components/ui/index.ts`):
-```typescript
-export { Button } from './Button';
-export { Card } from './Card';
-export { Dialog } from './Dialog';
-export type { ButtonProps } from './Button';
-```
-
-**Directory Structure:**
-- Components co-located with styles
-- Utils grouped by domain
-- Types in separate `types.ts` or inline
-- Tests co-located with source (`Component.test.ts`)
-
-### Python
-
-**Exports:**
-- Use `__all__` to define public API
-- Import from submodules explicitly
-- Avoid wildcard imports in production code
-
-Example:
+**Backend Module Pattern:**
 ```python
-# src/api/__init__.py
-from .routes import router
+# module-level logger
+logger = logging.getLogger(__name__)
 
-__all__ = ["router"]
+# module-level constants
+WEIGHT_EXPLICIT = 1.0
+
+# dataclasses for data structures
+@dataclass
+class LinkedItem: ...
+
+# public async functions
+async def find_related_content(session, workspace_id, ticket): ...
+
+# private helpers prefixed with _
+async def _find_explicit_refs(...): ...
 ```
 
-**Directory Structure:**
-- `src/api/routes/` for endpoint handlers
-- `src/agents/` for LangGraph agent definitions
-- `src/synthesis/` for context synthesis logic
-- `src/ingestion/` for data collection
-- `src/embeddings/` for vector operations
-- `src/workers/` for Celery background jobs
-- `src/config.py` for settings singleton
-
-## Environment Configuration
-
-**Frontend (.env):**
-- `NEXT_PUBLIC_*` prefix for browser-exposed variables
-- Typically: Supabase URLs/keys, app URLs, PostHog tokens
-- Example: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_APP_URL`
-
-**Backend (.env):**
-- All keys secret (no prefix)
-- Settings loaded via Pydantic BaseSettings
-- Located at `backend/../.env` (project root)
-- Example: `ANTHROPIC_API_KEY`, `SUPABASE_KEY`, `REDIS_URL`
-
-**Shared:**
-- `ENVIRONMENT` for environment selection (dev/staging/prod)
-- `BACKEND_URL` for frontend-to-backend communication
-
-## Build & Development
-
-### TypeScript/JavaScript
-
-**Scripts (package.json):**
-- `dev`: Start development server (Next.js with Turbopack)
-- `build`: Production build
-- `start`: Run production build
-- `lint`: Run ESLint (Next.js)
-- `typecheck`: Run tsc without emitting
-
-**Run Commands:**
-```bash
-cd apps/web && pnpm dev        # Frontend dev
-cd apps/web && pnpm lint       # Lint and type check
-cd apps/web && pnpm build      # Build for production
-```
-
-### Python
-
-**Scripts (Makefile):**
-- `setup`: Initialize venv, install deps, start Docker services
-- `dev-backend`: Run uvicorn with reload
-- `lint`: Run ruff check
-- `typecheck`: Run mypy
-- `test`: Run pytest
-
-**Run Commands:**
-```bash
-cd backend && . .venv/bin/activate
-uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-**Format & Lint:**
-```bash
-ruff check .        # Check for issues
-ruff format .       # Auto-format code
-mypy src/           # Type checking
-```
+**SQLModel Models:**
+- All table models extend `BaseModel` (from `/Users/dauletashikbayev/Developer/ContextOS-core/backend/src/models/base.py`) which provides `id: UUID`, `created_at`, `updated_at`, `deleted_at`
+- Soft deletes via `deleted_at` field — never hard-delete records
+- `table=True` flag marks ORM-mapped models; response schemas use `table=False` (plain Pydantic)
 
 ---
 
-*Convention analysis: 2026-02-24*
+*Convention analysis: 2026-03-12*

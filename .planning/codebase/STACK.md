@@ -1,235 +1,142 @@
 # Technology Stack
 
-**Analysis Date:** 2026-02-24
+**Analysis Date:** 2026-03-12
 
 ## Languages
 
 **Primary:**
-- TypeScript ^5.7.0 - Frontend (Next.js) and MCP server
-- Python >=3.12 - Backend API and workers
-- SQL - Database migrations and functions (PostgreSQL)
+- Python 3.12 - Backend API, services, workers (`backend/src/`)
+- TypeScript 5.7 - Frontend web app, MCP server (`apps/web/src/`, `packages/mcp-server/src/`)
 
 **Secondary:**
-- JavaScript - Build configuration, package scripts
-- Shell - Development Makefile commands
+- SQL - Supabase migrations and database functions (`supabase/migrations/`)
 
 ## Runtime
 
-**Environment:**
-- Node.js 22+ (frontend requirement per README)
-- Python 3.12 (backend runtime, Docker image: `python:3.12-slim`)
-- Deno support for workers (Redis-based Celery)
+**Backend:**
+- Python 3.12 (enforced via `requires-python = ">=3.12"` in `backend/pyproject.toml`)
+- `uv` for dependency management and running commands
 
-**Package Managers:**
-- `pnpm` 9+ (frontend monorepo)
-- `pip` (Python package management)
-- `setuptools` (Python build backend)
+**Frontend:**
+- Node.js 20 (Alpine, per `apps/web/Dockerfile`)
+- pnpm 9 as package manager
+- Lockfile: `apps/web/pnpm-lock.yaml` (present)
 
-**Lockfiles:**
-- `pnpm-lock.yaml` (TypeScript dependencies, implied)
-- `pyproject.toml` with `poetry`-compatible format (Python dependencies)
+**MCP Server:**
+- Node.js ESM module, TypeScript compiled to `dist/`
+- No lockfile in `packages/mcp-server/` — uses parent workspace
+
+## Package Managers
+
+- **Backend:** `uv` (fast Python package manager); fallback to `pip` if uv unavailable
+- **Frontend/MCP:** `pnpm` 9 via corepack
+- **Root workspace:** Plain `npm`-style `package.json` for shared deps (`dialkit`, `motion`)
 
 ## Frameworks
 
-**Web Framework:**
-- Next.js ^15.2.0 - Full-stack React framework with server components
-  - Includes Turbopack for faster dev builds
-  - Runs on Vercel (production target per README)
-
-**API Framework:**
-- FastAPI - Python async HTTP framework with automatic OpenAPI docs
-  - Uvicorn ^0.28.0+ - ASGI server (Docker CMD runs uvicorn on 0.0.0.0:8000)
-
-**Agentic Framework:**
-- LangGraph - Agent orchestration for LLM workflows
-- LlamaIndex - Data indexing and retrieval for context synthesis
-
-**MCP (Model Context Protocol):**
-- @modelcontextprotocol/sdk ^1.7.0 - Server for AI coding assistants (Claude Code, Cursor, etc.)
-  - Exports as executable: `contextos-mcp` CLI command
-
-**UI Framework:**
-- React ^19.0.0 - Server and client components
-- React DOM ^19.0.0
-
-**UI Component Library:**
-- shadcn/ui (implied from dependencies, based on README)
-- class-variance-authority ^0.7.1 - Utility for variant-based component styling
-- clsx ^2.1.1 - Conditional CSS class composition
-- tailwind-merge ^2.6.0 - Merge Tailwind CSS classes without conflicts
-
-**Icon Library:**
-- lucide-react ^0.469.0 - Icon components
-
-**Toast/Notification:**
-- sonner ^1.7.0 - Toast notifications
-
-## Styling & Build
-
-**CSS Framework:**
-- Tailwind CSS v4.0.0 - Utility-first CSS
-- @tailwindcss/postcss ^4.0.0 - PostCSS plugin
-- PostCSS ^8.5.0 - CSS preprocessing
-
-**Linting & Code Quality:**
-- ESLint ^9.0.0 - JavaScript/TypeScript linting
-- eslint-config-next ^15.2.0 - Next.js ESLint config
-- @eslint/eslintrc ^3.3.0 - ESLint config utilities
-- ruff - Python linter and formatter (dev dependency in backend)
-- mypy - Python static type checker (dev dependency in backend)
-
-**Type Checking:**
-- TypeScript compiler (tsc --noEmit) for frontend
-- mypy for backend
-
-## Testing
+**Backend Core:**
+- FastAPI (via `fastapi[standard]`) — async REST API with lifespan management
+- Uvicorn (via `uvicorn[standard]`) — ASGI server; run with `--reload` in dev, bare in prod
+- Pydantic v2 + `pydantic-settings` — settings via env vars, all models validated
+- SQLModel `>=0.0.22` — ORM layer built on SQLAlchemy + Pydantic
+- SQLAlchemy `>=2.0` (async) — raw queries where SQLModel falls short
+- `asyncpg` — async PostgreSQL driver
 
 **Frontend:**
-- Not explicitly configured in package.json
-- Likely Jest/Vitest (no visible test runner in dependencies)
+- Next.js 15.2 with Turbopack (dev) and standalone output (prod)
+- React 19
+- Tailwind CSS 4
+- shadcn/ui components (generated via `shadcn` CLI) using Radix UI primitives
+- `class-variance-authority` + `clsx` + `tailwind-merge` — style utilities
 
-**Backend:**
-- pytest - Python test runner (dev dependency)
-- pytest-asyncio - AsyncIO support for pytest (dev dependency)
+**MCP Server:**
+- `@modelcontextprotocol/sdk` 1.7 — MCP server protocol implementation
+- Zod 3.24 — input schema validation for tool parameters
 
-**Commands:**
-```bash
-# Frontend type checking
-pnpm typecheck  # tsc --noEmit
+**Testing:**
+- Backend: `pytest` + `pytest-asyncio` + `pytest-cov`
+- Frontend: `vitest` 4
 
-# Backend tests
-cd backend && python -m pytest
-
-# Linting
-pnpm lint
-cd backend && ruff check .
-
-# Backend type checking
-cd backend && mypy src/
-```
+**Build/Dev:**
+- Backend: `ruff` (lint + format), `mypy` (strict type checking)
+- Frontend: ESLint 9 + `eslint-config-next`, `postcss`
+- `hatchling` — Python build backend
 
 ## Key Dependencies
 
-**Critical — AI & Language Models:**
-- anthropic - Anthropic Claude API client (backend)
-- langgraph - Agent orchestration library
-- llama-index - Data indexing and retrieval
-- llama-index-readers-slack - Slack integration for LlamaIndex
-- llama-index-readers-notion - Notion integration for LlamaIndex
+**AI / LLM:**
+- `openai>=1.0` — LLM completions (GPT-4o-mini default) and embeddings (`text-embedding-3-small`, 768 dimensions)
+- `google-genai` — Gemini SDK installed but OpenAI is the active client in `src/services/llm_client.py`
+- `langgraph` — Installed; not yet wired into production flows
+- `lmnr` — Laminar LLM observability tracing; wraps all OpenAI calls with `@observe`
 
-**Critical — Database & ORM:**
-- @supabase/supabase-js ^2.49.0 - JavaScript client (frontend)
-- @supabase/ssr ^0.6.0 - Server-side rendering helpers (frontend)
-- supabase - Python client (backend)
+**Data / Storage:**
+- `supabase` (Python SDK) — Used for Supabase Vault secret storage and Realtime
+- `pgvector` — PostgreSQL vector extension client for embedding similarity search
+- `redis` — In-memory rate limiting, caching layer; Redis 7 Alpine via Docker
 
-**Critical — Background Jobs:**
-- celery[redis] - Task queue with Redis broker
-- redis - Redis Python client
+**Integrations:**
+- `httpx[http2]` — Async HTTP client for all external API calls
+- `slack-bolt` — Slack Events API and OAuth
+- `tree-sitter-language-pack` — Code parsing for repository indexing
+- `PyJWT[crypto]>=2.8` — Supabase JWT verification via JWKS
 
-**Critical — Configuration:**
-- pydantic >=2.0 - Data validation
-- pydantic-settings - Environment variable loading
-- python-dotenv - .env file loading
-
-**HTTP Clients:**
-- httpx - Async HTTP client (backend integrations)
+**Frontend:**
+- `@supabase/ssr` + `@supabase/supabase-js` — Auth and Realtime in Next.js (browser + server)
+- `@sentry/nextjs` — Error monitoring (via `withSentryConfig` wrapper in `next.config.ts`)
+- `posthog-js` — Product analytics (manual pageview tracking only)
+- `remotion` + `@remotion/player` — Video composition (used for landing page hero animation)
+- `react-markdown` + `remark-gfm` — Markdown rendering for context pages
+- `sonner` — Toast notifications
+- `lucide-react` — Icon library
 
 **Observability:**
-- lmnr - Laminar (LLM observability)
-- sentry-sdk[fastapi] - Error tracking
-- PostHog (frontend observability, implied from env vars)
+- `sentry-sdk[fastapi]` — Backend error tracking + performance monitoring
+- `structlog` — Structured JSON logging backend
 
-**Data Validation:**
-- zod ^3.24.0 - TypeScript schema validation (MCP server)
-
-**Development Tools:**
-- tsx ^4.19.0 - TypeScript execution for Node.js (MCP server)
-- @types/node ^22.0.0 - Node.js type definitions
-- @types/react ^19.0.0 - React type definitions
-- @types/react-dom ^19.0.0 - React DOM type definitions
+**SSE:**
+- `sse-starlette>=3.3.2` — Server-Sent Events for streaming context generation progress
 
 ## Configuration
 
-**Environment Variables:**
-- Frontend (exposed to browser): `NEXT_PUBLIC_*` prefix required
-  - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-  - `NEXT_PUBLIC_APP_URL`
-  - `NEXT_PUBLIC_SENTRY_DSN`
-  - `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST`
+**Environment:**
+- Single root `.env` file for both backend and frontend (backend reads via `env_file = "../.env"`)
+- Frontend reads via `NEXT_PUBLIC_*` prefixed vars in `apps/web/.env.local` (auto-generated by `make setup-frontend-env`)
+- `backend/src/config.py` defines all settings as `pydantic-settings` `BaseSettings`
+- Environments: `dev`, `staging`, `prod`; production validates required secrets at startup
 
-- Backend (server-only):
-  - Database: `SUPABASE_URL`, `SUPABASE_KEY`
-  - LLM: `ANTHROPIC_API_KEY`
-  - Integrations: `LINEAR_API_KEY`, `SLACK_BOT_TOKEN`, `NOTION_TOKEN`
-  - Cache: `REDIS_URL`
-  - Observability: `LAMINAR_API_KEY`, `SENTRY_DSN`
-  - App: `ENVIRONMENT` (dev/staging/prod), `BACKEND_URL`
+**Required Secrets:**
+- `DATABASE_URL` — async PostgreSQL (`postgresql+asyncpg://...`)
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`
+- `OPENAI_API_KEY` — LLM and embeddings
+- OAuth credentials per integration (LINEAR, SLACK, GITHUB, NOTION, GITLAB, JIRA)
+- `REDIS_URL` — defaults to `redis://localhost:6379/0`
+- `SENTRY_DSN` — required in production
+- `LAMINAR_API_KEY` — optional (gracefully disabled if absent)
 
-**Configuration Files:**
-- `.env.example` - Template for required environment variables
-- `tsconfig.json` (Next.js, MCP server) - TypeScript compiler options
-- `next.config.ts` - Next.js configuration
-- `postcss.config.mjs` - PostCSS configuration
-- `eslint.config.mjs` - ESLint rules
-- `pyproject.toml` - Python project metadata and dependencies
+**Build:**
+- `apps/web/next.config.ts` — Next.js standalone output, Sentry source map upload
+- `backend/Dockerfile` — Multi-stage Python build (builder + production runner)
+- `apps/web/Dockerfile` — Multi-stage Node build (deps → builder → runner)
+- `docker-compose.yml` — Redis only (other services run externally or via Supabase local)
+- `nginx/nginx.conf` — Reverse proxy with `backend:8000` and `frontend:3000` upstreams
 
-**Python Configuration:**
-- `src/config.py` - Pydantic Settings class for environment loading (see INTEGRATIONS.md for detail)
+## Platform Requirements
 
-## Database
+**Development:**
+- Docker (for Redis via `docker compose up -d`)
+- Supabase CLI (for local Postgres + Auth + Vault + Realtime via `supabase start`)
+- ngrok (for OAuth callbacks and webhooks — Slack requires HTTPS redirect URIs)
+- `uv` for Python tooling
+- `pnpm` 9 via corepack
 
-**Primary Database:**
-- PostgreSQL (via Supabase)
-- Vector extension: pgvector (1536-dimensional embeddings)
-- Text search: pg_trgm extension
-
-**In-Memory Cache:**
-- Redis 7-alpine (via Docker Compose)
-- Default connection: `redis://localhost:6379/0`
-- Purpose: Celery task queue broker
-
-## Containerization
-
-**Docker:**
-- Multi-stage build pattern (`backend/Dockerfile`)
-- Stage 1: Dependencies layer (install pip packages)
-- Stage 2: Production image (copy only necessary files)
-- Base image: `python:3.12-slim`
-- Runs as non-root: UID 1000 (appuser)
-- Exposed port: 8000
-
-**Docker Compose:**
-- Redis service (Compose file version not specified, likely v3.8+)
-- Celery worker profile: `--profile workers`
-- Health checks configured for Redis
-
-## Deployment Targets
-
-**Production Hosting:**
-- Frontend: Vercel (Next.js native platform)
-- Backend: Railway (Python FastAPI service)
-
-**Local Development:**
-- Docker Compose for Redis and Celery workers
-- Supabase CLI for local PostgreSQL + Auth
-- Node dev server (Next.js)
-- Python dev server (uvicorn with --reload)
-
-## Development Commands (Makefile)
-
-```bash
-make setup          # Install all dependencies, Docker setup
-make dev           # Start Redis (docker), prompt for frontend/backend
-make dev-frontend  # cd apps/web && pnpm dev
-make dev-backend   # cd backend && uvicorn src.main:app --reload
-make dev-workers   # docker compose --profile workers up
-make lint          # ESLint + Ruff
-make typecheck     # tsc + mypy
-make test          # pytest
-make clean         # docker down, remove venvs
-make db-reset      # supabase db reset
-```
+**Production:**
+- Containerized (Dockerfiles provided for backend and frontend)
+- PostgreSQL database via Supabase (hosted)
+- Redis instance
+- Nginx reverse proxy (`nginx/nginx.conf`)
+- HTTPS required for BACKEND_URL and all CORS origins
 
 ---
 
-*Stack analysis: 2026-02-24*
+*Stack analysis: 2026-03-12*
