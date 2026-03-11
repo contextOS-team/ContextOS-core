@@ -95,9 +95,8 @@ async def webhook(
 
     payload = await request.json()
 
-    # Process synchronously for debugging (TODO: move back to background_tasks)
-    await _process_update_background(payload, workspace_id)
-    return {"status": "ok"}
+    background_tasks.add_task(_process_update_background, payload, workspace_id)
+    return {"ok": True}
 
 
 async def _process_update_background(payload: dict, workspace_id: str | uuid.UUID) -> None:
