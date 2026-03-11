@@ -18,6 +18,8 @@ Usage:
 import asyncio
 import json
 import logging
+import os
+import socket
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -31,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 STREAM_KEY = "code_index:jobs"
 GROUP_NAME = "code-index-workers"
-CONSUMER_NAME = "worker-1"
+CONSUMER_NAME = f"worker-{socket.gethostname()}-{os.getpid()}"
 BATCH_READ_COUNT = 5  # Fewer than embedding worker -- indexing is heavier
 BLOCK_MS = 10000  # 10s block (indexing happens less frequently)
 

@@ -7,6 +7,7 @@ and Fathom endpoints from abuse.
 
 from __future__ import annotations
 
+import ipaddress
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -64,13 +65,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         )
         self._last_cleanup = time.monotonic()
 
+    @staticmethod
+    def _is_trusted_proxy(ip: str) -> bool:
+        """Check if IP is a known proxy (loopback or private range).
+
+        SEC-02: Only trust X-Forwarded-For from these addresses to prevent
+        direct clients from spoofing their IP to bypass rate limits.
+        """
+        try:
+            addr = ipaddress.ip_address(ip)
+            return addr.is_loopback or addr.is_private
+        except ValueError:
+            return False
+
     def _get_client_ip(self, request: Request) -> str:
-        """Extract client IP from request, respecting X-Forwarded-For."""
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            # First IP in chain is the original client
-            return forwarded.split(",")[0].strip()
-        return request.client.host if request.client else "unknown"
+        """Extract client IP, only trusting X-Forwarded-For from known proxies."""
+        client_host = request.client.host if request.client else "unknown"
+
+        # SEC-02: Only trust X-Forwarded-For when request comes from a proxy
+        if client_host != "unknown" and self._is_trusted_proxy(client_host):
+            forwarded = request.headers.get("x-forwarded-for")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
+
+        return client_host
 
     def _get_rate_limit(self, path: str) -> tuple[str, int] | None:
         """Return (prefix, limit) if path matches a rate-limited prefix, else None."""

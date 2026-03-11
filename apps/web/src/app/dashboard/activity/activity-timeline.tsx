@@ -128,25 +128,6 @@ export function ActivityTimeline({
     return () => observer.disconnect()
   }, [events.length])
 
-  // Cursor-based pagination via IntersectionObserver
-  useEffect(() => {
-    const sentinel = paginationSentinelRef.current
-    if (!sentinel) return
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && hasMore && !isLoadingMore) {
-          loadMore()
-        }
-      },
-      { rootMargin: '200px' }
-    )
-
-    observer.observe(sentinel)
-    return () => observer.disconnect()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMore, isLoadingMore, events.length])
-
   const loadMore = useCallback(async () => {
     if (!hasMore || isLoadingMore) return
     setIsLoadingMore(true)
@@ -173,6 +154,24 @@ export function ActivityTimeline({
 
     setIsLoadingMore(false)
   }, [hasMore, isLoadingMore, events, workspaceId])
+
+  // Cursor-based pagination via IntersectionObserver
+  useEffect(() => {
+    const sentinel = paginationSentinelRef.current
+    if (!sentinel) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMore && !isLoadingMore) {
+          loadMore()
+        }
+      },
+      { rootMargin: '200px' }
+    )
+
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [hasMore, isLoadingMore, events.length, loadMore])
 
   // Flush buffered events and scroll to top
   const flushBuffer = useCallback(() => {

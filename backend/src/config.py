@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     # Public HTTPS base URL for Telegram webhooks (e.g. ngrok URL in dev)
     TELEGRAM_WEBHOOK_BASE_URL: str = ""
 
+    # OAuth state signing (SEC-03: dedicated secret, not provider client secrets)
+    OAUTH_STATE_SECRET: str = ""
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
 

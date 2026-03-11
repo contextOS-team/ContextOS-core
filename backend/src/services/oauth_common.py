@@ -22,21 +22,38 @@ class OAuthStateError(ValueError):
     """Raised when OAuth state parameter is invalid or tampered."""
 
 
+def _get_signing_secret(fallback_secret: str) -> str:
+    """Return OAUTH_STATE_SECRET if configured, otherwise fall back to provider secret.
+
+    SEC-03: Dedicated secret isolates OAuth state signing from provider credentials.
+    Fallback ensures backward compatibility during migration.
+    """
+    from src.config import get_settings
+    settings = get_settings()
+    if settings.OAUTH_STATE_SECRET:
+        return settings.OAUTH_STATE_SECRET
+    return fallback_secret
+
+
 def sign_oauth_state(workspace_id: UUID, secret: str) -> str:
     """Create a signed state parameter encoding workspace_id.
 
     Uses HMAC-SHA256 to prevent CSRF. Format: {workspace_id}:{signature}
 
+    SEC-03: Uses OAUTH_STATE_SECRET when configured, falling back to the
+    provider client secret for backward compatibility.
+
     Args:
         workspace_id: Workspace UUID to encode.
-        secret: Client secret for HMAC signing.
+        secret: Provider client secret (used as fallback only).
 
     Returns:
         Signed state string: "{workspace_id}:{hmac_signature}"
     """
+    signing_key = _get_signing_secret(secret)
     message = str(workspace_id)
     signature = hmac.new(
-        secret.encode(), message.encode(), hashlib.sha256
+        signing_key.encode(), message.encode(), hashlib.sha256
     ).hexdigest()
     return f"{message}:{signature}"
 
@@ -44,9 +61,12 @@ def sign_oauth_state(workspace_id: UUID, secret: str) -> str:
 def verify_oauth_state(state: str, secret: str) -> UUID:
     """Verify and extract workspace_id from a signed state parameter.
 
+    SEC-03: Uses OAUTH_STATE_SECRET when configured, falling back to the
+    provider client secret for backward compatibility.
+
     Args:
         state: Signed state string from OAuth callback.
-        secret: Client secret for HMAC verification.
+        secret: Provider client secret (used as fallback only).
 
     Returns:
         The extracted workspace UUID.
@@ -54,13 +74,14 @@ def verify_oauth_state(state: str, secret: str) -> UUID:
     Raises:
         OAuthStateError: If the state format or signature is invalid.
     """
+    signing_key = _get_signing_secret(secret)
     try:
         workspace_str, signature = state.rsplit(":", 1)
     except ValueError as e:
         raise OAuthStateError("Invalid state parameter format") from e
 
     expected = hmac.new(
-        secret.encode(), workspace_str.encode(), hashlib.sha256
+        signing_key.encode(), workspace_str.encode(), hashlib.sha256
     ).hexdigest()
 
     if not hmac.compare_digest(signature, expected):

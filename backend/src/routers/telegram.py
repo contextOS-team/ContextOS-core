@@ -35,6 +35,7 @@ async def connect(
     Accepts JSON body: {"bot_token": "..."}
     """
     body = await request.json()
+    # SECURITY: bot_token must never be logged
     bot_token = body.get("bot_token", "")
 
     if not bot_token:

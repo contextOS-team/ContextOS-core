@@ -58,6 +58,7 @@ export function useContextPagesRealtime({
     return () => {
       supabase.removeChannel(channel)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deps intentionally empty: callbacks are stored in refs (onInsertRef, onUpdateRef)
+    // and supabase client is created inside the effect. No external deps needed.
   }, [])
 }
