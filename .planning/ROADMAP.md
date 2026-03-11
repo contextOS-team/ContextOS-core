@@ -288,7 +288,7 @@ Plans:
   3. Synthesis pipeline uses shared helpers with zero duplication
   4. Settings page is decomposed into focused tab components (each under 200 lines)
   5. Frontend uses AlertDialog for confirmations and shows user-friendly error messages
-**Plans:** 6 plans
+**Plans:** 5/6 plans executed
 
 Plans:
 - [x] 29-01-PLAN.md — Security hardening: JQL injection, IP spoofing, OAuth state signing, API key salt, Redis rate limiter, consumer names, workspace safety

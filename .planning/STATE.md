@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
-status: executing
-stopped_at: Completed 29-04-PLAN.md
-last_updated: "2026-03-11T20:22:02.246Z"
-last_activity: 2026-03-12 -- Completed 29-02 (Frontend UI/UX Polish)
+status: completed
+stopped_at: Completed 29-06-PLAN.md
+last_updated: "2026-03-11T20:45:39.674Z"
+last_activity: 2026-03-12 -- Completed 29-04 (Synthesis Pipeline Overhaul)
 progress:
   total_phases: 15
-  completed_phases: 11
-  total_plans: 35
-  completed_plans: 33
-  percent: 96
+  completed_phases: 10
+  total_plans: 37
+  completed_plans: 34
+  percent: 97
 ---
 
 # Project State
@@ -90,6 +90,7 @@ Progress: [██████████] 97%
 | Phase 29 P03 | 3min | 2 tasks | 8 files |
 | Phase 29 P02 | 8min | 2 tasks | 10 files |
 | Phase 29 P04 | 5min | 2 tasks | 3 files |
+| Phase 29 P06 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -183,6 +184,8 @@ Recent decisions affecting current work:
 - [Phase 29]: TICKET_ID_PATTERN strict allowlist (^[A-Z][A-Z0-9]+-\d+$) for JQL injection prevention
 - [Phase 29]: X-Forwarded-For trusted only from loopback/private IPs via ipaddress module
 - [Phase 29]: _lookup_ticket returns 3-tuple (ticket, fk_id, is_linear) for mock-friendly ticket type detection
+- [Phase 29]: NotionSyncSection receives isPageLoading prop to gate mount-effect sync resume
+- [Phase 29]: makeConnectHandler/makeDisconnectHandler moved into integration-cards.tsx as module-level helpers
 
 ### Roadmap Evolution
 
@@ -206,6 +209,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T20:22:02.243Z
-Stopped at: Completed 29-04-PLAN.md
+Last session: 2026-03-11T20:45:39.671Z
+Stopped at: Completed 29-06-PLAN.md
 Resume file: None
