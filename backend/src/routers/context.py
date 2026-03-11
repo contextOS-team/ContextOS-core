@@ -75,6 +75,7 @@ async def stream_context_generation(
     user: UserContext = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
     linear_issue_id: str | None = Query(default=None),
+    jira_issue_id: str | None = Query(default=None),
 ):
     """Stream context generation progress via SSE.
 
@@ -101,28 +102,51 @@ async def stream_context_generation(
                     )
                     return
 
-                # Sync ticket from Linear if not found locally
-                ticket_stmt = select(LinearTicket).where(
-                    LinearTicket.workspace_id == user.workspace_id,
-                    LinearTicket.identifier == ticket_identifier,
-                    LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
-                )
-                ticket_result = await session.execute(ticket_stmt)
-                if ticket_result.scalar_one_or_none() is None and linear_issue_id:
-                    from src.services.linear_sync import sync_single_ticket
-                    from src.services.linear_oauth import get_valid_access_token
+                # Sync ticket if not found locally
+                if linear_issue_id:
+                    ticket_stmt = select(LinearTicket).where(
+                        LinearTicket.workspace_id == user.workspace_id,
+                        LinearTicket.identifier == ticket_identifier,
+                        LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
+                    )
+                    ticket_result = await session.execute(ticket_stmt)
+                    if ticket_result.scalar_one_or_none() is None:
+                        from src.services.linear_sync import sync_single_ticket
+                        from src.services.linear_oauth import get_valid_access_token
 
-                    logger.info(
-                        "SSE: Ticket %s not found locally, syncing from Linear",
-                        ticket_identifier,
+                        logger.info(
+                            "SSE: Ticket %s not found locally, syncing from Linear",
+                            ticket_identifier,
+                        )
+                        access_token = await get_valid_access_token(
+                            session, user.workspace_id, user.user_id, settings
+                        )
+                        await sync_single_ticket(
+                            session, user.workspace_id, access_token, linear_issue_id
+                        )
+                        await session.commit()
+                elif jira_issue_id:
+                    from src.models.jira import JiraIssue
+                    jira_stmt = select(JiraIssue).where(
+                        JiraIssue.workspace_id == user.workspace_id,
+                        JiraIssue.jira_id == jira_issue_id,
+                        JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
                     )
-                    access_token = await get_valid_access_token(
-                        session, user.workspace_id, user.user_id, settings
-                    )
-                    await sync_single_ticket(
-                        session, user.workspace_id, access_token, linear_issue_id
-                    )
-                    await session.commit()
+                    jira_result = await session.execute(jira_stmt)
+                    if jira_result.scalar_one_or_none() is None:
+                        try:
+                            from src.services.jira_sync import sync_jira_issues
+                            safe_key = ticket_identifier.replace('\\', '').replace('"', '')
+                            await sync_jira_issues(
+                                session, user.workspace_id, settings,
+                                jql=f'key = "{safe_key}"',
+                            )
+                            await session.commit()
+                        except Exception:
+                            logger.warning(
+                                "SSE: Failed to sync Jira issue %s",
+                                ticket_identifier, exc_info=True,
+                            )
 
                 async for event in generate_context_page_stream(
                     session, user.workspace_id, ticket_identifier
@@ -149,41 +173,61 @@ async def _generate_in_background(
     user_id: UUID,
     ticket_identifier: str,
     linear_issue_id: str | None,
+    jira_issue_id: str | None,
     settings: Settings,
 ) -> None:
     """Background task for context page generation with its own session.
 
-    If the ticket doesn't exist locally and linear_issue_id is provided,
-    syncs the ticket from Linear first before generating the context page.
+    If the ticket doesn't exist locally, syncs it from the appropriate
+    provider (Linear or Jira) before generating the context page.
     """
-    from src.services.linear_sync import sync_single_ticket
-    from src.services.linear_oauth import get_valid_access_token
-
     async with async_session() as session:
         try:
-            # Check if ticket exists locally
-            stmt = select(LinearTicket).where(
-                LinearTicket.workspace_id == workspace_id,
-                LinearTicket.identifier == ticket_identifier,
-                LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
-            )
-            result = await session.execute(stmt)
-            ticket = result.scalar_one_or_none()
+            if linear_issue_id:
+                stmt = select(LinearTicket).where(
+                    LinearTicket.workspace_id == workspace_id,
+                    LinearTicket.identifier == ticket_identifier,
+                    LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
+                )
+                result = await session.execute(stmt)
+                if result.scalar_one_or_none() is None:
+                    from src.services.linear_sync import sync_single_ticket
+                    from src.services.linear_oauth import get_valid_access_token
 
-            if ticket is None and linear_issue_id:
-                # Sync the ticket from Linear first
-                logger.info(
-                    "Ticket %s not found locally, syncing from Linear (issue_id=%s)",
-                    ticket_identifier,
-                    linear_issue_id,
+                    logger.info(
+                        "Ticket %s not found locally, syncing from Linear (issue_id=%s)",
+                        ticket_identifier,
+                        linear_issue_id,
+                    )
+                    access_token = await get_valid_access_token(
+                        session, workspace_id, user_id, settings
+                    )
+                    await sync_single_ticket(
+                        session, workspace_id, access_token, linear_issue_id
+                    )
+                    await session.commit()
+            elif jira_issue_id:
+                from src.models.jira import JiraIssue
+                jira_stmt = select(JiraIssue).where(
+                    JiraIssue.workspace_id == workspace_id,
+                    JiraIssue.jira_id == jira_issue_id,
+                    JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
                 )
-                access_token = await get_valid_access_token(
-                    session, workspace_id, user_id, settings
-                )
-                await sync_single_ticket(
-                    session, workspace_id, access_token, linear_issue_id
-                )
-                await session.commit()
+                jira_result = await session.execute(jira_stmt)
+                if jira_result.scalar_one_or_none() is None:
+                    try:
+                        from src.services.jira_sync import sync_jira_issues
+                        safe_key = ticket_identifier.replace('\\', '').replace('"', '')
+                        await sync_jira_issues(
+                            session, workspace_id, settings,
+                            jql=f'key = "{safe_key}"',
+                        )
+                        await session.commit()
+                    except Exception:
+                        logger.warning(
+                            "Background: Failed to sync Jira issue %s",
+                            ticket_identifier, exc_info=True,
+                        )
 
             await generate_context_page(session, workspace_id, ticket_identifier)
             await session.commit()
@@ -198,6 +242,7 @@ class GenerateRequest(PydanticBaseModel):
     """Optional body for POST /{ticket_identifier}/generate."""
 
     linear_issue_id: str | None = None
+    jira_issue_id: str | None = None
 
 
 @router.post("/{ticket_identifier}/generate", status_code=status.HTTP_202_ACCEPTED)
@@ -220,6 +265,7 @@ async def trigger_context_generation(
         user.user_id,
         ticket_identifier,
         body.linear_issue_id if body else None,
+        body.jira_issue_id if body else None,
         settings,
     )
 
