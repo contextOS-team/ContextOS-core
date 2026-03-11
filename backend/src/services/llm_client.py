@@ -117,57 +117,6 @@ class LLMClient:
             model=self.model_name,
         )
 
-    @observe(name="llm_generate_with_context")
-    async def generate_context_page(
-        self,
-        ticket_data: dict,
-        sources: list[dict],
-        workspace_id: UUID,
-        ticket_identifier: str,
-    ) -> LLMResponse:
-        """Generate a context page from ticket data and related sources.
-
-        Builds a synthesis prompt from the provided data and calls
-        :meth:`generate`.
-
-        Args:
-            ticket_data: Dict with ticket fields (title, description, etc.).
-            sources: List of source dicts (Slack messages, meeting excerpts, etc.).
-            workspace_id: Workspace UUID for trace tagging.
-            ticket_identifier: Human-readable ticket reference.
-
-        Returns:
-            ``LLMResponse`` from the synthesis call.
-        """
-        # Build synthesis prompt
-        source_texts = "\n\n".join(
-            f"### Source: {s.get('type', 'unknown')}\n{s.get('content', '')}"
-            for s in sources
-        )
-
-        prompt = (
-            f"You are a context synthesis assistant for engineering tickets.\n\n"
-            f"## Ticket: {ticket_data.get('identifier', ticket_identifier)}\n"
-            f"**Title:** {ticket_data.get('title', 'Untitled')}\n"
-            f"**Description:** {ticket_data.get('description', 'No description')}\n\n"
-            f"## Related Sources\n{source_texts}\n\n"
-            f"Synthesize the above into a concise context page that helps an "
-            f"engineer understand the full story behind this ticket."
-        )
-
-        system_prompt = (
-            "You are a technical writing assistant. Produce clear, concise "
-            "context summaries for engineering teams. Focus on decisions, "
-            "requirements, and actionable information."
-        )
-
-        return await self.generate(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            workspace_id=workspace_id,
-            ticket_identifier=ticket_identifier,
-        )
-
 
 # ---------------------------------------------------------------------------
 # Module-level singleton

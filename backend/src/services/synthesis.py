@@ -25,6 +25,11 @@ from src.services.llm_client import get_llm_client
 
 logger = logging.getLogger(__name__)
 
+# Maximum characters for the synthesis prompt's related content section.
+# ~25k tokens at ~4 chars/token.  Exceeding this risks hitting model context
+# limits and increasing latency/cost with diminishing returns.
+MAX_PROMPT_CHARS = 100_000
+
 
 @dataclass
 class TicketProxy:
@@ -107,12 +112,18 @@ Only include if multiple people are involved. Who is involved and their roles.""
 
 
 def _format_related_content(items: list) -> str:
-    """Format linked items into a structured text block for the LLM prompt."""
+    """Format linked items into a structured text block for the LLM prompt.
+
+    Respects MAX_PROMPT_CHARS budget — once the next item would exceed the
+    limit, a truncation notice is appended and remaining items are skipped.
+    """
     if not items:
         return "No related content found."
 
-    sections = []
-    for item in items:
+    sections: list[str] = []
+    char_count = 0
+
+    for idx, item in enumerate(items):
         if item.source_type == "code_chunk":
             section = (
                 f"#### [{item.source_type}] {item.title}\n"
@@ -125,7 +136,16 @@ def _format_related_content(items: list) -> str:
                 f"**Relevance:** {item.relevance_score:.2f} | **Signals:** {', '.join(item.signals)}\n\n"
                 f"{item.snippet}"
             )
+
+        # Check token budget before adding
+        separator_len = len("\n\n---\n\n") if sections else 0
+        if char_count + separator_len + len(section) > MAX_PROMPT_CHARS:
+            remaining = len(items) - idx
+            sections.append(f"[Truncated: {remaining} more items omitted]")
+            break
+
         sections.append(section)
+        char_count += separator_len + len(section)
 
     return "\n\n---\n\n".join(sections)
 
@@ -142,6 +162,118 @@ def _priority_label(priority: int | str | None) -> str:
         return priority
     labels = {0: "None", 1: "Urgent", 2: "High", 3: "Normal", 4: "Low"}
     return labels.get(priority, "Unknown")
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers — used by both generate_context_page and
+# generate_context_page_stream to eliminate duplication (ARCH-02).
+# ---------------------------------------------------------------------------
+
+
+async def _lookup_ticket(
+    session: AsyncSession,
+    workspace_id: UUID,
+    ticket_identifier: str,
+) -> tuple[LinearTicket | TicketProxy, UUID | None, bool]:
+    """Look up a ticket by identifier, trying Linear first then Jira.
+
+    Returns:
+        (ticket, ticket_id_for_fk, is_linear) where ticket_id_for_fk is the
+        UUID to use as the ContextPage.ticket_id FK (set only for Linear rows),
+        and is_linear indicates which provider the ticket was found in.
+
+    Raises:
+        ValueError: If the ticket is not found in any provider.
+    """
+    stmt = select(LinearTicket).where(
+        LinearTicket.workspace_id == workspace_id,
+        LinearTicket.identifier == ticket_identifier,
+        LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    result = await session.execute(stmt)
+    linear_ticket = result.scalar_one_or_none()
+
+    if linear_ticket:
+        return linear_ticket, linear_ticket.id, True
+
+    # Fallback to Jira
+    jira_stmt = select(JiraIssue).where(
+        JiraIssue.workspace_id == workspace_id,
+        JiraIssue.jira_key == ticket_identifier,
+        JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    jira_result = await session.execute(jira_stmt)
+    jira_issue = jira_result.scalar_one_or_none()
+
+    if jira_issue:
+        return TicketProxy.from_jira(jira_issue), None, False
+
+    raise ValueError(f"Ticket {ticket_identifier} not found")
+
+
+async def _upsert_context_page_placeholder(
+    session: AsyncSession,
+    workspace_id: UUID,
+    ticket: LinearTicket | TicketProxy,
+    ticket_id_for_fk: UUID | None,
+) -> ContextPage:
+    """Create or update a ContextPage with status='generating'.
+
+    Flushes and commits immediately so that the placeholder is visible to
+    other sessions (e.g. Realtime subscribers) before the LLM call starts.
+    """
+    existing_stmt = select(ContextPage).where(
+        ContextPage.workspace_id == workspace_id,
+        ContextPage.ticket_identifier == ticket.identifier,
+        ContextPage.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    existing_result = await session.execute(existing_stmt)
+    context_page = existing_result.scalar_one_or_none()
+
+    if context_page:
+        context_page.status = "generating"
+    else:
+        context_page = ContextPage(
+            workspace_id=workspace_id,
+            ticket_id=ticket_id_for_fk,
+            ticket_identifier=ticket.identifier,
+            title=f"Context: {ticket.title}",
+            content="",
+            status="generating",
+            sources=[],
+        )
+        session.add(context_page)
+
+    await session.flush()
+    await session.commit()
+    return context_page
+
+
+def _build_synthesis_prompt(
+    ticket: LinearTicket | TicketProxy,
+    related_items: list[LinkedItem],
+) -> str:
+    """Format the SYNTHESIS_TEMPLATE with ticket info and related content.
+
+    Pure function — no async, no DB access.
+    """
+    related_text = _format_related_content(related_items)
+
+    return SYNTHESIS_TEMPLATE.format(
+        identifier=ticket.identifier,
+        title=ticket.title,
+        status=ticket.status or "Unknown",
+        assignee=ticket.assignee_name or "Unassigned",
+        priority=_priority_label(ticket.priority),
+        labels=", ".join(ticket.labels) if ticket.labels else "None",
+        description=ticket.description or "No description provided.",
+        related_content=related_text,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public generation functions
+# ---------------------------------------------------------------------------
 
 
 async def generate_context_page(
@@ -169,124 +301,81 @@ async def generate_context_page(
     Raises:
         ValueError: If ticket not found.
     """
-    # 1. Look up ticket (Linear first, then Jira)
-    ticket = None
-    ticket_id_for_fk = None
+    context_page: ContextPage | None = None
 
-    stmt = select(LinearTicket).where(
-        LinearTicket.workspace_id == workspace_id,
-        LinearTicket.identifier == ticket_identifier,
-        LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
-    )
-    result = await session.execute(stmt)
-    linear_ticket = result.scalar_one_or_none()
-
-    if linear_ticket:
-        ticket = linear_ticket
-        ticket_id_for_fk = linear_ticket.id
-    else:
-        jira_stmt = select(JiraIssue).where(
-            JiraIssue.workspace_id == workspace_id,
-            JiraIssue.jira_key == ticket_identifier,
-            JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
+    try:
+        # 1. Look up ticket (Linear first, then Jira)
+        ticket, ticket_id_for_fk, _is_linear = await _lookup_ticket(
+            session, workspace_id, ticket_identifier
         )
-        jira_result = await session.execute(jira_stmt)
-        jira_issue = jira_result.scalar_one_or_none()
-        if jira_issue:
-            ticket = TicketProxy.from_jira(jira_issue)
 
-    if ticket is None:
-        raise ValueError(f"Ticket {ticket_identifier} not found")
+        # 2. Create/update placeholder with status="generating"
+        context_page = await _upsert_context_page_placeholder(
+            session, workspace_id, ticket, ticket_id_for_fk
+        )
 
-    # Mark existing context page as generating
-    existing_stmt = select(ContextPage).where(
-        ContextPage.workspace_id == workspace_id,
-        ContextPage.ticket_identifier == ticket_identifier,
-        ContextPage.deleted_at.is_(None),  # type: ignore[union-attr]
-    )
-    existing_result = await session.execute(existing_stmt)
-    existing_page = existing_result.scalar_one_or_none()
+        # 3. Find related content
+        linking_result = await find_related_content(session, workspace_id, ticket)
 
-    if existing_page:
-        existing_page.status = "generating"
-        await session.flush()
-        await session.commit()
-    else:
-        # Create a placeholder so the page appears in the feed immediately
-        existing_page = ContextPage(
+        # 4. Build prompt
+        prompt = _build_synthesis_prompt(ticket, linking_result.items)
+
+        # 5. Call LLM
+        llm = get_llm_client()
+        llm_response = await llm.generate(
+            prompt=prompt,
+            system_prompt=SYNTHESIS_SYSTEM_PROMPT,
             workspace_id=workspace_id,
-            ticket_id=ticket_id_for_fk,
-            ticket_identifier=ticket.identifier,
-            title=f"Context: {ticket.title}",
-            content="",
-            status="generating",
-            sources=[],
+            ticket_identifier=ticket_identifier,
         )
-        session.add(existing_page)
+
+        # Build sources list for the context page
+        sources_list = [
+            {
+                "type": item.source_type,
+                "id": str(item.source_id),
+                "title": item.title,
+                "relevance_score": round(item.relevance_score, 3),
+            }
+            for item in linking_result.items
+        ]
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        # 6. Update the context page with LLM results
+        context_page.title = f"Context: {ticket.title}"
+        context_page.content = llm_response.text
+        context_page.summary = llm_response.text[:500]
+        context_page.status = "ready"
+        context_page.sources = sources_list
+        context_page.generated_at = now
+        context_page.generation_model = llm_response.model
+        context_page.generation_tokens_used = llm_response.total_tokens
+
+        # BUG-03 fix: flush AND commit so the caller doesn't need to commit
         await session.flush()
         await session.commit()
 
-    # 2. Find related content
-    linking_result = await find_related_content(session, workspace_id, ticket)
+        logger.info(
+            "Generated context page for %s (tokens=%d, sources=%d)",
+            ticket_identifier,
+            llm_response.total_tokens,
+            len(sources_list),
+        )
 
-    # 3. Build prompt
-    related_text = _format_related_content(linking_result.items)
+        return context_page
 
-    prompt = SYNTHESIS_TEMPLATE.format(
-        identifier=ticket.identifier,
-        title=ticket.title,
-        status=ticket.status or "Unknown",
-        assignee=ticket.assignee_name or "Unassigned",
-        priority=_priority_label(ticket.priority),
-        labels=", ".join(ticket.labels) if ticket.labels else "None",
-        description=ticket.description or "No description provided.",
-        related_content=related_text,
-    )
-
-    # 4. Call LLM
-    llm = get_llm_client()
-    llm_response = await llm.generate(
-        prompt=prompt,
-        system_prompt=SYNTHESIS_SYSTEM_PROMPT,
-        workspace_id=workspace_id,
-        ticket_identifier=ticket_identifier,
-    )
-
-    # Build sources list for the context page
-    sources_list = [
-        {
-            "type": item.source_type,
-            "id": str(item.source_id),
-            "title": item.title,
-            "relevance_score": round(item.relevance_score, 3),
-        }
-        for item in linking_result.items
-    ]
-    sources = sources_list
-
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-
-    # 5. Update the context page (placeholder was created above)
-    existing_page.title = f"Context: {ticket.title}"
-    existing_page.content = llm_response.text
-    existing_page.summary = llm_response.text[:500]
-    existing_page.status = "ready"
-    existing_page.sources = sources
-    existing_page.generated_at = now
-    existing_page.generation_model = llm_response.model
-    existing_page.generation_tokens_used = llm_response.total_tokens
-    context_page = existing_page
-
-    await session.flush()
-
-    logger.info(
-        "Generated context page for %s (tokens=%d, sources=%d)",
-        ticket_identifier,
-        llm_response.total_tokens,
-        len(sources),
-    )
-
-    return context_page
+    except Exception as e:
+        logger.exception("Generation failed for %s", ticket_identifier)
+        # BUG-01 fix: persist error status so page doesn't stay stuck in "generating"
+        try:
+            if context_page:
+                context_page.status = "error"
+                await session.flush()
+                await session.commit()
+        except Exception:
+            logger.warning("Failed to persist error status for %s", ticket_identifier)
+        raise
 
 
 async def generate_context_page_stream(
@@ -306,35 +395,15 @@ async def generate_context_page_stream(
     - {"event": "complete", "context_page_id": "..."}
     - {"event": "error", "message": "..."}
     """
+    context_page: ContextPage | None = None
+
     try:
-        # 1. Look up ticket (Linear first, then Jira)
-        ticket = None
-        ticket_id_for_fk = None  # Only set for LinearTicket (FK constraint)
-
-        stmt = select(LinearTicket).where(
-            LinearTicket.workspace_id == workspace_id,
-            LinearTicket.identifier == ticket_identifier,
-            LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
-        )
-        result = await session.execute(stmt)
-        linear_ticket = result.scalar_one_or_none()
-
-        if linear_ticket:
-            ticket = linear_ticket
-            ticket_id_for_fk = linear_ticket.id
-        else:
-            # Try Jira
-            jira_stmt = select(JiraIssue).where(
-                JiraIssue.workspace_id == workspace_id,
-                JiraIssue.jira_key == ticket_identifier,
-                JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
+        # 1. Look up ticket (Linear first, then Jira) using shared helper
+        try:
+            ticket, ticket_id_for_fk, is_linear = await _lookup_ticket(
+                session, workspace_id, ticket_identifier
             )
-            jira_result = await session.execute(jira_stmt)
-            jira_issue = jira_result.scalar_one_or_none()
-            if jira_issue:
-                ticket = TicketProxy.from_jira(jira_issue)
-
-        if ticket is None:
+        except ValueError:
             yield {"event": "error", "message": f"Ticket {ticket_identifier} not found"}
             return
 
@@ -362,7 +431,7 @@ async def generate_context_page_stream(
         connected_sources: list[str] = []
 
         # Add the ticket provider based on the ticket type
-        if linear_ticket:
+        if is_linear:
             connected_sources.append("linear")
         elif ticket is not None:
             # Jira ticket — only show Jira, not Linear
@@ -383,30 +452,10 @@ async def generate_context_page_stream(
             sync_result = await session.execute(sync_stmt)
             syncing_providers = {row[0] for row in sync_result.fetchall()}
 
-        # 3. Create/update context page with status="generating"
-        existing_stmt = select(ContextPage).where(
-            ContextPage.workspace_id == workspace_id,
-            ContextPage.ticket_identifier == ticket_identifier,
-            ContextPage.deleted_at.is_(None),  # type: ignore[union-attr]
+        # 3. Create/update context page with status="generating" using shared helper
+        context_page = await _upsert_context_page_placeholder(
+            session, workspace_id, ticket, ticket_id_for_fk
         )
-        existing_result = await session.execute(existing_stmt)
-        context_page = existing_result.scalar_one_or_none()
-
-        if context_page:
-            context_page.status = "generating"
-            await session.flush()
-        else:
-            context_page = ContextPage(
-                workspace_id=workspace_id,
-                ticket_id=ticket_id_for_fk,
-                ticket_identifier=ticket.identifier,
-                title=f"Context: {ticket.title}",
-                content="",
-                status="generating",
-                sources=[],
-            )
-            session.add(context_page)
-            await session.flush()
 
         # 4. Emit start event
         yield {"event": "start", "steps": connected_sources + ["synthesize"]}
@@ -442,17 +491,7 @@ async def generate_context_page_stream(
         # 6. Synthesize
         yield {"event": "step_start", "source": "synthesize"}
 
-        related_text = _format_related_content(all_items)
-        prompt = SYNTHESIS_TEMPLATE.format(
-            identifier=ticket.identifier,
-            title=ticket.title,
-            status=ticket.status or "Unknown",
-            assignee=ticket.assignee_name or "Unassigned",
-            priority=_priority_label(ticket.priority),
-            labels=", ".join(ticket.labels) if ticket.labels else "None",
-            description=ticket.description or "No description provided.",
-            related_content=related_text,
-        )
+        prompt = _build_synthesis_prompt(ticket, all_items)
 
         llm = get_llm_client()
         llm_response = await llm.generate(
@@ -484,6 +523,7 @@ async def generate_context_page_stream(
         context_page.generation_tokens_used = llm_response.total_tokens
 
         await session.flush()
+        await session.commit()
 
         yield {"event": "step_complete", "source": "synthesize", "detail": "Context generated"}
         yield {"event": "complete", "context_page_id": str(context_page.id)}
@@ -497,6 +537,14 @@ async def generate_context_page_stream(
 
     except Exception as e:
         logger.exception("Stream generation failed for %s", ticket_identifier)
+        # BUG-01 fix: persist error status so page doesn't stay stuck in "generating"
+        try:
+            if context_page:
+                context_page.status = "error"
+                await session.flush()
+                await session.commit()
+        except Exception:
+            logger.warning("Failed to persist error status for %s", ticket_identifier)
         yield {"event": "error", "message": str(e)}
 
 
