@@ -9,12 +9,9 @@ Uses httpx for HTTP calls with Bearer token auth and Notion-Version header.
 Rate limit handling: exponential backoff on 429 (same pattern as Linear GraphQL client).
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import random
-import time
 
 import httpx
 
@@ -27,56 +24,8 @@ MAX_RETRIES = 3
 MAX_BLOCK_DEPTH = 5
 
 
-class NotionRateLimiter:
-    """Token-bucket rate limiter for Notion API (3 requests/second).
-
-    Unlike a semaphore (which limits *concurrent* requests), a token bucket
-    limits *throughput*: a fast request completing in 100ms frees capacity
-    for the next request immediately, up to the rate ceiling.
-
-    Args:
-        capacity: Maximum burst size (tokens).
-        rate: Token refill rate per second.
-    """
-
-    def __init__(self, capacity: int = 3, rate: float = 3.0) -> None:
-        self._capacity = capacity
-        self._rate = rate
-        self._tokens: float = float(capacity)
-        self._last_refill: float = time.monotonic()
-        self._lock = asyncio.Lock()
-
-    async def acquire(self) -> None:
-        """Wait until a token is available, then consume one."""
-        while True:
-            async with self._lock:
-                now = time.monotonic()
-                elapsed = now - self._last_refill
-                self._tokens = min(
-                    self._capacity, self._tokens + elapsed * self._rate
-                )
-                self._last_refill = now
-
-                if self._tokens >= 1.0:
-                    self._tokens -= 1.0
-                    return
-
-                # Calculate sleep time until one token is available
-                sleep_time = (1.0 - self._tokens) / self._rate
-
-            await asyncio.sleep(sleep_time)
-
-
-# Module-level rate limiter (lazily created -- asyncio.Lock needs event loop)
-_rate_limiter: NotionRateLimiter | None = None
-
-
-def _get_rate_limiter() -> NotionRateLimiter:
-    """Return the module-level rate limiter, creating it on first call."""
-    global _rate_limiter
-    if _rate_limiter is None:
-        _rate_limiter = NotionRateLimiter()
-    return _rate_limiter
+# Module-level semaphore for Notion API concurrency (3 concurrent requests)
+_notion_semaphore = asyncio.Semaphore(3)
 
 
 class NotionClientError(Exception):
@@ -139,8 +88,8 @@ class NotionClient:
         delay = 1.0
 
         for attempt in range(MAX_RETRIES + 1):
-            await _get_rate_limiter().acquire()
-            response = await self._client.request(method, url, **kwargs)
+            async with _notion_semaphore:
+                response = await self._client.request(method, url, **kwargs)
 
             if response.status_code == 429:
                 if attempt < MAX_RETRIES:
@@ -267,7 +216,13 @@ class NotionClient:
         while True:
             response = await self.get_block_children(block_id, start_cursor=cursor)
             blocks = response.get("results", [])
-            all_blocks.extend(blocks)
+
+            for block in blocks:
+                if block.get("has_children"):
+                    block["children"] = await self.get_all_blocks(
+                        block["id"], depth=depth + 1
+                    )
+                all_blocks.append(block)
 
             if not response.get("has_more"):
                 break
@@ -275,18 +230,6 @@ class NotionClient:
             cursor = response.get("next_cursor")
             if not cursor:
                 break
-
-        # Fetch children concurrently for all blocks with has_children=True
-        parent_blocks = [b for b in all_blocks if b.get("has_children")]
-        if parent_blocks:
-            children_results = await asyncio.gather(
-                *(
-                    self.get_all_blocks(b["id"], depth=depth + 1)
-                    for b in parent_blocks
-                )
-            )
-            for block, children in zip(parent_blocks, children_results):
-                block["children"] = children
 
         return all_blocks
 
