@@ -29,9 +29,10 @@ import {
 import { useContextPagesRealtime } from '@/hooks/use-context-pages-realtime'
 import {
   searchLinearTickets,
-  type LinearTicketSearchResult,
-  type LinearTicketSearchResponse,
+  searchJiraIssues,
+  getIntegrationStatus,
 } from '@/lib/api'
+import { detectTicketProvider } from '@/lib/ticket-provider'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
 type RowPayload = RealtimePostgresChangesPayload<Record<string, unknown>>
@@ -50,6 +51,8 @@ const SOURCE_GROUPS: Record<string, { group: string; icon: React.ElementType; co
   github_review: { group: 'GitHub', icon: GitPullRequest, color: 'text-emerald-400 bg-emerald-400/10' },
   code_chunk: { group: 'Code', icon: Code2, color: 'text-emerald-400 bg-emerald-400/10' },
   notion_page: { group: 'Notion', icon: FileText, color: 'text-blue-400 bg-blue-400/10' },
+  jira_issue: { group: 'Jira', icon: CheckCircle2, color: 'text-blue-500 bg-blue-500/10' },
+  jira_comment: { group: 'Jira', icon: MessageSquare, color: 'text-blue-500 bg-blue-500/10' },
 }
 
 function getSourceChips(sources: ContextPageRow['sources']) {
@@ -151,6 +154,17 @@ function FeedRow({ page, onClick }: { page: ContextPageRow; onClick: () => void 
 // Generate Ticket Picker (separate from search)
 // ---------------------------------------------------------------------------
 
+/** Normalised ticket used throughout the picker & generate flow. */
+interface PickerTicket {
+  id: string
+  identifier: string
+  title: string
+  state: string | null
+  assignee: string | null
+  /** Which provider this ticket came from */
+  source: 'linear' | 'jira'
+}
+
 function GenerateTicketPicker({
   open,
   onClose,
@@ -158,34 +172,82 @@ function GenerateTicketPicker({
 }: {
   open: boolean
   onClose: () => void
-  onSelect: (ticket: LinearTicketSearchResult) => void
+  onSelect: (ticket: PickerTicket) => void
 }) {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<LinearTicketSearchResult[]>([])
+  const [results, setResults] = useState<PickerTicket[]>([])
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [endCursor, setEndCursor] = useState<string | null>(null)
   const [hasNextPage, setHasNextPage] = useState(false)
-  const [pendingTicket, setPendingTicket] = useState<LinearTicketSearchResult | null>(null)
+  const [pendingTicket, setPendingTicket] = useState<PickerTicket | null>(null)
+  const [provider, setProvider] = useState<'linear' | 'jira' | null>(null)
+  const [providerDetected, setProviderDetected] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<NodeJS.Timeout | null>(null)
   const observerRef = useRef<IntersectionObserver | null>(null)
 
-  const loadTickets = useCallback(async (q?: string, cursor?: string) => {
+  // Detect which ticket provider is connected (once on open)
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setProvider(null)
+    setProviderDetected(false)
+    setPendingTicket(null)
+    setQuery('')
+    setResults([])
+    getIntegrationStatus().then((s) => {
+      if (cancelled) return
+      setProvider(detectTicketProvider(s))
+      setProviderDetected(true)
+    }).catch(() => {
+      if (cancelled) return
+      setProvider(null)
+      setProviderDetected(true)
+    })
+    return () => { cancelled = true }
+  }, [open])
+
+  const loadTickets = useCallback(async (p: 'linear' | 'jira', q?: string, cursor?: string) => {
     if (cursor) {
       setLoadingMore(true)
     } else {
       setLoading(true)
     }
     try {
-      const result = await searchLinearTickets(q, 20, cursor)
-      if (cursor) {
-        setResults((prev) => [...prev, ...result.tickets])
+      if (p === 'jira') {
+        // Jira — no cursor pagination, single page
+        const jiraResult = await searchJiraIssues(q)
+        const tickets: PickerTicket[] = jiraResult.issues.map((j) => ({
+          id: j.jira_id,
+          identifier: j.key,
+          title: j.summary,
+          state: j.status,
+          assignee: j.assignee,
+          source: 'jira',
+        }))
+        setResults(tickets)
+        setHasNextPage(false)
+        setEndCursor(null)
       } else {
-        setResults(result.tickets)
+        // Linear — cursor-based pagination
+        const linearResult = await searchLinearTickets(q, 20, cursor)
+        const tickets: PickerTicket[] = linearResult.tickets.map((t) => ({
+          id: t.id,
+          identifier: t.identifier,
+          title: t.title,
+          state: t.state,
+          assignee: t.assignee,
+          source: 'linear',
+        }))
+        if (cursor) {
+          setResults((prev) => [...prev, ...tickets])
+        } else {
+          setResults(tickets)
+        }
+        setHasNextPage(linearResult.has_next_page)
+        setEndCursor(linearResult.end_cursor)
       }
-      setHasNextPage(result.has_next_page)
-      setEndCursor(result.end_cursor)
     } catch {
       if (!cursor) setResults([])
     } finally {
@@ -194,36 +256,31 @@ function GenerateTicketPicker({
     }
   }, [])
 
-  // Load assigned tickets on open
+  // Load tickets when provider is determined or query changes (debounced)
   useEffect(() => {
-    if (open) {
-      loadTickets()
-      setPendingTicket(null)
-      setQuery('')
-    }
-  }, [open, loadTickets])
-
-  // Debounced search — reset pagination immediately on query change
-  useEffect(() => {
-    if (!open) return
+    if (!open || !provider) return
     setHasNextPage(false)
     setEndCursor(null)
     if (searchRef.current) clearTimeout(searchRef.current)
+    // Load immediately when provider first set (query is empty), debounce on query changes
+    const delay = query.trim() ? 300 : 0
     searchRef.current = setTimeout(() => {
-      loadTickets(query.trim() || undefined)
-    }, 300)
+      loadTickets(provider, query.trim() || undefined)
+    }, delay)
     return () => {
       if (searchRef.current) clearTimeout(searchRef.current)
     }
-  }, [query, open, loadTickets])
+  }, [query, open, provider, loadTickets])
 
   // Infinite scroll — ref callback attaches observer when sentinel mounts
   const loadingMoreRef = useRef(loadingMore)
   const endCursorRef = useRef(endCursor)
   const queryRef = useRef(query)
+  const providerRef = useRef(provider)
   loadingMoreRef.current = loadingMore
   endCursorRef.current = endCursor
   queryRef.current = query
+  providerRef.current = provider
 
   const sentinelRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -234,8 +291,8 @@ function GenerateTicketPicker({
       if (!node) return
       observerRef.current = new IntersectionObserver(
         (entries) => {
-          if (entries[0]?.isIntersecting && !loadingMoreRef.current) {
-            loadTickets(queryRef.current.trim() || undefined, endCursorRef.current ?? undefined)
+          if (entries[0]?.isIntersecting && !loadingMoreRef.current && providerRef.current) {
+            loadTickets(providerRef.current, queryRef.current.trim() || undefined, endCursorRef.current ?? undefined)
           }
         },
         { threshold: 0 }
@@ -291,13 +348,31 @@ function GenerateTicketPicker({
             </Button>
           </div>
         </div>
+      ) : providerDetected && !provider ? (
+        <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
+          <p className="text-sm font-medium text-foreground">No ticket provider connected</p>
+          <p className="text-xs text-muted-foreground">
+            Connect Linear or Jira in Settings to generate context pages.
+          </p>
+        </div>
       ) : (
         <>
-          <div className="p-3 border-b border-border">
+          <div className="p-3 border-b border-border space-y-2">
+            {provider && (
+              <div className="flex items-center gap-1.5">
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  provider === 'jira'
+                    ? 'bg-blue-500/10 text-blue-500'
+                    : 'bg-violet-400/10 text-violet-400'
+                }`}>
+                  {provider === 'jira' ? 'Jira' : 'Linear'}
+                </span>
+              </div>
+            )}
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="Search Linear tickets..."
+                placeholder={provider === 'jira' ? 'Search Jira issues...' : 'Search Linear tickets...'}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="pl-8 h-8 text-sm"
@@ -306,7 +381,7 @@ function GenerateTicketPicker({
             </div>
           </div>
           <div className="max-h-64 overflow-y-auto">
-            {loading ? (
+            {loading || !provider ? (
               <div className="p-3 space-y-2">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <div key={i} className="flex items-center gap-3">
@@ -415,12 +490,14 @@ export default function ContextFeedPage() {
 
   // Handle generate selection
   const handleGenerateSelect = useCallback(
-    (ticket: LinearTicketSearchResult) => {
+    (ticket: PickerTicket) => {
       setGenerateOpen(false)
-      const params = new URLSearchParams({
-        ticket: ticket.identifier,
-        linear_issue_id: ticket.id,
-      })
+      const params = new URLSearchParams({ ticket: ticket.identifier })
+      if (ticket.source === 'linear') {
+        params.set('linear_issue_id', ticket.id)
+      } else if (ticket.source === 'jira') {
+        params.set('jira_issue_id', ticket.id)
+      }
       router.push(`/dashboard/context/generate?${params.toString()}`)
     },
     [router]
@@ -622,7 +699,7 @@ export default function ContextFeedPage() {
               No context pages yet
             </p>
             <p className="text-xs text-muted-foreground max-w-[280px]">
-              Generate context for a Linear ticket to aggregate all related discussions, code, and decisions into one place.
+              Generate context for a ticket to aggregate all related discussions, code, and decisions into one place.
             </p>
             <Button
               className="mt-2 gap-1.5"
