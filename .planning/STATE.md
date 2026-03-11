@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: executing
-stopped_at: Completed 29-02-PLAN.md
-last_updated: "2026-03-11T20:14:11.954Z"
+stopped_at: Completed 29-04-PLAN.md
+last_updated: "2026-03-11T20:22:02.246Z"
 last_activity: 2026-03-12 -- Completed 29-02 (Frontend UI/UX Polish)
 progress:
   total_phases: 15
-  completed_phases: 10
+  completed_phases: 11
   total_plans: 35
-  completed_plans: 32
+  completed_plans: 33
   percent: 96
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 ## Current Position
 
 Phase: 29 of 29 (Codebase Hardening)
-Plan: 4 of 4 (29-01 complete, 29-02 complete, 29-03 complete)
-Status: In Progress
-Last activity: 2026-03-12 -- Completed 29-02 (Frontend UI/UX Polish)
+Plan: 4 of 4 (all complete)
+Status: Phase Complete
+Last activity: 2026-03-12 -- Completed 29-04 (Synthesis Pipeline Overhaul)
 
-Progress: [█████████░] 96%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -89,6 +89,7 @@ Progress: [█████████░] 96%
 | Phase 29 P01 | 5min | 2 tasks | 11 files |
 | Phase 29 P03 | 3min | 2 tasks | 8 files |
 | Phase 29 P02 | 8min | 2 tasks | 10 files |
+| Phase 29 P04 | 5min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -181,6 +182,7 @@ Recent decisions affecting current work:
 - [Phase 29]: Legacy API keys with NULL salt verify via unsalted hash path -- no migration needed
 - [Phase 29]: TICKET_ID_PATTERN strict allowlist (^[A-Z][A-Z0-9]+-\d+$) for JQL injection prevention
 - [Phase 29]: X-Forwarded-For trusted only from loopback/private IPs via ipaddress module
+- [Phase 29]: _lookup_ticket returns 3-tuple (ticket, fk_id, is_linear) for mock-friendly ticket type detection
 
 ### Roadmap Evolution
 
@@ -204,6 +206,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-12T20:10:00.000Z
-Stopped at: Completed 29-02-PLAN.md
+Last session: 2026-03-11T20:22:02.243Z
+Stopped at: Completed 29-04-PLAN.md
 Resume file: None
