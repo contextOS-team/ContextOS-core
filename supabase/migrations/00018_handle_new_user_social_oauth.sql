@@ -43,8 +43,8 @@ BEGIN
   VALUES (new_workspace_id, NEW.id, 'owner');
 
   -- Create onboarding state (step 1, not completed)
-  INSERT INTO public.user_onboarding_state (user_id, workspace_id)
-  VALUES (NEW.id, new_workspace_id);
+  INSERT INTO public.user_onboarding_state (user_id)
+  VALUES (NEW.id);
 
   RETURN NEW;
 END;
