@@ -26,6 +26,7 @@ from src.models.integration import Provider, WorkspaceIntegration
 from src.models.user import WorkspaceMember
 from src.services.slack_channels import (
     get_cached_channels,
+    get_selected_channels,
     list_channels as fetch_channels,
     save_channel_selection,
 )
@@ -170,7 +171,8 @@ async def get_channels(
     Use POST /channels/refresh to fetch fresh data from Slack API.
     """
     channels = await get_cached_channels(session, user.workspace_id)
-    return {"channels": channels}
+    selected = await get_selected_channels(session, user.workspace_id)
+    return {"channels": channels, "selected_channels": selected}
 
 
 @router.post("/channels/refresh")

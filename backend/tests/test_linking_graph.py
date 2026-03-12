@@ -119,6 +119,13 @@ async def test_find_graph_results_basic() -> None:
     mock_traverse_result = MagicMock()
     mock_traverse_result.fetchall.return_value = [row_d1, row_d2]
 
+    # Mock source_id lookup for source-backed graph nodes
+    mock_source_lookup = MagicMock()
+    mock_source_lookup.fetchall.return_value = [
+        (depth1_node_id, depth1_source_id),
+        (depth2_node_id, depth2_source_id),
+    ]
+
     # Mock bulk lookup summaries
     mock_bulk_result = MagicMock()
     mock_msg = MagicMock()
@@ -139,6 +146,7 @@ async def test_find_graph_results_basic() -> None:
     mock_session.execute.side_effect = [
         mock_node_result,      # GraphNode fingerprint lookup
         mock_traverse_result,  # traverse_graph() SQL
+        mock_source_lookup,    # GraphNode.source_id bulk lookup
         mock_bulk_result,      # bulk lookup for slack_message
         mock_bulk_result2,     # bulk lookup for github_pull_request
     ]
@@ -234,6 +242,13 @@ async def test_depth_decay_scoring() -> None:
     mock_traverse_result = MagicMock()
     mock_traverse_result.fetchall.return_value = [row_d1, row_d2]
 
+    # Mock source_id lookup for source-backed graph nodes
+    mock_source_lookup = MagicMock()
+    mock_source_lookup.fetchall.return_value = [
+        (row_d1.node_id, d1_source_id),
+        (row_d2.node_id, d2_source_id),
+    ]
+
     # Mock bulk lookups
     mock_slack = MagicMock()
     mock_slack.id = d1_source_id
@@ -253,6 +268,7 @@ async def test_depth_decay_scoring() -> None:
     mock_session.execute.side_effect = [
         mock_node_result,
         mock_traverse_result,
+        mock_source_lookup,
         mock_bulk1,
         mock_bulk2,
     ]
@@ -327,6 +343,13 @@ async def test_same_as_transparent() -> None:
     mock_traverse_result = MagicMock()
     mock_traverse_result.fetchall.return_value = [row_slack, row_same_as, row_via_same_as]
 
+    # Mock source_id lookup for source-backed graph nodes
+    mock_source_lookup = MagicMock()
+    mock_source_lookup.fetchall.return_value = [
+        (slack_node_id, row_slack.source_id),
+        (pr_node_id, pr_source_id),
+    ]
+
     # Mock bulk lookups (same_as node is skipped, so only slack + PR lookups)
     mock_slack_obj = MagicMock()
     mock_slack_obj.id = row_slack.source_id
@@ -347,6 +370,7 @@ async def test_same_as_transparent() -> None:
     mock_session.execute.side_effect = [
         mock_node_result,
         mock_traverse_result,
+        mock_source_lookup,
         mock_b1,
         mock_b2,
     ]

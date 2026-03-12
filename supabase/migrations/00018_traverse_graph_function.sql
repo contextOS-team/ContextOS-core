@@ -26,8 +26,8 @@ RETURNS TABLE (
   path uuid[]
 ) AS $$
 BEGIN
-  -- Validate workspace access: caller must be a member
-  IF NOT EXISTS (
+  -- Validate workspace access: caller must be a member OR service role
+  IF auth.uid() IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM public.workspace_members
     WHERE workspace_members.workspace_id = match_workspace_id
       AND workspace_members.user_id = auth.uid()

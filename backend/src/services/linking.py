@@ -428,9 +428,27 @@ async def _find_graph_results(
         # Cap results to prevent explosion
         result_rows = result_rows[:_GRAPH_MAX_RESULTS]
 
-        # 4. Process each result row
+        # 4. Bulk-fetch source_id for source-backed graph nodes
+        #    traverse_graph() returns node_id (graph UUID) but we need
+        #    graph_nodes.source_id (FK to the actual source table)
+        source_backed_node_ids = [
+            row.node_id
+            for row in result_rows
+            if row.entity_type in _GRAPH_ENTITY_TO_SOURCE
+        ]
+        node_source_map: dict[UUID, UUID | None] = {}
+        if source_backed_node_ids:
+            source_lookup = await session.execute(
+                select(GraphNode.id, GraphNode.source_id).where(
+                    GraphNode.id.in_(source_backed_node_ids),
+                )
+            )
+            for nid, sid in source_lookup.fetchall():
+                node_source_map[nid] = sid
+
+        # 5. Process each result row
         source_backed_keys: list[tuple[str, UUID]] = []
-        pending: list[tuple[tuple[str, UUID], float, str]] = []
+        pending: list[tuple[tuple[str, UUID], float, str, str]] = []
 
         for row in result_rows:
             entity_type = row.entity_type
@@ -452,10 +470,10 @@ async def _find_graph_results(
 
             if entity_type in _GRAPH_ENTITY_TO_SOURCE:
                 source_type = _GRAPH_ENTITY_TO_SOURCE[entity_type]
-                source_id = row.source_id if hasattr(row, "source_id") and row.source_id else row.node_id
+                source_id = node_source_map.get(row.node_id) or row.node_id
                 key = (source_type, source_id)
                 source_backed_keys.append(key)
-                pending.append((key, score, provenance))
+                pending.append((key, score, provenance, row.name))
             elif entity_type in _GRAPH_ONLY_ENTITIES:
                 # Graph-only entities use node_id as source_id
                 source_type = entity_type.lower()
@@ -492,14 +510,17 @@ async def _find_graph_results(
                         signals=[provenance],
                     )
 
-        # 5. Bulk-fetch summaries for source-backed entities
+        # 6. Bulk-fetch summaries for source-backed entities
         if source_backed_keys:
             summaries = await _bulk_lookup_source_summaries(
                 session, source_backed_keys
             )
 
-            for key, score, provenance in pending:
+            for key, score, provenance, node_name in pending:
                 title, snippet = summaries.get(key, (key[0], ""))
+                # Fall back to graph node name when source lookup fails
+                if title == key[0]:
+                    title = node_name
                 items[key] = LinkedItem(
                     source_type=key[0],
                     source_id=key[1],
