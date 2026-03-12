@@ -201,6 +201,20 @@ async def get_bot_token(
     bot_token_name_val = token_name(Provider.SLACK, workspace_id, "bot_access")
     token_value = await read_token(session, bot_token_name_val)
 
+    # Fallback: try legacy name format from before the Provider enum fix.
+    # Tokens stored before the fix used f"{Provider.SLACK}" which in Python 3.12
+    # produces "Provider.SLACK" instead of "slack".
+    if not token_value:
+        legacy_name = f"oauth_Provider.SLACK_{workspace_id}_bot_access"
+        token_value = await read_token(session, legacy_name)
+        if token_value:
+            # Migrate: store under the correct name and delete the legacy one
+            await store_token(session, bot_token_name_val, token_value)
+            from src.services.vault import delete_token
+            await delete_token(session, legacy_name)
+            await session.commit()
+            logger.info("Migrated Slack bot token from legacy vault name for workspace %s", workspace_id)
+
     if not token_value:
         raise SlackOAuthError("No Slack bot token found for this workspace")
 
