@@ -307,8 +307,18 @@ async def _find_hybrid_matches(
 
     for source_type, source_id, combined_score in hits:
         key = (source_type, source_id)
+
+        # Skip hits whose source record no longer exists in the DB.
+        # This happens when an embedding references a deleted/missing record.
+        if key not in summaries:
+            logger.debug(
+                "Dropping hybrid hit %s/%s — source record not found",
+                source_type, source_id,
+            )
+            continue
+
+        title, snippet = summaries[key]
         score = combined_score * WEIGHT_HYBRID
-        title, snippet = summaries.get(key, (source_type, ""))
 
         items[key] = LinkedItem(
             source_type=source_type,
@@ -418,8 +428,7 @@ async def _bulk_lookup_source_summaries(
 
     for source_type, ids in grouped.items():
         if source_type not in _SOURCE_SUMMARY_MAP:
-            for sid in ids:
-                result_map[(source_type, sid)] = (source_type, "")
+            # Unknown source type — caller should skip these
             continue
 
         model_cls, extract = _SOURCE_SUMMARY_MAP[source_type]
@@ -430,11 +439,8 @@ async def _bulk_lookup_source_summaries(
         for record in records:
             result_map[(source_type, record.id)] = extract(record)
 
-        # Fill missing IDs
-        fetched_ids = {r.id for r in records}
-        for sid in ids:
-            if sid not in fetched_ids:
-                result_map[(source_type, sid)] = (source_type, "")
+        # Missing IDs are intentionally NOT added to result_map.
+        # Callers check membership to skip orphaned embedding hits.
 
     return result_map
 
@@ -443,21 +449,22 @@ async def _lookup_source_summary(
     session: AsyncSession,
     source_type: str,
     source_id: UUID,
-) -> tuple[str, str]:
+) -> tuple[str, str] | None:
     """Look up a human-readable title and snippet for a single source record.
 
+    Returns None if the source type is unknown or the record doesn't exist.
     Uses the shared _SOURCE_SUMMARY_MAP. Prefer _bulk_lookup_source_summaries
     when fetching multiple records to avoid N+1 queries.
     """
     if source_type not in _SOURCE_SUMMARY_MAP:
-        return (source_type, "")
+        return None
 
     model_cls, extract = _SOURCE_SUMMARY_MAP[source_type]
     stmt = select(model_cls).where(model_cls.id == source_id)
     result = await session.execute(stmt)
     record = result.scalar_one_or_none()
     if record is None:
-        return (source_type, "")
+        return None
     return extract(record)
 
 
@@ -467,6 +474,7 @@ SOURCE_TYPE_MAP = {
     "gitlab": ["gitlab_merge_request", "gitlab_review"],
     "notion": ["notion_page"],
     "fathom": ["meeting_transcript", "meeting_segment"],
+    "slack_huddle": ["meeting_transcript", "meeting_segment"],
     "linear": ["linear_comment"],
     "telegram": ["telegram_message"],
     "jira": ["jira_issue", "jira_comment"],
@@ -542,7 +550,7 @@ async def find_content_by_source(
             if reviews:
                 parts.append(f"{reviews} review{'s' if reviews > 1 else ''}")
             detail = f"Found {', '.join(parts)}" if parts else "No MRs or reviews found"
-        elif source_name == "fathom":
+        elif source_name in ("fathom", "slack_huddle"):
             n = len(source_items)
             detail = f"Found {n} meeting segment{'s' if n != 1 else ''}" if n else "No meetings found"
         elif source_name == "linear":

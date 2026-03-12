@@ -445,6 +445,11 @@ async def generate_context_page_stream(
             if provider in connected_providers:
                 connected_sources.append(provider)
 
+        # Slack huddles piggyback on the Slack OAuth token -- if Slack is
+        # connected, huddle transcripts are also available for linking.
+        if "slack" in connected_sources:
+            connected_sources.append("slack_huddle")
+
         # 2b. Check sync status for connected providers
         syncing_providers: set[str] = set()
         if connected_sources:
