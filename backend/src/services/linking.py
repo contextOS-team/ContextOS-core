@@ -1,10 +1,12 @@
 """Linking engine for finding content related to a Linear ticket.
 
-Combines two signals with weighted scores to find and rank related content:
+Combines three signals with weighted scores to find and rank related content:
 - Explicit references (weight 1.0): PRs linked via FK, Slack messages containing
   ticket identifier, comments via ticket_id FK
 - Hybrid search (weight 0.8): Combined vector similarity + full-text search
   via hybrid_search() SQL function
+- Graph traversal (weight 0.8): Knowledge graph neighbors via traverse_graph()
+  with exponential depth-decay scoring
 """
 
 import logging
@@ -16,9 +18,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from src.config import CONTEXT_TOKEN_BUDGET, GRAPH_MAX_DEPTH
 from src.models.code_chunk import CodeChunk
 from src.models.github import GithubPullRequest, GithubReview
 from src.models.gitlab import GitlabMergeRequest, GitlabReview
+from src.models.graph_node import GraphNode
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
@@ -26,18 +30,35 @@ from src.models.telegram import TelegramMessage
 from src.models.jira import JiraComment, JiraIssue
 from src.models.ticket import LinearComment, LinearTicket
 from src.services.embedding import generate_embedding
+from src.services.graph_ops import compute_fingerprint
 
 logger = logging.getLogger(__name__)
 
 # Signal weights for combined scoring
 WEIGHT_EXPLICIT = 1.0
 WEIGHT_HYBRID = 0.8
+WEIGHT_GRAPH = 0.8
+DEPTH_DECAY = 0.6  # Exponential decay factor for graph depth scoring
 
 # Top-k limit for hybrid search results. 10 balances recall vs noise —
 # all results are ranked by combined_score, with a low floor (0.15) to
 # exclude completely irrelevant items without filtering good matches.
 HYBRID_SEARCH_LIMIT = 10
 HYBRID_SCORE_FLOOR = 0.15
+
+# Graph entity type to source type mapping for source-backed entities
+_GRAPH_ENTITY_TO_SOURCE: dict[str, str] = {
+    "Ticket": "linear_ticket",
+    "SlackThread": "slack_message",
+    "PR": "github_pull_request",
+    "CodeChunk": "code_chunk",
+    "NotionPage": "notion_page",
+    "Meeting": "meeting_transcript",
+}
+_GRAPH_ONLY_ENTITIES = {"Person", "Decision", "Blocker", "Feature", "Component"}
+
+# Maximum number of graph results to prevent same_as expansion explosion
+_GRAPH_MAX_RESULTS = 20
 
 
 @dataclass
@@ -468,6 +489,285 @@ async def _lookup_source_summary(
     return extract(record)
 
 
+async def _find_graph_results(
+    session: AsyncSession,
+    workspace_id: UUID,
+    ticket: LinearTicket,
+) -> dict[tuple[str, UUID], LinkedItem]:
+    """Find related content via knowledge graph traversal.
+
+    Looks up the ticket's graph node by fingerprint, then traverses
+    neighboring nodes using the traverse_graph() SQL function. Results
+    are scored with exponential depth decay and returned as LinkedItems
+    with graph provenance metadata.
+
+    Fails silently on missing graph nodes or database errors, returning
+    an empty dict so retrieval continues with explicit + hybrid signals.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to search within.
+        ticket: The LinearTicket to find graph neighbors for.
+
+    Returns:
+        Dict mapping (source_type, source_id) to LinkedItem with graph signals.
+    """
+    items: dict[tuple[str, UUID], LinkedItem] = {}
+
+    try:
+        # 1. Find the ticket's graph node by fingerprint
+        fingerprint = compute_fingerprint("Ticket", ticket.identifier)
+        node_stmt = select(GraphNode).where(
+            GraphNode.workspace_id == workspace_id,
+            GraphNode.fingerprint == fingerprint,
+            GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        node_result = await session.execute(node_stmt)
+        graph_node = node_result.scalar_one_or_none()
+
+        if graph_node is None:
+            return items
+
+        # 2. Traverse the graph from this node
+        # Extra hop budget for same_as edges that don't count as real hops
+        traverse_stmt = text("""
+            SELECT node_id, entity_type, name, properties,
+                   edge_relationship_type, depth, path
+            FROM traverse_graph(
+                CAST(:start_node_id AS uuid),
+                CAST(:workspace_id AS uuid),
+                :max_depth,
+                'both',
+                NULL,
+                NULL
+            )
+            WHERE depth > 0
+        """)
+        traverse_result = await session.execute(
+            traverse_stmt,
+            {
+                "start_node_id": str(graph_node.id),
+                "workspace_id": str(workspace_id),
+                "max_depth": GRAPH_MAX_DEPTH + 1,
+            },
+        )
+        rows = traverse_result.fetchall()
+
+        if not rows:
+            return items
+
+        # 3. Build node map for provenance path construction and
+        #    track which nodes were reached via same_as edges
+        same_as_node_ids: set[UUID] = set()
+        result_rows = []
+
+        for row in rows:
+            if row.edge_relationship_type == "same_as":
+                same_as_node_ids.add(row.node_id)
+                continue  # same_as nodes themselves are not results
+            result_rows.append(row)
+
+        # Cap results to prevent explosion
+        result_rows = result_rows[:_GRAPH_MAX_RESULTS]
+
+        # 4. Bulk-fetch source_id for source-backed graph nodes
+        #    traverse_graph() returns node_id (graph UUID) but we need
+        #    graph_nodes.source_id (FK to the actual source table)
+        source_backed_node_ids = [
+            row.node_id
+            for row in result_rows
+            if row.entity_type in _GRAPH_ENTITY_TO_SOURCE
+        ]
+        node_source_map: dict[UUID, UUID | None] = {}
+        if source_backed_node_ids:
+            source_lookup = await session.execute(
+                select(GraphNode.id, GraphNode.source_id).where(
+                    GraphNode.id.in_(source_backed_node_ids),
+                )
+            )
+            for nid, sid in source_lookup.fetchall():
+                node_source_map[nid] = sid
+
+        # 5. Process each result row
+        source_backed_keys: list[tuple[str, UUID]] = []
+        pending: list[tuple[tuple[str, UUID], float, str, str]] = []
+
+        for row in result_rows:
+            entity_type = row.entity_type
+            effective_depth = row.depth
+
+            # Adjust effective depth: if any ancestor in the path is a
+            # same_as node, reduce depth by the number of same_as hops
+            if row.path:
+                same_as_count = sum(
+                    1 for nid in row.path
+                    if nid in same_as_node_ids
+                )
+                effective_depth = max(1, row.depth - same_as_count)
+
+            score = WEIGHT_GRAPH * (DEPTH_DECAY ** effective_depth)
+
+            # Build provenance path string
+            provenance = f"graph:{entity_type}({row.edge_relationship_type},d={effective_depth})"
+
+            if entity_type in _GRAPH_ENTITY_TO_SOURCE:
+                source_type = _GRAPH_ENTITY_TO_SOURCE[entity_type]
+                source_id = node_source_map.get(row.node_id) or row.node_id
+                key = (source_type, source_id)
+                source_backed_keys.append(key)
+                pending.append((key, score, provenance, row.name))
+            elif entity_type in _GRAPH_ONLY_ENTITIES:
+                # Graph-only entities use node_id as source_id
+                source_type = entity_type.lower()
+                source_id = row.node_id
+                key = (source_type, source_id)
+
+                # Special formatting for Decision nodes
+                if entity_type == "Decision":
+                    props = row.properties or {}
+                    snippet = (
+                        f"[DECISION] {row.name}"
+                        f" | By: {props.get('by', 'Unknown')}"
+                        f" | In: {props.get('source', 'Unknown')}"
+                        f" | Affects: {props.get('affects', 'Unknown')}"
+                        f" | Confidence: {props.get('confidence', 'N/A')}"
+                    )
+                    items[key] = LinkedItem(
+                        source_type=source_type,
+                        source_id=source_id,
+                        title=row.name,
+                        snippet=snippet,
+                        relevance_score=score,
+                        signals=[provenance],
+                    )
+                else:
+                    props = row.properties or {}
+                    snippet = props.get("description", row.name)[:200]
+                    items[key] = LinkedItem(
+                        source_type=source_type,
+                        source_id=source_id,
+                        title=row.name,
+                        snippet=snippet,
+                        relevance_score=score,
+                        signals=[provenance],
+                    )
+
+        # 6. Bulk-fetch summaries for source-backed entities
+        if source_backed_keys:
+            summaries = await _bulk_lookup_source_summaries(
+                session, source_backed_keys
+            )
+
+            for key, score, provenance, node_name in pending:
+                title, snippet = summaries.get(key, (key[0], ""))
+                # Fall back to graph node name when source lookup fails
+                if title == key[0]:
+                    title = node_name
+                items[key] = LinkedItem(
+                    source_type=key[0],
+                    source_id=key[1],
+                    title=title,
+                    snippet=snippet,
+                    relevance_score=score,
+                    signals=[provenance],
+                )
+
+    except Exception:
+        logger.warning(
+            "Graph traversal failed for ticket %s, falling back to empty graph results",
+            ticket.identifier,
+        )
+        return {}
+
+    return items
+
+
+def _estimate_tokens(item: LinkedItem) -> int:
+    """Estimate the token count for a LinkedItem.
+
+    Uses a simple heuristic: total character length of title, snippet,
+    and signals divided by 4 (average chars per token), plus overhead
+    for formatting.
+    """
+    text_len = len(item.title) + len(item.snippet) + sum(len(s) for s in item.signals)
+    return (text_len + 50) // 4
+
+
+def _normalize_signal(signal: str) -> str:
+    """Normalize a signal string to its base type for grouping.
+
+    Maps specific signal names to categories:
+    - "graph:..." -> "graph"
+    - "explicit_link" / "explicit_reference" -> "explicit"
+    - "hybrid_search" -> "hybrid"
+    """
+    if signal.startswith("graph:"):
+        return "graph"
+    if signal in ("explicit_link", "explicit_reference"):
+        return "explicit"
+    if signal == "hybrid_search":
+        return "hybrid"
+    return signal
+
+
+def _apply_token_budget(
+    items: list[LinkedItem],
+    budget_tokens: int = CONTEXT_TOKEN_BUDGET,
+) -> list[LinkedItem]:
+    """Trim a list of LinkedItems to fit within a token budget.
+
+    Guarantees signal diversity by reserving the top-1 item from each
+    signal type before filling remaining budget by score. This ensures
+    that even minority signals (e.g., a single graph result) are
+    represented in the final output.
+
+    Args:
+        items: List of LinkedItems to trim.
+        budget_tokens: Maximum token budget (default: CONTEXT_TOKEN_BUDGET).
+
+    Returns:
+        Trimmed list of LinkedItems sorted by relevance_score descending.
+    """
+    if not items:
+        return items
+
+    # Group items by primary signal type (first signal, normalized)
+    groups: dict[str, list[LinkedItem]] = {}
+    for item in items:
+        primary = _normalize_signal(item.signals[0]) if item.signals else "unknown"
+        groups.setdefault(primary, []).append(item)
+
+    # Sort each group by relevance_score descending
+    for group_items in groups.values():
+        group_items.sort(key=lambda x: x.relevance_score, reverse=True)
+
+    # Reserve top-1 from each signal group
+    reserved: list[LinkedItem] = []
+    remaining_pool: list[LinkedItem] = []
+
+    for signal_type, group_items in groups.items():
+        reserved.append(group_items[0])
+        remaining_pool.extend(group_items[1:])
+
+    # Sort remaining pool by score descending
+    remaining_pool.sort(key=lambda x: x.relevance_score, reverse=True)
+
+    # Build result starting with reserved items
+    result = list(reserved)
+    used_tokens = sum(_estimate_tokens(it) for it in result)
+
+    # Fill from pool while within budget
+    for item in remaining_pool:
+        item_tokens = _estimate_tokens(item)
+        if used_tokens + item_tokens > budget_tokens:
+            break
+        result.append(item)
+        used_tokens += item_tokens
+
+    # Sort final result by relevance_score descending
+    result.sort(key=lambda x: x.relevance_score, reverse=True)
+    return result
+
 SOURCE_TYPE_MAP = {
     "slack": ["slack_message"],
     "github": ["github_pull_request", "github_review", "code_chunk"],
@@ -575,8 +875,9 @@ async def find_related_content(
 ) -> LinkingResult:
     """Find all content related to a Linear ticket using multi-signal search.
 
-    Combines explicit references and hybrid search (vector + full-text)
-    with weighted scores to produce a ranked list of related items.
+    Combines explicit references, hybrid search (vector + full-text), and
+    graph traversal with weighted scores to produce a ranked, budget-trimmed
+    list of related items.
 
     Args:
         session: Async database session.
@@ -586,9 +887,10 @@ async def find_related_content(
     Returns:
         LinkingResult with ranked list of LinkedItem objects.
     """
-    # Gather signals from both sources
+    # Gather signals from all three sources
     explicit = await _find_explicit_refs(session, workspace_id, ticket)
     hybrid = await _find_hybrid_matches(session, workspace_id, ticket)
+    graph = await _find_graph_results(session, workspace_id, ticket)
 
     # Merge results: combine scores for items found by multiple signals
     merged: dict[tuple[str, UUID], LinkedItem] = {}
@@ -596,6 +898,7 @@ async def find_related_content(
     for source, signal_items in [
         ("explicit", explicit),
         ("hybrid", hybrid),
+        ("graph", graph),
     ]:
         for key, item in signal_items.items():
             if key in merged:
@@ -607,11 +910,12 @@ async def find_related_content(
             else:
                 merged[key] = item
 
-    # Sort by relevance score descending
-    sorted_items = sorted(merged.values(), key=lambda x: x.relevance_score, reverse=True)
+    # Apply token budget trimming with signal diversity guarantee
+    merged_items = list(merged.values())
+    budget_trimmed = _apply_token_budget(merged_items)
 
     return LinkingResult(
         ticket_id=ticket.id,
         ticket_identifier=ticket.identifier,
-        items=sorted_items,
+        items=budget_trimmed,
     )

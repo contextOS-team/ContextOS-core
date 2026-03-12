@@ -25,7 +25,11 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0",
     "PyJWT[crypto]>=2.8",
     "tree-sitter-language-pack",
+
+    "rapidfuzz>=3.0",
+
     "sse-starlette>=3.3.2",
+
 ]
 
 [project.optional-dependencies]

@@ -7,6 +7,10 @@ from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
 
+# Graph-enhanced retrieval constants
+CONTEXT_TOKEN_BUDGET = 2000  # Unified token budget for all retrieval signals
+GRAPH_MAX_DEPTH = 2          # Maximum traversal depth for graph signal
+
 
 class Environment(str, Enum):
     """Application environment."""

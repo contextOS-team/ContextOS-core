@@ -4,6 +4,9 @@ from src.models.base import BaseModel, TimestampMixin
 from src.models.context_page import ContextPage
 from src.models.embedding import Embedding
 from src.models.github import GithubPullRequest, GithubReview
+from src.models.graph_edge import GraphEdge
+from src.models.graph_node import GraphNode
+from src.models.identity_mapping import IdentityMapping
 from src.models.integration import OAuthToken, WebhookDelivery, WorkspaceIntegration
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.slack import SlackMessage
@@ -18,6 +21,9 @@ __all__ = [
     "Embedding",
     "GithubPullRequest",
     "GithubReview",
+    "GraphEdge",
+    "GraphNode",
+    "IdentityMapping",
     "LinearComment",
     "LinearTicket",
     "MeetingSegment",

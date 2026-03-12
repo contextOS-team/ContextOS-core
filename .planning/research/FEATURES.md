@@ -1,398 +1,329 @@
-# Feature Research
+# Feature Landscape
 
-**Domain:** Developer tool dashboard redesign — onboarding, context feed, activity timeline, settings, auth, dark design system
-**Researched:** 2026-03-04
-**Confidence:** MEDIUM-HIGH
-
----
-
-## Competitive Reference Analysis
-
-This milestone targets four capability areas. The following products represent state-of-the-art patterns for each:
-
-| Reference Product | Why Relevant |
-|-------------------|--------------|
-| **Linear** | Sets the bar for developer tool dark UI, minimal onboarding, dense list views, LCH color systems |
-| **Vercel** | Best-in-class deployment dashboard: project cards with live previews, tab-state icons, filterable logs |
-| **PostHog 3000** | Explicitly redesigned to feel like a dev tool — dark mode, data density, command palette, side panels |
-| **Supabase** | Emerald-on-dark brand applied to a dense data tool; activity logs, real-time feeds, settings patterns |
-| **Clerk** | Auth page dark mode as of 2025; brand identity in login flow |
-| **Raycast** | Dark surfaces with abstract noisy overlays, bold red accent; abstains from generic blue gradients |
+**Domain:** GraphRAG knowledge graph layer for developer context tool
+**Researched:** 2026-03-06
+**Milestone:** v1.2 GraphRAG (subsequent milestone -- adds graph layer to existing ContextOS)
 
 ---
 
-## What Makes a Dashboard Feel Crafted vs. AI-Generated
+## Context: What Exists vs. What's New
 
-This is the central question of the milestone. Evidence from Linear's redesign blog, PostHog's "What if PostHog looked like a dev tool?" and PostHog's engineer design guide, combined with the LogRocket analysis of "Linear design" as a trend, converges on six specific signals.
+ContextOS already has a mature retrieval pipeline: hybrid search (pgvector cosine similarity + full-text via tsvector), multi-signal linking (explicit references at weight 1.0 + hybrid search at weight 0.8), and LLM synthesis producing 7-section context pages. The existing `find_related_content()` function in `linking.py` merges scored results from explicit refs and hybrid search, feeding ranked items into Gemini Flash for synthesis.
 
-### The Six Signals
-
-**1. Deliberate surface hierarchy**
-Crafted dark UIs use 3-4 distinct surface levels (background → card → elevated card → overlay), all derived from a single base color shifted in lightness — not arbitrary hex values per component. The existing `globals.css` already does this with OKLCH: `background: oklch(0.12)`, `card: oklch(0.17)`, `input: oklch(0.25)`. The gap is inconsistent application — some components bypass the token system. Enforce the token hierarchy strictly.
-
-**2. Typography with one deliberate break**
-Generic: Inter everywhere, uniform weight. Crafted: Inter for body + one intentional variation. Linear uses Inter Display for headings. PostHog recommends IBM Plex Sans for "tech-forward" density. The existing stack already loads Inter with JetBrains Mono for code. The move is: use `font-display` / `tracking-tight` / heavier weight on h1-h2, and reserve `font-mono` (JetBrains Mono) for all identifiers — ticket IDs, timestamps, API keys, token counts. This one rule makes a dashboard read like a tool.
-
-**3. Monospace for data, proportional for prose**
-Every number that represents system state — ticket identifiers, timestamps, token counts, sync counts, API key prefixes, error codes — should render in JetBrains Mono. Proportional fonts on data values look unintentional; monospace signals the designer knew what the number meant.
-
-**4. Semantic accent color, not decorative**
-Generic: teal everywhere for brand. Crafted: teal appears exactly where the system is active, successful, or primary-action. Status dots, connected integration borders (already in the current dashboard code), CTA buttons. Muted/gray for everything else. The ContextOS landing page uses teal extensively; the dashboard should treat teal as a signal, not decoration.
-
-**5. Microinteractions at interaction boundaries**
-Linear uses spring-curve animations (`cubic-bezier(0.16, 1, 0.3, 1)`) — the existing codebase already uses this exact curve in `animate-fade-in-up`. The gap is: this animation only fires on page mount. Extend it to list item appearance (stagger), status changes (scale-in), and completion states (checkmark draw). These 3 uses are enough. More than 5 distinct animation contexts reads as over-engineered.
-
-**6. Empty states that show what will be there**
-Generic: "No data yet." Crafted: shows a faded/ghost version of what a populated state looks like, with exactly one primary action. Vercel shows a project card with "Deploy your first project." Linear shows a blank issue list with a keyboard shortcut hint. The principle: every empty state teaches the user what success looks like and gives them one unambiguous next step.
+The GraphRAG layer adds a THIRD retrieval signal: relationship-aware graph traversal via Apache AGE. It does NOT replace existing retrieval -- it extends it with multi-hop connections that similarity search cannot find ("Who discussed the decision that affects this ticket?" requires traversal, not embedding distance).
 
 ---
 
-## Feature Landscape
+## Table Stakes
 
-### Capability 1: Guided Onboarding
+Features the GraphRAG layer must have to justify its existence. Without these, the graph layer adds complexity with no payoff.
 
-#### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Step-by-step setup flow before dashboard access | Users expect product-gated tools to walk them through prerequisites. Linear, Clerk, Supabase all do this. Shipping users straight to a blank dashboard is a churn event | MEDIUM | Route: `/onboarding` → redirect to `/dashboard` only after all required steps complete. Steps: workspace name → connect Linear → connect Slack → trigger first context. Do not require all integrations; require at least Linear |
-| Progress indicator with step count | Users need to know how far they are. "Step 2 of 4" reduces drop-off more than any other single UI element in onboarding research | LOW | Numbered stepper at top, not a progress bar. Steppers communicate meaning (what this step does); bars communicate only completion percentage |
-| Integration OAuth step within onboarding | Connecting integrations inside the flow (not as a separate detour) is the standard. Supabase does this for DB setup; Clerk for provider selection | MEDIUM | Reuse existing OAuth connect functions. Show connection confirmation in-step (green checkmark, external account name) before proceeding |
-| Skip / defer option for non-critical integrations | Slack, GitHub, Fathom are valuable but not required to see the core product. Blocking on all integrations kills conversion | LOW | Mark Linear as required (with lock icon), others as optional with "Add later" links. This mirrors Vercel's "Deploy now, configure later" philosophy |
-| Contextual explanation per step | Each step needs one sentence explaining WHY, not just what. "Connect Linear so ContextOS can pull your team's tickets" is better than "Connect Linear" | LOW | 15-20 words max. Teal accent on the key verb. Already the style of the landing page problem section |
-| Return-to-onboarding state on incomplete setup | If user closes mid-onboarding, they must return to the same step, not restart. Supabase preserves onboarding progress in user metadata | LOW | Store `onboarding_step` in Supabase user metadata. Middleware checks this before redirecting to dashboard |
-
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| First context generation as the final onboarding step | The "aha moment" for ContextOS is seeing an actual context page generated for a real ticket. Showing this inside onboarding (not after) converts users from "I connected some integrations" to "I saw the product work" | MEDIUM | After Linear + Slack connect, show a ticket picker or auto-select the most recent assigned ticket. Trigger generation, show a live progress bar (LangGraph steps: "Fetching Linear data... Pulling Slack context... Synthesizing..."), then reveal the context page. This is the money moment |
-| Animated completion state for each integration step | When OAuth succeeds and returns, the step visually resolves (checkmark draw animation, integration name appears, accent color activates). This mirrors Linear's "cinematic transition" onboarding noted in multiple analyses | LOW | SVG checkmark stroke animation (stroke-dashoffset), 400ms spring curve. Not a spinner — a draw animation communicates finality |
-| Workspace name personalization from first step | Ask for workspace/team name in step 1. Use it in the onboarding copy from step 2 onward ("Connecting Acme's Linear workspace"). Creates immediate ownership and reduces feel of generic setup | LOW | Single text input, no validation beyond non-empty. Store in `workspaces.name`. Already a DB column |
-
-#### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Video tutorial in onboarding | "Users need to learn the product" | Videos are skipped by 80%+ of users in B2B tools. Developer users explicitly prefer reading docs. Videos add CDN costs and go stale on every UI change | Write one tight onboarding tooltip per step (15-20 words). Link to docs from settings, not onboarding |
-| Onboarding checklist widget in dashboard | "Persistent reminder to complete setup" | A floating checklist in an otherwise focused dashboard is visual noise once setup is complete. It's appropriate for CRM tools (many optional setup items) but not for a tool with 2-3 required steps | Use banner on dashboard home if Linear is not connected. Auto-dismiss banner once connected. No persistent widget |
-| Email drip sequence triggered from onboarding | "Re-engage users who don't complete setup" | This is a marketing infrastructure problem (requires sending infra, unsubscribe handling, GDPR compliance) for a product in dogfooding. The team is the user. | When multi-team use begins, add PostHog funnel tracking and manual outreach first. Email automation is v3+ |
-| Multi-step form with validation before OAuth | "Collect team size, use case, role before connecting" | Every question before the value moment increases drop-off. Developer tools that ask qualifying questions in onboarding (vs. after) perform measurably worse | Skip the questionnaire entirely. You're dogfooding — you know the use case |
+| Feature | Why Expected | Complexity | Dependencies on Existing | Notes |
+|---------|--------------|------------|--------------------------|-------|
+| Knowledge graph schema (Apache AGE) | Foundation for everything else. Without nodes and edges in the DB, there is no graph. | Medium | Supabase Postgres (existing), requires AGE extension install | AGE uses openCypher syntax. Runs inside Postgres -- no new infrastructure. Must define entity types (Person, Decision, Ticket, PullRequest, CodeChunk, SlackThread, NotionPage, Meeting) and relationship types (AUTHORED, DISCUSSED_IN, DECIDED_BY, AFFECTS, MENTIONS, IMPLEMENTS, etc.) |
+| Rule-based entity extraction for structured data | Ticket IDs (CON-16), @mentions, PR numbers (#142), file paths, channel references -- these are deterministic patterns that regex handles perfectly. LLM extraction for these is wasteful and less accurate. | Low | Linear tickets, Slack messages, GitHub PRs, Notion pages (all existing tables) | Regex/pattern matching is 100% deterministic, zero-cost, auditable. Run on every ingested record during webhook/sync processing. Produces graph edges immediately. The rule-based vs LLM split is well-established: deterministic NLP for structure, LLMs for reasoning. |
+| LLM-based entity extraction for semantic entities | Decisions, rationale, blockers, requirements, architectural choices -- these can only be identified by understanding natural language context. | High | LLM client (existing Gemini Flash via llm_client.py), source content from all integrations | The expensive part. Must batch efficiently. Use Gemini Flash (cheap, fast). Extract structured JSON with entities + relationships. Research shows 60-85% accuracy is typical for LLM entity extraction -- accept imperfection. Microsoft GraphRAG uses multi-turn "gleanings" to improve recall but this adds cost. |
+| Cross-source identity resolution | Unify "Daulet" in Slack, "daulet-ash" on GitHub, "Daulet Ashikbayev" in Linear, and "Daulet" in meeting transcripts into ONE Person node. Without this, person references in the graph are fragmented and useless. | Medium | All integration data (existing), user profile metadata from each service's API | Start deterministic: email matching across platforms (Slack users.lookupByEmail API, GitHub user profile emails, Linear member emails). Fall back to fuzzy display name matching with LLM confirmation only for ambiguous cases. Build a `person_identities` mapping table linking platform-specific IDs to canonical Person nodes. |
+| Graph-enhanced retrieval (blend with hybrid search) | The entire point of the milestone: find multi-hop connections that vector + full-text search misses. "Who discussed this decision?" or "What other tickets does this architectural choice affect?" require traversal, not cosine similarity. | High | Existing `hybrid_search()` SQL function, existing `find_related_content()` in linking.py, embeddings table | Must be ADDITIVE, not a replacement. Graph results become a new signal (WEIGHT_GRAPH = 0.6) blended into the existing weighted scoring in linking.py. Graph traversal via AGE Cypher queries returns scored results merged alongside explicit refs (1.0) and hybrid search (0.8). |
+| Updated synthesis prompts | Context pages must visibly improve. If the graph exists but context pages look identical, the feature failed. | Medium | Existing synthesis.py, existing SYNTHESIS_TEMPLATE (7 sections) | Add decision trail data, relationship paths, and cross-referenced people to the prompt input. Modify `_format_related_content()` to format graph traversal results distinctly (show relationship paths: "Decision -> discussed in -> Slack thread -> mentioned by -> Person"). The LLM synthesizes graph context alongside existing signals. |
 
 ---
 
-### Capability 2: Dark Theme Dashboard Redesign
+## Differentiators
 
-#### Table Stakes
+Features that make the GraphRAG layer genuinely valuable beyond basic graph infrastructure. Not strictly required for MVP, but these are what justify the milestone investment.
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Dark mode as default (not a toggle) | ContextOS's landing is `#0A0A0F` navy-black. Defaulting the dashboard to light mode creates a jarring brand contradiction. Developers expect dark-first for internal tools | LOW | The existing `globals.css` has a complete `.dark` theme block. The issue is it's not the default — need `<html class="dark">` in layout. Remove the light-mode defaults or set dark as system-matched default |
-| Surface hierarchy with 3-4 levels | A single `--background` color for everything flattens the UI. PostHog 3000 uses 3 levels; Linear uses 3-4. Without elevation, cards float on nothing | LOW | Currently have: `background: oklch(0.12)`, `card: oklch(0.17)`, `input: oklch(0.25)`. Need a 4th: `elevated-card: oklch(0.20)` for hover states and overlays. This is a single token addition |
-| Teal primary as signal color, not decoration | The brand primary is `oklch(0.60 0.18 250)` — a strong teal. Applied everywhere it reads as MS Teams. Applied only on active/interactive states it reads as Linear | LOW | Audit every `text-primary` and `bg-primary` usage. Teal should appear on: active nav items, connected integration borders, CTA buttons, status indicators. Nowhere else |
-| Consistent border token usage | Generic dark UIs use `border-border` inconsistently, sometimes adding `bg-muted/40` overlays that create muddy mid-tones | LOW | One rule: cards use `border` token (`oklch(0.28)`), hover states use `border-border/60`, focus states use `ring` token (teal). Never mix border and background tokens on the same element |
-| Type scale that distinguishes heading from body | Current dashboard uses `text-2xl font-bold` for page titles and `text-sm` for everything else. No intermediate scale for section headers creates visual monotony | LOW | Add `text-xs uppercase tracking-[0.08em] font-medium text-muted-foreground` for section labels (already used partially in the current dashboard home). Add `text-base font-semibold` for card headers. Reserve `text-2xl` for page-level headings only |
-| JetBrains Mono for identifiers and data | Ticket IDs, timestamps, token counts, API keys, sync counts — all proportional today. Context engineers will notice | LOW | Already loaded in `layout.tsx`. Add utility class: `font-mono tabular-nums` to all identifier/count/timestamp elements. The current dashboard uses it on one element — extend systematically |
-
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Noise texture layer on interactive cards | Raycast and the ContextOS landing page both use grain overlays. Applied to interactive card backgrounds (not static surfaces), it adds tactility that reads as handcrafted. This is the single most-commented-on technique in "crafted vs generic" analysis | LOW | Already built: `.noise-bg::before` in `globals.css`. The problem is it's 0.015 opacity (nearly invisible). On cards: raise to 0.025-0.04 on hover, 0 at rest. The texture should appear when the user interacts, not as a static background |
-| Dot grid pattern on empty-state backgrounds | The landing page uses a CSS dot grid extensively. Bringing it into the dashboard only on empty states (no context pages, no activity) creates continuity between landing and app. Users who came from the landing recognize the pattern as "home" | LOW | CSS radial-gradient dot grid: `background-image: radial-gradient(circle, oklch(0.35 0.02 250) 1px, transparent 1px)`, `background-size: 24px 24px`. Apply only to empty-state panels, not general backgrounds |
-| Gradient text on page-level headings only | The landing uses gradient text pervasively. In the dashboard, restricting it to exactly one element per page (the page heading or a key metric) makes it feel like intentional branding rather than template overuse | LOW | Tailwind utility: `bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-transparent`. Use on `<h1>` only — or on the connected integration count ("3 sources active") |
-| Brand-colored left border on connected integrations | Already implemented in the current dashboard (`border-l-2 border-l-violet-500` for Linear, etc.). This is a pattern worth keeping and extending: it creates a visual link between the integration's brand identity and its connected state. Not generic | ALREADY BUILT | Keep this pattern. Ensure it extends to activity timeline events (source-colored left border per event type) |
-
-#### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Light/dark mode toggle in dashboard | "User preference" | Adds a theme provider, `next-themes`, localStorage sync, and system preference detection. The audience is the founding team — they can tolerate dark-only for the dogfood phase | Ship dark-only for v1.1. Add system-preference detection (not a toggle) in v2 when external users onboard |
-| Glassmorphism / frosted glass effects | "Premium, modern look" | Glassmorphism requires bright background colors to be readable. On a dark `oklch(0.12)` background, blur effects produce visual mud, not clarity. Linear and PostHog explicitly moved away from this | Use surface elevation (different background lightness) instead of blur for depth. Blur only works on modals over content, not as a general card style |
-| Heavy gradients on dashboard cards | "Matches the landing page energy" | Landing page gradients work because they're on a marketing surface (large, slow-scroll, brand-first). Dashboard cards are repeated UI elements — heavy gradients cause visual fatigue after 30 seconds of use | Reserve gradients for: page heading text, the onboarding completion illustration, and the empty state illustration. Use flat tinted backgrounds for all cards |
-| Animation on every interaction | "Polished feel" | Over-animated dashboards feel slow and immature. PostHog 3000's animation philosophy: entrance animations only, not repeated-interaction animations. Hover effects should be CSS transitions, not Framer Motion sequences | Framer Motion for: page-level route transitions, onboarding step transitions, context page generation progress. CSS transitions for: hover states, focus rings, status dots |
+| Feature | Value Proposition | Complexity | Dependencies on Existing | Notes |
+|---------|-------------------|------------|--------------------------|-------|
+| Decision extraction and linking | "The decision to use Apache AGE was made by Dulat in #arch-decisions on Feb 28, then referenced in ticket CON-32 and documented in the Architecture Notion page." Decisions are the single most valuable semantic entity for engineering context. No competing tool tracks decision provenance across Slack + meetings + tickets. | High | Slack messages, meeting transcripts, Linear comments (all existing tables) | Extract: what was decided, who decided, where discussed, what ticket/feature it affects. Link decisions bidirectionally to tickets. This IS the differentiator for ContextOS -- cross-tool decision trails that no other product does. |
+| Code-to-discussion linking | Connect code chunks to the Slack conversations and tickets that motivated them. "This function was discussed in #backend on Feb 15 and implemented in PR #87 for CON-21." | High | code_chunks table (existing from Phase 12), GitHub PRs (existing), Slack messages (existing) | Requires matching: PR descriptions mentioning tickets, Slack messages mentioning file paths or function names, commit messages referencing issues. The multi-signal linking pattern already exists in linking.py -- extend it with graph edges. |
+| Multi-hop relationship traversal for context | Answer queries impossible with vector search: "What other tickets are affected by the same decision?" or "Who else worked on code related to this feature?" or "What was discussed about this API before it was implemented?" | High | Knowledge graph schema (this milestone), populated graph data | 2-3 hop traversals via Cypher: Ticket->Decision->OtherTickets, Person->PRs->RelatedTickets, Code->Discussion->Requirements. Results feed into context page generation as "Related Context" signals with relationship path explanations. |
+| Person-centric context aggregation | "Daulet has been involved in 12 tickets, authored 3 architectural decisions, and submitted 47 PR reviews this month." Person nodes become a lens for understanding team knowledge distribution and expertise. | Medium | Identity resolution (this milestone), all existing source data | Emerges naturally from identity resolution + graph edges. Simple Cypher: MATCH (p:Person)-[r]->(n) RETURN type(r), count(r). Surface in context pages under the "Key People" section with cross-reference counts. |
+| Graph explorer UI | Visual graph view in the dashboard where users explore entity connections. Click a ticket node, see connected decisions, people, PRs, Slack threads radiating outward. | High | Frontend (Next.js/React, existing), graph data API endpoint (this milestone) | Stretch goal per PROJECT.md. Use reagraph (WebGL, React-native, maintained) or react-force-graph. Start with a simple force-directed node-link diagram. Backend: GET /api/graph/neighborhood/{entity_type}/{entity_id} returns subgraph JSON (nodes + edges). Do NOT build a full graph visualization product. |
 
 ---
 
-### Capability 3: Context Feed UX
+## Anti-Features
 
-#### Table Stakes
+Features to explicitly NOT build. These are tempting distractions that would derail the milestone.
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Browsable feed of all context pages with status | The existing context page is a lookup tool (type a ticket ID). Users expect to browse. Every document-centric tool (Notion, Linear, GitHub) shows a list first | MEDIUM | Replace the lookup tab with a paginated list view. Cards show: ticket identifier (mono), title, status dot (ready/generating/stale/error), generation timestamp (mono, relative), integration sources used (small brand logos). Sorted by generated_at DESC |
-| Status filtering | Users need to find stale or errored pages quickly. Vercel's deployment list shows status filter pills as the primary filter control | LOW | Filter pills: All / Ready / Generating / Stale / Error. Pill design: rounded-full, active = teal bg, inactive = outline. No dropdown — inline pills take one click |
-| Free-text search across ticket identifiers and titles | Developers search by ticket ID. The expected interaction: type "CON-16" and see that ticket's context page | LOW | Client-side filter against the fetched list (not a new API call) for small datasets. For >100 pages, debounce to a search API endpoint |
-| Detail view without leaving the feed | Clicking a context page should expand it (side panel or route) without losing list position. Linear's split view is the reference | MEDIUM | Option A (simpler): route to `/dashboard/context/[id]` with a back button. Option B (premium): slide-in right panel with the list still visible. Start with Option A for v1.1, design for Option B in v2 |
-| Copy AI prompt button on detail view | Already spec'd in v1.0 and must be in this view. One-click copy, confirmation toast | LOW | Sonner toast: "Copied to clipboard" with a 2s auto-dismiss. Button should be the most prominent element on the detail view, not a secondary action |
-| Regenerate button on detail view | Already spec'd in v1.0 | LOW | Secondary button, shows spinner during generation, triggers the existing generation endpoint |
-| Source attribution in detail view | Sources list already implemented in context/page.tsx. Keep and improve visual design | LOW | Source chips with brand icons (Linear/Slack/Fathom) rather than text type labels. Color-coded by source type |
-
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Generation progress with named steps | When generating, show "Fetching Linear ticket... Pulling Slack threads... Running AI synthesis..." rather than a generic spinner. This is the same experience Linear shows during their AI label generation | MEDIUM | Supabase Realtime subscription to the `context_generation_jobs` table. Map job step names to user-readable labels. Each step animates in as it starts. This works because the LangGraph pipeline already has named nodes |
-| Stale indicator with reason | "Stale" means something changed since last generation. Show WHAT changed: "2 new Slack messages since last generation" or "Ticket updated 3 hours ago." Vercel shows deployment status reason inline | MEDIUM | Requires backend to compute `stale_reason` when marking stale. Frontend shows it as a hover tooltip on the stale status dot |
-| Keyboard navigation in the feed | Developer tools users expect `j/k` for next/prev, `Enter` to open, `Esc` to close, `r` to regenerate, `c` to copy prompt. PostHog 3000's redesign explicitly added keyboard-first navigation as a differentiator | MEDIUM | useEffect + keydown listeners on the feed page. Only activate when not in a text input. This is a 50-line implementation but takes careful state management |
-| Source count as feed metadata | Show how many sources contributed to each context page in the feed card ("3 sources: Linear, Slack, Fathom"). Surfaces the quality of the context at a glance | LOW | Count sources by type from the sources array. Render as small brand logos (16px) in the feed card. Already have brand logo components |
-
-#### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Infinite scroll | "Better than pagination for browsing" | Infinite scroll destroys URL shareability, breaks back-button behavior, and requires complex intersection observer management. For a tool where most users have <50 context pages, pagination is cleaner | Use simple numbered pagination or "Load more" button. 20 pages per batch |
-| Inline editing of context page content | "Let me fix AI mistakes" | Documented anti-feature from v1.0 research. Turns generated artifact into a wiki. Defeats the purpose | Provide "Generate with hint" input on the regenerate action. One text field: "What should be different?" Feed as a prompt suffix |
-| Saved search / smart folders | "I want to see all context pages for Project X" | Premature organization layer. The team has <50 context pages. Add grouping only when the list becomes unmanageable | Filter by status (already planned). Add Linear project/label filter in v1.5 if the team requests it |
-
----
-
-### Capability 4: Activity Timeline
-
-#### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Reverse-chronological feed of system events | Every operations dashboard (Vercel, Supabase, PostHog, Sentry) shows an activity/event log. Users expect to know what the system has done | MEDIUM | Events: context page generated, context page stale, integration connected/disconnected, webhook received, sync completed, error occurred. Store in a `workspace_events` table (event_type, metadata, created_at) |
-| Event type icons with source color | Activity feeds without icons look like server logs. Each event type needs a distinct icon and color. The aubergine.co activity feed guide explicitly recommends lightweight icons per event type | LOW | Map event types to lucide-react icons: Sparkles (context generated), AlertCircle (error), Link (integration connected), RefreshCw (sync), Clock (stale). Color = source brand color (teal for ContextOS events, violet for Linear, etc.) |
-| Relative timestamps with absolute on hover | "5 minutes ago" is the standard for recent events. Absolute timestamp on hover covers the power-user need without cluttering the feed | LOW | `formatRelativeTime` already exists in `lib/utils.ts`. Add `title={absoluteTimestamp}` attribute for hover. Already used in the current dashboard |
-| Event grouping by day | GitHub's activity feed, Linear's changelog, and Vercel's deployment log all group events by date header (Today, Yesterday, March 3). Without grouping, long feeds become unreadable | LOW | Date separator component: `text-xs text-muted-foreground/50 uppercase tracking-widest border-b border-border/30 py-2 mb-2`. Insert between events when date changes |
-| Empty state when no activity | A blank white panel is worse than an empty state message. Every best-practice guide mentions this | LOW | Empty state: dot grid background, Sparkles icon, "No activity yet. Connect Linear to start generating context." — one call to action |
-
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Real-time feed via Supabase Realtime | The existing dashboard already plans Supabase Realtime for context page status. Extending it to the activity feed means new events appear without refresh. This is the experience PostHog 3000 and Supabase logs deliver | MEDIUM | Subscribe to `workspace_events` channel filtered by `workspace_id`. Prepend new events at the top with a slide-down animation (stagger-children pattern). Supabase Realtime is already in the stack; this is schema + subscription work |
-| Left border color coding by event type/source | Each activity item has a 2px left border in the source's brand color (teal for synthesis, violet for Linear, emerald for Slack). Same pattern as the integration status list. Creates visual scanning rhythm without needing to read the icon every time | LOW | Same `border-l-2` pattern already used in the integration list. Extend: `border-l-emerald-500` for Slack events, `border-l-violet-500` for Linear events, `border-l-primary` for ContextOS events |
-| Clickable events that link to the relevant entity | Tapping a "Context page generated" event navigates to that context page. Tapping "Integration connected" navigates to integrations settings. GitHub's activity feed does this; most internal tools don't bother | LOW | Add `link_to` field to the workspace_events record. Route to `/dashboard/context/[id]` or `/dashboard/integrations` as appropriate. Render the event item as a subtle `<Link>` wrapper |
-
-#### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Full audit log with user attribution | "Who did what?" | The product is single-user per workspace during dogfooding. Multi-user audit logging adds schema complexity (actor_id, IP, user agent) before there are multiple actors | Seed the event table with `actor_type: 'system' | 'user'` field but don't display attribution in UI until multi-user |
-| Filterable activity log with saved filters | "I only want to see errors" | For a feed of <100 events/day during dogfooding, filtering by type adds UI complexity not yet needed. Build the simple version first | Filter by event category (All / Errors / Integrations / Context) only when the team asks for it. Don't pre-build |
-| Download activity log as CSV | "Compliance / audit export" | This product is not being used for compliance. CSV export is a procurement checkbox for enterprise tools | Not applicable for v1.1 or v2. Add only if an enterprise customer asks |
-
----
-
-### Capability 5: Team Settings
-
-#### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Workspace name editing | Every SaaS product allows changing the workspace name | LOW | Single text input + save button. Update `workspaces.name`. Confirmation toast on success |
-| API key management (list, create, revoke) | The MCP server requires API keys. Users need to see existing keys, create new ones, and revoke compromised keys. Supabase and Clerk both surface API key management in settings | LOW | Table with columns: name, key prefix (e.g. `ctx_...`), created date, last used date, revoke button. Generate button creates a new key. Full key shown once on creation with a copy button (same pattern as GitHub PATs) |
-| Integration management (disconnect) | Already exists at `/dashboard/integrations`. Settings is the expected home for this | LOW | Move integration connection status and disconnect actions here, or add a link from settings to integrations. Don't duplicate — link |
-| Notification preferences (webhook failure alerts) | When synthesis fails or a webhook is rejected, the user needs to know. Email or in-app toggle | LOW | Simple toggle list: "Email me on synthesis errors", "Email me on integration disconnection". Store in `workspaces.notification_prefs JSONB`. Use Supabase Edge Function or FastAPI to send via Resend/Postmark |
-
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| API key usage metrics per key | Show the last-used timestamp and a rough call count (last 24h, last 7d) per API key. Clerk does this. Gives the user confidence the MCP server is actually calling the API | MEDIUM | Track API key usage events in Redis (increment on each call, expire after 30d). Surface in settings table. This is 30 lines of FastAPI middleware + a settings query |
-| Webhook health indicator | Show a "Webhook status" panel: last webhook received from each integration (Linear / Slack), timestamp, success/failure status. When webhooks stop flowing, users currently have no visibility | LOW | Query `webhook_events` table for last received per source. Green dot = received in last 2 hours. Yellow = 2-24h. Red = 24h+. This is a read-only status display |
-
-#### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Team member invites and role management | "We'll have multiple users" | Single-workspace dogfooding. Building invite flows, role-based permissions, and member removal before there are 2+ teams is YAGNI. Linear, Supabase, and Vercel all built this after their founding teams had product-market fit | Add a placeholder "Team" section in settings that says "Coming soon — invite your team." No implementation. |
-| SSO / SAML configuration | "Enterprise teams need SSO" | Supabase Auth supports SSO via third-party providers, but configuring SAML is a multi-week project for a product not yet past internal dogfooding | Supabase's Auth provider list already includes Google OAuth for a future v2 addition. SAML is v3+ |
-| Custom domain / white-labeling | "Our company wants contextos.acme.com" | No external customers yet. Custom domain adds Vercel project configuration, DNS management UI, and SSL certificate management | Not applicable for v1.1 |
-
----
-
-### Capability 6: Auth Page Redesign
-
-#### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Dark background matching dashboard | The current auth pages use `Card` (white background) centered on a light background. Users going from the landing page (`#0A0A0F`) to login see a jarring white flash. Clerk's 2025 dark mode dashboard and Supabase's auth pages both match their product's dark theme | LOW | Set auth layout background to `oklch(0.12)` (same as dashboard `--background`). Style the form card to `oklch(0.17)` (card surface). Remove the default light Card component and build a custom auth form panel |
-| Brand logo at top of form | Every developer tool auth page (Vercel, Supabase, Clerk, Linear) shows the product logo above the form. The current auth page has no logo | LOW | Add the ContextOS wordmark (or logo mark) above the form. Use the same `text-[15px] font-semibold tracking-[-0.02em]` as the nav bar wordmark |
-| Consistent error state styling | The current login page uses `bg-destructive/10 p-3 rounded-md` for errors. This should match the dashboard's error banner style | LOW | Use the same error component as the dashboard: `border-destructive/20 bg-destructive/5 flex items-center gap-3 rounded-xl px-4 py-3` |
-
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Subtle brand illustration or dot-grid backdrop | Split-layout auth pages (form on left, brand visual on right) are the premium pattern for B2B tools. Even Vercel's login is centered-form with brand color background. ContextOS could add the dot-grid pattern on the auth background for continuity with the landing page | LOW | Add the CSS dot grid background to the auth layout (same radial-gradient technique as landing). This creates visual continuity: landing → login → dashboard feels like one product, not three separate tools |
-| Magic link as primary, password as secondary | The current login shows both forms with equal prominence. Most developer tools (Supabase's own dashboard, Vercel, Netlify) default to magic link or SSO. For internal tools with no password requirements, magic link should be the hero action | LOW | Reorder: magic link form first, "Or sign in with password" as a collapsed section below. This better matches how the founding team actually authenticates |
-
-#### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Social OAuth buttons (Google, GitHub) | "Faster login for developers" | Supabase Auth supports these natively, but adding social providers requires: redirect URI registration per provider, environment variables, testing on each provider, and edge cases around account merging. For a 3-person founding team where you control who has accounts, this is unnecessary complexity | Add Google OAuth in v1.5 when external users onboard. GitHub OAuth in v2. For now: magic link covers the use case |
-| "Remember me" checkbox | "Users expect this" | Supabase sessions are persistent by default (30-day token). There is no session expiry problem to solve. Adding a visible "Remember me" checkbox implies there's a problem that doesn't exist | Remove cognitive noise. Don't add UI for a non-problem |
-| Multi-step auth wizard | "Welcome to ContextOS → Enter email → Enter password → 2FA" | Three steps for login is friction. The current single-form approach is correct. Only split into steps if adding MFA, which is not planned | Keep single-form. If MFA is added in v2, then a step UI makes sense |
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Full Microsoft GraphRAG pipeline (community detection + Leiden clustering + community reports) | Massive overkill. Microsoft GraphRAG is designed for corpus-scale summarization of thousands of unstructured documents. ContextOS has structured data from known sources (tickets, messages, PRs) -- not a raw document corpus. Community detection via Leiden adds weeks of work for negligible value at this data scale (hundreds to low-thousands of entities). | Build a simpler property graph with typed entities and relationships. Skip Leiden clustering entirely. The graph value comes from entity linking and relationship traversal, not from community summarization. |
+| Replace existing hybrid search with graph-only retrieval | The existing hybrid_search() function works well for semantic similarity. Graph retrieval has different strengths (relationships, multi-hop) but worse recall for fuzzy semantic matching. Replacing would regress context page quality for queries that work fine today. | Blend graph as a THIRD signal alongside vector + full-text. Add WEIGHT_GRAPH constant in linking.py (start at 0.6) and merge graph results into the existing find_related_content() pipeline. Graph supplements, never replaces. |
+| Real-time graph updates on every webhook event | Processing every Slack message through LLM entity extraction in real-time would burn API budget and add latency to webhook handlers that must respond quickly. | Two-tier extraction: rule-based extraction (regex for structured patterns) runs inline during ingestion (zero cost, instant). LLM semantic extraction queues records for batch processing via Redis Streams (same pattern as existing embedding pipeline). |
+| Neo4j or separate graph database | Adding a separate database doubles operational complexity, requires bidirectional data sync between Postgres and the graph DB, and contradicts the "stay in Supabase Postgres" constraint. Neo4j is purpose-built for graphs but is a different infrastructure dependency. | Apache AGE extension on existing Postgres. Single database, single backup, single connection pool. AGE supports openCypher queries natively. Performance is more than sufficient at this scale (~thousands of nodes, not millions). |
+| LLM entity extraction for structured references | Using Gemini/Claude to extract ticket IDs, PR numbers, @mentions from messages is wasteful. These are deterministic patterns with known formats. LLMs produce variable outputs for identical inputs -- unacceptable for pattern matching. | Regex extractors: `CON-\d+` for ticket IDs, `#\d+` for PR numbers, `<@[A-Z0-9]+>` for Slack mentions, file path patterns for code references. 100% accurate, zero cost, instant. Reserve LLM budget exclusively for semantic entities (decisions, rationale, blockers). |
+| Entity deduplication via ML/embedding similarity | Building an ML model or using embedding distance to detect duplicate entities is premature. The entity space is small (dozens of people, hundreds of decisions at most) and well-bounded by the platforms. | Deterministic dedup first: email matching for people, ticket identifier matching for issues, URL/number matching for PRs. LLM confirmation only for the small number of genuinely ambiguous fuzzy matches. |
+| Full NLP pipeline (SpaCy, Stanza, coreference resolution) | Academic-grade NLP pipelines are heavy dependencies (hundreds of MB) that solve problems the LLM handles better in a single structured output call. Adding SpaCy for NER when Gemini Flash already does it is duplicate work. | Use LLM structured output for semantic extraction. One prompt extracts entities + relationships + resolves coreferences. The LLM handles "he said the decision was..." -> "Daulet said the decision was..." naturally in context. |
+| Graph versioning / temporal graph | Tracking how the graph changes over time (edge creation/deletion timestamps, graph snapshots, bitemporal queries) adds significant schema complexity for minimal v1 value. | Timestamp edges with `created_at`. Query "relationships created before date X" with simple WHERE clauses if needed later. Full temporal graph semantics are a research project, not a product feature. |
+| LazyGraphRAG (defer extraction to query time) | Microsoft's LazyGraphRAG (June 2025) defers community summarization to query time, reducing indexing cost by 99%. Interesting for massive corpora but adds query latency and complexity. ContextOS processes structured data from known integrations -- indexing cost is already bounded. | Pre-extract at ingestion time (rule-based) and in batches (LLM). The data volume is manageable. Query-time extraction adds latency to context page generation, which users experience directly. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Onboarding Flow]
-    └──requires──> [Supabase user metadata (onboarding_step)]
-    └──requires──> [Linear OAuth (existing)]
-    └──requires──> [Slack OAuth (existing)]
-    └──requires──> [Context generation trigger (existing)]
-    └──enables──>  [Dashboard access] (gate until step 3+ complete)
-
-[Context Feed (list view)]
-    └──requires──> [Context pages in DB (from v1.0)]
-    └──requires──> [Supabase Realtime (for live status)]
-    └──enables──>  [Context detail view]
-        └──requires──> [Copy AI prompt (existing)]
-        └──requires──> [Regenerate (existing)]
-
-[Activity Timeline]
-    └──requires──> [workspace_events table (new schema)]
-    └──requires──> [Event emission from: webhooks, OAuth, synthesis pipeline]
-    └──enhances──> [Supabase Realtime (reuse subscription pattern from context feed)]
-    └──enables──>  [Webhook health indicator (in settings)]
-
-[Dark Theme Design System]
-    └──requires──> [globals.css token audit]
-    └──blocks──>   [All other UI work in this milestone]
-    └──enables──>  [Auth page redesign, Dashboard home redesign, Context feed, Activity timeline]
-
-[Auth Page Redesign]
-    └──requires──> [Dark theme tokens (above)]
-    └──independent of──> [All feature work (can ship any time)]
-
-[Team Settings]
-    └──requires──> [API keys table (v1.0)]
-    └──requires──> [webhook_events table (for health indicator)]
-    └──requires──> [workspace_events table (reuse from activity timeline)]
-    └──independent of──> [Context feed, Activity timeline]
-
-[Onboarding "Aha Moment" step]
-    └──requires──> [Context generation pipeline (Phase 4)]
-    └──requires──> [Linear OAuth connected (Phase 2)]
-    └──note──> This is the highest-risk dependency: if Phase 4 is not complete, the aha-moment step cannot show a real context page. Plan a fallback: show a demo/mock context page if no real ticket is available
+Rule-based extraction -----> Knowledge graph schema (AGE)
+                                    |
+LLM entity extraction ------------>|
+                                    |
+Cross-source identity resolution -->|
+                                    |
+                                    v
+                        Graph populated with nodes + edges
+                                    |
+                    +---------------+---------------+
+                    |               |               |
+                    v               v               v
+        Decision extraction   Code-to-discussion   Multi-hop traversal
+                    |               |               |
+                    +---------------+---------------+
+                                    |
+                                    v
+                        Graph-enhanced retrieval
+                        (blend into find_related_content)
+                                    |
+                                    v
+                        Updated synthesis prompts
+                        (context pages improve)
+                                    |
+                                    v
+                        Graph explorer UI (stretch)
 ```
 
-### Dependency Notes
+**Critical path:** Schema -> Extraction (rule-based + LLM) + Identity Resolution -> Graph-enhanced retrieval -> Updated synthesis. Everything else is additive.
 
-- **Dark theme must ship first:** Every UI feature in this milestone builds on the dark token system. If tokens are inconsistent, every component built on top will need rework. Token audit + dark-default must be the first PR of this milestone.
-- **Onboarding depends on Phase 4 for the aha moment:** The most valuable onboarding step (first context generation) requires the synthesis pipeline to be working. If this milestone runs before Phase 4 completes, build onboarding steps 1-3 and gate step 4 on Phase 4 readiness.
-- **Activity timeline requires a new DB table:** `workspace_events` does not exist yet. This needs a migration before any event emission code can be written. Schema work should happen in the first sprint alongside token audit.
-- **Context feed (list) replaces the existing lookup tab:** The current context/page.tsx has a "Ticket Context" tab that requires knowing a ticket ID. The feed replaces this as the primary entry point. The lookup tab becomes a secondary action (or moves to settings for power users).
+**Parallelizable work:**
+- Rule-based extraction and LLM extraction can be developed in parallel (different code paths, same destination graph)
+- Identity resolution can be developed alongside extraction (writes to same graph, independent logic)
+- Decision extraction and code-to-discussion linking are independent differentiators that can be built in any order after the graph is populated
+
+**Key integration points with existing code:**
+- `linking.py:find_related_content()` -- add graph results as third signal alongside explicit refs and hybrid search
+- `embedding.py:SOURCE_TYPE_MAP` -- no changes needed (graph reads from same source tables)
+- `synthesis.py:SYNTHESIS_TEMPLATE` -- modify to accept and format graph context data
+- `synthesis.py:_format_related_content()` -- extend to format graph relationship paths distinctly
+- Webhook handlers (linear_webhook.py, slack_events.py, github_webhook.py, notion_webhook.py) -- add inline rule-based extraction calls during ingestion
 
 ---
 
-## MVP Definition
+## Entity Type Taxonomy
 
-### Launch With (this milestone)
+Based on the domain (engineering team context across Linear, Slack, GitHub, Notion, Fathom), these are the entity types for the knowledge graph.
 
-Features needed for the dashboard to feel like a product, not a prototype.
+### Node Types
 
-- [ ] **Dark mode as default** — Remove the jarring light/dark contradiction with the landing page. Zero-effort token change.
-- [ ] **JetBrains Mono on all identifiers** — Single CSS audit pass. Makes the dashboard read like a developer tool instantly.
-- [ ] **Guided onboarding flow (steps 1-3: workspace name, Linear, Slack)** — Users must be walked to the product; they won't walk themselves.
-- [ ] **Auth page dark redesign** — First impression. Cannot ship a white card login for a dark-brand product.
-- [ ] **Context feed list view** — Replace lookup-only with browsable list. Core dashboard functionality.
-- [ ] **Context feed detail with copy + regenerate** — Existing functionality, new visual design.
-- [ ] **Activity timeline (basic, non-real-time)** — Shows the system is alive. Builds trust. Polling is acceptable for v1.1.
-- [ ] **workspace_events table + event emission** — Backend prerequisite for timeline. Emit on: synthesis complete, synthesis error, integration connected/disconnected.
-- [ ] **Settings: API key management** — Required for MCP users. Already spec'd in v1.0 but not in dashboard yet.
+| Node Type | Source(s) | Extraction Method | Graph Mapping |
+|-----------|-----------|-------------------|---------------|
+| Person | Linear members, Slack users, GitHub users, Fathom speakers | Identity resolution (email + fuzzy name) | Canonical identity. One node per real person, with `identities` property listing platform-specific IDs |
+| Decision | Slack messages, meeting transcripts, Linear comments | LLM extraction | Extracted semantic entity. Properties: what_decided, rationale, date, confidence_score |
+| Ticket | Linear tickets table | Direct mapping (1:1 from linear_tickets) | Already-existing structured data, promoted to graph node |
+| PullRequest | GitHub PRs table | Direct mapping (1:1 from github_pull_requests) | Already-existing structured data, promoted to graph node |
+| CodeChunk | code_chunks table (Phase 12) | Direct mapping (1:1 from code_chunks) | Already-existing structured data, promoted to graph node |
+| SlackThread | Slack messages grouped by thread_ts | Grouping rule (same channel + thread_ts) | Aggregation of individual messages into conversation units |
+| NotionPage | Notion pages table | Direct mapping (1:1 from notion_pages) | Already-existing structured data, promoted to graph node |
+| Meeting | Meeting transcripts table | Direct mapping (1:1 from meeting_transcripts) | Already-existing structured data, promoted to graph node |
 
-### Add After Validation (v1.1.x)
+### Edge Types
 
-- [ ] **Supabase Realtime for activity timeline** — Upgrade polling to live updates once the basic timeline ships and is being used.
-- [ ] **Onboarding step 4: first context generation** — Add the aha-moment step once Phase 4 pipeline is stable.
-- [ ] **Context feed keyboard navigation (j/k/Enter/Esc)** — Developer delight feature. Add when the team is using the feed daily and keyboard shortcuts feel natural to add.
-- [ ] **Stale reason indicator on context pages** — Adds context to "stale" status. Requires backend work to compute the reason.
-- [ ] **Animated integration connection confirmation** — SVG checkmark draw in onboarding. Adds craft; defer until core flow works.
-- [ ] **Settings: webhook health indicator** — Once the team has run the product for 2+ weeks and wants visibility into webhook health.
+| Edge Type | From -> To | Extraction Method | Description |
+|-----------|-----------|-------------------|-------------|
+| AUTHORED | Person -> Ticket, PR, SlackThread, NotionPage | Rule-based (author/creator fields in source tables) | Person created or owns the artifact |
+| REVIEWED | Person -> PullRequest | Rule-based (review.author field) | Person reviewed the PR |
+| DISCUSSED_IN | Decision -> SlackThread, Meeting | LLM extraction | Decision was discussed in this conversation |
+| DECIDED_BY | Decision -> Person | LLM extraction | Person made or drove the decision |
+| AFFECTS | Decision -> Ticket | LLM extraction | Decision impacts this ticket/feature |
+| MENTIONS | SlackThread -> Ticket, PR, CodeChunk | Rule-based (regex: CON-\d+, #\d+, file paths) | Message explicitly references the artifact |
+| IMPLEMENTS | PullRequest -> Ticket | Rule-based (PR description/branch name containing ticket ID) | PR implements this ticket |
+| REFERENCES | NotionPage -> Ticket, Decision | Rule-based + LLM | Documentation references the entity |
+| PARTICIPATED_IN | Person -> Meeting | Rule-based (transcript speaker names) | Person spoke in this meeting |
+| MODIFIES | PullRequest -> CodeChunk | Rule-based (diff file paths matching code_chunks) | PR changes this code |
+| ASSIGNED_TO | Ticket -> Person | Rule-based (ticket.assignee field) | Ticket is assigned to this person |
+| RELATED_TO | Ticket -> Ticket | Rule-based (Linear relations API) + LLM | Tickets are related (blocks, blocked-by, related) |
 
-### Future Consideration (v2+)
+---
 
-- [ ] **Light/dark mode system preference detection** — When external users onboard. Not needed for dogfooding team.
-- [ ] **Context feed right-panel split view** — Premium UX upgrade over route-based detail. Add when team requests faster navigation.
-- [ ] **Team member invites** — When second team onboards.
-- [ ] **Social OAuth (Google/GitHub)** — When external users create accounts.
-- [ ] **API key usage metrics** — When MCP server usage is established enough to want per-key analytics.
+## How Each Feature Actually Works
+
+### 1. Knowledge Graph Schema (AGE)
+
+Apache AGE adds graph capabilities to PostgreSQL via an extension. It stores graph data in dedicated catalog tables but queries are run through SQL with embedded Cypher via the `ag_catalog.cypher()` function.
+
+**Expected behavior:**
+- Install AGE extension in Supabase Postgres (requires `CREATE EXTENSION age`)
+- Create a graph: `SELECT ag_catalog.create_graph('contextos')`
+- Create vertex labels (node types): `SELECT ag_catalog.create_vlabel('contextos', 'Person')`
+- Create edge labels: `SELECT ag_catalog.create_elabel('contextos', 'AUTHORED')`
+- Insert nodes: `SELECT * FROM ag_catalog.cypher('contextos', $$ CREATE (p:Person {name: 'Daulet', email: 'daulet@...', canonical_id: '...'}) $$) AS (v ag_catalog.agtype)`
+- Query: `SELECT * FROM ag_catalog.cypher('contextos', $$ MATCH (t:Ticket {identifier: 'CON-16'})<-[:AFFECTS]-(d:Decision)-[:DISCUSSED_IN]->(s:SlackThread) RETURN d, s $$) AS (d ag_catalog.agtype, s ag_catalog.agtype)`
+- All existing Postgres RLS, backups, connections continue to work unchanged
+
+### 2. Rule-Based Entity Extraction
+
+Runs inline during webhook/sync ingestion. Zero latency impact beyond regex matching.
+
+**Expected behavior:**
+- When a Slack message is ingested, extract: ticket references (CON-\d+), PR references (#\d+ in context of repo discussion), @mentions (map to Person nodes via identity resolution), file paths, URLs
+- When a PR is ingested, extract: ticket references from title/description/branch name, file paths modified (link to CodeChunks), reviewer assignments
+- When a meeting transcript segment is ingested, extract: speaker names (map to Person nodes), ticket references mentioned in speech
+- Each extraction creates graph edges immediately (e.g., SlackThread --MENTIONS--> Ticket)
+- Extraction is idempotent: re-processing a message does not create duplicate edges
+
+### 3. LLM Entity Extraction
+
+Batch processing via Redis Streams. Processes queued content in background workers.
+
+**Expected behavior:**
+- Source content (Slack threads, meeting transcript segments, ticket descriptions with comments) is queued for extraction when ingested
+- Worker pulls batch, constructs prompt: "Extract entities (decisions, requirements, blockers, people) and relationships from this content. Return structured JSON."
+- Prompt includes domain-specific examples (few-shot) tuned for engineering context
+- LLM returns structured JSON: `{entities: [{type: "Decision", description: "Use AGE instead of Neo4j", confidence: 0.85}], relationships: [{from: "Decision:use-age", to: "Ticket:CON-32", type: "AFFECTS"}]}`
+- Worker writes entities and relationships to AGE graph
+- Extraction runs with Gemini Flash (cheapest option, ~$0.075/1M input tokens)
+- Content hash deduplication prevents re-extracting unchanged content (same pattern as embedding service)
+
+### 4. Cross-Source Identity Resolution
+
+Maps platform-specific user identities to canonical Person nodes.
+
+**Expected behavior:**
+- On first run (backfill): fetch user lists from Linear, Slack, GitHub, Fathom APIs
+- Match by email (deterministic, highest confidence): Slack users.list provides email, Linear members API provides email, GitHub users API provides email
+- For matches without email overlap: fuzzy match on display name + LLM confirmation ("Is 'daulet-ash' on GitHub likely the same person as 'Daulet Ashikbayev' on Linear?")
+- Store in `person_identities` table: canonical_person_id, platform, platform_user_id, display_name, email, confidence
+- On subsequent ingestion: when a Slack message arrives with user_id U12345, look up the canonical Person node and create edges accordingly
+- When a new platform user appears (new team member, external collaborator), attempt automatic resolution, flag unresolved for manual confirmation
+
+### 5. Graph-Enhanced Retrieval
+
+Cypher queries retrieve graph-connected content, scored and blended with existing signals.
+
+**Expected behavior:**
+- When `find_related_content()` runs for a ticket, additionally execute graph neighborhood queries:
+  - 1-hop: Direct connections (Person who authored, Decision that affects, PR that implements)
+  - 2-hop: "Decisions affecting this ticket -> other tickets affected by those same decisions"
+  - 2-hop: "People who worked on this ticket -> other tickets they worked on recently"
+  - 2-hop: "Code modified by PRs for this ticket -> Slack discussions mentioning that code"
+- Graph results scored by hop distance (1-hop = 1.0, 2-hop = 0.7, 3-hop = 0.4) and relationship type relevance
+- Scored graph results merged into linking.py's merged dictionary with WEIGHT_GRAPH multiplier (start at 0.6, tune empirically)
+- Graph retrieval adds ~50-200ms for 2-hop queries at this data scale (thousands of nodes) -- acceptable
+
+### 6. Updated Synthesis Prompts
+
+Context pages include decision trails, relationship paths, and cross-referenced people.
+
+**Expected behavior:**
+- `_format_related_content()` extended with a new section for graph-derived context
+- Graph results formatted distinctly: show relationship paths, not just content snippets
+  - "Decision: 'Use Apache AGE for knowledge graph' (made by Dulat, discussed in #architecture on Feb 28, affects tickets CON-32, CON-35)"
+  - "Related via shared decision: CON-35 (also affected by the AGE decision)"
+- Synthesis template updated to instruct LLM: "Use the relationship paths to explain WHY things are connected, not just THAT they are connected"
+- Context pages gain: decision trails in "Background & Decisions" section, cross-referenced people in "Key People" section with platform links, relationship-based related work in "Related Work" section
+
+### 7. Decision Extraction (Differentiator)
+
+Identifies and links decisions from unstructured communication.
+
+**Expected behavior:**
+- LLM prompt specifically targets decision language: "we decided", "the plan is", "let's go with", "after discussing, we'll", consensus statements, action items with rationale
+- Each Decision node stores: description (what was decided), rationale (why), source_message_id (where it was stated), date, confidence_score, status (proposed/accepted/superseded)
+- Decision nodes linked to: Person (DECIDED_BY), SlackThread/Meeting (DISCUSSED_IN), Ticket (AFFECTS)
+- Decisions surface prominently in context pages: "This ticket is affected by 2 decisions: [decision 1 with provenance], [decision 2 with provenance]"
+- This is ContextOS's unique differentiator. No competing tool (Linear, Notion, Confluence, Glean) traces decision provenance across communication channels to tickets.
+
+### 8. Code-to-Discussion Linking (Differentiator)
+
+Connects code artifacts to the conversations and decisions that motivated them.
+
+**Expected behavior:**
+- When a Slack message mentions a file path (`src/services/linking.py`) or function name (`find_related_content`), create MENTIONS edge to matching CodeChunk
+- When a PR implements a ticket (IMPLEMENTS edge), and that ticket was discussed in Slack threads (MENTIONED_IN edges), transitively link the PR's changed code to those discussions
+- In context pages, "Relevant Code" section enriched: "This function was discussed in #backend thread [link] before being implemented in PR #87 [link]"
+- Uses existing code_chunks from Phase 12 -- no re-parsing needed
+
+---
+
+## Complexity Estimates
+
+| Feature | Backend (Python/SQL) | Frontend (React) | LLM Calls | Total Effort |
+|---------|---------------------|-------------------|-----------|-------------|
+| AGE schema + migration | 2-3 days | None | None | 2-3 days |
+| Rule-based extractors | 2-3 days | None | None | 2-3 days |
+| Identity resolution | 3-4 days | None | Minimal (fuzzy confirmation only) | 3-4 days |
+| LLM entity extraction pipeline | 4-5 days | None | Heavy (batch, Gemini Flash) | 4-5 days |
+| Decision extraction | 2-3 days (built on LLM pipeline) | None | Included in extraction | 2-3 days |
+| Code-to-discussion linking | 2-3 days | None | Minimal | 2-3 days |
+| Graph-enhanced retrieval | 3-4 days | None | None | 3-4 days |
+| Updated synthesis prompts | 1-2 days | None | Included in generation | 1-2 days |
+| Graph explorer UI | 1 day (API endpoint) | 4-5 days (visualization) | None | 5-6 days |
+| **Total MVP (items 1-8)** | **~19-25 days** | **0 days** | **Moderate** | **~19-25 days** |
+| **Total with stretch (add UI)** | **~20-26 days** | **4-5 days** | **Moderate** | **~24-31 days** |
+
+---
+
+## MVP Recommendation
+
+### Must Ship (table stakes -- graph layer fails without these)
+
+1. **Knowledge graph schema** -- AGE extension, entity/relationship labels, Cypher query wrapper functions. Foundation for everything else.
+2. **Rule-based entity extraction** -- Regex extractors for ticket IDs, PR numbers, @mentions, file paths, channel names. Run inline during ingestion. Cheap, immediate graph population.
+3. **Cross-source identity resolution** -- Deterministic email-based matching across Linear, Slack, GitHub, Fathom. Person nodes unify identities. Without this, person references fragment uselessly.
+4. **LLM entity extraction** -- Gemini Flash extracting decisions, rationale, requirements, blockers from Slack messages and meeting transcripts. Batch processing via Redis Streams. Accept 70-80% accuracy.
+5. **Graph-enhanced retrieval** -- Cypher traversal queries blended as third signal into existing find_related_content(). Start with 1-2 hop neighborhood queries for a given ticket.
+6. **Updated synthesis prompts** -- Pass graph context (decision trails, relationship paths, key people with cross-references) into the LLM prompt. Context pages must visibly improve.
+
+### Should Ship (differentiators that justify the milestone)
+
+7. **Decision extraction and linking** -- The highest-value semantic entity. Decisions traced from Slack thread to meeting transcript to ticket. This is ContextOS's unique value proposition and should be prioritized.
+8. **Code-to-discussion linking** -- Connect existing code_chunks to conversations and tickets. Extends Phase 12 investment and completes the cross-tool story.
+
+### Defer
+
+9. **Graph explorer UI** -- Backend-first. The API endpoint for subgraph retrieval should ship, but the React visualization component is stretch. Use reagraph if built. Do not block the milestone on UI work.
+10. **Person-centric aggregation views** -- Emerges from graph data naturally, but dedicated UI/API can wait. The value shows up organically in context pages via updated synthesis prompts.
+11. **Community detection / clustering** -- Not needed at ContextOS's data scale. Revisit only if graph grows past 100K nodes (unlikely in the medium term).
 
 ---
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| Dark mode as default | HIGH | LOW | P1 |
-| JetBrains Mono on identifiers | HIGH | LOW | P1 |
-| Auth page dark redesign | HIGH | LOW | P1 |
-| workspace_events table + event emission | HIGH | LOW | P1 |
-| Guided onboarding (steps 1-3) | HIGH | MEDIUM | P1 |
-| Context feed list view | HIGH | MEDIUM | P1 |
-| Context feed detail view (redesigned) | HIGH | LOW | P1 |
-| Activity timeline (polling) | MEDIUM | MEDIUM | P1 |
-| Settings: API key management | HIGH | LOW | P1 |
-| Surface hierarchy token audit | HIGH | LOW | P1 |
-| Onboarding step 4 (first context gen) | HIGH | MEDIUM | P2 |
-| Supabase Realtime for activity timeline | MEDIUM | LOW | P2 |
-| Context feed keyboard navigation | MEDIUM | LOW | P2 |
-| Stale reason indicator | MEDIUM | MEDIUM | P2 |
-| Animated onboarding completion states | LOW | LOW | P2 |
-| Settings: webhook health indicator | MEDIUM | LOW | P2 |
-| API key usage metrics | LOW | MEDIUM | P3 |
-| Context feed right-panel split view | MEDIUM | HIGH | P3 |
-| Light/dark mode toggle | LOW | MEDIUM | P3 |
-| Team member invites | LOW | HIGH | P3 |
-| Notification preferences | LOW | MEDIUM | P3 |
-
-**Priority key:**
-- P1: Must have for this milestone to feel "done"
-- P2: Should have, add in the second sprint once P1 is stable
-- P3: Nice to have, future milestone
-
----
-
-## Competitor Feature Analysis: Onboarding
-
-| Onboarding Pattern | Linear | Vercel | Supabase | Clerk | ContextOS Approach |
-|--------------------|--------|--------|----------|-------|-------------------|
-| Steps before dashboard access | Yes (workspace setup) | Yes (first project) | Yes (project creation) | Yes (framework selection) | **Yes — Linear connect required as gate** |
-| Integration setup in-flow | Partial (GitHub import optional) | Yes (GitHub/GitLab import) | Yes (Vercel environment sync) | Yes (provider selection) | **Yes — OAuth steps 2 and 3** |
-| Aha moment in onboarding | Yes (first issue created) | Yes (first deploy live) | Yes (first query runs) | Yes (first sign-in works) | **Yes — first context page generated (step 4)** |
-| Skip options for optional steps | Yes | Yes | Yes | Yes | **Yes — Slack/GitHub/Fathom skippable** |
-| Progress indicator type | Step dots | Step list | Progress bar | Step tabs | **Numbered stepper (step X of Y)** |
-| Return-to-onboarding on incomplete | Yes | Yes | Yes | Yes | **Yes — stored in user metadata** |
-
-## Competitor Feature Analysis: Dashboard Dark Theme
-
-| Visual Pattern | Linear | PostHog 3000 | Vercel | Supabase | ContextOS Target |
-|----------------|--------|--------------|--------|----------|-----------------|
-| Default mode | Dark | Dark | Light (system) | Dark option | **Dark (forced default)** |
-| Surface levels | 4 | 3 | 2 | 3 | **4 (add elevated-card token)** |
-| Accent color usage | Purple on active states only | Red on active/brand only | None (mono) | Emerald on status | **Teal on status/CTA only** |
-| Monospace in data | Yes (identifiers) | Yes (events, IDs) | Yes (commit SHAs) | Yes (UUIDs, queries) | **Yes (all identifiers)** |
-| Texture/noise overlay | No | No | No | No | **Yes (on interactive card hover)** |
-| Gradient text | No (in product) | No (in product) | No | No | **Yes (h1 only, or key metric)** |
+| Feature | User Value | Implementation Cost | Risk | Priority |
+|---------|------------|---------------------|------|----------|
+| Knowledge graph schema (AGE) | FOUNDATIONAL | LOW-MEDIUM | Medium (AGE in Supabase) | P0 |
+| Rule-based entity extraction | HIGH | LOW | Low | P0 |
+| Cross-source identity resolution | HIGH | MEDIUM | Low | P0 |
+| LLM entity extraction pipeline | HIGH | HIGH | Medium (accuracy) | P1 |
+| Graph-enhanced retrieval | HIGH | HIGH | Medium (scoring tuning) | P1 |
+| Updated synthesis prompts | HIGH | LOW-MEDIUM | Low | P1 |
+| Decision extraction + linking | VERY HIGH | MEDIUM | Medium (LLM accuracy) | P1 |
+| Code-to-discussion linking | MEDIUM-HIGH | MEDIUM | Low | P2 |
+| Graph explorer UI (API endpoint) | MEDIUM | LOW | Low | P2 |
+| Graph explorer UI (frontend) | MEDIUM | HIGH | Medium (UX scope creep) | P3 (stretch) |
 
 ---
 
 ## Sources
 
-- [Linear UI Redesign — linear.app/now](https://linear.app/now/how-we-redesigned-the-linear-ui) — LCH color system, Inter Display, inverted-L chrome refinement (HIGH confidence, official)
-- [PostHog 3000 redesign — X/Twitter announcement](https://x.com/posthog/status/1737140231713734926) — dark mode, data density, side panels, command palette (HIGH confidence, official)
-- [PostHog "What if PostHog looked like a dev tool?"](https://posthog.com/blog/posthog-as-a-dev-tool) — philosophy behind dev-tool aesthetics, command palette, Cmd+Shift+K (MEDIUM confidence, CSS-only page response)
-- [PostHog "An engineer's guide to vibe design"](https://newsletter.posthog.com/p/an-engineers-guide-to-vibe-design) — hierarchy, contrast, balance, consistency, alignment, proximity; font recommendations, tight/standard/loose spacing, elevation options (HIGH confidence, full article retrieved)
-- [Vercel dashboard redesign](https://vercel.com/blog/dashboard-redesign) — project previews, deployment status in tab icons, filterable logs, git metadata display, 1.2s FMP improvement (HIGH confidence, official)
-- [LogRocket: Linear design trend](https://blog.logrocket.com/ux-design/linear-design/) — dark mode characteristics, typography boldness, color reduction, single-direction flow, minimal CTAs (HIGH confidence, full article retrieved)
-- [Aubergine.co: Designing chronological activity feeds](https://www.aubergine.co/insights/a-guide-to-designing-chronological-activity-feeds) — actor/icon/description/timestamp components, lazy loading, filtering, new activity indicators (HIGH confidence, full article retrieved)
-- [growthdives.com: Linear onboarding](https://www.growthdives.com/p/the-onboarding-linear-built-without) — one input per step, minimal animations, no growth tricks, trust over tricks (MEDIUM confidence, paywalled, summary from search results)
-- [fmerian.medium.com: Linear FTUX](https://fmerian.medium.com/delightful-onboarding-experience-the-linear-ftux-cf56f3bc318c) — step structure, workspace creation flow (LOW confidence, 403 blocked)
-- [shadcn/ui Theming](https://ui.shadcn.com/docs/theming) — OKLCH variable patterns, dark mode implementation (HIGH confidence, official)
-- [PostHog "What makes a dev tool feel crafted"](https://www.linkedin.com/posts/j-hawkins_what-if-posthog-looked-like-a-dev-tool-activity-7140477511817158656-uA2P) — confirmed dark mode, density, side panels as the three pillars (MEDIUM confidence, LinkedIn summary)
-- Existing codebase: `/apps/web/src/app/globals.css`, `/apps/web/src/app/dashboard/page.tsx`, `/apps/web/src/app/dashboard/sidebar.tsx`, `/apps/web/src/app/dashboard/context/page.tsx` — current design system tokens, existing patterns, gaps (HIGH confidence, direct inspection)
+- [Microsoft GraphRAG Methods](https://microsoft.github.io/graphrag/index/methods/) -- Entity extraction pipeline architecture, prompt structure, gleanings (HIGH confidence)
+- [Microsoft GraphRAG Dataflow](https://microsoft.github.io/graphrag/index/default_dataflow/) -- 6-stage indexing pipeline: TextUnits -> Extraction -> Summarization -> Community Detection -> Reports -> Embeddings (HIGH confidence)
+- [Apache AGE Project](https://age.apache.org/) -- PostgreSQL graph extension, openCypher support, ACID compliance (HIGH confidence)
+- [Apache AGE GitHub](https://github.com/apache/age) -- Production maturity, Apache Top-Level Project since May 2022 (HIGH confidence)
+- [Azure AGE Extension](https://learn.microsoft.com/en-us/azure/postgresql/azure-ai/generative-ai-age-overview) -- Cloud PostgreSQL AGE support confirmed (HIGH confidence)
+- [Building Knowledge Graphs with Apache AGE](https://pub.towardsai.net/building-knowledge-graphs-with-apache-age-621b787f6926) -- Practical implementation patterns (MEDIUM confidence)
+- [GraphRAG Overview - Meilisearch](https://www.meilisearch.com/blog/graph-rag) -- GraphRAG concepts, entity extraction cost (3-5x more LLM calls), accuracy ranges (MEDIUM confidence)
+- [Graph-enhanced RAG - Elastic](https://www.elastic.co/search-labs/blog/rag-graph-traversal) -- Hybrid retrieval blending: vector first for broad recall, graph for structured reasoning (MEDIUM confidence)
+- [GraphRAG vs Vector RAG](https://www.meilisearch.com/blog/graph-rag-vs-vector-rag) -- When graph adds value (multi-hop, relationships) vs when vector suffices (semantic similarity) (MEDIUM confidence)
+- [Neo4j Multi-hop Reasoning](https://neo4j.com/blog/genai/knowledge-graph-llm-multi-hop-reasoning/) -- Multi-hop query patterns, graph traversal vs LLM chaining (MEDIUM confidence)
+- [Entity Resolution Techniques](https://www.puppygraph.com/blog/entity-resolution) -- Deterministic, probabilistic, and ML-based identity resolution approaches (MEDIUM confidence)
+- [Slack users.identity API](https://docs.slack.dev/reference/methods/users.identity/) -- Cross-platform identity via email lookup (HIGH confidence)
+- [Why LLMs Wrong for Enterprise Entity Extraction](https://www.bitext.com/blog/why-llms-are-the-wrong-tool-for-enterprise-grade-entity-extraction/) -- Rule-based vs LLM tradeoffs: deterministic for structure, LLM for reasoning (MEDIUM confidence)
+- [Datagrid: Knowledge Graphs from Slack](https://datagrid.com/blog/build-knowledge-graphs-slack-conversations-ai-agents-d16d8) -- Practical Slack-to-KG patterns, decision extraction from conversations (MEDIUM confidence)
+- [reagraph - WebGL Graph for React](https://github.com/reaviz/reagraph) -- Graph visualization library for React (MEDIUM confidence)
+- [Microsoft GraphRAG Auto-tuning](https://www.microsoft.com/en-us/research/blog/graphrag-auto-tuning-provides-rapid-adaptation-to-new-domains/) -- Domain-specific prompt generation for entity extraction (MEDIUM confidence)
+- [Scribd find-slack-user-action](https://github.com/scribd/find-slack-user-action) -- Email-based cross-platform identity matching (Slack/GitHub) (MEDIUM confidence)
 
 ---
 
-*Feature research for: ContextOS v1.1 dashboard redesign, onboarding, dark design system*
-*Researched: 2026-03-04*
+*Feature research for: ContextOS v1.2 GraphRAG knowledge graph layer*
+*Researched: 2026-03-06*

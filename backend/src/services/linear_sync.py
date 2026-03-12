@@ -201,6 +201,24 @@ async def sync_tickets_for_teams(
                 "Linear sync complete: %d tickets synced" % total_tickets,
             )
 
+            # Seed Linear roster for identity resolution (fail-silent)
+            try:
+                from src.services.identity_resolution import fetch_linear_roster, seed_roster
+
+                members = await fetch_linear_roster(session, workspace_id, user_id, settings)
+                seeded = await seed_roster(session, workspace_id, "linear", members)
+                logger.info(
+                    "Linear roster seeding: %d members for workspace %s",
+                    seeded,
+                    workspace_id,
+                )
+            except Exception:
+                logger.warning(
+                    "Linear roster seeding failed for workspace %s (non-blocking)",
+                    workspace_id,
+                    exc_info=True,
+                )
+
         except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError):
             await _update_sync_status(session, workspace_id, "error", total_tickets)
             await update_cursor_status(

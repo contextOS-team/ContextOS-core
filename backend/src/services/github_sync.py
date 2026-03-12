@@ -123,6 +123,24 @@ async def sync_repos(
 
         srl.info("GitHub sync complete: %d PRs across %d repos" % (total_prs, len(selected_repos)))
 
+        # Seed GitHub roster for identity resolution (fail-silent)
+        try:
+            from src.services.identity_resolution import fetch_github_roster, seed_roster
+
+            members = await fetch_github_roster(session, workspace_id, settings)
+            seeded = await seed_roster(session, workspace_id, "github", members)
+            logger.info(
+                "GitHub roster seeding: %d members for workspace %s",
+                seeded,
+                workspace_id,
+            )
+        except Exception:
+            logger.warning(
+                "GitHub roster seeding failed for workspace %s (non-blocking)",
+                workspace_id,
+                exc_info=True,
+            )
+
     return {
         "total_prs": total_prs,
         "total_reviews": total_reviews,

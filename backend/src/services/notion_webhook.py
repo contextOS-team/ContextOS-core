@@ -11,7 +11,9 @@ from uuid import UUID
 from sqlmodel import select
 
 from src.db import async_session
+from src.models.notion import NotionPage
 from src.models.user import WorkspaceMember
+from src.services.graph_extractor import extract_and_populate_graph
 from src.services.notion_sync import sync_page_by_id
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,34 @@ async def process_notion_webhook_event(
 
             await sync_page_by_id(workspace_id, user_id, page_id)
             logger.info("Processed Notion page update: %s", page_id)
+
+            # Graph extraction for the synced page
+            try:
+                async with async_session() as graph_session:
+                    stmt = select(NotionPage).where(
+                        NotionPage.workspace_id == workspace_id,
+                        NotionPage.notion_id == page_id,
+                        NotionPage.deleted_at.is_(None),  # type: ignore[union-attr]
+                    )
+                    result = await graph_session.execute(stmt)
+                    page = result.scalar_one_or_none()
+
+                    if page:
+                        content = f"{page.title}\n\n{page.content or ''}"
+                        await extract_and_populate_graph(
+                            session=graph_session,
+                            workspace_id=workspace_id,
+                            content=content,
+                            source_type="notion_page",
+                            source_id=page.id,
+                            source_name=f"Notion: {page.title}",
+                            source_external_id=page.notion_id,
+                        )
+                        await graph_session.commit()
+            except Exception:
+                logger.warning(
+                    "Graph extraction failed for Notion page %s", page_id, exc_info=True
+                )
 
         except Exception:
             logger.exception(

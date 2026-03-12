@@ -34,6 +34,7 @@ from src.services.code_index_worker import enqueue_code_index_job
 from src.services.embedding import queue_embedding_generation
 from src.services.github_linking import link_pr_to_ticket
 from src.services.github_repos import is_repo_monitored
+from src.services.graph_extractor import extract_and_populate_graph
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,22 @@ async def handle_pull_request_event(
         session, workspace_id, "github_pull_request", [pr_record.id]
     )
 
+    # 7. Graph extraction for the PR
+    try:
+        await extract_and_populate_graph(
+            session=session,
+            workspace_id=workspace_id,
+            content=f"{pr_record.title}\n\n{pr_record.description or ''}",
+            source_type="github_pull_request",
+            source_id=pr_record.id,
+            source_name=f"PR #{pr_record.number}: {pr_record.title}",
+            source_external_id=f"{repo_full_name}#{pr_record.number}",
+        )
+    except Exception:
+        logger.warning(
+            "Graph extraction failed for PR #%d", pr_record.number, exc_info=True
+        )
+
     logger.info(
         "Upserted PR #%d (%s) state=%s for workspace %s",
         pr_data.get("number", 0),
@@ -320,6 +337,23 @@ async def handle_review_event(
         await queue_embedding_generation(
             session, workspace_id, "github_review", [review_record.id]
         )
+
+    # Graph extraction for the review
+    if review_record.body:
+        try:
+            await extract_and_populate_graph(
+                session=session,
+                workspace_id=workspace_id,
+                content=review_record.body,
+                source_type="github_review",
+                source_id=review_record.id,
+                source_name=f"Review on PR #{pr_record.number}",
+                source_external_id=f"review:{github_id}",
+            )
+        except Exception:
+            logger.warning(
+                "Graph extraction failed for review %s", github_id, exc_info=True
+            )
 
     logger.info(
         "Upserted review %s (state=%s) for PR #%d",
@@ -429,6 +463,23 @@ async def handle_review_comment_event(
         await queue_embedding_generation(
             session, workspace_id, "github_review", [review_comment_record.id]
         )
+
+    # Graph extraction for the review comment
+    if review_comment_record.body:
+        try:
+            await extract_and_populate_graph(
+                session=session,
+                workspace_id=workspace_id,
+                content=review_comment_record.body,
+                source_type="github_review",
+                source_id=review_comment_record.id,
+                source_name=f"Review comment on PR #{pr_record.number}",
+                source_external_id=f"review-comment:{github_id}",
+            )
+        except Exception:
+            logger.warning(
+                "Graph extraction failed for review comment %s", github_id, exc_info=True
+            )
 
     logger.info(
         "Upserted review comment %s on %s:%s for PR #%d",

@@ -1,17 +1,17 @@
 # Project Research Summary
 
-**Project:** ContextOS Dashboard Redesign — v1.1 Milestone
-**Domain:** Developer tool SaaS dashboard — onboarding, dark design system, context feed, activity timeline, team settings, auth redesign
-**Researched:** 2026-03-04
+**Project:** ContextOS v1.2 -- GraphRAG Knowledge Graph Layer
+**Domain:** GraphRAG knowledge graph for engineering context synthesis
+**Researched:** 2026-03-06
 **Confidence:** HIGH
 
 ## Executive Summary
 
-ContextOS's v1.1 milestone is a dashboard redesign targeting six capability areas: guided onboarding, a dark-first design system, a browsable context feed, a real-time activity timeline, team settings, and an auth page rebrand. The research consensus is clear: these features are individually well-understood (with strong precedents from Linear, Vercel, PostHog 3000, and Supabase), but they interact through a shared dark token system that must be built correctly before any other work begins. The stack additions are minimal — five npm packages on top of the existing Next.js 15 / React 19 / Tailwind v4 / shadcn/ui / Supabase foundation — and the architecture stays aligned with what is already in the codebase.
+ContextOS v1.2 adds a knowledge graph layer to an existing RAG application that already has hybrid search (pgvector + full-text), multi-source ingestion (Linear, Slack, GitHub, Notion, Fathom), and LLM synthesis producing context pages. The graph layer introduces entity extraction, identity resolution, and relationship-aware retrieval as a THIRD signal blended with existing vector + full-text search. The goal is to answer multi-hop questions that embedding similarity cannot -- "Who discussed the decision that affects this ticket?" requires traversal, not cosine distance. This is a well-understood extension pattern in GraphRAG literature, and the core approach (rule-based extraction for structured references, LLM extraction for semantic entities like decisions, blended retrieval with depth decay) is proven across multiple production deployments. Zero new Python backend dependencies are required; the existing stack (asyncpg, SQLAlchemy async, OpenAI SDK, Pydantic) handles everything.
 
-The recommended approach is build-order discipline over feature completeness: token foundation first, then auth and onboarding infrastructure, then the feed features. The most dangerous pitfall is deploying the dark theme without solving the CSS scoping problem across the three distinct theme contexts (landing, dashboard, auth). The second most dangerous is onboarding OAuth redirects destroying wizard state. Both are preventable with a single explicit decision made early: use `.dark` class on layout wrappers, never on `<html>`, and always write onboarding resume state before initiating any OAuth redirect. The entire milestone is buildable with confidence — no unknowns require architectural pivots.
+**The single most important research finding is that Apache AGE cannot run on Supabase Cloud.** All four research tracks independently confirmed this. AGE is a C extension, not a Trusted Language Extension, and Supabase's Nix-based images reject it. The current PROJECT.md states "Apache AGE (Postgres) for knowledge graph -- stays in Supabase, no new infrastructure," which is factually wrong. The STACK researcher proposed a workaround (dedicated AGE Docker container on Railway as a second database), but the ARCHITECTURE and PITFALLS researchers additionally flagged that AGE's core R&D team was fired in October 2024, development has slowed to volunteer pace, and building a production dependency on it is a long-term liability regardless of hosting approach. **The recommended pivot: use plain PostgreSQL tables (`graph_nodes` + `graph_edges`) with recursive CTEs for traversal.** This requires zero extensions, works on Supabase Cloud today, supports RLS multi-tenancy, lives alongside existing pgvector + pg_trgm, and is sufficient for the 2-3 hop traversals this domain requires. The ARCHITECTURE research provides complete SQL schema, traversal function, and index definitions ready to use.
 
-The key differentiator between a template-looking dashboard and a crafted one comes down to three decisions: applying a brand-tinted color temperature to the dark token values (not neutral gray), restricting the teal accent to actionable and status elements only, and using JetBrains Mono consistently on all data identifiers. These are design token decisions, not component work. Research confirms that once the tokens are right, the components built on top will inherit the character without additional effort.
+The top three risks are: (1) the AGE assumption blocking the milestone at day 1 if not corrected in PROJECT.md, (2) LLM entity extraction producing hallucinated or non-deterministic entities that corrupt the graph (GDELT Project research demonstrates that a single apostrophe correction can cause entities to appear and disappear), and (3) graph-retrieved context flooding synthesis prompts and making context pages worse instead of better (studies show ~20% accuracy drop when context grows from 5 to 30 documents). All three have concrete prevention strategies: pivot to plain PG tables, validate LLM output against source text spans, and enforce a fixed token budget for graph context.
 
 ---
 
@@ -19,160 +19,116 @@ The key differentiator between a template-looking dashboard and a crafted one co
 
 ### Recommended Stack
 
-The existing stack (Next.js 15, React 19, TypeScript, Tailwind v4, shadcn/ui, Radix, Supabase, PostHog, Sentry, FastAPI) requires only five new npm packages for this milestone. All five have confirmed compatibility with React 19 and Next.js 15 App Router.
+The existing stack (FastAPI, Next.js 15, Supabase, Redis, pgvector, OpenAI SDK, SQLAlchemy async + asyncpg, Pydantic) handles the entire GraphRAG addition with zero new Python dependencies. Entity extraction uses the existing OpenAI SDK structured output (`response_format` with JSON schema). Identity resolution is custom code (~50-100 LOC). Graph queries run through existing asyncpg/SQLAlchemy as standard SQL with recursive CTEs. The only new frontend dependency is `react-force-graph-2d` (stretch goal only, requires `dynamic(() => import(...), { ssr: false })` for Next.js 15 compatibility).
 
-**Core technologies (new additions only):**
-- `react-hook-form ^7.71.2` + `@hookform/resolvers ^5.2.2` + `zod ^4.3.6`: per-step validated onboarding form state — the prescribed shadcn/ui pattern; resolvers v5 adds Zod v4 auto-detection; install via `pnpm add react-hook-form @hookform/resolvers zod --filter @contextos/web`
-- `motion ^12.34.5`: animated step transitions and timeline stagger — the renamed successor to framer-motion; required only because CSS keyframes cannot do `AnimatePresence` unmount animations and `height:auto` transitions; import from `'motion/react'`
-- `nuqs ^2.8.9`: URL-synced filter state for the context feed — gives shareable filtered views, browser back/forward, and RSC re-render triggering; requires `NuqsAdapter` in layout
-- `date-fns ^4.1.0`: relative and absolute timestamp formatting in feed and timeline — tree-shakable, ships TypeScript types, the shadcn/ui DatePicker default; use `formatDistanceToNow`, `format`, `parseISO`
-- `@stepperize/react ^6.1.0`: onboarding wizard step state machine — type-safe `defineStepper` + `useStepper`; evaluate necessity at Phase 3 (only add if 4+ steps with conditional branching; for 3 linear steps, a `useState` is sufficient)
+**Core technologies:**
+- **Plain PostgreSQL tables (graph_nodes + graph_edges):** Graph storage on Supabase Cloud -- no extensions needed, recursive CTEs for traversal, RLS-compatible via SECURITY DEFINER functions
+- **OpenAI SDK structured output:** LLM-based entity extraction via `response_format` JSON schema -- already in the stack, works with both OpenAI and Gemini
+- **Regex extractors (in-house, ~200 LOC):** Rule-based extraction for ticket IDs (`[A-Z]+-\d+`), @mentions (`<@U[A-Z0-9]+>`), PR numbers, file paths -- zero cost, deterministic, handles 80% of linking signals
+- **Custom identity resolution (in-house, ~100 LOC):** Email-based cross-platform person matching -- bounded problem (~10-50 team members), no library needed
+- **react-force-graph-2d ^1.48 (stretch only):** Graph visualization -- Canvas-based, performant for hundreds of nodes, SSR workaround verified
 
-**Design system additions (zero new npm packages):**
-- Ten shadcn/ui components via CLI: `progress command select badge separator avatar tabs dialog skeleton scroll-area`
-- A `dashboard-theme` CSS class extending the existing `.dark` block with brand-tinted OKLCH token overrides (background `oklch(0.10 0.012 210)`, card `oklch(0.14 0.014 220)`) to prevent the neutral gray default trap
-- A `DarkModeApplier` client component that applies `.dark` to `<html>` only when inside authenticated routes, enabling Radix UI portal dark mode without breaking the landing page
+**What NOT to add:** apache-age-python (dead project, v0.0.7, Sep 2023, synchronous psycopg2), LangChain AGEGraph/LLMGraphTransformer (sync psycopg2, Gemini bug Issue #26624 closed NOT_PLANNED), spaCy/GLiNER (300MB+ models for generic NER when domain-specific entities are either trivially regex-extractable or require full LLM reasoning), Splink/dedupe/recordlinkage (census-scale deduplication for a ~10-person team), Neo4j (separate infrastructure category), networkx (in-memory graph when state belongs in DB).
 
-**Explicitly deferred:** `@tanstack/react-query` (premature before caching problems exist), `next-themes` (overkill for a force-dark dashboard with no toggle), `@tanstack/react-virtual` (context feed at MVP scale is under 500 items), `framer-motion` (renamed to `motion` — the same package).
-
-See `.planning/research/STACK.md` for version compatibility matrix and full installation commands.
+See `.planning/research/STACK.md` for full version compatibility matrix, Docker Compose configuration, and integration code examples.
 
 ### Expected Features
 
-**Must have (P1 — this milestone):**
-- Dark mode as default across dashboard, auth, and onboarding — removes brand contradiction with the landing page
-- JetBrains Mono on all data identifiers (timestamps, ticket IDs, token counts, API keys) — single CSS audit pass, instant "developer tool" signal
-- Auth page dark redesign — first impression; a white card login for a dark-brand product destroys trust
-- Guided onboarding (steps 1-3: workspace name, connect integration, preferences) — users will not self-onboard from a blank dashboard
-- `user_onboarding_state` and `activity_events` database tables — schema prerequisites that block multiple other features
-- Context feed list view replacing the lookup-only tab — browsable list with status filtering and free-text search
-- Context feed detail view (redesigned) with copy-prompt and regenerate — existing functionality in a new visual design
-- Activity timeline (initial version with polling acceptable) — shows the system is alive, builds trust
-- Settings page with API key management — required for MCP users, spec'd in v1.0 but not yet in dashboard
+**Must have (table stakes -- graph layer fails without these):**
+- Knowledge graph schema (nodes + edges tables, recursive CTE traversal function, RLS policies, fingerprint deduplication)
+- Rule-based entity extraction (regex for ticket IDs, @mentions, PR numbers, file paths -- inline during webhook ingestion, idempotent)
+- Cross-source identity resolution (email-based deterministic matching across Linear, Slack, GitHub, Fathom, identity mapping table from team roster APIs)
+- LLM entity extraction (decisions, rationale, blockers via Gemini Flash structured output -- batch via background tasks, content filtering to skip noise)
+- Graph-enhanced retrieval (recursive CTE traversal results blended as third signal in `find_related_content()` with depth decay scoring)
+- Updated synthesis prompts (decision trails, relationship paths, cross-referenced people in context pages, fixed token budget for graph context)
 
-**Should have (P2 — second sprint):**
-- Supabase Realtime for activity timeline — upgrade from polling to live updates once basic timeline is in use
-- Onboarding step 4: first context generation as the "aha moment" — requires Phase 4 pipeline to be stable; plan a mock context page fallback if unavailable
-- Context feed keyboard navigation (`j/k/Enter/Esc/r/c`) — developer delight, approximately 50-line implementation
-- Animated integration connection confirmation (SVG checkmark draw) in onboarding
-- Stale reason indicator on context pages (requires backend to compute `stale_reason`)
-- Settings: webhook health indicator (last webhook received per source with green/yellow/red status dots)
+**Should have (differentiators that justify the milestone):**
+- Decision extraction and linking -- the highest-value semantic entity. Decisions traced from Slack thread to meeting transcript to ticket. ContextOS's unique value proposition: cross-tool decision trails that no competing product (Linear, Notion, Confluence, Glean) offers.
+- Code-to-discussion linking -- connects code_chunks (Phase 12) to conversations and tickets that motivated them. Uses PR-to-ticket links as primary bridge, extends to Slack only through threads that explicitly discuss those PRs or tickets.
 
-**Defer to v2+:**
-- Light/dark mode toggle (external users not yet onboarding)
-- Context feed right-panel split view (route-based detail is correct for v1)
-- Team member invites and role management
-- Social OAuth (Google/GitHub)
-- API key usage metrics per key
+**Defer (v2+):**
+- Graph explorer UI frontend (build the API endpoint, defer the React visualization component)
+- Person-centric aggregation views (emerges from graph data, dedicated UI can wait)
+- Community detection / Leiden clustering (Microsoft GraphRAG overkill at this data scale -- hundreds to low-thousands of entities, not millions)
+- Graph versioning / temporal graph (timestamp edges with `created_at`, defer full bitemporal queries)
+- LazyGraphRAG / query-time extraction (adds latency, unnecessary with bounded ingestion volume)
 
-See `.planning/research/FEATURES.md` for full prioritization matrix and competitor analysis tables.
+See `.planning/research/FEATURES.md` for full prioritization matrix, entity type taxonomy, and complexity estimates (19-25 days for MVP backend, 24-31 days including stretch UI).
 
 ### Architecture Approach
 
-The architecture stays in the existing App Router pattern with targeted, additive changes. Three structural decisions are settled by research and must not be reconsidered: (1) dark theme applied via `.dark` class on each route group's layout wrapper — never on `<html>` — with `DarkModeApplier` extending it to `<html>` only for Radix portal support; (2) onboarding completion checked in `dashboard/layout.tsx` as a server-side redirect, not in middleware, to avoid DB calls on static asset requests; (3) Supabase Realtime subscriptions always extracted to dedicated `lib/hooks/` files with mandatory `removeChannel` cleanup.
+The graph layer lives entirely within Supabase Cloud PostgreSQL as two new tables (`graph_nodes`, `graph_edges`) with JSONB properties for flexibility, fingerprint-based deduplication, and a `traverse_graph()` SECURITY DEFINER function for performant recursive CTE traversal that bypasses per-row RLS overhead. Entity extraction runs as async background tasks triggered after webhook ingestion (rule-based first for structured patterns, LLM second for semantic entities like decisions). The linking engine (`find_related_content()`) gains a third retrieval signal: graph traversal results scored with depth decay (1-hop = 0.9, 2-hop = 0.54, 3-hop = 0.32) and blended alongside existing explicit refs (weight 1.0) and hybrid search (weight 0.8). Synthesis prompts are extended with structured graph context sections (decision trails, people involvement, relationship paths) under a fixed token budget of ~2,000 tokens to prevent context overflow.
 
-**Major components and their responsibilities:**
-1. `(onboarding)/layout.tsx + page.tsx` (NEW) — auth-gated route group; 3-step wizard with `@stepperize/react` + `react-hook-form`; step state persisted to `user_onboarding_state` table after each advance
-2. `components/dashboard/ContextFeedProvider + ContextFeedList + FilterBar` (NEW) — compound component pattern with shared React context for filter state; client-side filtering against up to 100 pages loaded once; Supabase Realtime for live status updates
-3. `lib/hooks/use-realtime-feed.ts + use-context-pages.ts` (NEW) — extracted subscription hooks with mandatory `removeChannel` cleanup; single channel per logical feed
-4. `components/dashboard/ActivityPanel + ActivityEventRow` (NEW) — real-time activity timeline consuming `activity_events` via `useRealtimeFeed` hook
-5. `dashboard/layout.tsx` (MODIFY) — adds `.dark` class wrapper, `DarkModeApplier`, and onboarding completion gate
-6. `(auth)/layout.tsx + login + signup` (MODIFY) — dark-card treatment matching dashboard token system
-7. `globals.css` (MODIFY) — dashboard-specific semantic token extensions inside `.dark {}` block with brand-tinted OKLCH values
+**Major components:**
+1. **Graph tables + traversal function** -- `graph_nodes` (entity_type, canonical_name, properties JSONB, fingerprint, confidence, source_type, source_id) and `graph_edges` (relationship_type, source/target node IDs, weight, properties JSONB) with workspace_id RLS, composite indexes, and `traverse_graph()` SECURITY DEFINER function
+2. **Entity extraction service (`services/graph/extraction.py`)** -- two-tier: regex extractors (ticket IDs, @mentions, PR numbers, file paths) run first at zero cost, then LLM extraction for decisions/concepts only on high-value content (messages >50 chars containing decision signal words)
+3. **Identity resolution service (`services/graph/identity.py`)** -- deterministic email/platform-ID matching across sources, explicit identity mapping table seeded from team roster APIs during integration setup, `same_as` edges for fuzzy candidates (never auto-merge on name alone)
+4. **Graph retrieval service (`services/graph/retrieval.py`)** -- recursive CTE traversal with depth decay scoring, returns scored `LinkedItem` dicts for the linking engine
+5. **Modified linking engine (`services/linking.py`)** -- `find_related_content()` extended with `find_graph_connections()` as third retrieval path, items found by multiple signals get boosted scores
+6. **Modified synthesis (`services/synthesis.py`)** -- prompts include decision trail section, people involvement section, relationship path descriptions; graceful degradation when no graph data exists
 
-**New database tables (2):**
-- `user_onboarding_state` (user_id PK, step_reached, preferences JSONB, completed_at) — row auto-created on first sign-in via DB trigger; RLS `auth.uid() = user_id`
-- `activity_events` (workspace_id FK, event_type, source_type, entity_id, entity_title denormalized, metadata JSONB) — indexed on `(workspace_id, created_at DESC)`; RLS scoped to workspace membership; 30-day retention policy via pg_cron from day one
-
-**New FastAPI backend additions (additive, no existing routes changed):** `emit_activity()` helper as side effect of context generation and OAuth connect; `/api/user/onboarding` GET/PATCH; `/api/user/profile` PATCH; `/api/team/members` GET; `/api/apikeys` GET/POST/DELETE.
-
-See `.planning/research/ARCHITECTURE.md` for complete project structure diff, data flow diagrams, and build order.
+See `.planning/research/ARCHITECTURE.md` for complete SQL DDL, Python code examples, integration points with existing code, and suggested build order.
 
 ### Critical Pitfalls
 
-1. **FOUC white flash on dark dashboard and auth pages** — `bg-background` resolves to near-white before `.dark` class activates. Add `className="dark"` to layout wrapper div as the very first commit of this milestone. Also add a `DarkModeApplier` client component to apply `.dark` to `<html>` for Radix portal support. Without this, every shadcn Dialog/DropdownMenu/Sheet will render with light tokens inside a dark page.
+1. **Apache AGE not available on Supabase Cloud + project health risk (CRITICAL, Pitfalls #1 and #2)** -- AGE is a C extension not supported by Supabase Cloud. The AGE project's core R&D team was fired Oct 2024; future PG version compatibility is uncertain. **Use plain PostgreSQL tables with recursive CTEs.** No extension dependencies, works on every PostgreSQL version, sufficient for 2-3 hop traversals.
 
-2. **Generic "AI slop" dark theme** — shadcn/ui `.dark` defaults produce neutral gray surfaces with blue primary that look like every Next.js starter template. Fix: override OKLCH values in a `dashboard-theme` block (`oklch(0.10 0.012 210)` for background, teal-tinted card and border values) and restrict teal to actionable/status elements only. This must happen during token definition before any components are built — token decisions propagate everywhere; retrofitting requires touching every component.
+2. **LLM entity extraction hallucination and non-determinism (CRITICAL, Pitfall #3)** -- Same input produces different entities across runs. LLMs hallucinate entities not in source text. A single apostrophe correction can cause entities to appear/disappear. **Prevention:** rule-based first always; validate LLM output against source text spans; structured output with strict Pydantic schema; batch and deduplicate before graph insertion; temperature 0.
 
-3. **OAuth redirect destroying onboarding wizard state** — Every OAuth connect (Linear, Slack) inside the onboarding flow involves a full-page redirect that wipes React state. Fix: write an `onboarding_return=/onboarding?step=N` cookie (10-minute TTL, whitelisted path) before initiating any OAuth redirect; read it in `/auth/callback` to redirect back to the correct wizard step. The existing `handleQuickConnect` in `dashboard/page.tsx` has this exact vulnerability.
+3. **Graph retrieval floods synthesis prompt with noise (CRITICAL, Pitfall #4)** -- A 2-hop traversal can return hundreds of related items. Studies show ~20% accuracy drop when context grows from 5 to 30 documents. **Prevention:** fixed token budget for graph context (~2,000 tokens max); score paths by relevance with depth decay; summarize relationship paths into single sentences; A/B test quality impact before shipping.
 
-4. **Supabase Realtime subscription leaks** — React Strict Mode double-invokes effects in development, creating duplicate subscriptions. Without `supabase.removeChannel(channel)` in effect cleanup, production subscriptions accumulate on navigation. Fix: always extract subscriptions to `lib/hooks/` files with mandatory cleanup; write a mount/unmount test after implementing each subscription to verify channel count returns to baseline.
+4. **Cross-source identity resolution false merges (MODERATE, Pitfall #5)** -- "Alex" on Slack auto-merged with different "Alex" on Linear destroys user trust immediately. **Prevention:** anchor on platform user IDs (email, Slack user_id, GitHub login); never auto-merge on name alone; seed identity mapping from team roster APIs; flag fuzzy matches for manual review.
 
-5. **CSS scoping collision between landing and dashboard themes** — Adding `.dark` to `<html>` globally breaks the landing page which relies on `.landing-theme` for its navy-teal palette. The two themes must never coexist as DOM ancestors. The `DarkModeApplier` pattern (mounts/unmounts `.dark` on `<html>` per route group) is the correct solution. Never import `landing.css` in non-landing layouts.
+5. **Recursive CTE + RLS performance degradation (MODERATE, Pitfall #6)** -- RLS subquery fires per-row during recursive traversal, turning millisecond queries into seconds. **Prevention:** SECURITY DEFINER function validates workspace membership once at entry, traverses without per-row RLS overhead. Benchmark on Supabase Cloud, not just local dev.
 
 ---
 
 ## Implications for Roadmap
 
-Based on research, the following phase structure is recommended. Phases 1-2 are hard blockers for all subsequent work. Phases 3-4 can partially parallelize after Phase 2 schema exists. Phases 5-6 are independent of each other once Phase 2 is complete.
+Based on research, suggested phase structure:
 
-### Phase 1: Dark Theme Token Foundation
-**Rationale:** Every UI component in this milestone builds on the dark token system. If tokens are inconsistent or brand-disconnected, every subsequent component will need rework. This phase has zero dependencies and blocks everything else. The research identifies this as the highest-impact foundation work.
-**Delivers:** `globals.css` with brand-tinted dashboard token overrides inside a scoped `dashboard-theme` class, `DarkModeApplier` client component, `.dark` class applied to dashboard and auth layout wrappers, visual verification that all existing shadcn components (including portalled dialogs and dropdowns) render correctly in dark mode, JetBrains Mono applied consistently to all data identifier elements.
-**Addresses:** Dark mode as default, teal-as-signal design principle, monospace-for-data rule
-**Avoids:** FOUC white flash (Pitfall 1), generic dark theme (Pitfall 2), CSS scoping collision (Pitfall 5)
-**Research flag:** Standard pattern — well-documented in shadcn/ui Tailwind v4 docs. No additional research needed.
+### Phase 1: Graph Foundation (Schema + Rule-Based Extraction)
+**Rationale:** Everything depends on the graph tables existing. Rule-based extraction is zero-cost, deterministic, and immediately populates the graph with high-confidence edges. This phase validates the core architecture (plain PG tables + recursive CTEs) before investing in LLM extraction.
+**Delivers:** Supabase migration with `graph_nodes` and `graph_edges` tables (RLS, indexes, fingerprint dedup constraint), `traverse_graph()` SECURITY DEFINER function, SQLModel classes (`GraphNode`, `GraphEdge`), regex extractors for ticket IDs / @mentions / PR numbers / file paths, webhook handler integration via `BackgroundTasks`, node fingerprint deduplication logic, embeddings CHECK constraint updated to include graph source types.
+**Addresses features:** Knowledge graph schema, rule-based entity extraction
+**Avoids pitfalls:** AGE dependency (#1, #2 -- plain PG from the start), schema over-engineering (#8 -- start with ~5 entity types, ~6 relationship types), embeddings CHECK constraint (#11)
 
-### Phase 2: Auth Page Redesign + Schema Foundation
-**Rationale:** Auth pages are the first impression and cannot lag behind the dashboard visually. The `user_onboarding_state` and `activity_events` database schema are infrastructure prerequisites with no upstream dependencies — creating them early unblocks both the onboarding and activity feed phases.
-**Delivers:** Dark-themed login and signup pages matching brand palette; `user_onboarding_state` and `activity_events` Supabase migrations with RLS, indexes, and DB triggers; `emit_activity()` FastAPI helper wired into existing context generation and OAuth connect handlers; auth callback updated to route to `/onboarding` when `completed_at` is null; 30-day retention policy for `activity_events`.
-**Uses:** Dark tokens from Phase 1; Supabase migration tooling (existing)
-**Avoids:** Auth page FOUC (Pitfall 9), activity timeline N+1 query (Pitfall 10 — denormalize `entity_title` at write time in the schema)
-**Research flag:** Standard pattern. No additional research needed.
+### Phase 2: Identity Resolution + LLM Extraction
+**Rationale:** Identity resolution needs person nodes from Phase 1 to merge against. LLM extraction builds on the same pipeline infrastructure. Both are independent code paths that can be developed in parallel (different services, same destination graph tables). This phase produces the semantic entities (decisions, concepts) that make the graph genuinely valuable beyond structural references.
+**Delivers:** Deterministic identity resolution (email + platform ID matching), explicit `identity_mappings` table seeded from Linear/Slack/GitHub team roster APIs, `same_as` edges for fuzzy candidates with confidence scores, LLM extraction pipeline for decisions and semantic entities, content filtering (skip bot/short/emoji messages, process Slack threads as units), structured output via existing OpenAI SDK, content hash deduplication to prevent re-extraction, decision extraction with `decided_at` timestamps and SUPERSEDES edges for temporal ordering.
+**Addresses features:** Cross-source identity resolution, LLM entity extraction, decision extraction and linking
+**Avoids pitfalls:** LLM hallucination (#3 -- source text validation, structured output), Slack message noise (#7 -- filtering before extraction), false identity merges (#5 -- ID-anchored matching, never auto-merge on name), graph staleness (#9 -- content hash tracking from the start)
 
-### Phase 3: Onboarding Wizard
-**Rationale:** Users cannot self-discover a developer tool dashboard. Onboarding gates dashboard access and ensures the product is experienced in the intended sequence. Depends on Phase 2 schema and Phase 1 tokens.
-**Delivers:** `(onboarding)` route group with 3-step wizard (workspace name → connect integration → preferences), step persistence to `user_onboarding_state` after each advance, OAuth redirect state preservation via cookie, server-side onboarding gate in `dashboard/layout.tsx`, skip options for all non-critical integrations, animated step transitions.
-**Uses:** `react-hook-form` + `@hookform/resolvers` + `zod` (form validation per step), `@stepperize/react` or `useState` (step state machine — evaluate at planning time), `motion` (step transition animations via `AnimatePresence`)
-**Implements:** OnboardingWizard, OnboardingStep components, `/api/user/onboarding` FastAPI endpoints
-**Avoids:** OAuth redirect state loss (Pitfall 3), step persistence loss on refresh (Pitfall 8), blocking dead-ends on optional integrations (Pitfall 6), context feed dead-end empty state for onboarding-incomplete users (Pitfall 7)
-**Research flag:** `@stepperize/react` has MEDIUM confidence — evaluate step count and branching at planning time. For 3 linear steps with no conditional branching, use `useState` and skip this dependency. Also: Onboarding aha-moment step 4 (first context generation) depends on the LangGraph pipeline stability — plan a mock fallback context page.
+### Phase 3: Graph-Enhanced Retrieval + Synthesis
+**Rationale:** Requires a populated graph (Phases 1-2) to be meaningful. This is where GraphRAG delivers user-visible value: context pages improve with decision trails and relationship paths. Must be built carefully to avoid making synthesis worse through context overflow.
+**Delivers:** `find_graph_connections()` function with depth-decay scoring, modified `find_related_content()` with graph as third retrieval signal, modified synthesis prompts with decision trail / people involvement / relationship path sections, token budget enforcement for graph context (~2,000 tokens), graceful degradation when no graph data exists, code-to-discussion linking via PR-to-ticket bridges, per-signal score logging for debugging and weight tuning.
+**Addresses features:** Graph-enhanced retrieval, updated synthesis prompts, code-to-discussion linking
+**Avoids pitfalls:** Context overflow (#4 -- token budget, path summarization, A/B testing), black-box score blending (#10 -- separate retrieval channels, normalized scores, per-signal logging), RLS performance (#6 -- SECURITY DEFINER already in place from Phase 1), weak code-to-discussion edges (#13 -- multi-signal co-occurrence, PR-based primary bridge)
 
-### Phase 4: Activity Timeline
-**Rationale:** An activity timeline makes the system feel alive and builds trust that the backend is working. It has a firm dependency on `activity_events` table and `emit_activity()` wiring from Phase 2. Start with polling; Realtime is a fast upgrade once the basic feed ships.
-**Delivers:** `use-realtime-feed.ts` hook with mandatory cleanup, `ActivityPanel` and `ActivityEventRow` components integrated into `dashboard/page.tsx`, event type icon/color mapping (lucide-react), day-group date dividers, reverse-chronological display with relative timestamps and absolute on hover, contextual empty state with actionable CTA.
-**Uses:** `date-fns` (timestamp formatting), Supabase Realtime with `INSERT`-only subscription (polling first, then upgrade), lucide-react icons (existing)
-**Implements:** ActivityPanel, ActivityEventRow, useRealtimeFeed hook
-**Avoids:** Realtime subscription leaks (Pitfall 4 — hook-extracted cleanup), N+1 queries (entity_title denormalized at write time in Phase 2)
-**Research flag:** Standard pattern — Supabase Realtime `postgres_changes` is well-documented. No additional research needed.
-
-### Phase 5: Context Feed
-**Rationale:** The context feed replaces the existing lookup-only tab as the primary entry point to context pages — the core dashboard capability. Independent of Phase 4; both can proceed in parallel after Phase 2 schema exists. Phase 1 tokens must be applied before visual work begins.
-**Delivers:** `ContextFeedProvider` + `FilterBar` + `ContextFeedList` + `ContextFeedItem` compound components, `use-context-pages.ts` Realtime hook (INSERT + UPDATE), status filter pills (All/Ready/Generating/Stale/Error), URL-synced free-text search and filter state via `nuqs`, context feed detail view with copy-prompt and regenerate, branching empty states with CTAs per user onboarding status (no integrations / integrations connected but no pages / generation in progress).
-**Uses:** `nuqs` (URL filter state), Supabase Realtime (live status updates on context pages), compound component pattern with React context for filter sharing
-**Implements:** ContextFeedProvider, FilterBar, ContextFeedList, ContextFeedItem, EmptyFeedState, use-context-pages hook
-**Avoids:** Dead-end empty state (Pitfall 7 — three branching CTAs per onboarding status), N+1 filter queries (client-side filtering on up to 100 pages loaded once), URL filter state lost on navigation (nuqs persists to URL)
-**Research flag:** Standard pattern — compound component, Supabase Realtime, and nuqs URL state are all well-documented. No additional research needed.
-
-### Phase 6: Settings Page
-**Rationale:** API key management is required for MCP server users and was spec'd in v1.0 but never surfaced in the dashboard. Settings is independent of the feed phases and can be built any time after Phase 1 tokens, but is lower priority than the feed work.
-**Delivers:** `dashboard/settings/page.tsx` with API key list/create/revoke (show full key once on creation with copy button, then prefix-only — GitHub PAT pattern), workspace name editing, notification preference toggles stored in `workspaces.notification_prefs JSONB`, webhook health indicator panel (last received per source, colored status dots from `activity_events`), sidebar updated with Settings nav link.
-**Uses:** `react-hook-form` (settings forms — same pattern as onboarding, same dependency already installed), shadcn `tabs` component
-**Implements:** Settings page, `/api/apikeys` FastAPI endpoints
-**Avoids:** No major pitfalls specific to this phase; standard CRUD patterns apply.
-**Research flag:** Standard CRUD pattern. Webhook health indicator query is a simple read from `activity_events` grouped by source. No research needed.
+### Phase 4: Polish + Graph Explorer (Stretch)
+**Rationale:** Backend must work and context pages must demonstrably improve before investing in visualization. Graph explorer requires real data to build against -- building against mock data is an explicitly documented anti-pattern.
+**Delivers:** GET `/api/context/{ticket_identifier}/graph` endpoint returning subgraph JSON (nodes + edges), react-force-graph-2d visualization component (if time permits, dynamic import with SSR disabled), decision temporal ordering improvements, retrieval weight tuning based on empirical quality comparison data, person-centric aggregation surfaced in context pages.
+**Addresses features:** Graph explorer UI (API + optional frontend), person-centric aggregation, decision temporal context
+**Avoids pitfalls:** Building UI before backend works (ARCHITECTURE anti-pattern #5), conflicting temporal decisions (#12 -- SUPERSEDES edges from Phase 2)
 
 ### Phase Ordering Rationale
 
-- **Phase 1 before everything:** Tokens cascade to every component. Wrong tokens mean rework on every component already built.
-- **Phase 2 (schema) before Phases 3-5:** `user_onboarding_state` must exist before Phase 3 can persist wizard state. `activity_events` and `emit_activity()` must exist before Phase 4 can display data.
-- **Phase 3 before Phases 4-5 (as a gate):** Onboarding gates dashboard access. Testing Phases 4-5 without completing onboarding infrastructure requires manual database bypasses that slow development iteration.
-- **Phases 4 and 5 can parallelize** once Phase 2 schema and Phase 1 tokens are in place. They share no component dependencies.
-- **Phase 6 is lowest priority** — settings CRUD is valuable but not the core experience. Can ship after the feed features are stable.
+- **Schema before extraction:** You cannot store entities without tables. The traversal function must exist before retrieval testing.
+- **Rule-based before LLM:** Validates the extraction -> graph pipeline with zero cost and deterministic data. If the pipeline has bugs, they surface before burning LLM budget. Rule-based person nodes provide the roster that identity resolution merges against.
+- **Identity resolution alongside LLM extraction (Phase 2 parallelizable):** Independent code paths (different services, same destination tables). Developing in parallel shortens the critical path.
+- **Retrieval after population:** Graph-enhanced retrieval with an empty graph produces nothing. Phases 1-2 must populate meaningful data before retrieval quality can be assessed.
+- **Synthesis tuning last among core phases:** Synthesis changes are the user-facing output. They must be tuned against real retrieval results. A/B testing against pre-graph context pages requires the full pipeline working.
+- **UI absolutely last:** The documented anti-pattern of building visualization against mock data. API endpoint ships with Phase 3; frontend component is stretch.
 
 ### Research Flags
 
-**Needs evaluation or care during planning:**
-- **Phase 3 (`@stepperize/react`):** MEDIUM confidence library. At Phase 3 planning: if the wizard has 3 linear steps with no conditional branching, skip the dependency and use `useState`. If 4+ steps or conditional branching, add it. The threshold is documented in STACK.md.
-- **Phase 3 (Onboarding aha-moment step 4):** Cross-milestone dependency on LangGraph pipeline stability. Plan a realistic mock context page fallback for the onboarding completion screen in case the pipeline is not ready. FEATURES.md explicitly flags this as the highest-risk dependency.
-- **Phase 3 (Step completion derivation):** PITFALLS.md and ARCHITECTURE.md both recommend deriving step completion from actual data state (Linear connected? → step 2 complete) rather than a stored step counter. Define this mapping explicitly during Phase 3 planning to make the wizard resilient to partial state from outside the onboarding flow.
+Phases likely needing deeper research during planning:
+- **Phase 2 (LLM Extraction + Identity Resolution):** Decision extraction prompt engineering needs iteration. The exact content filtering thresholds (message length, decision signal words list) need tuning. LLM extraction accuracy (60-85% cited range) needs validation with a manually labeled evaluation set of 20-30 messages. Identity resolution edge cases (display name changes, external collaborators, multiple email addresses) need case-by-case design.
+- **Phase 3 (Retrieval + Synthesis):** Score blending weights (explicit 1.0, hybrid 0.8, graph 0.9) are empirical starting points that need tuning against real data. Token budget for graph context needs experimentation. Quality comparison framework for A/B testing graph inclusion does not exist yet and must be built.
 
-**Standard patterns — no additional research needed:**
-- **Phase 1 (Dark theme tokens):** shadcn/ui Tailwind v4 documentation is comprehensive and directly applicable.
-- **Phase 2 (Auth redesign + schema):** Auth dark theme follows the same `.dark` class structural pattern. Supabase migrations are routine.
-- **Phase 4 (Activity timeline):** Supabase Realtime `postgres_changes` with workspace-scoped filter is fully documented.
-- **Phase 5 (Context feed):** Compound component + Supabase Realtime + nuqs — all standard patterns with official docs.
-- **Phase 6 (Settings):** CRUD + API key display pattern is the GitHub PAT model, widely documented.
+Phases with standard patterns (skip deep research):
+- **Phase 1 (Schema + Rule-Based Extraction):** Plain PostgreSQL tables, recursive CTEs, regex extraction are all well-documented patterns with complete SQL DDL and Python code provided in ARCHITECTURE.md. No architectural decisions remain.
+- **Phase 4 (Graph Explorer):** react-force-graph-2d integration with Next.js 15 is straightforward (dynamic import, SSR disabled, verified). The API endpoint is a standard graph neighborhood query wrapping `traverse_graph()`.
 
 ---
 
@@ -180,50 +136,59 @@ Based on research, the following phase structure is recommended. Phases 1-2 are 
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All 5 npm packages version-verified against npm registry on 2026-03-04. React 19 + Next.js 15 compatibility confirmed for all additions. Only @stepperize/react is MEDIUM — evaluable at implementation time without commitment risk. |
-| Features | MEDIUM-HIGH | Table stakes and P1 features are grounded in direct competitor analysis (Linear, Vercel, PostHog 3000, Supabase). Differentiators are well-evidenced. MVP scope is deliberately conservative. The one uncertainty is the aha-moment step 4 dependency on Phase 4 pipeline. |
-| Architecture | HIGH | Architecture is grounded in direct codebase inspection of existing files, not just documentation. Build order, component responsibilities, and data flow patterns are concrete and implementation-ready. All 5 architectural patterns have code examples in ARCHITECTURE.md. |
-| Pitfalls | HIGH | Critical pitfalls are verified against official shadcn/ui GitHub issues, Supabase docs, and direct codebase inspection. Prevention strategies are specific (FOUC: one-line class addition; OAuth state: cookie before redirect; subscription leaks: removeChannel in cleanup) — not generic advice. |
+| Stack | HIGH | Zero new backend dependencies confirmed. Plain PG approach verified via Supabase's own pgrouting blog, postgres-graph-rag library, and multiple CTE tutorials. AGE incompatibility verified via official Supabase docs and GitHub discussions #40285 and #13263. |
+| Features | HIGH | Feature taxonomy grounded in direct competitor analysis and existing codebase inspection. Table stakes vs differentiators clearly separated. Complexity estimates (19-25 days MVP) align with architecture component count. Decision extraction as unique differentiator is a strong, defensible thesis. |
+| Architecture | HIGH | Complete DDL for graph tables, traversal function, RLS policies, and indexes provided and ready to use. Integration points with existing code (linking.py, synthesis.py, webhook handlers) are specific to named functions and files. RLS performance pattern (SECURITY DEFINER) verified across multiple PostgreSQL optimization sources. |
+| Pitfalls | HIGH | 13 pitfalls identified from 20+ verified sources. Top 3 critical pitfalls have concrete, actionable prevention strategies. The AGE blocker is unanimously confirmed across all 4 research tracks. LLM hallucination evidence comes from peer-reviewed-quality GDELT Project experiments. Context overflow risk backed by published research on "lost in the middle" effects. |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **@stepperize/react evaluation:** Decide at Phase 3 planning time whether the wizard needs it (4+ steps with conditional branching) or whether `useState` suffices (3 linear steps). STACK.md documents this threshold; do not install the dependency until the decision is made.
-- **Onboarding step 4 dependency:** Confirm Phase 4 LangGraph pipeline stability before planning the aha-moment step. If not stable, build a realistic mock context page that shows what a generated page looks like — this is explicitly called out in FEATURES.md as a required fallback.
-- **Step completion derivation mapping:** Define the explicit mapping from integration state to wizard step completion during Phase 3 planning (e.g., `Linear OAuth token exists AND integration.status = 'active'` → step 2 complete). PITFALLS.md warns that storing a step counter alone causes the wizard to regress when users connect integrations outside the onboarding flow.
-- **`activity_events` retention policy:** Add a 30-day pg_cron retention policy when creating the table in Phase 2. Do not defer — the table grows continuously and retrofitting retention policies after data accumulates requires a table scan migration.
+- **PROJECT.md correction required:** The current PROJECT.md states "Apache AGE (Postgres) for knowledge graph -- stays in Supabase, no new infrastructure." This must be updated to "Plain PostgreSQL tables (graph_nodes + graph_edges) with recursive CTEs -- stays in Supabase, no new infrastructure" before development begins. All four research tracks confirm this change is necessary.
+- **LLM extraction accuracy validation:** Research cites 60-85% as typical for LLM entity extraction. Build an evaluation set of 20-30 manually labeled messages during Phase 2 to measure actual accuracy for engineering decisions from Slack and meeting transcripts.
+- **Retrieval weight tuning framework:** Starting weights are reasonable defaults but need empirical tuning. Build a quality comparison framework (before/after graph context page side-by-side) before shipping graph-enhanced synthesis to users.
+- **Recursive CTE performance benchmarking:** The 2-3 hop traversal with SECURITY DEFINER is expected to perform well at this scale (~1K-10K nodes), but MUST be benchmarked on Supabase Cloud with RLS enabled. PITFALLS research warns that local dev performance differs from Cloud.
+- **Content hash staleness detection:** The pattern (compare graph node source_content_hash against current source document hash) is described in research but not yet implemented anywhere in the existing codebase. Needs design during Phase 2.
 
 ---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- npm registry — react-hook-form 7.71.2, @hookform/resolvers 5.2.2, zod 4.3.6, motion 12.34.5, nuqs 2.8.9, @stepperize/react 6.1.0, date-fns 4.1.0 (versions verified 2026-03-04)
-- shadcn/ui official docs — React Hook Form zodResolver pattern, Tailwind v4 dark mode (`@custom-variant dark`), component registry
-- Supabase official docs — Realtime postgres_changes, Realtime limits (200 connections free, 100 channels/connection), RLS patterns, channel cleanup
-- Tailwind CSS v4 official docs — `@theme`, `@custom-variant dark (&:is(.dark *))`, CSS-first token architecture
-- Next.js official docs — Route Groups (parentheses syntax, no URL impact), App Router server component redirects
-- Direct codebase inspection — `globals.css`, `landing.css`, `dashboard/layout.tsx`, `(auth)/layout.tsx`, `middleware.ts`, `lib/supabase/client.ts`, `lib/api.ts` (ground truth for existing patterns and gaps)
-- Linear UI redesign blog (linear.app/now) — LCH color system, Inter Display, spring animation curves
-- PostHog "An engineer's guide to vibe design" newsletter — surface hierarchy, contrast, font recommendations, elevation options
-- Vercel dashboard redesign blog — project previews, deployment status patterns, filterable logs
-- Aubergine.co activity feed design guide — chronological feed component anatomy, grouping, filtering
-- shadcn/ui GitHub issue #5552 — Next.js 15 + ThemeProvider hydration issues (FOUC cause confirmed)
+- [Supabase Extensions List](https://supabase.com/docs/guides/database/extensions) -- AGE not available
+- [Supabase Discussion #40285](https://github.com/orgs/supabase/discussions/40285) -- AGE install blocked, confirmed not possible
+- [Supabase Discussion #13263](https://github.com/orgs/supabase/discussions/13263) -- AGE not supported, workarounds discussed
+- [Apache AGE Discussion #2150](https://github.com/apache/age/discussions/2150) -- core R&D team dismissed Oct 2024
+- [Apache AGE Issue #2111](https://github.com/apache/age/issues/2111) -- PG17 support delayed
+- [GDELT: LLM Entity Extraction Hallucination](https://blog.gdeltproject.org/experiments-in-entity-extraction-using-llms-hallucination-how-a-single-apostrophe-can-change-the-results/) -- non-determinism evidence
+- [GDELT: LLM Infinite Loops & Failure Modes](https://blog.gdeltproject.org/llm-infinite-loops-failure-modes-the-current-state-of-llm-entity-extraction/) -- extraction failure modes
+- [Redis: Context Window Overflow](https://redis.io/blog/context-window-overflow/) -- prompt stuffing risks
+- [Pinecone: Less is More](https://www.pinecone.io/blog/why-use-retrieval-instead-of-larger-context/) -- retrieval vs. context size
+- [Bytebase: PostgreSQL RLS Limitations](https://www.bytebase.com/blog/postgres-row-level-security-limitations-and-alternatives/) -- RLS performance
+- [Scott Pierce: Optimizing Postgres RLS](https://scottpierce.dev/posts/optimizing-postgres-rls/) -- SECURITY DEFINER pattern
+- [postgres-graph-rag library](https://github.com/h4gen/postgres-graph-rag) -- pure PG graph RAG approach validated
+- [Recursive CTEs for graph traversal](https://www.sheshbabu.com/posts/graph-retrieval-using-postgres-recursive-ctes/) -- SQL traversal patterns
+- [Microsoft GraphRAG Methods](https://microsoft.github.io/graphrag/index/methods/) -- entity extraction pipeline architecture
+- [Supabase pgrouting blog](https://supabase.com/blog/pgrouting-postgres-graph-database) -- Supabase's own approach to graph in Postgres
 
 ### Secondary (MEDIUM confidence)
-- @hookform/resolvers GitHub issue #799 — Zod v4 compatibility confirmation for resolvers v5.x
-- LogRocket: Linear design trend article — dark mode characteristics, color reduction philosophy
-- LogRocket: Best React animation libraries 2026 — motion recommendation, bundle comparison
-- Stepperize GitHub repo — composable step state, shadcn integration
-- OnboardJS blog: Supabase onboarding persistence — state loss on refresh patterns
-- growthdives.com: Linear onboarding analysis — one input per step, minimal animations, trust over growth tricks
+- [GraphRAG.com: Graph-Enhanced Vector Search](https://graphrag.com/reference/graphrag/graph-enhanced-vector-search/) -- hybrid retrieval patterns
+- [Neo4j: Knowledge Graph from Slack Archive](https://medium.com/neo4j/how-to-create-a-knowledge-graph-from-your-slack-archive-with-neo4j-6a1a1d59a535) -- Slack extraction patterns
+- [Datagrid: Knowledge Graphs from Slack](https://datagrid.com/blog/build-knowledge-graphs-slack-conversations-ai-agents-d16d8) -- Slack filtering, decision extraction
+- [Entity Resolution Techniques](https://www.puppygraph.com/blog/entity-resolution) -- deterministic, probabilistic, ML-based approaches
+- [Memgraph: Model a Knowledge Graph](https://memgraph.com/docs/data-modeling/modeling-guides/model-a-knowledge-graph) -- schema design principles
+- [FalkorDB: How to Build a Knowledge Graph](https://www.falkordb.com/blog/how-to-build-a-knowledge-graph/) -- iterative schema approach
+- [NetApp: Hybrid RAG in the Real World](https://community.netapp.com/t5/Tech-ONTAP-Blogs/Hybrid-RAG-in-the-Real-World-Graphs-BM25-and-the-End-of-Black-Box-Retrieval/ba-p/464834) -- score blending challenges
+- [Bitext: Why LLMs Are Wrong for Enterprise Entity Extraction](https://www.bitext.com/blog/why-llms-are-the-wrong-tool-for-enterprise-grade-entity-extraction/) -- production reliability
+- [freeCodeCamp: 5 Common RAG Failures with Knowledge Graphs](https://www.freecodecamp.org/news/how-to-solve-5-common-rag-failures-with-knowledge-graphs/) -- RAG failure taxonomy
+- [Knowledge Graphs with PostgreSQL](https://app.readytensor.ai/publications/knowledge-graphs-with-postgresql-eQyINuo4ojwW) -- nodes/edges table approach
 
 ### Tertiary (LOW confidence)
-- fmerian.medium.com: Linear FTUX (403 blocked, summary from search results) — step structure confirmation
-- PostHog LinkedIn post summary — dark mode, density, side panels as three pillars of dev-tool feel
+- [source{d} Identity Matching](https://github.com/src-d/identity-matching) -- archived project, approach reference only
+- [iText2KG: Incremental KG Construction](https://arxiv.org/html/2409.03284v1) -- incremental update patterns
+- [postgres-graph-rag v0.1.2](https://github.com/h4gen/postgres-graph-rag) -- early-stage, interesting pattern reference but not production-hardened
 
 ---
-
-*Research completed: 2026-03-04*
+*Research completed: 2026-03-06*
 *Ready for roadmap: yes*

@@ -29,6 +29,7 @@ from sqlmodel import select
 from src.models.integration import Provider, WorkspaceIntegration
 from src.models.slack import SlackMessage
 from src.services import embedding
+from src.services.graph_extractor import extract_and_populate_graph
 
 logger = logging.getLogger(__name__)
 
@@ -273,6 +274,22 @@ async def _handle_message(
         await embedding.queue_embedding_generation(
             session, workspace_id, "slack_message", [message_id]
         )
+
+        # Graph extraction for Slack messages
+        try:
+            await extract_and_populate_graph(
+                session=session,
+                workspace_id=workspace_id,
+                content=event.get("text", ""),
+                source_type="slack_message",
+                source_id=message_id,
+                source_name=f"Slack message in #{channel_id}",
+                source_external_id=slack_ts,
+            )
+        except Exception:
+            logger.warning(
+                "Graph extraction failed for Slack message ts=%s", slack_ts, exc_info=True
+            )
 
 
 async def _handle_message_edit(

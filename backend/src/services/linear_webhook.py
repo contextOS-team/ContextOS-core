@@ -24,6 +24,7 @@ from src.db import async_session
 from src.models.integration import OAuthToken, Provider, WorkspaceIntegration
 from src.models.ticket import LinearComment, LinearTicket
 from src.services import embedding
+from src.services.graph_extractor import extract_and_populate_graph
 from src.services.linear_oauth import get_valid_access_token
 from src.services.linear_sync import sync_single_ticket
 
@@ -201,6 +202,20 @@ async def handle_issue_create(session: AsyncSession, workspace_id: UUID, data: d
         logger.warning("Could not sync ticket %s for issue create", linear_id)
         return
 
+    # Graph extraction runs for ALL tickets (not just synced teams)
+    try:
+        await extract_and_populate_graph(
+            session=session,
+            workspace_id=workspace_id,
+            content=f"{ticket.title}\n\n{ticket.description or ''}",
+            source_type="linear_ticket",
+            source_id=ticket.id,
+            source_name=f"{ticket.identifier}: {ticket.title}",
+            source_external_id=ticket.identifier,
+        )
+    except Exception:
+        logger.warning("Graph extraction failed for ticket %s", ticket.identifier, exc_info=True)
+
     # Check if team is synced to decide on embedding
     team_id = data.get("teamId") or (data.get("team", {}) or {}).get("id")
     if await _is_team_synced(session, workspace_id, team_id):
@@ -245,6 +260,20 @@ async def handle_issue_update(session: AsyncSession, workspace_id: UUID, data: d
     if not ticket:
         logger.warning("Could not sync ticket %s for issue update", linear_id)
         return
+
+    # Graph extraction runs for ALL tickets (not just synced teams)
+    try:
+        await extract_and_populate_graph(
+            session=session,
+            workspace_id=workspace_id,
+            content=f"{ticket.title}\n\n{ticket.description or ''}",
+            source_type="linear_ticket",
+            source_id=ticket.id,
+            source_name=f"{ticket.identifier}: {ticket.title}",
+            source_external_id=ticket.identifier,
+        )
+    except Exception:
+        logger.warning("Graph extraction failed for ticket %s", ticket.identifier, exc_info=True)
 
     # Check if content changed (title or description)
     if existing_ticket and not is_content_change(existing_ticket, ticket.title, ticket.description):
@@ -423,3 +452,17 @@ async def _upsert_comment(session: AsyncSession, workspace_id: UUID, data: dict)
         await embedding.queue_embedding_generation(
             session, workspace_id, "linear_comment", [comment_id]
         )
+
+    # Graph extraction for comments runs regardless of team sync status
+    try:
+        await extract_and_populate_graph(
+            session=session,
+            workspace_id=workspace_id,
+            content=body,
+            source_type="linear_comment",
+            source_id=comment_id,
+            source_name=f"Comment on {ticket.identifier}",
+            source_external_id=linear_id,
+        )
+    except Exception:
+        logger.warning("Graph extraction failed for comment %s", linear_id, exc_info=True)

@@ -20,6 +20,7 @@ from src.models.integration import OAuthToken, WorkspaceIntegration
 from src.models.jira import JiraIssue
 from src.models.sync import SyncCursor
 from src.models.ticket import LinearTicket
+from src.services.graph_ops import compute_fingerprint
 from src.services.linking import LinkedItem, find_content_by_source, find_related_content
 from src.services.llm_client import get_llm_client
 
@@ -85,33 +86,83 @@ SYNTHESIS_TEMPLATE = """\
 ### Related Content
 {related_content}
 
+{graph_section}
 ---
 
 Based on the ticket and related content above, produce a context page. Do NOT start with a title heading. Use only these sections (skip any section that has no real content from the sources):
 
-## Summary
-2-3 sentence overview of what this ticket is about and why it matters.
-
-## Background & Decisions
-Only include if there are actual discussions, Slack messages, meeting notes, or comments. Key decisions and context from those sources.
-
-## Requirements
-What needs to be built or fixed, extracted from the ticket and discussions.
-
-## Related Work
-Only include if there are actual PRs, linked tickets, or other engineering artifacts in the sources.
-
-## Relevant Code
-Only include if code chunks are present in the related content. Include function signatures, class definitions, and route handlers with file paths and repo names.
-
-## Open Questions
-Only include if there are genuinely unresolved questions or ambiguities in the sources.
-
-## Key People
-Only include if multiple people are involved. Who is involved and their roles."""
+1. **Summary** — 2-3 sentence overview of what this ticket is about and why it matters
+2. **Background & Decisions** — Key decisions, discussions, and context from Slack, meetings, and comments. If the Graph Connections section above contains [DECISION] items, weave each into the narrative as a decision trail: state what was decided, who decided it (citing the person), where it was discussed (citing the source like Slack thread name or meeting title), and which tickets it affects. Include the confidence level (e.g., "confirmed" for high confidence, "likely decided" for lower). Always cite the source so engineers can verify. Show all decisions regardless of confidence.
+3. **Requirements** — What needs to be built or fixed, extracted from the ticket and discussions
+4. **Related Work** — PRs, linked tickets, and other relevant engineering artifacts. If the Graph Connections section above shows relationships between items, explain WHY they are connected in natural language (e.g., "This PR was discussed in Slack thread #deploy-v2 by @alex, who also authored the spec in Notion") rather than listing raw connections. Focus on the most important relationship paths and skip mechanical hops.
+5. **Relevant Code** — Code snippets from across the codebase that are relevant to this ticket. Include function signatures, class definitions, and route handlers with file paths and repo names. This helps engineers understand existing implementations even from repos they have never worked in. If any code snippets have associated discussion provenance (noted as "Discussed in:" annotations in the Related Content), include that context so engineers know where this code was talked about.
+6. **Open Questions** — Unresolved questions or ambiguities that need clarification
+7. **Key People** — Who is involved and their roles (assignee, reviewers, participants in discussions). If graph data shows a person's involvement across multiple sources (e.g., authored ticket, discussed in Slack, reviewed PR), list their cross-source involvement to show the full picture of their engagement."""
 
 
-def _format_related_content(items: list) -> str:
+def _format_decision_node(name: str, properties: dict) -> str:
+    """Format a decision node with special highlighting.
+
+    Args:
+        name: Decision description/name.
+        properties: Dict with person_name, source_type, ticket_refs, confidence.
+
+    Returns:
+        Formatted string: [DECISION] name | By: person | In: source | Affects: tickets | Confidence: X.X
+    """
+    person = properties.get("person_name", "Unknown")
+    source = properties.get("source_type", "Unknown")
+    tickets = ", ".join(properties.get("ticket_refs", []))
+    confidence = properties.get("confidence", "N/A")
+    parts = [f"[DECISION] {name}"]
+    parts.append(f"By: {person}")
+    parts.append(f"In: {source}")
+    if tickets:
+        parts.append(f"Affects: {tickets}")
+    parts.append(f"Confidence: {confidence}")
+    return " | ".join(parts)
+
+
+GRAPH_SECTION_TEMPLATE = """\
+### Graph Connections
+The following items were discovered through knowledge graph traversal --
+connections between entities that may not appear in direct text search:
+
+{graph_content}"""
+
+
+def _format_graph_section(items: list) -> str:
+    """Format graph-discovered items into a separate prompt section.
+
+    Items with graph signals are rendered with their graph path provenance
+    and entity types. Decision nodes get special [DECISION] highlighting.
+
+    Args:
+        items: List of LinkedItems with graph signals.
+
+    Returns:
+        Formatted graph section string, or empty string if no items.
+    """
+    if not items:
+        return ""
+
+    sections = []
+    for item in items:
+        if item.source_type == "Decision":
+            path_signal = next((s for s in item.signals if s.startswith("graph:")), "")
+            section = f"**{path_signal}**\n{item.snippet}"
+        else:
+            path_signal = next((s for s in item.signals if s.startswith("graph:")), "")
+            section = f"**{path_signal}**\n{item.snippet}\n*Type: {item.source_type}*"
+        sections.append(section)
+
+    return GRAPH_SECTION_TEMPLATE.format(graph_content="\n\n---\n\n".join(sections))
+
+
+def _format_related_content(
+    items: list,
+    code_provenance: dict[UUID, list[str]] | None = None,
+) -> str:
     """Format linked items into a structured text block for the LLM prompt.
 
     Respects MAX_PROMPT_CHARS budget — once the next item would exceed the
@@ -125,10 +176,16 @@ def _format_related_content(items: list) -> str:
 
     for idx, item in enumerate(items):
         if item.source_type == "code_chunk":
+            # Build optional provenance annotation
+            annotation = ""
+            if code_provenance and item.source_id in code_provenance:
+                discussions = code_provenance[item.source_id]
+                annotation = f"\nDiscussed in: {'; '.join(discussions)}"
+
             section = (
                 f"#### [{item.source_type}] {item.title}\n"
                 f"**Relevance:** {item.relevance_score:.2f} | **Signals:** {', '.join(item.signals)}\n\n"
-                f"```\n{item.snippet}\n```"
+                f"```\n{item.snippet}\n```{annotation}"
             )
         else:
             section = (
@@ -256,12 +313,25 @@ async def _upsert_context_page_placeholder(
 def _build_synthesis_prompt(
     ticket: LinearTicket | TicketProxy,
     related_items: list[LinkedItem],
+    code_provenance: dict[UUID, list[str]] | None = None,
 ) -> str:
     """Format the SYNTHESIS_TEMPLATE with ticket info and related content.
 
-    Pure function — no async, no DB access.
+    Separates graph items from non-graph items and formats them into
+    distinct sections for the synthesis prompt.
     """
-    related_text = _format_related_content(related_items)
+    # Separate graph items from non-graph items
+    graph_items = [
+        item for item in related_items
+        if any(s.startswith("graph:") for s in item.signals)
+    ]
+    non_graph_items = [
+        item for item in related_items
+        if not any(s.startswith("graph:") for s in item.signals)
+    ]
+
+    related_text = _format_related_content(non_graph_items, code_provenance=code_provenance)
+    graph_text = _format_graph_section(graph_items)
 
     return SYNTHESIS_TEMPLATE.format(
         identifier=ticket.identifier,
@@ -272,7 +342,118 @@ def _build_synthesis_prompt(
         labels=", ".join(ticket.labels) if ticket.labels else "None",
         description=ticket.description or "No description provided.",
         related_content=related_text,
+        graph_section=graph_text,
     )
+
+
+# Entity types considered "discussion" sources for provenance annotations
+_DISCUSSION_ENTITY_TYPES = frozenset({"SlackThread", "Meeting"})
+
+# Relationship types that indicate code-to-discussion provenance
+_PROVENANCE_RELATIONSHIP_TYPES = frozenset({"mentions", "discussed_in"})
+
+
+async def _get_code_provenance(
+    session: AsyncSession,
+    workspace_id: UUID,
+    items: list,
+) -> dict[UUID, list[str]]:
+    """Query graph edges to find discussion provenance for code_chunk items.
+
+    For each code_chunk LinkedItem, looks up the corresponding CodeChunk graph
+    node (by fingerprint), finds connected discussion nodes (SlackThread, Meeting)
+    via 'mentions' or 'discussed_in' edges, and builds annotation strings.
+
+    Fail-silent: returns empty dict on any error.
+    """
+    try:
+        code_items = [item for item in items if item.source_type == "code_chunk"]
+        if not code_items:
+            return {}
+
+        from src.models.graph_edge import GraphEdge
+        from src.models.graph_node import GraphNode
+
+        fp_to_source_id: dict[str, UUID] = {}
+        for item in code_items:
+            fp = compute_fingerprint("CodeChunk", f"chunk:{item.source_id}")
+            fp_to_source_id[fp] = item.source_id
+
+        fingerprints = list(fp_to_source_id.keys())
+        node_stmt = select(GraphNode).where(
+            GraphNode.workspace_id == workspace_id,
+            GraphNode.fingerprint.in_(fingerprints),  # type: ignore[union-attr]
+            GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        node_result = await session.execute(node_stmt)
+        chunk_nodes = node_result.scalars().all()
+
+        if not chunk_nodes:
+            return {}
+
+        node_id_to_source_id: dict[UUID, UUID] = {}
+        chunk_node_ids = []
+        for node in chunk_nodes:
+            chunk_node_ids.append(node.id)
+            if node.fingerprint in fp_to_source_id:
+                node_id_to_source_id[node.id] = fp_to_source_id[node.fingerprint]
+
+        edge_stmt = select(GraphEdge).where(
+            GraphEdge.workspace_id == workspace_id,
+            GraphEdge.target_node_id.in_(chunk_node_ids),  # type: ignore[union-attr]
+            GraphEdge.relationship_type.in_(_PROVENANCE_RELATIONSHIP_TYPES),  # type: ignore[union-attr]
+            GraphEdge.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        edge_result = await session.execute(edge_stmt)
+        edges = edge_result.scalars().all()
+
+        if not edges:
+            return {}
+
+        source_node_ids = set()
+        chunk_to_sources: dict[UUID, list[UUID]] = {}
+        for edge in edges:
+            source_node_ids.add(edge.source_node_id)
+            chunk_to_sources.setdefault(edge.target_node_id, []).append(edge.source_node_id)
+
+        disc_stmt = select(GraphNode).where(
+            GraphNode.id.in_(list(source_node_ids)),  # type: ignore[union-attr]
+            GraphNode.entity_type.in_(_DISCUSSION_ENTITY_TYPES),  # type: ignore[union-attr]
+            GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        disc_result = await session.execute(disc_stmt)
+        disc_nodes = disc_result.scalars().all()
+
+        disc_annotations: dict[UUID, str] = {}
+        for node in disc_nodes:
+            if node.entity_type == "SlackThread":
+                disc_annotations[node.id] = f"#{node.name}" if not node.name.startswith("#") else node.name
+            elif node.entity_type == "Meeting":
+                disc_annotations[node.id] = f"Meeting: {node.name}"
+            else:
+                disc_annotations[node.id] = node.name
+
+        result: dict[UUID, list[str]] = {}
+        for chunk_node_id, source_ids in chunk_to_sources.items():
+            source_id = node_id_to_source_id.get(chunk_node_id)
+            if source_id is None:
+                continue
+            annotations = []
+            for sid in source_ids:
+                if sid in disc_annotations:
+                    annotations.append(disc_annotations[sid])
+            if annotations:
+                result[source_id] = annotations
+
+        return result
+
+    except Exception:
+        logger.warning(
+            "Code provenance query failed (workspace=%s)",
+            workspace_id,
+            exc_info=True,
+        )
+        return {}
 
 
 # ---------------------------------------------------------------------------
@@ -321,8 +502,11 @@ async def generate_context_page(
         # 3. Find related content
         linking_result = await find_related_content(session, workspace_id, ticket)
 
+        # 3b. Query code provenance for code_chunk items
+        code_provenance = await _get_code_provenance(session, workspace_id, linking_result.items)
+
         # 4. Build prompt
-        prompt = _build_synthesis_prompt(ticket, linking_result.items)
+        prompt = _build_synthesis_prompt(ticket, linking_result.items, code_provenance=code_provenance)
 
         # 5. Call LLM
         llm = get_llm_client()
@@ -501,7 +685,8 @@ async def generate_context_page_stream(
         # 6. Synthesize
         yield {"event": "step_start", "source": "synthesize"}
 
-        prompt = _build_synthesis_prompt(ticket, all_items)
+        code_provenance = await _get_code_provenance(session, workspace_id, all_items)
+        prompt = _build_synthesis_prompt(ticket, all_items, code_provenance=code_provenance)
 
         llm = get_llm_client()
         llm_response = await llm.generate(

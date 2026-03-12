@@ -144,8 +144,8 @@ export interface SlackChannel {
   num_members: number
 }
 
-export function getSlackChannels(): Promise<{ channels: SlackChannel[] }> {
-  return apiFetch<{ channels: SlackChannel[] }>('/api/slack/channels')
+export function getSlackChannels(): Promise<{ channels: SlackChannel[]; selected_channels?: string[] }> {
+  return apiFetch<{ channels: SlackChannel[]; selected_channels?: string[] }>('/api/slack/channels')
 }
 
 export function refreshSlackChannels(): Promise<{ channels: SlackChannel[] }> {

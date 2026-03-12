@@ -22,7 +22,8 @@ def token_name(provider: str, workspace_id: UUID, token_type: str) -> str:
     Format: oauth_{provider}_{workspace_id}_{token_type}
     Example: oauth_linear_<uuid>_access
     """
-    return f"oauth_{provider}_{workspace_id}_{token_type}"
+    p = provider.value if hasattr(provider, "value") else provider
+    return f"oauth_{p}_{workspace_id}_{token_type}"
 
 
 async def store_token(session: AsyncSession, name: str, value: str) -> str:

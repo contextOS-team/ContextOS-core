@@ -1,949 +1,777 @@
-# Architecture Research
+# Architecture Patterns
 
-**Domain:** Next.js App Router dashboard redesign — dark theme, onboarding, activity feed, team settings
-**Researched:** 2026-03-04
-**Confidence:** HIGH (based on direct codebase analysis + verified official documentation)
+**Domain:** GraphRAG knowledge graph layer for engineering context synthesis
+**Researched:** 2026-03-06
 
----
+## Critical Finding: Apache AGE Cannot Run on Supabase Cloud
 
-> **Scope note:** This document covers the NEW milestone only — guided onboarding, dark-themed dashboard, context feed with filtering, activity timeline, team settings, and auth page redesign. It treats the existing codebase as ground truth and explicitly identifies what changes vs. what stays.
+**Confidence: HIGH** -- verified via Supabase official docs and GitHub discussions.
 
----
+Apache AGE is NOT in Supabase's list of supported PostgreSQL extensions. AGE is a C extension (not a Trusted Language Extension), so it cannot be installed on Supabase Cloud. The Supabase Postgres images are built with Nix and do not allow compiling C extensions at runtime.
 
-## Standard Architecture
+Workarounds from the community (dual databases with `postgres_fdw`, self-hosted Supabase, Docker images with PG13) all violate ContextOS's constraint of staying on Supabase Cloud + Railway hosting.
 
-### System Overview
+**Recommendation: Use plain PostgreSQL tables (nodes + edges) with recursive CTEs for graph traversal.** This approach:
+- Works on Supabase Cloud today (no extension required)
+- Lives alongside existing pgvector + pg_trgm
+- Supports RLS multi-tenancy with standard `workspace_id` patterns
+- Enables graph-enhanced retrieval via SQL, blended with existing hybrid search
+- Is proven in production (postgres-graph-rag library, multiple real-world deployments)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          ROUTE LAYER (App Router)                            │
-│                                                                              │
-│  ┌──────────────┐  ┌───────────────────────────────────────────────────┐    │
-│  │ (landing)/   │  │              (dashboard)/                          │    │
-│  │ layout.tsx   │  │ layout.tsx  ← NEW: adds .dark class to wrapper    │    │
-│  │ .landing-    │  │                                                    │    │
-│  │  theme       │  │  /dashboard       /context   /integrations         │    │
-│  │  (existing)  │  │  (redesigned)    /settings   /team (NEW)           │    │
-│  └──────────────┘  │                                                    │    │
-│                    └───────────────────────────────────────────────────┘    │
-│  ┌──────────────────┐                                                        │
-│  │  (auth)/         │  ← MODIFIED: add .dark wrapper like landing            │
-│  │  layout.tsx      │                                                        │
-│  │  (auth pages     │                                                        │
-│  │   redesigned)    │                                                        │
-│  └──────────────────┘                                                        │
-│  ┌──────────────────┐                                                        │
-│  │  (onboarding)/   │  ← NEW route group                                     │
-│  │  layout.tsx      │    Auth-gated, redirects out when complete             │
-│  │  page.tsx        │    Multi-step wizard (3 steps, no nested routes)        │
-│  └──────────────────┘                                                        │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                       COMPONENT LAYER                                        │
-│                                                                              │
-│  NEW components (src/components/dashboard/):                                 │
-│  ┌──────────────┐ ┌──────────────┐ ┌─────────────┐ ┌───────────────────┐   │
-│  │ContextFeed   │ │ActivityPanel │ │ FilterBar    │ │ OnboardingWizard  │   │
-│  │ (list + RT)  │ │ (realtime)   │ │ (compound)   │ │ (step machine)    │   │
-│  └──────┬───────┘ └──────┬───────┘ └─────────────┘ └───────────────────┘   │
-│         │                │                                                   │
-├─────────┼────────────────┼─────────────────────────────────────────────────┤
-│         │          DATA LAYER                                                │
-│         ▼                ▼                                                   │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │                  Supabase (existing + new tables)                    │   │
-│  │  ┌────────────────┐  ┌──────────────────┐  ┌──────────────────────┐  │   │
-│  │  │ context_pages  │  │ activity_events   │  │ user_onboarding     │  │   │
-│  │  │ (existing)     │  │ (NEW -- RT feed)  │  │ _state (NEW)        │  │   │
-│  │  └────────────────┘  └──────────────────┘  └──────────────────────┘  │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+The tradeoff is that Cypher query syntax is not available -- graph queries use recursive CTEs instead. For ContextOS's use case (2-3 hop traversals within a workspace, not massive graph analytics), this is more than sufficient.
 
-### Component Responsibilities
-
-| Component | Status | Responsibility | Changes From Existing |
-|-----------|--------|---------------|----------------------|
-| `(dashboard)/layout.tsx` | MODIFY | Auth gate + dark theme wrapper | Add `.dark` class to root div |
-| `(dashboard)/sidebar.tsx` | MODIFY | Top nav with extended nav items | Add Team, Settings links; update active state logic |
-| `(dashboard)/page.tsx` | MODIFY | Dashboard home — activity + context feed | Replace integration-status-only view |
-| `(auth)/layout.tsx` | MODIFY | Auth pages wrapper | Add dark theme treatment |
-| `(auth)/login/page.tsx` | MODIFY | Login UI | Dark card, brand-aligned visuals |
-| `(auth)/signup/page.tsx` | MODIFY | Signup UI | Dark card, brand-aligned visuals |
-| `(onboarding)/layout.tsx` | NEW | Onboarding shell — auth-gated, progress bar | — |
-| `(onboarding)/page.tsx` | NEW | Multi-step onboarding wizard | — |
-| `components/dashboard/ContextFeed` | NEW | Filtered list of context pages with real-time status | — |
-| `components/dashboard/FilterBar` | NEW | Source type toggles for ContextFeed | — |
-| `components/dashboard/ActivityPanel` | NEW | Real-time activity timeline | — |
-| `components/dashboard/OnboardingWizard` | NEW | Step machine (3 steps) | — |
-| `(dashboard)/settings/page.tsx` | NEW | API key management, user preferences | — |
-| `(dashboard)/team/page.tsx` | NEW | Team member list and invite flow | — |
-| `lib/hooks/use-realtime-feed.ts` | NEW | Supabase Realtime subscription hook | Extracted from component |
-| `app/globals.css` | MODIFY | Dashboard dark tokens in `.dark {}` block (already present — verify completeness) | Token audit + dashboard-specific extensions |
+Sources:
+- [Supabase Extensions List](https://supabase.com/docs/guides/database/extensions) -- AGE absent
+- [Supabase Discussion #40285](https://github.com/orgs/supabase/discussions/40285) -- AGE install blocked
+- [Supabase Discussion #13263](https://github.com/orgs/supabase/discussions/13263) -- AGE not supported
+- [postgres-graph-rag](https://github.com/h4gen/postgres-graph-rag) -- pure PG graph RAG library
 
 ---
 
-## Question 1: Design Token Unification
+## Recommended Architecture
 
-**Decision: Two-layer token strategy — shared semantic names, different values per context.**
+### High-Level Integration
 
-The existing codebase already implements the right pattern but it is incomplete:
-
-- `globals.css` defines OKLCH tokens at `:root` (light) and `.dark` (dark) — HIGH confidence these are correct
-- `landing.css` overrides the same semantic token names (e.g. `--background`, `--primary`) scoped under `.landing-theme`
-- The dashboard currently uses `:root` tokens (light mode) without applying `.dark`
-
-**The fix is a single class addition**, not a redesign:
-
-```tsx
-// apps/web/src/app/dashboard/layout.tsx — BEFORE
-<div className="flex flex-col min-h-screen bg-background">
-
-// AFTER — adds dark theme to all dashboard descendants
-<div className="dark flex flex-col min-h-screen bg-background">
+```
+                    EXISTING                              NEW (v1.2)
+             +------------------+                 +--------------------+
+             |  Webhook/Sync    |                 |  Entity Extraction |
+             |  (Linear, Slack, |---[triggers]--->|  Pipeline          |
+             |   GitHub, Notion)|                 |  (rule + LLM)     |
+             +------------------+                 +--------------------+
+                      |                                     |
+                      v                                     v
+             +------------------+                 +--------------------+
+             |  Source Tables   |                 |  Graph Tables      |
+             |  (linear_tickets,|                 |  (graph_nodes,     |
+             |   slack_messages,|                 |   graph_edges)     |
+             |   code_chunks..)|                 +--------------------+
+             +------------------+                          |
+                      |                                     |
+                      v                                     v
+             +------------------+                 +--------------------+
+             |  Embeddings +    |                 |  Graph Traversal   |
+             |  Hybrid Search   |<---[blended]--->|  (Recursive CTEs)  |
+             +------------------+                 +--------------------+
+                      |                                     |
+                      v                                     v
+             +--------------------------------------------------+
+             |              Linking Engine (MODIFIED)            |
+             |  find_related_content() + graph_signal            |
+             +--------------------------------------------------+
+                                     |
+                                     v
+             +--------------------------------------------------+
+             |            Synthesis (MODIFIED prompts)           |
+             |  Includes decision trails, relationship paths     |
+             +--------------------------------------------------+
 ```
 
-This works because `globals.css` already defines a `.dark {}` block with OKLCH dark palette values. The `@custom-variant dark (&:is(.dark *))` declaration in `globals.css` means Tailwind's `dark:` utilities activate for any descendant of `.dark`.
+### Component Boundaries
 
-**Design token layers:**
+| Component | Responsibility | Status | Communicates With |
+|-----------|---------------|--------|-------------------|
+| `graph_nodes` table | Store entity nodes (Person, Decision, CodeArtifact, etc.) | **NEW** | Graph edges, entity extractors |
+| `graph_edges` table | Store typed relationships between entities | **NEW** | Graph nodes, traversal queries |
+| `entity_extraction` service | Extract entities from source content on ingest | **NEW** | Source tables, graph tables, LLM client |
+| `identity_resolution` service | Merge person identities across sources | **NEW** | Graph nodes, source tables |
+| `graph_retrieval` service | Traverse graph and return related entities/paths | **NEW** | Graph tables, linking engine |
+| `linking.py` | Find related content for a ticket (EXISTING) | **MODIFIED** | Graph retrieval (new signal), hybrid search, explicit refs |
+| `synthesis.py` | Generate context pages (EXISTING) | **MODIFIED** | Linking engine (receives graph data), LLM client |
+| `embedding.py` | Generate/store embeddings (EXISTING) | **MINOR CHANGE** | Source type constraint update only |
+| Webhook handlers | Process incoming data (EXISTING) | **MODIFIED** | Trigger entity extraction after data ingest |
 
-| Layer | File | Scope | Mood |
-|-------|------|-------|------|
-| Base tokens | `globals.css` `@theme` block | All Tailwind utilities globally | — |
-| Light (default) | `globals.css` `:root {}` | Dashboard default until `.dark` applied | Clean, neutral |
-| Dark dashboard | `globals.css` `.dark {}` | Everything inside `<div class="dark">` | Deep blue-gray OKLCH |
-| Landing dark | `landing.css` `.landing-theme {}` | Inside `<div class="landing-theme">` | Deep navy + teal brand |
-| Auth pages | `globals.css` `.dark {}` | Via `.dark` wrapper in auth layout | Same as dashboard dark |
+### New Files (Recommended Structure)
 
-**Why this keeps them distinct despite sharing token names:**
+```
+backend/src/
+  services/
+    graph/
+      __init__.py
+      schema.py          # Graph node/edge types, entity type enums
+      extraction.py      # Entity extraction pipeline (rule + LLM)
+      identity.py        # Cross-source identity resolution
+      retrieval.py       # Graph traversal queries (recursive CTEs)
+      decisions.py       # Decision extraction from messages/transcripts
+  models/
+    graph.py             # SQLModel for graph_nodes, graph_edges
 
-- Landing uses `--primary: #00D4AA` (teal) and `--background: #0A0A0F` (deep navy)
-- Dashboard dark uses `--primary: oklch(0.60 0.18 250)` (indigo-blue) and `--background: oklch(0.12 0.015 270)` (blue-gray)
-- They never overlap because `.landing-theme` is never nested inside `.dark` and vice versa
-
-**Token additions needed for dashboard dark theme:**
-
-The existing `.dark` block in `globals.css` is already complete. What is missing is dashboard-specific semantic extensions for the activity feed and context cards:
-
-```css
-/* Add to globals.css inside .dark {} block */
-.dark {
-  /* existing tokens already present ... */
-
-  /* Dashboard-specific extensions */
-  --activity-insert: oklch(0.45 0.15 160);      /* green tint for new items */
-  --activity-update: oklch(0.45 0.15 250);      /* blue tint for updates */
-  --activity-delete: oklch(0.50 0.18 25);       /* red tint for deletes */
-  --context-status-ready: oklch(0.55 0.14 160); /* green for ready status */
-  --context-status-generating: oklch(0.60 0.15 85); /* amber for in-progress */
-  --context-status-stale: oklch(0.55 0.14 60);  /* orange for stale */
-}
+supabase/migrations/
+  00017_graph_tables.sql # Graph schema: nodes, edges, indexes, RLS
 ```
 
 ---
 
-## Question 2: Onboarding Route Structure
+## Database Schema Design
 
-**Decision: New `(onboarding)` route group with step state managed in component, not URL.**
-
-### Route placement
-
-```
-src/app/
-├── (landing)/          — existing, public
-├── (auth)/             — existing, unauthenticated only
-│   ├── layout.tsx      — MODIFY: add dark wrapper
-│   ├── login/page.tsx  — MODIFY: dark-themed card
-│   └── signup/page.tsx — MODIFY: dark-themed card
-├── (onboarding)/       — NEW route group
-│   ├── layout.tsx      — auth-gate + progress wrapper
-│   └── page.tsx        — wizard (single URL, steps managed in React state)
-└── dashboard/          — existing, auth-gated
-```
-
-**Why single URL (`/onboarding`) rather than `/onboarding/1`, `/onboarding/2`, `/onboarding/3`:**
-
-- Back-button behavior on sub-steps is confusing for 3-step flows
-- Step state is transient; it does not need to be bookmarkable or shareable
-- Single URL means no intermediate loading states during step transitions
-- The wizard manages step index in `useState`, transitions with framer-motion or CSS `animate-fade-in-up`
-
-### Onboarding trigger: middleware vs. layout check
-
-**Decision: Layout-level redirect, not middleware.**
-
-The middleware currently runs on every route to refresh Supabase sessions. Adding a database check (has user completed onboarding?) to every middleware call adds latency to all requests including static asset fetches.
-
-Instead, the dashboard layout (already does a server-side auth check) adds a second check:
-
-```typescript
-// apps/web/src/app/dashboard/layout.tsx
-export default async function DashboardLayout({ children }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) redirect('/login')
-
-  // NEW: onboarding gate
-  const { data: onboardingState } = await supabase
-    .from('user_onboarding_state')
-    .select('completed_at')
-    .eq('user_id', user.id)
-    .single()
-
-  if (!onboardingState?.completed_at) {
-    redirect('/onboarding')
-  }
-
-  return (
-    <div className="dark flex flex-col min-h-screen bg-background">
-      <Sidebar userEmail={user.email ?? ''} userFullName={user.user_metadata?.full_name} />
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-6 py-10 lg:px-10">{children}</div>
-      </main>
-    </div>
-  )
-}
-```
-
-The `(onboarding)/layout.tsx` does the inverse — if onboarding IS complete, redirect to dashboard:
-
-```typescript
-// apps/web/src/app/(onboarding)/layout.tsx
-export default async function OnboardingLayout({ children }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) redirect('/login')
-
-  const { data: state } = await supabase
-    .from('user_onboarding_state')
-    .select('completed_at')
-    .eq('user_id', user.id)
-    .single()
-
-  if (state?.completed_at) redirect('/dashboard')
-
-  return (
-    <div className="dark min-h-screen bg-background flex flex-col">
-      {children}
-    </div>
-  )
-}
-```
-
-### Onboarding wizard steps
-
-```
-Step 1: Profile setup
-  - Full name (pre-filled from auth metadata if present)
-  - Role / team (optional)
-  - Action: save to user_metadata on Supabase Auth user
-
-Step 2: Connect your first integration
-  - Show integration cards: Linear, Slack, GitHub, Notion (status from FastAPI)
-  - Must connect at least one to proceed (OR skip button for manual dismissal)
-  - Re-uses existing connectLinear() / connectSlack() from lib/api.ts
-
-Step 3: Choose what to surface
-  - Which source types to show in context feed by default
-  - Saved to user_onboarding_state.preferences JSONB column
-  - "Finish setup" button marks completed_at
-```
-
-### Database table for onboarding state
+### Graph Nodes Table
 
 ```sql
-CREATE TABLE user_onboarding_state (
-  user_id     UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  step_reached INT NOT NULL DEFAULT 1,
-  preferences  JSONB,
-  completed_at TIMESTAMPTZ,
-  created_at   TIMESTAMPTZ DEFAULT now()
-);
+CREATE TABLE public.graph_nodes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
 
-ALTER TABLE user_onboarding_state ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "users own their onboarding state"
-  ON user_onboarding_state
-  FOR ALL USING (auth.uid() = user_id);
+  -- Entity identity
+  entity_type TEXT NOT NULL CHECK (entity_type IN (
+    'person', 'decision', 'code_artifact', 'feature', 'ticket',
+    'meeting', 'channel', 'repository', 'file', 'concept'
+  )),
+  canonical_name TEXT NOT NULL,        -- display name after resolution
+
+  -- Source provenance (which record created/updated this node)
+  source_type TEXT,                     -- e.g. 'slack_message', 'linear_ticket'
+  source_id UUID,                       -- FK to original source record
+
+  -- Flexible properties (JSONB avoids schema migration per entity type)
+  properties JSONB NOT NULL DEFAULT '{}',
+  -- Examples:
+  --   person:  {"email": "...", "slack_id": "U123", "github_login": "...", "linear_name": "..."}
+  --   decision: {"status": "decided", "decided_at": "...", "rationale": "...", "text": "..."}
+  --   code_artifact: {"repo": "...", "file_path": "...", "symbol": "...", "language": "..."}
+  --   feature: {"description": "...", "status": "in_progress"}
+
+  -- Deduplication
+  fingerprint TEXT NOT NULL,            -- hash of (entity_type, canonical_name, workspace_id)
+
+  confidence FLOAT NOT NULL DEFAULT 1.0,  -- extraction confidence (1.0 = rule-based, <1.0 = LLM)
+
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  UNIQUE (workspace_id, fingerprint)
+);
 ```
 
-Row creation: triggered automatically on first auth sign-in using a Supabase database trigger (same pattern as workspace auto-creation in Phase 1).
-
----
-
-## Question 3: Real-time Activity Feed with Supabase
-
-**Decision: Supabase Realtime `postgres_changes` subscription on `activity_events` table, scoped by `workspace_id`.**
-
-### Database table
+### Graph Edges Table
 
 ```sql
-CREATE TABLE activity_events (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  user_id      UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-  event_type   TEXT NOT NULL,       -- 'context_page.created', 'integration.connected', etc.
-  source_type  TEXT,                -- 'linear', 'slack', 'github', 'notion', 'system'
-  entity_id    TEXT,                -- e.g. ticket identifier CON-16
-  entity_title TEXT,
-  metadata     JSONB,
-  created_at   TIMESTAMPTZ DEFAULT now()
+CREATE TABLE public.graph_edges (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id UUID NOT NULL REFERENCES public.workspaces(id) ON DELETE CASCADE,
+
+  -- Relationship
+  source_node_id UUID NOT NULL REFERENCES public.graph_nodes(id) ON DELETE CASCADE,
+  target_node_id UUID NOT NULL REFERENCES public.graph_nodes(id) ON DELETE CASCADE,
+  relationship_type TEXT NOT NULL CHECK (relationship_type IN (
+    'authored', 'mentioned_in', 'decided_in', 'implements',
+    'related_to', 'assigned_to', 'reviewed', 'discussed_in',
+    'blocks', 'depends_on', 'motivated_by', 'part_of',
+    'same_as'  -- identity resolution edge
+  )),
+
+  -- Provenance: which source record established this edge
+  source_type TEXT,
+  source_id UUID,
+
+  -- Edge properties
+  properties JSONB NOT NULL DEFAULT '{}',
+  -- Examples:
+  --   mentioned_in: {"message_ts": "...", "context_snippet": "..."}
+  --   decided_in: {"decision_text": "...", "timestamp": "..."}
+  --   same_as: {"match_type": "email", "confidence": 1.0}
+
+  weight FLOAT NOT NULL DEFAULT 1.0,    -- edge strength/confidence
+
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+  -- Prevent duplicate edges of the same type between same nodes from same source
+  UNIQUE (workspace_id, source_node_id, target_node_id, relationship_type, source_type, source_id)
 );
-
-CREATE INDEX activity_events_workspace_created
-  ON activity_events(workspace_id, created_at DESC);
-
-ALTER TABLE activity_events ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "workspace members see events"
-  ON activity_events FOR SELECT
-  USING (workspace_id IN (
-    SELECT workspace_id FROM workspace_members WHERE user_id = auth.uid()
-  ));
 ```
 
-Realtime must be enabled for this table in the Supabase dashboard (or via `supabase_realtime` publication).
+### Key Indexes
 
-### React hook pattern
+```sql
+-- Node lookups
+CREATE INDEX idx_graph_nodes_workspace ON public.graph_nodes (workspace_id);
+CREATE INDEX idx_graph_nodes_type ON public.graph_nodes (workspace_id, entity_type);
+CREATE INDEX idx_graph_nodes_name ON public.graph_nodes USING gin (canonical_name gin_trgm_ops);
+CREATE INDEX idx_graph_nodes_source ON public.graph_nodes (source_type, source_id);
 
-```typescript
-// apps/web/src/lib/hooks/use-realtime-feed.ts
-import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+-- Edge traversal (both directions for bidirectional queries)
+CREATE INDEX idx_graph_edges_source ON public.graph_edges (source_node_id);
+CREATE INDEX idx_graph_edges_target ON public.graph_edges (target_node_id);
+CREATE INDEX idx_graph_edges_workspace ON public.graph_edges (workspace_id);
+CREATE INDEX idx_graph_edges_type ON public.graph_edges (workspace_id, relationship_type);
 
-export interface ActivityEvent {
-  id: string
-  event_type: string
-  source_type: string | null
-  entity_id: string | null
-  entity_title: string | null
-  metadata: Record<string, unknown> | null
-  created_at: string
-}
+-- RLS (follows existing workspace_data pattern)
+ALTER TABLE public.graph_nodes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.graph_edges ENABLE ROW LEVEL SECURITY;
 
-export function useRealtimeFeed(workspaceId: string, limit = 50) {
-  const [events, setEvents] = useState<ActivityEvent[]>([])
-  const [loading, setLoading] = useState(true)
+CREATE POLICY "workspace_data" ON public.graph_nodes
+  FOR ALL USING (
+    workspace_id IN (SELECT workspace_id FROM public.workspace_members WHERE user_id = auth.uid())
+  );
 
-  useEffect(() => {
-    const supabase = createClient()
+CREATE POLICY "workspace_data" ON public.graph_edges
+  FOR ALL USING (
+    workspace_id IN (SELECT workspace_id FROM public.workspace_members WHERE user_id = auth.uid())
+  );
 
-    // Initial load
-    supabase
-      .from('activity_events')
-      .select('*')
-      .eq('workspace_id', workspaceId)
-      .order('created_at', { ascending: false })
-      .limit(limit)
-      .then(({ data }) => {
-        if (data) setEvents(data)
-        setLoading(false)
-      })
-
-    // Realtime subscription — INSERT only (events are append-only)
-    const channel = supabase
-      .channel(`activity-${workspaceId}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'activity_events',
-        filter: `workspace_id=eq.${workspaceId}`,
-      }, (payload) => {
-        setEvents((prev) => [payload.new as ActivityEvent, ...prev].slice(0, limit))
-      })
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [workspaceId, limit])
-
-  return { events, loading }
-}
+-- Triggers
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.graph_nodes
+  FOR EACH ROW EXECUTE FUNCTION moddatetime(updated_at);
 ```
 
-**Key constraints:**
-
-- The `filter` parameter uses PostgREST filter syntax: `workspace_id=eq.${workspaceId}` (not SQL)
-- Cleanup via `supabase.removeChannel(channel)` is mandatory — React Strict Mode double-invokes effects, so without cleanup you get duplicate subscriptions
-- The Supabase `postgres_changes` feature requires the table to be in the `supabase_realtime` publication (check with `SELECT * FROM pg_publication_tables WHERE pubname = 'supabase_realtime'`)
-- Subscribe to INSERT only (not `*`) — events never change after creation, so UPDATE/DELETE subscriptions are wasteful
-
-### Activity event writers
-
-The FastAPI backend writes to `activity_events` as a side effect of existing operations. This is purely additive — no existing API routes change:
-
-```python
-# Called after context_page status changes to 'ready'
-async def emit_activity(supabase, workspace_id, event_type, source_type=None, entity_id=None, entity_title=None, metadata=None):
-    await supabase.table("activity_events").insert({
-        "workspace_id": workspace_id,
-        "event_type": event_type,
-        "source_type": source_type,
-        "entity_id": entity_id,
-        "entity_title": entity_title,
-        "metadata": metadata or {},
-    }).execute()
-
-# Example call sites:
-# - context_page generated: emit_activity(ws_id, "context_page.created", "linear", ticket_id, ticket_title)
-# - integration connected: emit_activity(ws_id, "integration.connected", "slack")
-# - new PR ingested: emit_activity(ws_id, "pr.ingested", "github", pr_number, pr_title)
-```
-
----
-
-## Question 4: Context Feed Component Architecture
-
-**Decision: Compound-component pattern with shared state via React context. FilterBar owns filter state and passes it down through context. ContextFeed reads filter state and applies it client-side.**
-
-### Component tree
-
-```
-<ContextFeedProvider>          ← React context: filter state + setter
-  <FilterBar />                ← source type toggles, reads/writes context
-  <ContextFeedList />          ← subscribes to context_pages RT, reads filter context
-    <ContextFeedItem />        ← pure display, no state
-    <ContextFeedItem />
-    ...
-  <EmptyState />               ← shown when filter produces no results
-</ContextFeedProvider>
-```
-
-### FilterBar design
-
-Source type filter is a multi-select toggle group (not a dropdown — toggles are faster to scan):
-
-```typescript
-// Filter state shape
-type SourceFilter = {
-  linear: boolean
-  slack: boolean
-  github: boolean
-  notion: boolean
-  all: boolean    // shorthand — true when all are selected
-}
-
-// Context shape
-interface ContextFeedContextValue {
-  filter: SourceFilter
-  setFilter: (update: Partial<SourceFilter>) => void
-  activeCount: number   // for "X results" label
-}
-```
-
-**FilterBar renders as:**
-
-```
-[All]  [Linear]  [Slack]  [GitHub]  [Notion]    showing 12 results
-```
-
-Each pill is a toggle button using existing `Button` component with `variant="outline"` for inactive, `variant="default"` (primary) for active. No new component primitives needed.
-
-### Context feed data flow
-
-```typescript
-// Context pages come from Supabase direct read + realtime
-// (following existing split read/write pattern from ARCHITECTURE.md)
-
-// apps/web/src/components/dashboard/ContextFeedList.tsx
-'use client'
-import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
-
-function useContextPages(workspaceId: string) {
-  const [pages, setPages] = useState([])
-
-  useEffect(() => {
-    const supabase = createClient()
-
-    // Initial load
-    supabase
-      .from('context_pages')
-      .select('id, ticket_identifier, title, status, sources, updated_at')
-      .eq('workspace_id', workspaceId)
-      .order('updated_at', { ascending: false })
-      .limit(100)
-      .then(({ data }) => { if (data) setPages(data) })
-
-    // Realtime: watch for status changes (generating -> ready, etc.)
-    const channel = supabase
-      .channel(`context-pages-${workspaceId}`)
-      .on('postgres_changes', {
-        event: '*',                    // INSERT (new pages) and UPDATE (status changes)
-        schema: 'public',
-        table: 'context_pages',
-        filter: `workspace_id=eq.${workspaceId}`,
-      }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setPages((prev) => [payload.new, ...prev])
-        } else if (payload.eventType === 'UPDATE') {
-          setPages((prev) => prev.map((p) => p.id === payload.new.id ? payload.new : p))
-        }
-      })
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [workspaceId])
-
-  return pages
-}
-```
-
-### Client-side filtering
-
-Filtering is applied client-side (not a new Supabase query per filter change). Rationale: 100 context pages is manageable in memory, filter changes should be instant without network round-trips, and the realtime subscription stays live across filter state changes.
-
-```typescript
-// Filter application — pure function, called during render
-function applyFilter(pages: ContextPage[], filter: SourceFilter): ContextPage[] {
-  if (filter.all) return pages
-
-  return pages.filter((page) => {
-    // page.sources is ContextPageSource[] — check if any source matches active filters
-    return page.sources.some((source) => {
-      const sourceType = mapSourceToFilterKey(source.type)
-      return filter[sourceType] === true
-    })
-  })
-}
-
-function mapSourceToFilterKey(sourceType: string): keyof SourceFilter {
-  if (sourceType.startsWith('linear')) return 'linear'
-  if (sourceType.startsWith('slack')) return 'slack'
-  if (sourceType.startsWith('github')) return 'github'
-  if (sourceType.startsWith('notion') || sourceType === 'notion_page') return 'notion'
-  return 'linear' // default
-}
-```
-
----
-
-## Recommended Project Structure (Changes Only)
-
-```
-apps/web/src/
-├── app/
-│   ├── (auth)/
-│   │   ├── layout.tsx           MODIFY: add dark wrapper + visual redesign
-│   │   ├── login/page.tsx       MODIFY: dark card, logo, updated copy
-│   │   └── signup/page.tsx      MODIFY: dark card, logo, updated copy
-│   │
-│   ├── (onboarding)/            NEW route group
-│   │   ├── layout.tsx           NEW: auth gate + inverse onboarding check
-│   │   └── page.tsx             NEW: multi-step wizard
-│   │
-│   ├── dashboard/
-│   │   ├── layout.tsx           MODIFY: add .dark class + onboarding gate
-│   │   ├── page.tsx             MODIFY: home with ContextFeed + ActivityPanel
-│   │   ├── sidebar.tsx          MODIFY: add Team, Settings nav items
-│   │   ├── context/page.tsx     KEEP: existing lookup UI unchanged
-│   │   ├── integrations/page.tsx KEEP: existing integrations UI unchanged
-│   │   ├── settings/            NEW directory
-│   │   │   └── page.tsx         NEW: API keys, user preferences
-│   │   └── team/                NEW directory
-│   │       └── page.tsx         NEW: team members, invite
-│   │
-│   └── globals.css              MODIFY: audit .dark block, add feed tokens
-│
-├── components/
-│   ├── dashboard/               NEW directory
-│   │   ├── ContextFeedProvider.tsx  compound component context
-│   │   ├── ContextFeedList.tsx      list + RT subscription
-│   │   ├── ContextFeedItem.tsx      card display
-│   │   ├── FilterBar.tsx            source type toggles
-│   │   ├── ActivityPanel.tsx        timeline with RT
-│   │   ├── ActivityEventRow.tsx     single event display
-│   │   ├── OnboardingWizard.tsx     step machine shell
-│   │   ├── OnboardingStep.tsx       individual step wrapper
-│   │   └── EmptyFeedState.tsx       zero-state display
-│   │
-│   └── ui/                      KEEP existing; add if needed:
-│       └── badge.tsx            NEW if not present (for status pills)
-│
-└── lib/
-    ├── hooks/                   NEW directory
-    │   ├── use-realtime-feed.ts activity event RT subscription
-    │   └── use-context-pages.ts context page RT subscription
-    └── api.ts                   MODIFY: add team invite, onboarding endpoints
-```
-
-### Structure rationale
-
-- **`components/dashboard/`**: All new dashboard components land here, not in `app/`. The App Router convention is to keep components that are not layouts/pages outside the `app/` tree. This keeps `app/` as route declarations only.
-- **`lib/hooks/`**: Extracted hooks instead of inline `useEffect` in components. Each hook owns one subscription lifecycle. This prevents Strict Mode double-subscription bugs and makes testing straightforward.
-- **`(onboarding)/` route group**: Parentheses prevent `/onboarding` from inheriting dashboard layout (which requires onboarding to be complete). Route groups in Next.js App Router do not affect the URL — the page is accessible at `/onboarding`.
-- **No new shared UI primitives**: All new components compose existing `Button`, `Card`, `Input`, `Label` from `components/ui/`. Only add `Badge` if not already in shadcn install.
-
----
-
-## Architectural Patterns
-
-### Pattern 1: Theme Scope via Class Wrapper (not `html` element)
-
-**What:** Apply dark theme to a layout wrapper div rather than the `<html>` element. Each layout independently controls its theme.
-
-**When to use:** When different route groups need different themes in the same app. The root `<html>` in `app/layout.tsx` stays theme-neutral.
-
-**Trade-offs:**
-- Pro: Landing, auth, and dashboard can each have independent palettes with zero JavaScript
-- Pro: No theme flash — the class is server-rendered in the layout's HTML
-- Con: shadcn components that portal out of the DOM (tooltips, modals, comboboxes) may need special handling because portals render at `document.body`, outside the `.dark` wrapper
-
-**Handling portalled components:**
-
-The `@custom-variant dark (&:is(.dark *))` in `globals.css` (line 5) uses `:is()` which is a CSS selector, not a DOM ancestor check. This means it works for elements that are descendants in the DOM — portalled elements at `document.body` will NOT inherit dark theme. Fix:
-
-```typescript
-// For shadcn components with portal prop (Dialog, Popover, DropdownMenu):
-// Pass the wrapper element as the portal container
-
-// Option A: Apply .dark to body when dashboard is active
-// (simplest — mutate document.body.classList in a client component useEffect)
-
-// Option B: Pass portal container explicitly
-<DropdownMenuContent
-  className="..."
-  // Radix UI portal can target a specific element
-/>
-```
-
-Recommendation: Add `.dark` to `document.body` from a client component in the dashboard layout. This is a one-line fix that eliminates the portal problem entirely:
-
-```typescript
-// apps/web/src/components/dashboard/DarkModeApplier.tsx
-'use client'
-import { useEffect } from 'react'
-export function DarkModeApplier() {
-  useEffect(() => {
-    document.documentElement.classList.add('dark')
-    return () => document.documentElement.classList.remove('dark')
-  }, [])
-  return null
-}
-```
-
-Include this in dashboard layout. It adds `.dark` to `<html>` only when inside a dashboard route, and removes it on navigation away.
-
-### Pattern 2: Extract Supabase RT Hooks
-
-**What:** Each realtime subscription lives in a dedicated `lib/hooks/` file, not inline in a component. The hook encapsulates initial load + subscription setup + cleanup.
-
-**When to use:** Any time a component needs real-time data. Never write subscription `useEffect` directly in a page or compound component.
-
-**Trade-offs:**
-- Pro: Prevents accidental duplicate subscriptions (React Strict Mode fires effects twice in dev)
-- Pro: Hook is independently testable with a mock Supabase client
-- Pro: Multiple components can share the same hook without re-subscribing
-- Con: One more file per data entity
-
-**Example (already shown in Question 3 above — `use-realtime-feed.ts`)**
-
-### Pattern 3: Onboarding as Server-Side Guard
-
-**What:** Onboarding completion is checked in server components (layout.tsx files), not client-side. The check is a simple database row existence query, not middleware.
-
-**When to use:** Post-auth redirects where the condition is user-specific database state.
-
-**Trade-offs:**
-- Pro: No client-side redirect flash — the server renders the correct page immediately
-- Pro: Middleware stays lightweight (session refresh only, no DB calls)
-- Con: Every dashboard route request includes an extra Supabase query (acceptable — it is a single indexed row lookup by PK)
-
-### Pattern 4: Compound Component for Filtered Feed
-
-**What:** `ContextFeedProvider` wraps the feed area with a React context that holds filter state. `FilterBar` reads and writes it. `ContextFeedList` reads it for filtering. Neither child needs prop drilling.
-
-**When to use:** When sibling components need to share state without a global store or prop chains.
-
-**Trade-offs:**
-- Pro: Clean separation — filter UI and data display are decoupled
-- Pro: FilterBar can be moved to a different DOM location without prop refactoring
-- Con: Context re-renders all consumers on any filter change (acceptable given component count and size)
-
-**Example structure:**
-
-```typescript
-// components/dashboard/ContextFeedProvider.tsx
-'use client'
-import { createContext, useContext, useState } from 'react'
-
-const ContextFeedContext = createContext<ContextFeedContextValue | null>(null)
-
-export function ContextFeedProvider({ children }: { children: React.ReactNode }) {
-  const [filter, setFilterState] = useState<SourceFilter>({
-    all: true, linear: true, slack: true, github: true, notion: true,
-  })
-
-  function setFilter(update: Partial<SourceFilter>) {
-    setFilterState((prev) => ({ ...prev, ...update }))
-  }
-
-  return (
-    <ContextFeedContext.Provider value={{ filter, setFilter }}>
-      {children}
-    </ContextFeedContext.Provider>
+### Graph Traversal Function (Recursive CTE)
+
+```sql
+-- Multi-hop graph traversal from a starting node
+CREATE OR REPLACE FUNCTION public.traverse_graph(
+  start_node_id UUID,
+  match_workspace_id UUID,
+  max_depth INT DEFAULT 2,
+  edge_types TEXT[] DEFAULT NULL,
+  node_types TEXT[] DEFAULT NULL
+)
+RETURNS TABLE (
+  node_id UUID,
+  entity_type TEXT,
+  canonical_name TEXT,
+  properties JSONB,
+  depth INT,
+  path_edge_types TEXT[],    -- relationship types along the path
+  path_node_ids UUID[]       -- node IDs along the path
+) AS $$
+BEGIN
+  RETURN QUERY
+  WITH RECURSIVE graph_walk AS (
+    -- Anchor: start node
+    SELECT
+      n.id AS node_id,
+      n.entity_type,
+      n.canonical_name,
+      n.properties,
+      0 AS depth,
+      ARRAY[]::TEXT[] AS path_edge_types,
+      ARRAY[n.id] AS path_node_ids
+    FROM public.graph_nodes n
+    WHERE n.id = start_node_id
+      AND n.workspace_id = match_workspace_id
+      AND n.deleted_at IS NULL
+
+    UNION ALL
+
+    -- Recursive: follow edges in both directions
+    SELECT
+      n2.id,
+      n2.entity_type,
+      n2.canonical_name,
+      n2.properties,
+      gw.depth + 1,
+      gw.path_edge_types || e.relationship_type,
+      gw.path_node_ids || n2.id
+    FROM graph_walk gw
+    JOIN public.graph_edges e ON (
+      (e.source_node_id = gw.node_id OR e.target_node_id = gw.node_id)
+      AND e.workspace_id = match_workspace_id
+    )
+    JOIN public.graph_nodes n2 ON (
+      n2.id = CASE
+        WHEN e.source_node_id = gw.node_id THEN e.target_node_id
+        ELSE e.source_node_id
+      END
+    )
+    WHERE gw.depth < max_depth
+      AND e.deleted_at IS NULL
+      AND n2.deleted_at IS NULL
+      AND NOT (n2.id = ANY(gw.path_node_ids))  -- cycle prevention
+      AND (edge_types IS NULL OR e.relationship_type = ANY(edge_types))
+      AND (node_types IS NULL OR n2.entity_type = ANY(node_types))
   )
-}
-
-export function useContextFeed() {
-  const ctx = useContext(ContextFeedContext)
-  if (!ctx) throw new Error('useContextFeed must be inside ContextFeedProvider')
-  return ctx
-}
+  SELECT DISTINCT ON (gw2.node_id) gw2.*
+  FROM graph_walk gw2
+  WHERE gw2.depth > 0  -- exclude start node from results
+  ORDER BY gw2.node_id, gw2.depth;  -- prefer shortest path
+END;
+$$ LANGUAGE plpgsql;
 ```
 
 ---
 
 ## Data Flow
 
-### Onboarding Completion Flow
+### Entity Extraction Flow (NEW)
 
 ```
-New user signs up / first login
-    │
-    ▼
-DB trigger creates user_onboarding_state row (step_reached=1, completed_at=NULL)
-    │
-    ▼
-Dashboard layout.tsx (server) checks completed_at → NULL → redirect('/onboarding')
-    │
-    ▼
-User completes 3 steps in OnboardingWizard
-    │
-    ├─ Step 1: PATCH /api/user/profile → updates auth.users metadata via Supabase Admin
-    ├─ Step 2: Connect integration (re-uses existing lib/api.ts connect functions)
-    └─ Step 3: Save preferences → PATCH user_onboarding_state set preferences=..., completed_at=now()
-    │
-    ▼
-redirect('/dashboard') → layout check passes → dashboard renders
+1. Source data arrives (webhook or sync)
+     |
+2. Existing flow: store in source table, generate embedding
+     |
+3. NEW: Trigger entity extraction (async, after commit)
+     |
+4. Rule-based extractors run first (cheap, fast, deterministic):
+     - Ticket IDs (regex: [A-Z]+-\d+) -> ticket node + mentioned_in edge
+     - @mentions (Slack user IDs) -> person node + mentioned_in edge
+     - GitHub logins (@username in PR body) -> person node + authored/reviewed edge
+     - PR numbers (#\d+ with repo context) -> code_artifact node
+     - File paths (src/..., *.py patterns) -> file node
+     - URLs (github.com/owner/repo/...) -> code_artifact or repository node
+     |
+5. LLM extractors run second (for semantic entities, filtered content only):
+     - Decision extraction from messages >50 chars containing decision signals
+     - Concept/feature extraction from tickets and discussions
+     - Relationship inference (who decided what, who is blocking whom)
+     |
+6. Identity resolution:
+     - Match extracted person against existing graph_nodes in workspace
+     - Deterministic merge: email, Slack user_id, GitHub login (confidence=1.0)
+     - Fuzzy merge: name similarity Jaro-Winkler >0.85, verified per workspace
+     - Create 'same_as' edges for merged identities
+     - Aggregate properties JSONB across sources
+     |
+7. Upsert nodes and edges into graph tables (fingerprint-based dedup)
 ```
 
-### Real-time Activity Feed Flow
+### Graph-Enhanced Retrieval Flow (MODIFIED find_related_content)
 
 ```
-Backend event occurs (context page ready, integration connected, etc.)
-    │
-    ▼
-FastAPI route/task calls emit_activity() → INSERT into activity_events
-    │
-    ▼
-Supabase Postgres → Realtime publication → WebSocket broadcast to subscribed clients
-    │
-    ▼
-useRealtimeFeed hook receives INSERT payload
-    │
-    ▼
-setEvents((prev) => [newEvent, ...prev].slice(0, 50))
-    │
-    ▼
-ActivityPanel re-renders with new event at top
+1. find_related_content() called for a ticket (EXISTING entry point)
+     |
+2. EXISTING: Find explicit references (PRs, comments, Slack mentions)
+3. EXISTING: Run hybrid_search() (vector + full-text)
+     |
+4. NEW: Graph signal
+     a. Find graph_node for this ticket (by source_type='linear_ticket', source_id=ticket.id)
+     b. Call traverse_graph() with max_depth=2
+     c. For each discovered node:
+        - If node has source_type + source_id -> look up the source record
+        - Build LinkedItem with relevance = WEIGHT_GRAPH * edge_weight * depth_decay
+     d. Separately collect decision trail nodes (entity_type='decision')
+     e. Separately collect person involvement (entity_type='person')
+     f. Return graph-discovered items + structured graph context
+     |
+5. MODIFIED: Merge all three signals (explicit + hybrid + graph)
+     - Graph items scored with WEIGHT_GRAPH = 0.9
+     - Items found by multiple signals get boosted scores
+     |
+6. MODIFIED: Pass graph context to synthesis
+     - Decision trail (decision nodes connected to this ticket + path info)
+     - People involvement (person nodes + their relationship types)
+     - Cross-source connections (e.g., "Daulet discussed in #eng -> decided in standup -> PR'd in repo")
 ```
 
-### Context Feed Filter Flow
+### Identity Resolution Flow (NEW)
 
 ```
-User clicks [Slack] toggle in FilterBar
-    │
-    ▼
-FilterBar calls setFilter({ slack: false, all: false })
-    │
-    ▼
-ContextFeedContext value updates
-    │
-    ▼
-ContextFeedList re-renders → applyFilter(pages, filter) runs client-side
-    │
-    ▼
-Filtered list renders (no network request, instant)
-```
-
-### Auth Page Dark Theme Flow
-
-```
-User navigates to /login
-    │
-    ▼
-(auth)/layout.tsx renders with .dark wrapper div
-    │
-    ▼
-DarkModeApplier (client component) runs useEffect → adds .dark to <html>
-    │
-    ▼
-All shadcn tokens (Card, Input, Button) resolve to .dark values
-Landing CSS (.landing-theme) is NOT imported in auth layout → no teal bleed
+1. On first ingest of a person reference:
+     - Extract identifiers: email, Slack user_id, GitHub login, Linear display name
+     - Look up in properties JSONB of existing person nodes in workspace
+     |
+2. Deterministic matching (auto-merge, confidence=1.0):
+     - Same email -> same person
+     - Same Slack user_id (U...) -> same person
+     - Same GitHub login -> same person
+     - Merge: update properties JSONB to union all identifiers
+     |
+3. Fuzzy matching (candidate, confidence<1.0):
+     - Name similarity only (Jaro-Winkler > 0.85)
+     - Within same workspace only
+     - Create 'same_as' edge with candidate confidence
+     - Do NOT auto-merge -- flag for review or LLM verification
+     |
+4. No match -> create new person node with available identifiers
+     |
+5. Edge consolidation: when two nodes merge, redirect edges from
+   the deprecated node to the canonical node (or keep both and
+   resolve at query time via same_as traversal)
 ```
 
 ---
 
-## Integration Points: New vs. Existing
+## Patterns to Follow
 
-### What stays unchanged
+### Pattern 1: Async Post-Ingest Hook
 
-| Existing Component | Reason Not Changed |
-|-------------------|-------------------|
-| `lib/supabase/client.ts` | Same browser client, no changes |
-| `lib/supabase/server.ts` | Same server client, no changes |
-| `lib/supabase/middleware.ts` | Session refresh only, onboarding check is in layouts not middleware |
-| `lib/api.ts` | All existing functions kept. New team/onboarding endpoints appended. |
-| `dashboard/integrations/` | All integration cards unchanged |
-| `dashboard/context/page.tsx` | Ticket lookup page unchanged |
-| `components/landing/` | Untouched |
-| `landing.css` | Untouched |
-| `(landing)/layout.tsx` | Untouched |
+**What:** Entity extraction runs as a background task triggered after source data is committed, not inline with the webhook handler.
 
-### New backend endpoints needed
+**When:** Every time new data arrives (webhook, sync, manual import).
 
-These are small additions to the FastAPI backend:
+**Why:** Entity extraction (especially LLM calls) is slow (200ms-2s). Webhook handlers must respond within 3 seconds. Running extraction inline would timeout.
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/user/onboarding` | GET | Fetch user onboarding state |
-| `/api/user/onboarding` | PATCH | Update step, preferences, mark complete |
-| `/api/user/profile` | PATCH | Update full name (writes to Supabase Auth metadata) |
-| `/api/team/members` | GET | List workspace members |
-| `/api/team/invite` | POST | Send email invite (Supabase Auth invite) |
-| `/api/apikeys` | GET/POST/DELETE | API key management (if not yet built) |
+**Example:**
+```python
+# In webhook handler (e.g., slack_events.py after storing message)
+from src.services.graph.extraction import extract_entities_from_source
 
-The `emit_activity()` helper is called internally — not a new public API endpoint.
+async def handle_slack_message(session, workspace_id, message_data):
+    # 1. Store message (existing)
+    msg = await store_slack_message(session, workspace_id, message_data)
+    await session.commit()
 
-### New Supabase tables
-
-| Table | Purpose | RLS |
-|-------|---------|-----|
-| `user_onboarding_state` | Per-user onboarding progress | `auth.uid() = user_id` |
-| `activity_events` | Append-only event log for RT feed | Workspace membership check |
-
-Both tables need to be added to the Supabase Realtime publication if they require real-time (only `activity_events` does).
-
----
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| 0-100 users | Current pattern handles this comfortably. Each user gets one WebSocket for activity feed + one for context pages. Total: 200 open connections at 100 users. Supabase Pro handles this. |
-| 100-1000 users | Activity feed subscriptions start to cost. Evaluate moving high-volume event types (Slack message ingested, embedding generated) to server-side batching rather than per-event rows. Dashboard should only show user-facing events. |
-| 1000+ users | Consider event aggregation (e.g., "5 new context pages ready" instead of 5 individual rows) to reduce WebSocket message volume. Partition `activity_events` by workspace for query performance. |
-
-### Scaling priorities for this milestone
-
-1. **RT connection count:** The `useRealtimeFeed` + `useContextPages` hooks each open a channel. A single user visiting the dashboard creates 2 WebSocket multiplexed channels on 1 connection (Supabase multiplexes channels over one WS). This is fine.
-2. **`activity_events` table growth:** With high-activity workspaces, this table grows quickly. Add a 30-day retention policy from the start (pg_cron job or Supabase scheduled function).
-3. **Onboarding redirect query:** 1 indexed PK lookup per dashboard page load. Negligible.
-
----
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Applying `.dark` to `<html>` globally in root layout
-
-**What people do:** Add `className="dark"` to the `<html>` tag in `app/layout.tsx` to enable dark mode everywhere.
-
-**Why it is wrong:** This forces dark mode on the landing page too, overriding the `.landing-theme` variables and destroying the marketing page palette. The two dark themes (landing teal vs. dashboard blue-gray) must never coexist at the root level.
-
-**Do this instead:** Apply `.dark` in each route group layout independently. Use `DarkModeApplier` client component to also apply it to `<html>` for portal support, mounted/unmounted per route.
-
-### Anti-Pattern 2: Writing RT subscriptions inline in page components
-
-**What people do:** Put the `useEffect` with `supabase.channel().on().subscribe()` directly inside `page.tsx` or a compound component.
-
-**Why it is wrong:** React Strict Mode fires effects twice in development, creating duplicate subscriptions. The cleanup function is easy to forget. The subscription logic cannot be tested independently.
-
-**Do this instead:** Extract to `lib/hooks/use-realtime-feed.ts`. The hook returns data and handles all lifecycle. Components only call the hook.
-
-### Anti-Pattern 3: Putting onboarding check in middleware
-
-**What people do:** Add a database query in `middleware.ts` to check `user_onboarding_state` on every request.
-
-**Why it is wrong:** Middleware runs on EVERY request including `_next/static` (CSS, JS), `_next/image`, and API routes. Adding a DB call multiplies database load unnecessarily. Middleware is also an edge function — it cannot easily use the full server-side Supabase client that handles cookie-based session refresh.
-
-**Do this instead:** Check in `dashboard/layout.tsx` (server component). Only dashboard page navigations trigger this check. Static assets are excluded by the middleware `matcher` config (already in place).
-
-### Anti-Pattern 4: Fetching context pages on every filter change
-
-**What people do:** Make a new Supabase query with a `WHERE source_type = ?` clause each time the user toggles a filter.
-
-**Why it is wrong:** Filter changes should be instant (< 16ms). Network round-trips introduce 50-200ms latency per change. For a feed of 100 items, client-side filtering is fast and avoids query complexity.
-
-**Do this instead:** Load up to 100 context pages once (with realtime subscription keeping it current), filter client-side using the `applyFilter()` pure function. Only paginate if the workspace has > 200 context pages.
-
-### Anti-Pattern 5: Nesting `.landing-theme` and `.dark` tokens
-
-**What people do:** Import `landing.css` in the dashboard layout "for consistency" or accidentally import `globals.css` from a landing component.
-
-**Why it is wrong:** `.landing-theme` overrides `--primary` to teal `#00D4AA`. If `.landing-theme` and `.dark` are both ancestors, teal primary bleeds into dashboard components. Auth pages with teal buttons look wrong.
-
-**Do this instead:** Never import `landing.css` in non-landing layouts. The `(landing)/layout.tsx` is the only file that imports it (`import '../landing.css'`). Keep it that way.
-
----
-
-## Build Order (This Milestone)
-
-Dependencies determine the order. Dark theme tokens must come before any visual component work.
-
-```
-Step 1: Token foundation (no dependencies)
-├── Audit .dark block in globals.css — verify sidebar tokens are complete
-├── Add DarkModeApplier client component
-└── Apply .dark to dashboard/layout.tsx wrapper + verify all shadcn components render correctly
-
-Step 2: Auth page redesign (depends on Step 1)
-├── Modify (auth)/layout.tsx — add .dark wrapper + DarkModeApplier
-├── Redesign login/page.tsx — dark card treatment
-└── Redesign signup/page.tsx — dark card treatment
-
-Step 3: Onboarding infrastructure (depends on Step 1)
-├── Create user_onboarding_state table + RLS + trigger
-├── Add onboarding gate to dashboard/layout.tsx
-├── Create (onboarding)/layout.tsx with inverse gate
-└── Add /api/user/onboarding endpoints to FastAPI
-
-Step 4: Onboarding wizard (depends on Step 3)
-├── OnboardingWizard.tsx (step shell + progress bar)
-├── OnboardingStep.tsx (step 1 — profile)
-├── OnboardingStep.tsx (step 2 — integrations, re-uses api.ts connect functions)
-└── OnboardingStep.tsx (step 3 — preferences + complete)
-
-Step 5: Activity feed infrastructure (depends on Step 1)
-├── Create activity_events table + RLS + index + realtime publication
-├── Implement emit_activity() in FastAPI backend
-└── Wire emit_activity() to existing context_page generation + integration connect handlers
-
-Step 6: Activity feed UI (depends on Step 5)
-├── use-realtime-feed.ts hook
-├── ActivityPanel.tsx + ActivityEventRow.tsx
-└── Integrate ActivityPanel into dashboard/page.tsx
-
-Step 7: Context feed (depends on Step 1 for dark theme)
-├── ContextFeedProvider.tsx (context + state)
-├── FilterBar.tsx (source type toggles)
-├── use-context-pages.ts hook (RT subscription)
-├── ContextFeedList.tsx + ContextFeedItem.tsx
-└── Integrate ContextFeed into dashboard/page.tsx
-
-Step 8: New pages (depends on Steps 1, 7)
-├── dashboard/settings/page.tsx (API keys, preferences)
-├── dashboard/team/page.tsx (members, invite)
-└── Update sidebar.tsx to include Team + Settings nav items
+    # 2. Queue entity extraction (new, non-blocking)
+    background_tasks.add_task(
+        extract_entities_from_source,
+        workspace_id=workspace_id,
+        source_type="slack_message",
+        source_id=msg.id,
+    )
 ```
 
-**Critical path:** Step 1 (tokens) → Step 2 (auth) or Step 3 (onboarding) → Step 4 (wizard) → Steps 5-8 (feed features) can partially parallelize.
+### Pattern 2: Rule-First, LLM-Second Extraction
 
-Steps 6 and 7 are independent once Step 5's infrastructure exists.
+**What:** Run cheap regex/pattern extractors before expensive LLM calls. Only invoke LLM for content that passes a relevance filter.
+
+**When:** Processing any source content for entity extraction.
+
+**Why:** Rule-based extraction is free, instant, and deterministic. LLM extraction costs money and is non-deterministic. For structured references (ticket IDs, @mentions, PR numbers), rules are more reliable than LLMs anyway.
+
+**Example:**
+```python
+async def extract_entities(
+    session: AsyncSession,
+    workspace_id: UUID,
+    source_type: str,
+    source_id: UUID,
+    text: str,
+) -> list[ExtractedEntity]:
+    entities = []
+
+    # Phase 1: Rules (free, instant, deterministic)
+    entities.extend(extract_ticket_refs(text))       # regex: [A-Z]+-\d+
+    entities.extend(extract_slack_mentions(text))     # regex: <@U[A-Z0-9]+>
+    entities.extend(extract_pr_refs(text))            # regex: #\d+, github.com/.../pull/\d+
+    entities.extend(extract_file_paths(text))         # regex: [\w/]+\.\w{1,4}
+
+    # Phase 2: LLM (expensive, only for high-value content)
+    if _should_run_llm_extraction(source_type, text):
+        llm_entities = await _llm_extract_decisions_and_concepts(text)
+        entities.extend(llm_entities)
+
+    return entities
+
+
+def _should_run_llm_extraction(source_type: str, text: str) -> bool:
+    """Only run LLM extraction on content likely to contain decisions/concepts."""
+    if len(text) < 50:
+        return False
+    if source_type == "meeting_segment" and len(text) < 100:
+        return False
+
+    # Decision signal words
+    decision_signals = ["decided", "agreed", "we should", "the plan is",
+                        "going with", "approved", "let's", "action item",
+                        "conclusion", "resolution"]
+    text_lower = text.lower()
+    return any(signal in text_lower for signal in decision_signals)
+```
+
+### Pattern 3: Fingerprint-Based Deduplication
+
+**What:** Each graph node has a deterministic fingerprint (hash of entity_type + normalized_name + workspace_id). Upserts use `ON CONFLICT (workspace_id, fingerprint) DO UPDATE` to prevent duplicates.
+
+**When:** Every entity extraction writes to the graph.
+
+**Why:** The same person/decision/concept will be extracted from multiple sources. Without deduplication, the graph would be full of duplicate nodes that fragment relationships.
+
+**Example:**
+```python
+import hashlib
+
+def compute_node_fingerprint(
+    entity_type: str,
+    canonical_name: str,
+    workspace_id: UUID,
+) -> str:
+    """Deterministic hash for graph node dedup."""
+    normalized = canonical_name.lower().strip()
+    raw = f"{entity_type}:{normalized}:{workspace_id}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+```
+
+### Pattern 4: Blended Scoring with Depth Decay
+
+**What:** Graph-discovered items are scored with a weight that decays by hop distance. Direct connections (depth=1) score higher than 2-hop connections.
+
+**When:** Graph retrieval returns items for the linking engine.
+
+**Why:** A person directly assigned to a ticket is more relevant than someone who commented on a related PR two hops away. Depth decay prevents distant connections from drowning out direct relationships.
+
+**Example:**
+```python
+WEIGHT_GRAPH = 0.9       # between explicit (1.0) and hybrid (0.8)
+DEPTH_DECAY = 0.6        # each hop multiplies by this factor
+
+def score_graph_item(edge_weight: float, depth: int) -> float:
+    """Score a graph-discovered item with depth decay."""
+    return WEIGHT_GRAPH * edge_weight * (DEPTH_DECAY ** (depth - 1))
+    # depth=1: 0.9 * 1.0 * 1.0   = 0.90  (strong signal)
+    # depth=2: 0.9 * 1.0 * 0.6   = 0.54  (moderate signal)
+    # depth=3: 0.9 * 1.0 * 0.36  = 0.32  (weak, probably cap at 2)
+```
+
+### Pattern 5: LLM Extraction via Structured Output
+
+**What:** Use the LLM's structured output (JSON mode) for entity extraction, not free-text parsing.
+
+**When:** Running LLM-based extraction for decisions and concepts.
+
+**Why:** Structured output guarantees the response matches the expected schema. No post-processing regex needed. Gemini and GPT-4o both support this well.
+
+**Example:**
+```python
+EXTRACTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "decisions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "status": {"type": "string", "enum": ["decided", "proposed", "rejected"]},
+                    "people_involved": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["text", "status"],
+            },
+        },
+        "concepts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+}
+
+async def _llm_extract_decisions_and_concepts(text: str) -> list[ExtractedEntity]:
+    """Extract decisions and concepts using structured LLM output."""
+    llm = get_llm_client()
+    response = await llm._client.chat.completions.create(
+        model=llm.model_name,
+        messages=[
+            {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
+            {"role": "user", "content": text},
+        ],
+        response_format={"type": "json_schema", "json_schema": {"name": "extraction", "schema": EXTRACTION_SCHEMA}},
+    )
+    # Parse structured response into ExtractedEntity objects
+    ...
+```
+
+---
+
+## Anti-Patterns to Avoid
+
+### Anti-Pattern 1: Synchronous Graph Extraction in Webhook Handlers
+
+**What:** Running entity extraction + graph writes inline with webhook processing.
+
+**Why bad:** LLM extraction calls take 500ms-2s. Slack expects webhook responses within 3 seconds. GitHub webhooks timeout at 10 seconds. Inline processing will cause webhook failures, data loss, and retry storms.
+
+**Instead:** Store source data first, commit, then trigger extraction as a background task via `BackgroundTasks`. The graph is eventually consistent (seconds, not minutes).
+
+### Anti-Pattern 2: Replacing Hybrid Search with Graph-Only Retrieval
+
+**What:** Removing or deprioritizing vector + full-text search in favor of graph traversal.
+
+**Why bad:** Graph retrieval only finds entities that have been explicitly extracted and linked. New content has no graph connections yet. Hybrid search works on raw content and catches things the graph misses. The graph supplements search; it does not replace it.
+
+**Instead:** Graph is a third signal in the linking engine, blended with existing explicit refs (weight=1.0) and hybrid search (weight=0.8). The existing retrieval pipeline is the fallback.
+
+### Anti-Pattern 3: Over-Extracting Entities with LLM
+
+**What:** Running LLM extraction on every incoming message, including short replies, bot notifications, emoji reactions, and status updates.
+
+**Why bad:** Most Slack messages are noise ("sounds good", "done", "thanks", bot automated messages). LLM extraction on these wastes money ($0.001-0.01 per call adds up) and fills the graph with low-value nodes. At scale with an active Slack workspace, this becomes expensive quickly.
+
+**Instead:** Filter before extraction. Only run LLM extraction on: messages > 50 characters, non-bot messages, messages containing decision signal words, meeting transcript segments > 100 characters. Rule-based extraction runs on everything (it is free).
+
+### Anti-Pattern 4: Eager Identity Merging on Fuzzy Name Matches
+
+**What:** Automatically merging person nodes when names are similar (e.g., "Dan" and "Daniel", or "Alex Kim" and "Alex Chen").
+
+**Why bad:** False merges corrupt the graph. If "Dan Smith" and "Daniel Jones" are incorrectly merged, all of Daniel Jones's edges now point to Dan Smith. Recovering from bad merges requires manual edge surgery. At a 3-person team this is manageable; at 50+ it is catastrophic.
+
+**Instead:** Only auto-merge on deterministic signals (same email, same Slack user_id, same GitHub login). For fuzzy name matches, create a candidate `same_as` edge with confidence < 1.0 and leave it unmerged. Query-time resolution can follow `same_as` edges when needed.
+
+### Anti-Pattern 5: Building Graph Explorer UI Before Backend Works
+
+**What:** Starting with a React graph visualization component before the graph is populated with real data.
+
+**Why bad:** You cannot build a meaningful UI without real graph data to test against. The graph schema, traversal queries, and extraction pipeline all need to work first. A graph explorer built against mock data will need to be rewritten once real data shapes are understood.
+
+**Instead:** Build the backend pipeline first (schema -> extraction -> identity resolution -> retrieval). Verify the graph quality by inspecting data directly (SQL queries, API endpoints returning JSON). Only then build the visual explorer as a stretch goal.
+
+---
+
+## Integration Points with Existing Code (Detailed)
+
+### 1. MODIFIED: `backend/src/services/linking.py`
+
+Add graph signal as a third retrieval path in `find_related_content()`:
+
+```python
+# Add import
+from src.services.graph.retrieval import find_graph_connections
+
+WEIGHT_GRAPH = 0.9  # NEW constant
+
+async def find_related_content(session, workspace_id, ticket) -> LinkingResult:
+    explicit = await _find_explicit_refs(session, workspace_id, ticket)
+    hybrid = await _find_hybrid_matches(session, workspace_id, ticket)
+    graph = await find_graph_connections(session, workspace_id, ticket)  # NEW
+
+    merged = {}
+    for source, signal_items in [
+        ("explicit", explicit),
+        ("hybrid", hybrid),
+        ("graph", graph),       # NEW third signal
+    ]:
+        for key, item in signal_items.items():
+            if key in merged:
+                existing = merged[key]
+                existing.relevance_score += item.relevance_score
+                existing.signals.extend(item.signals)
+            else:
+                merged[key] = item
+
+    sorted_items = sorted(merged.values(), key=lambda x: x.relevance_score, reverse=True)
+    return LinkingResult(
+        ticket_id=ticket.id,
+        ticket_identifier=ticket.identifier,
+        items=sorted_items,
+    )
+```
+
+### 2. MODIFIED: `backend/src/services/synthesis.py`
+
+Extend the synthesis template with graph-derived sections:
+
+```python
+# Additional prompt block appended when graph context is available
+GRAPH_CONTEXT_SECTION = """
+### Decision Trail
+{decision_trail}
+
+### Key People & Involvement
+{people_involvement}
+
+### Cross-Source Connections
+{relationship_paths}
+"""
+```
+
+The `generate_context_page()` function needs to:
+- Accept optional `GraphContext` data from the linking result
+- Append decision trails, people involvement, and relationship paths to the prompt
+- Only include these sections when graph data is available (graceful degradation)
+
+### 3. MODIFIED: Webhook Handlers
+
+Each webhook handler adds a `BackgroundTasks` call for entity extraction. Files affected:
+- `backend/src/services/slack_events.py` -- after storing Slack messages
+- `backend/src/services/linear_webhook.py` -- after processing ticket/comment updates
+- `backend/src/services/github_webhook.py` -- after processing PR/review events
+- `backend/src/services/notion_webhook.py` -- after processing page updates
+- `backend/src/services/fathom.py` -- after storing meeting transcripts
+
+### 4. MODIFIED: `backend/src/routers/context.py`
+
+Add an optional API endpoint for graph data around a ticket (for frontend graph explorer):
+```
+GET /api/context/{ticket_identifier}/graph
+```
+
+### 5. MODIFIED: `supabase/migrations/` -- New Migration
+
+A new migration `00017_graph_tables.sql` creates:
+- `graph_nodes` table with all columns, constraints, indexes, RLS
+- `graph_edges` table with all columns, constraints, indexes, RLS
+- `traverse_graph()` function
+- Updated triggers
+
+### 6. NEW: `backend/src/models/graph.py`
+
+SQLModel classes:
+- `GraphNode` -- maps to `graph_nodes` table
+- `GraphEdge` -- maps to `graph_edges` table
+
+### 7. NEW: `backend/src/services/graph/` package
+
+- `extraction.py` -- rule-based + LLM entity extraction
+- `identity.py` -- cross-source person identity resolution
+- `retrieval.py` -- graph traversal via recursive CTE, returns `LinkedItem` dicts
+- `decisions.py` -- decision-specific extraction logic and formatting
+- `schema.py` -- entity type enums, relationship type enums, extraction schemas
+
+---
+
+## Suggested Build Order
+
+Based on dependency analysis, the components should be built in this sequence:
+
+1. **Graph Schema + Models** (no dependencies, unblocks everything)
+   - Migration: `graph_nodes` and `graph_edges` tables with RLS, indexes
+   - SQLModel classes: `GraphNode`, `GraphEdge`
+   - Traversal function: `traverse_graph()` SQL function
+   - Estimated effort: small
+
+2. **Rule-Based Entity Extraction** (depends on: graph schema)
+   - Regex extractors for ticket IDs, @mentions, PR numbers, file paths
+   - Node/edge upsert logic with fingerprint deduplication
+   - Integration with webhook handlers via `BackgroundTasks`
+   - High value, zero LLM cost -- populates graph immediately
+   - Estimated effort: medium
+
+3. **Identity Resolution** (depends on: entity extraction producing person nodes)
+   - Deterministic matching (email, Slack user_id, GitHub login)
+   - Person node merging with `same_as` edges
+   - Properties JSONB aggregation across sources
+   - Estimated effort: medium
+
+4. **Graph-Enhanced Retrieval** (depends on: graph schema + some populated nodes)
+   - `find_graph_connections()` function
+   - Blended scoring with depth decay
+   - Modify `find_related_content()` to include graph signal
+   - Estimated effort: medium
+
+5. **LLM Entity Extraction** (depends on: rule-based extraction pipeline working)
+   - Decision extraction from Slack messages and meeting transcripts
+   - Concept/feature extraction
+   - Structured output via LLM client (JSON mode)
+   - Content filtering (only run on high-value messages)
+   - Estimated effort: medium-high
+
+6. **Updated Synthesis Prompts** (depends on: graph retrieval integrated in linking)
+   - Decision trail section in context pages
+   - People involvement section
+   - Relationship path descriptions
+   - Graceful degradation when no graph data exists
+   - Estimated effort: small-medium
+
+7. **Graph Explorer UI** (stretch -- depends on: graph populated + retrieval working)
+   - API endpoint returning graph data around a ticket
+   - React component for graph visualization
+   - Estimated effort: high (frontend)
 
 ---
 
 ## Sources
 
-- Supabase Realtime Postgres Changes (official docs, HIGH confidence): https://supabase.com/docs/guides/realtime/postgres-changes
-- Supabase Realtime cleanup pattern (official docs): "ensure you free up resources" via `supabase.removeChannel(channel)`
-- Tailwind v4 scoped theming pattern (Wawand.co, verified against official Tailwind docs, MEDIUM confidence): https://wawand.co/blog/posts/managing-multiple-portals-with-tailwind/
-- shadcn/ui Tailwind v4 dark mode (official docs, HIGH confidence): https://ui.shadcn.com/docs/tailwind-v4
-- Next.js Route Groups (official docs, HIGH confidence): https://nextjs.org/docs/app/api-reference/file-conventions/route-groups
-- Compound Component Pattern (patterns.dev, HIGH confidence): https://www.patterns.dev/react/compound-pattern/
-- Codebase analysis: direct inspection of `globals.css`, `landing.css`, `(landing)/layout.tsx`, `(auth)/layout.tsx`, `dashboard/layout.tsx`, `lib/supabase/client.ts`, `lib/supabase/server.ts`, `lib/api.ts`, `middleware.ts` (HIGH confidence — ground truth)
+- [Supabase Extensions Documentation](https://supabase.com/docs/guides/database/extensions) -- AGE not available (HIGH confidence)
+- [Supabase Discussion on AGE](https://github.com/orgs/supabase/discussions/40285) -- confirmed not installable (HIGH confidence)
+- [Supabase Discussion #13263](https://github.com/orgs/supabase/discussions/13263) -- AGE not supported, workarounds discussed (HIGH confidence)
+- [postgres-graph-rag library](https://github.com/h4gen/postgres-graph-rag) -- pure PG graph RAG approach validated (HIGH confidence)
+- [Graph Retrieval with Recursive CTEs](https://www.sheshbabu.com/posts/graph-retrieval-using-postgres-recursive-ctes/) -- SQL traversal patterns (HIGH confidence)
+- [Knowledge Graphs with PostgreSQL](https://app.readytensor.ai/publications/knowledge-graphs-with-postgresql-eQyINuo4ojwW) -- nodes/edges table approach (HIGH confidence)
+- [LangChain LLMGraphTransformer](https://python.langchain.com/api_reference/experimental/graph_transformers/langchain_experimental.graph_transformers.llm.LLMGraphTransformer.html) -- entity extraction patterns (MEDIUM confidence)
+- [GraphRAG Intro](https://graphrag.com/concepts/intro-to-graphrag/) -- retrieval architecture patterns (HIGH confidence)
+- [GraphRAG at Scale](https://particula.tech/blog/graphrag-implementation-enterprise-data-platform) -- identity resolution is the hardest part (MEDIUM confidence)
+- [Entity Resolved Knowledge Graphs (Neo4j)](https://neo4j.com/blog/developer/entity-resolved-knowledge-graphs/) -- identity resolution patterns (MEDIUM confidence)
+- [Google Gemini Structured Outputs](https://blog.google/technology/developers/gemini-api-structured-outputs/) -- entity extraction with structured output (HIGH confidence)
+- [LangExtract by Google](https://developers.googleblog.com/en/introducing-langextract-a-gemini-powered-information-extraction-library/) -- Gemini extraction library (MEDIUM confidence)
+- [Gemini Large-Scale Entity Extraction](https://www.sweetspot-data.com/blog/gemini-les-miserables-graph) -- Gemini 2.5 Flash for graph construction (MEDIUM confidence)
+- [source{d} Identity Matching](https://github.com/src-d/identity-matching) -- Git signature to person matching approach (LOW confidence, archived project)
+- [Supabase pgrouting blog](https://supabase.com/blog/pgrouting-postgres-graph-database) -- Supabase's own approach to graph in Postgres (HIGH confidence)
 
 ---
 
-*Architecture research for: ContextOS dashboard dark theme, onboarding, activity feed milestone*
-*Researched: 2026-03-04*
+*Architecture research: 2026-03-06*

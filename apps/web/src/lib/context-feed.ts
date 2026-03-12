@@ -73,10 +73,14 @@ export async function fetchContextPages(): Promise<ContextPageRow[]> {
 export async function fetchContextPageById(id: string) {
   const supabase = createClient()
 
+  // Determine if id is a UUID or a ticket identifier (e.g. "CON-60")
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+  const column = isUUID ? 'id' : 'ticket_identifier'
+
   const { data, error } = await supabase
     .from('context_pages')
     .select('*')
-    .eq('id', id)
+    .eq(column, id)
     .is('deleted_at', null)
     .single()
 

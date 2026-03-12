@@ -33,6 +33,9 @@ export function SlackChannels({ onSaved }: SlackChannelsProps) {
     try {
       const data = await getSlackChannels()
       setChannels(data.channels || [])
+      if (data.selected_channels) {
+        setSelectedIds(new Set(data.selected_channels))
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load channels')
     } finally {
