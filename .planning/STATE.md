@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: executing
-stopped_at: Completed 28-01-PLAN.md
-last_updated: "2026-03-12T10:34:20.422Z"
+stopped_at: Completed 30-01-PLAN.md
+last_updated: "2026-03-12T10:53:59.756Z"
 last_activity: 2026-03-12 -- Completed 28-01 (GitLab Code Indexing Backend)
 progress:
   total_phases: 16
   completed_phases: 12
-  total_plans: 39
-  completed_plans: 37
+  total_plans: 41
+  completed_plans: 38
   percent: 97
 ---
 
@@ -93,6 +93,7 @@ Progress: [██████████] 97%
 | Phase 29 P06 | 3min | 2 tasks | 4 files |
 | Phase 29 P05 | 4min | 2 tasks | 3 files |
 | Phase 28 P02 | 2min | 2 tasks | 3 files |
+| Phase 30 P01 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -193,6 +194,9 @@ Recent decisions affecting current work:
 - [Phase 28]: GitLab project selection uses numeric Set<number> for IDs, internal visibility uses dimmed Lock icon
 - [Phase 29]: makeConnectHandler/makeDisconnectHandler moved into integration-cards.tsx as module-level helpers
 - [Phase 29]: connected_sources guard pattern: None means query all (backward compat), hybrid search post-filters results
+- [Phase 30]: Canvas content retrieved via files.info content field with url_private download fallback
+- [Phase 30]: Huddles without AI notes create minimal MeetingTranscript with placeholder text, embedding skipped
+- [Phase 30]: User name resolution cached within poll run to avoid redundant Slack API calls
 
 ### Roadmap Evolution
 
@@ -217,6 +221,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-12T10:30:07Z
-Stopped at: Completed 28-01-PLAN.md
+Last session: 2026-03-12T10:53:59.752Z
+Stopped at: Completed 30-01-PLAN.md
 Resume file: None
