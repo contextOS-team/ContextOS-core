@@ -410,7 +410,9 @@ async def _update_index_status(
     if last_at is not None:
         config["code_index_last_at"] = last_at
     integration.config = config
-    await session.flush()
+    # Commit immediately so the frontend can poll and see the status change
+    # (especially "indexing" → visible before the long clone/parse work starts)
+    await session.commit()
 
 
 async def index_workspace_repos(
@@ -438,42 +440,47 @@ async def index_workspace_repos(
     # Set status to "indexing" at start
     await _update_index_status(workspace_id, session, "indexing", provider="github")
 
-    repos = await get_cached_repos(workspace_id, session)
-    results: list[dict] = []
+    try:
+        repos = await get_cached_repos(workspace_id, session)
+        results: list[dict] = []
 
-    for repo in repos:
-        full_name = repo.get("full_name", "")
-        if not full_name:
-            continue
+        for repo in repos:
+            full_name = repo.get("full_name", "")
+            if not full_name:
+                continue
 
-        # Check if repo is monitored
-        monitored = await is_repo_monitored(workspace_id, full_name, session)
-        if not monitored:
-            continue
+            # Check if repo is monitored
+            monitored = await is_repo_monitored(workspace_id, full_name, session)
+            if not monitored:
+                continue
 
-        logger.info("Indexing repo %s for workspace %s", full_name, workspace_id)
+            logger.info("Indexing repo %s for workspace %s", full_name, workspace_id)
+            try:
+                summary = await index_repo(workspace_id, full_name, session, settings, provider="github")
+                results.append(summary)
+            except Exception:
+                logger.exception("Failed to index repo %s", full_name)
+                results.append({
+                    "repo": full_name,
+                    "files_scanned": 0,
+                    "chunks_created": 0,
+                    "chunks_updated": 0,
+                    "chunks_deleted": 0,
+                    "changed_chunk_ids": [],
+                    "error": "Indexing failed",
+                })
+
+        return results
+    finally:
+        # Set status to "idle" even if an exception occurs mid-indexing.
+        # Wrap in try/except so a broken session doesn't mask the original error.
         try:
-            summary = await index_repo(workspace_id, full_name, session, settings, provider="github")
-            results.append(summary)
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            await _update_index_status(
+                workspace_id, session, "idle", last_at=now.isoformat(), provider="github"
+            )
         except Exception:
-            logger.exception("Failed to index repo %s", full_name)
-            results.append({
-                "repo": full_name,
-                "files_scanned": 0,
-                "chunks_created": 0,
-                "chunks_updated": 0,
-                "chunks_deleted": 0,
-                "changed_chunk_ids": [],
-                "error": "Indexing failed",
-            })
-
-    # Set status to "idle" with last_at timestamp on completion
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    await _update_index_status(
-        workspace_id, session, "idle", last_at=now.isoformat(), provider="github"
-    )
-
-    return results
+            logger.warning("Failed to reset index status to idle for github", exc_info=True)
 
 
 async def index_gitlab_workspace_repos(
@@ -505,44 +512,49 @@ async def index_gitlab_workspace_repos(
     # Set status to "indexing" at start
     await _update_index_status(workspace_id, session, "indexing", provider="gitlab")
 
-    repos = await get_gitlab_cached_repos(workspace_id, session)
-    results: list[dict] = []
+    try:
+        repos = await get_gitlab_cached_repos(workspace_id, session)
+        results: list[dict] = []
 
-    for repo in repos:
-        path_with_namespace = repo.get("path_with_namespace", "")
-        project_id = repo.get("id")
-        if not path_with_namespace or project_id is None:
-            continue
+        for repo in repos:
+            path_with_namespace = repo.get("path_with_namespace", "")
+            project_id = repo.get("id")
+            if not path_with_namespace or project_id is None:
+                continue
 
-        # Check if project is monitored
-        monitored = await is_project_monitored(workspace_id, project_id, session)
-        if not monitored:
-            continue
+            # Check if project is monitored
+            monitored = await is_project_monitored(workspace_id, project_id, session)
+            if not monitored:
+                continue
 
-        logger.info("Indexing GitLab project %s for workspace %s", path_with_namespace, workspace_id)
+            logger.info("Indexing GitLab project %s for workspace %s", path_with_namespace, workspace_id)
+            try:
+                # Refresh token before each clone -- GitLab tokens expire in 2 hours
+                await ensure_valid_token(session, workspace_id, settings)
+                summary = await index_repo(
+                    workspace_id, path_with_namespace, session, settings, provider="gitlab"
+                )
+                results.append(summary)
+            except Exception:
+                logger.exception("Failed to index GitLab project %s", path_with_namespace)
+                results.append({
+                    "repo": path_with_namespace,
+                    "files_scanned": 0,
+                    "chunks_created": 0,
+                    "chunks_updated": 0,
+                    "chunks_deleted": 0,
+                    "changed_chunk_ids": [],
+                    "error": "Indexing failed",
+                })
+
+        return results
+    finally:
+        # Set status to "idle" even if an exception occurs mid-indexing.
+        # Wrap in try/except so a broken session doesn't mask the original error.
         try:
-            # Refresh token before each clone -- GitLab tokens expire in 2 hours
-            await ensure_valid_token(session, workspace_id, settings)
-            summary = await index_repo(
-                workspace_id, path_with_namespace, session, settings, provider="gitlab"
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            await _update_index_status(
+                workspace_id, session, "idle", last_at=now.isoformat(), provider="gitlab"
             )
-            results.append(summary)
         except Exception:
-            logger.exception("Failed to index GitLab project %s", path_with_namespace)
-            results.append({
-                "repo": path_with_namespace,
-                "files_scanned": 0,
-                "chunks_created": 0,
-                "chunks_updated": 0,
-                "chunks_deleted": 0,
-                "changed_chunk_ids": [],
-                "error": "Indexing failed",
-            })
-
-    # Set status to "idle" with last_at timestamp on completion
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    await _update_index_status(
-        workspace_id, session, "idle", last_at=now.isoformat(), provider="gitlab"
-    )
-
-    return results
+            logger.warning("Failed to reset index status to idle for gitlab", exc_info=True)

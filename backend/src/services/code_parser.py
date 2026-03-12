@@ -7,6 +7,7 @@ logic and generic fallback for other languages.
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -15,22 +16,57 @@ from tree_sitter_language_pack import get_parser
 
 logger = logging.getLogger(__name__)
 
-# File extension to tree-sitter language mapping
+# File extension to tree-sitter language mapping.
+# Covers all mainstream programming languages available in tree-sitter-language-pack.
 EXTENSION_MAP: dict[str, str] = {
+    # Python
     ".py": "python",
+    # TypeScript / JavaScript
     ".ts": "typescript",
-    ".tsx": "typescript",
+    ".tsx": "tsx",
     ".js": "javascript",
     ".jsx": "javascript",
+    # Go
     ".go": "go",
+    # Rust
     ".rs": "rust",
+    # Java / JVM
     ".java": "java",
-    ".rb": "ruby",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".scala": "scala",
+    ".groovy": "groovy",
+    ".gradle": "groovy",
+    # C / C++
+    ".c": "c",
+    ".h": "c",
     ".cpp": "cpp",
     ".cc": "cpp",
     ".cxx": "cpp",
-    ".c": "c",
-    ".h": "c",
+    ".hpp": "cpp",
+    ".hxx": "cpp",
+    # C#
+    ".cs": "csharp",
+    # Swift / Objective-C
+    ".swift": "swift",
+    ".m": "objc",
+    # Ruby
+    ".rb": "ruby",
+    # PHP
+    ".php": "php",
+    # Dart (Flutter)
+    ".dart": "dart",
+    # Haskell
+    ".hs": "haskell",
+    # Lua
+    ".lua": "lua",
+    # Shell
+    ".sh": "bash",
+    ".bash": "bash",
+    # Zig
+    ".zig": "zig",
+    # Solidity
+    ".sol": "solidity",
 }
 
 # Cache parsers to avoid re-initialization
@@ -38,6 +74,69 @@ _parser_cache: dict[str, object] = {}
 
 # Minimum lines for a chunk to be considered non-trivial
 MIN_CHUNK_LINES = 2
+
+# Identifier node types used for name extraction fallback (Kotlin, Scala, etc.)
+_IDENT_TYPES: frozenset[str] = frozenset({
+    "identifier", "simple_identifier", "type_identifier", "constant",
+})
+
+# C++ keywords/constructs that don't exist in C — used to upgrade .h files
+_CPP_INDICATORS = re.compile(
+    r'\b(?:class|namespace|template|public:|private:|protected:|virtual|nullptr|constexpr|auto\s+\w+\s*=)\b'
+)
+# Strip C/C++ comments and string literals before running the heuristic,
+# so that "class" in a comment doesn't trigger a false C++ upgrade.
+_C_COMMENTS_AND_STRINGS = re.compile(
+    r'//[^\n]*|/\*.*?\*/|"(?:[^"\\]|\\.)*"', re.DOTALL
+)
+
+# Target node types for the generic parser (shared across _parse_generic and _walk_generic)
+_GENERIC_TARGET_TYPES: dict[str, str] = {
+    # Functions
+    "function_definition": "function",
+    "function_declaration": "function",
+    "function_item": "function",         # Rust
+    "method_definition": "method",
+    "method_declaration": "method",
+    "method": "method",               # Ruby
+    # Classes
+    "class_definition": "class",
+    "class_declaration": "class",
+    "class": "class",                   # Ruby
+    "class_specifier": "class",         # C/C++
+    "impl_item": "class",               # Rust impl blocks
+    # Structs
+    "struct_item": "type",              # Rust
+    "struct_specifier": "type",         # C/C++
+    "struct_declaration": "type",
+    # Interfaces / Protocols / Traits
+    "interface_declaration": "interface",
+    "protocol_declaration": "interface",  # Swift
+    "trait_item": "interface",            # Rust
+    "trait_definition": "interface",      # Scala
+    # Enums
+    "enum_item": "type",                # Rust
+    "enum_declaration": "type",
+    # Objects / Modules
+    "object_definition": "class",        # Scala
+    "object_declaration": "class",       # Kotlin
+    # Type aliases
+    "type_alias_declaration": "type",
+    "type_item": "type",                # Rust
+}
+
+# Container node types to recurse into without emitting as chunks
+_CONTAINER_TYPES: frozenset[str] = frozenset({
+    "module", "namespace_definition", "namespace_declaration",
+    "mod_item", "program", "translation_unit",
+})
+
+# Body/block wrapper types to recurse into
+_BODY_TYPES: frozenset[str] = frozenset({
+    "body", "class_body", "block", "declaration_list",
+    "body_statement",                    # Ruby
+    "field_declaration_list",            # C/C++ class/struct body
+})
 
 
 @dataclass
@@ -93,10 +192,19 @@ def _node_text(node: Node, source_bytes: bytes) -> str:
 
 
 def _get_node_name(node: Node) -> str | None:
-    """Extract the name identifier from a tree-sitter node."""
+    """Extract the name identifier from a tree-sitter node.
+
+    Tries the 'name' field first (most grammars), then falls back to
+    finding the first identifier-like child node (Kotlin, Scala, etc.).
+    """
     name_node = node.child_by_field_name("name")
     if name_node:
         return name_node.text.decode("utf-8", errors="replace")
+    # Fallback: find first identifier child (covers Kotlin simple_identifier,
+    # type_identifier for classes, etc.)
+    for child in node.children:
+        if child.type in _IDENT_TYPES:
+            return child.text.decode("utf-8", errors="replace")
     return None
 
 
@@ -553,45 +661,69 @@ def _parse_go(root: Node, source_bytes: bytes, language: str) -> list[CodeChunkD
 def _parse_generic(root: Node, source_bytes: bytes, language: str) -> list[CodeChunkData]:
     """Generic fallback parser for languages without specific extraction logic.
 
-    Extracts common node types: function_definition, class_definition,
-    function_declaration, class_declaration.
+    Recursively walks the AST to extract functions, classes, structs,
+    interfaces, protocols, enums, traits, and methods nested inside classes.
     """
     chunks: list[CodeChunkData] = []
-    target_types = {
-        "function_definition": "function",
-        "class_definition": "class",
-        "function_declaration": "function",
-        "class_declaration": "class",
-        "method_definition": "method",
-    }
+    _walk_generic(root, source_bytes, language, chunks, parent_class=None)
+    return chunks
 
-    for node in root.children:
-        if node.type in target_types:
-            name = _get_node_name(node)
+
+def _walk_generic(
+    node: Node,
+    source_bytes: bytes,
+    language: str,
+    chunks: list[CodeChunkData],
+    parent_class: str | None,
+) -> None:
+    """Recursively walk the AST collecting code chunks.
+
+    Recurses into container types (modules, namespaces) and class-like
+    nodes (to extract methods with parent_class metadata).
+    """
+    for child in node.children:
+        if child.type in _GENERIC_TARGET_TYPES:
+            name = _get_node_name(child)
             if name is None:
                 continue
-            content = _node_text(node, source_bytes)
-            start_line = node.start_point.row + 1
-            end_line = node.end_point.row + 1
+            base_type = _GENERIC_TARGET_TYPES[child.type]
+            if parent_class and base_type in ("function", "method"):
+                symbol_type = "method"
+                metadata: dict = {"parent_class": parent_class}
+            else:
+                symbol_type = base_type
+                metadata = {}
+            content = _node_text(child, source_bytes)
+            start_line = child.start_point.row + 1
+            end_line = child.end_point.row + 1
             if end_line - start_line + 1 < MIN_CHUNK_LINES:
                 continue
             chunks.append(CodeChunkData(
                 symbol_name=name,
-                symbol_type=target_types[node.type],
+                symbol_type=symbol_type,
                 language=language,
                 content=content,
                 start_line=start_line,
                 end_line=end_line,
+                metadata=metadata if metadata else {},
             ))
-
-    return chunks
+            # Recurse into class-like nodes for methods
+            if symbol_type in ("class", "interface", "type") and child.type not in (
+                "type_item", "type_alias_declaration",
+            ):
+                _walk_generic(child, source_bytes, language, chunks, parent_class=name)
+        elif child.type in _CONTAINER_TYPES:
+            _walk_generic(child, source_bytes, language, chunks, parent_class=parent_class)
+        elif child.type in _BODY_TYPES:
+            _walk_generic(child, source_bytes, language, chunks, parent_class=parent_class)
 
 
 # Language family to parser function mapping
 _LANGUAGE_PARSERS = {
     "python": _parse_python,
     "typescript": _parse_typescript,
-    "javascript": _parse_typescript,  # Same AST structure
+    "tsx": _parse_typescript,          # Same AST structure
+    "javascript": _parse_typescript,   # Same AST structure
     "go": _parse_go,
 }
 
@@ -610,6 +742,14 @@ def parse_file(file_path: str, content: str, language: str) -> list[CodeChunkDat
     """
     if not content or not content.strip():
         return []
+
+    # Upgrade .h files to C++ if content contains C++ constructs.
+    # Strip comments and strings first to avoid false positives like
+    # /* Base class for widgets */ triggering the "class" keyword match.
+    if language == "c":
+        stripped = _C_COMMENTS_AND_STRINGS.sub("", content)
+        if _CPP_INDICATORS.search(stripped):
+            language = "cpp"
 
     parser = _get_cached_parser(language)
     if parser is None:

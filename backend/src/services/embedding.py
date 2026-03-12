@@ -79,7 +79,10 @@ SOURCE_TYPE_MAP: dict[str, tuple[type, callable]] = {
     ),
     "notion_page": (
         NotionPage,
-        lambda r: f"{r.title}\n\n{r.content or ''}".strip(),
+        # Return empty string for pages without content — this causes
+        # queue_embedding_generation to skip them, preventing generic
+        # embeddings that pollute hybrid search results.
+        lambda r: f"{r.title}\n\n{r.content}".strip() if r.content else "",
     ),
     "context_page": (
         ContextPage,
@@ -358,12 +361,55 @@ async def process_pending_embeddings(
                 )
                 count += len(missing_ids)
 
+    # Clean up embeddings for Notion pages that have no content — these
+    # produce generic vectors that pollute hybrid search results.
+    cleaned = await _soft_delete_empty_notion_embeddings(session, workspace_id)
+    if cleaned:
+        logger.info(
+            "Soft-deleted %d embeddings for content-less Notion pages in workspace %s",
+            cleaned, workspace_id,
+        )
+
     logger.info(
         "Processed %d pending embeddings for workspace %s",
         count,
         workspace_id,
     )
     return count
+
+
+async def _soft_delete_empty_notion_embeddings(
+    session: AsyncSession,
+    workspace_id: UUID,
+) -> int:
+    """Soft-delete embeddings for Notion pages that have NULL content.
+
+    These pages produce weak/generic embedding vectors that match
+    everything with moderate similarity, polluting search results.
+
+    Returns the number of embeddings soft-deleted.
+    """
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    update_stmt = text("""
+        UPDATE embeddings
+        SET deleted_at = :now
+        WHERE workspace_id = :workspace_id
+          AND source_type = 'notion_page'
+          AND deleted_at IS NULL
+          AND source_id IN (
+              SELECT id FROM notion_pages
+              WHERE workspace_id = :workspace_id
+                AND content IS NULL
+                AND deleted_at IS NULL
+          )
+    """)
+    result = await session.execute(
+        update_stmt,
+        {"now": now, "workspace_id": workspace_id},
+    )
+    return result.rowcount
 
 
 async def backfill_search_content(
