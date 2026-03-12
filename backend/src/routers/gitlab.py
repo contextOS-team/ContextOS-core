@@ -34,6 +34,7 @@ from src.services.gitlab_repos import (
     refresh_repos,
     save_selected_repos,
 )
+from src.services.code_index_worker import enqueue_workspace_index_job
 from src.services.gitlab_sync import sync_projects
 from src.services.gitlab_webhook import process_gitlab_event, verify_webhook_token
 from src.services.oauth_common import sign_oauth_state
@@ -326,3 +327,79 @@ async def webhook(
     await process_gitlab_event(payload, session, settings)
 
     return {"status": "ok"}
+
+
+# ---------- Code indexing ----------
+
+
+@router.post("/index", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_index(
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Trigger code indexing for all selected GitLab projects.
+
+    Enqueues a workspace-wide code index job with provider="gitlab"
+    for async processing. Returns 202 immediately. Check
+    GET /index/status for progress.
+    """
+    await enqueue_workspace_index_job(user.workspace_id, provider="gitlab")
+    return {"status": "accepted", "message": "Code indexing started for selected GitLab projects"}
+
+
+@router.get("/index/status")
+async def get_index_status(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get code indexing status for GitLab projects.
+
+    Returns the current indexing state, last indexed timestamp,
+    and per-project chunk counts filtered to GitLab projects only.
+    """
+    from sqlalchemy import func
+    from sqlmodel import select as sm_select
+
+    from src.models.code_chunk import CodeChunk
+
+    # Get indexing status from workspace_integrations config
+    stmt = sm_select(WorkspaceIntegration).where(
+        WorkspaceIntegration.workspace_id == user.workspace_id,
+        WorkspaceIntegration.provider == Provider.GITLAB,
+    )
+    result = await session.execute(stmt)
+    integration = result.scalar_one_or_none()
+
+    config = integration.config if integration and integration.config else {}
+    index_status = config.get("code_index_status", "idle")
+    last_indexed_at = config.get("code_index_last_at")
+
+    # Build set of GitLab project paths to filter chunks
+    available_repos = config.get("available_projects", [])
+    gitlab_paths = {r.get("path_with_namespace", "") for r in available_repos if r.get("path_with_namespace")}
+
+    repos: list[dict] = []
+    if gitlab_paths:
+        # Get per-repo chunk counts filtered to GitLab projects
+        chunk_stmt = (
+            sm_select(
+                CodeChunk.repo_full_name,
+                func.count(CodeChunk.id).label("chunk_count"),
+            )
+            .where(
+                CodeChunk.workspace_id == user.workspace_id,
+                CodeChunk.deleted_at.is_(None),  # type: ignore[union-attr]
+                CodeChunk.repo_full_name.in_(gitlab_paths),  # type: ignore[union-attr]
+            )
+            .group_by(CodeChunk.repo_full_name)
+        )
+        chunk_result = await session.execute(chunk_stmt)
+        repos = [
+            {"repo": row.repo_full_name, "chunks": row.chunk_count}
+            for row in chunk_result.fetchall()
+        ]
+
+    return {
+        "status": index_status,
+        "last_indexed_at": last_indexed_at,
+        "repos": repos,
+    }
