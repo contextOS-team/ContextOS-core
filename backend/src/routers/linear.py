@@ -70,7 +70,7 @@ async def callback(
     except OAuthError as e:
         logger.error("OAuth state verification failed: %s", e)
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?linear=error&reason=invalid_state",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&linear=error&reason=invalid_state",
             status_code=status.HTTP_302_FOUND,
         )
 
@@ -89,7 +89,19 @@ async def callback(
 
         if user_id is None:
             return RedirectResponse(
-                url=f"{frontend_url}/dashboard?linear=error&reason=workspace_not_found",
+                url=f"{frontend_url}/dashboard/settings?tab=integrations&linear=error&reason=workspace_not_found",
+                status_code=status.HTTP_302_FOUND,
+            )
+
+        # Mutual exclusion: reject if Jira is already connected
+        jira_stmt = select(WorkspaceIntegration).where(
+            WorkspaceIntegration.workspace_id == workspace_id,
+            WorkspaceIntegration.provider == Provider.JIRA,
+        )
+        jira_result = await session.execute(jira_stmt)
+        if jira_result.scalar_one_or_none() is not None:
+            return RedirectResponse(
+                url=f"{frontend_url}/dashboard/settings?tab=integrations&linear=error&reason=provider_conflict",
                 status_code=status.HTTP_302_FOUND,
             )
 
@@ -97,13 +109,13 @@ async def callback(
         org_name = org_info.get("name", "")
 
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?linear=connected&org={org_name}",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&linear=connected&org={org_name}",
             status_code=status.HTTP_302_FOUND,
         )
     except OAuthError as e:
         logger.error("OAuth code exchange failed: %s", e)
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?linear=error&reason=exchange_failed",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&linear=error&reason=exchange_failed",
             status_code=status.HTTP_302_FOUND,
         )
 

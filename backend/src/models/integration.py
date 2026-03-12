@@ -23,6 +23,9 @@ class Provider(str, Enum):
     SLACK = "slack"
     FATHOM = "fathom"
     NOTION = "notion"
+    GITLAB = "gitlab"
+    TELEGRAM = "telegram"
+    JIRA = "jira"
 
 
 class OAuthToken(BaseModel, table=True):

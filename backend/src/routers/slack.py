@@ -81,7 +81,7 @@ async def callback(
     except SlackOAuthError as e:
         logger.error("Slack OAuth state verification failed: %s", e)
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?slack=error&reason=invalid_state",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&slack=error&reason=invalid_state",
             status_code=status.HTTP_302_FOUND,
         )
 
@@ -96,7 +96,7 @@ async def callback(
 
         if user_id is None:
             return RedirectResponse(
-                url=f"{frontend_url}/dashboard?slack=error&reason=workspace_not_found",
+                url=f"{frontend_url}/dashboard/settings?tab=integrations&slack=error&reason=workspace_not_found",
                 status_code=status.HTTP_302_FOUND,
             )
 
@@ -104,13 +104,13 @@ async def callback(
         team_name = team_info.get("name", "")
 
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?slack=connected&team={team_name}",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&slack=connected&team={team_name}",
             status_code=status.HTTP_302_FOUND,
         )
     except SlackOAuthError as e:
         logger.error("Slack OAuth code exchange failed: %s", e)
         return RedirectResponse(
-            url=f"{frontend_url}/dashboard?slack=error&reason=exchange_failed",
+            url=f"{frontend_url}/dashboard/settings?tab=integrations&slack=error&reason=exchange_failed",
             status_code=status.HTTP_302_FOUND,
         )
 

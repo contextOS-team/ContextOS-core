@@ -73,6 +73,18 @@ class Settings(BaseSettings):
     NOTION_REDIRECT_URI: str = ""
     NOTION_WEBHOOK_SECRET: str = ""
 
+    # GitLab
+    GITLAB_CLIENT_ID: str = ""
+    GITLAB_CLIENT_SECRET: str = ""
+    GITLAB_REDIRECT_URI: str = ""
+    GITLAB_WEBHOOK_SECRET: str = ""
+
+    # Jira
+    JIRA_CLIENT_ID: str = ""
+    JIRA_CLIENT_SECRET: str = ""
+    JIRA_REDIRECT_URI: str = ""
+    JIRA_WEBHOOK_SECRET: str = ""
+
     # Fathom
     FATHOM_API_KEY: str = ""
     FATHOM_API_BASE_URL: str = "https://api.fathom.ai/external/v1"
@@ -89,6 +101,10 @@ class Settings(BaseSettings):
     # Telegram (critical error alerts via Sentry webhook)
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
+
+    # Telegram integration webhook secret
+    # Per-workspace bot tokens stored in Vault. This secret verifies webhook authenticity.
+    TELEGRAM_WEBHOOK_SECRET: str = ""
 
     # CORS
     CORS_ORIGINS: str = "http://localhost:3000"
@@ -134,10 +150,22 @@ class Settings(BaseSettings):
         return f"{self._public_base_url}/api/notion/callback"
 
     @property
+    def gitlab_redirect_uri(self) -> str:
+        if self.GITLAB_REDIRECT_URI:
+            return self.GITLAB_REDIRECT_URI
+        return f"{self._public_base_url}/api/gitlab/callback"
+
+    @property
     def slack_redirect_uri(self) -> str:
         if self.SLACK_REDIRECT_URI:
             return self.SLACK_REDIRECT_URI
         return f"{self._public_base_url}/api/slack/callback"
+
+    @property
+    def jira_redirect_uri(self) -> str:
+        if self.JIRA_REDIRECT_URI:
+            return self.JIRA_REDIRECT_URI
+        return f"{self._public_base_url}/api/jira/callback"
 
     model_config = {
         "env_file": "../.env",

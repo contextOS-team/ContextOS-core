@@ -1,11 +1,12 @@
 """Context page synthesis service.
 
-Generates AI-powered context pages for Linear tickets by combining
-linked content from multiple sources into a structured document.
+Generates AI-powered context pages for Linear tickets (and Jira issues)
+by combining linked content from multiple sources into a structured document.
 """
 
 import logging
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from sqlmodel import select
 
 from src.models.context_page import ContextPage
 from src.models.integration import OAuthToken, WorkspaceIntegration
+from src.models.jira import JiraIssue
 from src.models.ticket import LinearTicket
 from src.services.graph_ops import compute_fingerprint
 from src.services.linking import find_related_content
@@ -22,6 +24,39 @@ from src.services.linking import LinkedItem, find_content_by_source, find_relate
 from src.services.llm_client import get_llm_client
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TicketProxy:
+    """Duck-typed proxy that lets Jira issues pass through the linking engine.
+
+    The linking and synthesis code accesses ticket.id, .identifier, .title,
+    .description, .status, .assignee_name, .priority, and .labels. This
+    proxy maps JiraIssue fields to the expected interface.
+    """
+
+    id: UUID
+    identifier: str
+    title: str
+    description: str | None = None
+    status: str | None = None
+    assignee_name: str | None = None
+    priority: int | str | None = None
+    labels: list[str] | None = None
+
+    @classmethod
+    def from_jira(cls, issue: JiraIssue) -> "TicketProxy":
+        return cls(
+            id=issue.id,
+            identifier=issue.jira_key,
+            title=issue.summary,
+            description=issue.description,
+            status=issue.status,
+            assignee_name=issue.assignee_name,
+            priority=issue.priority,  # pass Jira's string directly
+            labels=issue.labels,
+        )
+
 
 SYNTHESIS_SYSTEM_PROMPT = """\
 You are a context synthesis assistant for engineering teams. Your job is to produce
@@ -163,10 +198,18 @@ def _format_related_content(
     return "\n\n---\n\n".join(sections)
 
 
-def _priority_label(priority: int | None) -> str:
-    """Convert priority int to human-readable label."""
+def _priority_label(priority: int | str | None) -> str:
+    """Convert priority to human-readable label.
+
+    Handles Linear int priorities (0-4) and Jira string priorities
+    (e.g. "High", "Medium") passed through from TicketProxy.
+    """
+    if priority is None:
+        return "None"
+    if isinstance(priority, str):
+        return priority
     labels = {0: "None", 1: "Urgent", 2: "High", 3: "Normal", 4: "Low"}
-    return labels.get(priority, "Unknown") if priority is not None else "None"
+    return labels.get(priority, "Unknown")
 
 
 # Entity types considered "discussion" sources for provenance annotations
@@ -307,10 +350,10 @@ async def generate_context_page(
     workspace_id: UUID,
     ticket_identifier: str,
 ) -> ContextPage:
-    """Generate a context page for a Linear ticket.
+    """Generate a context page for a Linear ticket or Jira issue.
 
     Flow:
-    1. Look up LinearTicket by identifier
+    1. Look up LinearTicket or JiraIssue by identifier
     2. Call find_related_content() to get all linked content
     3. Build structured prompt with 7-section template
     4. Call LLMClient.generate() (Gemini, Laminar-traced)
@@ -319,7 +362,7 @@ async def generate_context_page(
     Args:
         session: Async database session.
         workspace_id: Workspace the ticket belongs to.
-        ticket_identifier: Human-readable ticket identifier (e.g. "CON-16").
+        ticket_identifier: Human-readable ticket identifier (e.g. "CON-16", "PROJ-123").
 
     Returns:
         The generated ContextPage record.
@@ -327,14 +370,31 @@ async def generate_context_page(
     Raises:
         ValueError: If ticket not found.
     """
-    # 1. Look up ticket
+    # 1. Look up ticket (Linear first, then Jira)
+    ticket = None
+    ticket_id_for_fk = None
+
     stmt = select(LinearTicket).where(
         LinearTicket.workspace_id == workspace_id,
         LinearTicket.identifier == ticket_identifier,
         LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     result = await session.execute(stmt)
-    ticket = result.scalar_one_or_none()
+    linear_ticket = result.scalar_one_or_none()
+
+    if linear_ticket:
+        ticket = linear_ticket
+        ticket_id_for_fk = linear_ticket.id
+    else:
+        jira_stmt = select(JiraIssue).where(
+            JiraIssue.workspace_id == workspace_id,
+            JiraIssue.jira_key == ticket_identifier,
+            JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        jira_result = await session.execute(jira_stmt)
+        jira_issue = jira_result.scalar_one_or_none()
+        if jira_issue:
+            ticket = TicketProxy.from_jira(jira_issue)
 
     if ticket is None:
         raise ValueError(f"Ticket {ticket_identifier} not found")
@@ -356,7 +416,7 @@ async def generate_context_page(
         # Create a placeholder so the page appears in the feed immediately
         existing_page = ContextPage(
             workspace_id=workspace_id,
-            ticket_id=ticket.id,
+            ticket_id=ticket_id_for_fk,
             ticket_identifier=ticket.identifier,
             title=f"Context: {ticket.title}",
             content="",
@@ -464,14 +524,32 @@ async def generate_context_page_stream(
     - {"event": "error", "message": "..."}
     """
     try:
-        # 1. Look up ticket
+        # 1. Look up ticket (Linear first, then Jira)
+        ticket = None
+        ticket_id_for_fk = None  # Only set for LinearTicket (FK constraint)
+
         stmt = select(LinearTicket).where(
             LinearTicket.workspace_id == workspace_id,
             LinearTicket.identifier == ticket_identifier,
             LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
         )
         result = await session.execute(stmt)
-        ticket = result.scalar_one_or_none()
+        linear_ticket = result.scalar_one_or_none()
+
+        if linear_ticket:
+            ticket = linear_ticket
+            ticket_id_for_fk = linear_ticket.id
+        else:
+            # Try Jira
+            jira_stmt = select(JiraIssue).where(
+                JiraIssue.workspace_id == workspace_id,
+                JiraIssue.jira_key == ticket_identifier,
+                JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
+            )
+            jira_result = await session.execute(jira_stmt)
+            jira_issue = jira_result.scalar_one_or_none()
+            if jira_issue:
+                ticket = TicketProxy.from_jira(jira_issue)
 
         if ticket is None:
             yield {"event": "error", "message": f"Ticket {ticket_identifier} not found"}
@@ -497,7 +575,7 @@ async def generate_context_page_stream(
 
         # linear is always connected (required by onboarding)
         connected_sources = ["linear"]
-        for provider in ["slack", "github", "notion", "fathom"]:
+        for provider in ["slack", "github", "notion", "fathom", "jira"]:
             if provider in connected_providers:
                 connected_sources.append(provider)
 
@@ -516,7 +594,7 @@ async def generate_context_page_stream(
         else:
             context_page = ContextPage(
                 workspace_id=workspace_id,
-                ticket_id=ticket.id,
+                ticket_id=ticket_id_for_fk,
                 ticket_identifier=ticket.identifier,
                 title=f"Context: {ticket.title}",
                 content="",

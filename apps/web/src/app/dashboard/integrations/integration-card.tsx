@@ -18,6 +18,10 @@ interface IntegrationCardProps {
   onDisconnect: () => void | Promise<void>
   children?: React.ReactNode
   connectForm?: React.ReactNode
+  /** When true, the connect button is disabled */
+  disabled?: boolean
+  /** Shown below the card name when disabled */
+  disabledReason?: string
 }
 
 function StatusIndicator({ status }: { status: IntegrationStatus }) {
@@ -46,6 +50,8 @@ export function IntegrationCard({
   onDisconnect,
   children,
   connectForm,
+  disabled,
+  disabledReason,
 }: IntegrationCardProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [isExpanded, setIsExpanded] = useState(false)
@@ -110,7 +116,7 @@ export function IntegrationCard({
 
       <CardContent className="px-5 pb-4 pt-0">
         {/* Actions */}
-        <div className="flex items-center gap-2 h-8">
+        <div className={`flex items-center gap-2 ${showConnectForm ? '' : 'h-8'}`}>
           {status === 'connected' ? (
             <>
               {children && (
@@ -139,19 +145,23 @@ export function IntegrationCard({
             </>
           ) : (
             !showConnectForm && (
-              <Button
-                size="sm"
-                onClick={handleConnect}
-                disabled={isLoading}
-                className="text-[13px]"
-              >
-                {isLoading ? (
-                  <span className="flex items-center gap-1.5">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Connecting
-                  </span>
-                ) : 'Connect'}
-              </Button>
+              disabled && disabledReason ? (
+                <p className="text-[12px] text-muted-foreground/60">{disabledReason}</p>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={handleConnect}
+                  disabled={isLoading}
+                  className="text-[13px]"
+                >
+                  {isLoading ? (
+                    <span className="flex items-center gap-1.5">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Connecting
+                    </span>
+                  ) : 'Connect'}
+                </Button>
+              )
             )
           )}
         </div>

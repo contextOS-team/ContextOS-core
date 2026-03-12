@@ -25,6 +25,8 @@ from src.models.graph_node import GraphNode
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
+from src.models.telegram import TelegramMessage
+from src.models.jira import JiraComment, JiraIssue
 from src.models.ticket import LinearComment, LinearTicket
 from src.services.embedding import generate_embedding
 from src.services.graph_ops import compute_fingerprint
@@ -286,6 +288,21 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
             f"{r.symbol_type}: {r.symbol_name} ({r.repo_full_name}:{r.file_path})",
             r.content[:200],
         ),
+    ),
+    "telegram_message": (
+        TelegramMessage,
+        lambda r: (
+            f"Telegram by {r.from_first_name or r.from_username or 'Unknown'} in {r.chat_title or 'DM'}",
+            r.text[:200],
+        ),
+    ),
+    "jira_issue": (
+        JiraIssue,
+        lambda r: (f"{r.jira_key}: {r.summary}", (r.description or "")[:200]),
+    ),
+    "jira_comment": (
+        JiraComment,
+        lambda r: (f"Jira comment by {r.author_name or 'Unknown'}", (r.body or "")[:200]),
     ),
 }
 
@@ -638,6 +655,8 @@ SOURCE_TYPE_MAP = {
     "notion": ["notion_page"],
     "fathom": ["meeting_transcript", "meeting_segment"],
     "linear": ["linear_comment"],
+    "telegram": ["telegram_message"],
+    "jira": ["jira_issue", "jira_comment"],
 }
 
 
@@ -698,6 +717,9 @@ async def find_content_by_source(
         elif source_name == "linear":
             n = len(source_items)
             detail = f"Found {n} comment{'s' if n != 1 else ''}" if n else "No comments found"
+        elif source_name == "telegram":
+            n = len(source_items)
+            detail = f"Found {n} message{'s' if n != 1 else ''}" if n else "No messages found"
         else:
             detail = f"Found {len(source_items)} items" if source_items else "No items found"
 

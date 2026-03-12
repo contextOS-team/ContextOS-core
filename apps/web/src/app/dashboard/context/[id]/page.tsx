@@ -53,6 +53,8 @@ const SOURCE_TYPE_CONFIG: Record<
   github_review: { label: 'Review', icon: GitPullRequest, group: 'GitHub' },
   code_chunk: { label: 'Code', icon: Code2, group: 'GitHub' },
   notion_page: { label: 'Page', icon: FileText, group: 'Notion' },
+  jira_issue: { label: 'Issue', icon: CheckCircle2, group: 'Jira' },
+  jira_comment: { label: 'Comment', icon: MessageSquare, group: 'Jira' },
   context_page: { label: 'Context', icon: FileText, group: 'Other' },
 }
 
@@ -62,6 +64,7 @@ const GROUP_ICONS: Record<string, React.ElementType> = {
   Meetings: Video,
   GitHub: Code2,
   Notion: FileText,
+  Jira: CheckCircle2,
   Other: FileText,
 }
 
@@ -71,6 +74,7 @@ const GROUP_COLORS: Record<string, string> = {
   Meetings: 'text-amber-400',
   GitHub: 'text-emerald-400',
   Notion: 'text-blue-400',
+  Jira: 'text-blue-500',
   Other: 'text-muted-foreground',
 }
 

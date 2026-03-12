@@ -199,6 +199,84 @@ Plans:
 - [ ] 23-01-PLAN.md — Install Remotion, create constants/shared components, build 3 scene compositions and root HeroComposition
 - [ ] 23-02-PLAN.md — Create RemotionPlayer wrapper, integrate into Hero.tsx replacing video, visual verification checkpoint
 
+### Phase 24: GitLab Integration
+
+**Goal:** Add GitLab as an alternative code hosting integration alongside GitHub -- GitLab OAuth, MR/review ingestion, MR-to-Linear linking, webhook sync, and GitLab source in onboarding wizard sources grid
+**Requirements**: GL-01, GL-02, GL-03, GL-04, GL-05, GL-06, GL-07, GL-08
+**Depends on:** Phase 23
+**Success Criteria** (what must be TRUE):
+  1. GitLab OAuth connect/disconnect flow works with standard OAuth2 authorization code + refresh tokens
+  2. GitLab merge requests and reviews sync from selected projects into gitlab_merge_requests/gitlab_reviews tables
+  3. MRs are linked to Linear tickets via source branch name parsing
+  4. GitLab webhooks process MR and note events with X-Gitlab-Token verification
+  5. GitLab appears as a source in onboarding wizard step 3 and settings integrations
+  6. Users can select which GitLab projects to monitor
+**Plans**: 3 plans
+
+Plans:
+- [ ] 24-01-PLAN.md — Database migration (gitlab_merge_requests/gitlab_reviews tables, constraint updates), SQLModel classes, Provider enum, Settings config
+- [ ] 24-02-PLAN.md — Backend services (OAuth2, MR sync, webhook handler, project selection, Linear linking) and router with /api/gitlab/* endpoints
+- [ ] 24-03-PLAN.md — Frontend: GitLabLogo icon, API functions, onboarding source card, settings integration card
+
+### Phase 25: Jira Integration
+
+**Goal:** Add Jira as an alternative task tracker alongside Linear -- Jira OAuth 2.0 (3LO), issue sync via JQL with token-based pagination, Jira-to-context linking, webhook updates with 30-day refresh, and Jira source in onboarding wizard sources grid
+**Requirements**: JIRA-01, JIRA-02, JIRA-03, JIRA-04, JIRA-05, JIRA-06
+**Depends on:** Phase 23 (parallel with 24, 26)
+**Success Criteria** (what must be TRUE):
+  1. Jira OAuth connect/disconnect flow works via auth.atlassian.com with cloudId resolution
+  2. Jira issues sync via /search/jql endpoint with nextPageToken pagination
+  3. Jira issues can be linked to context pages via jira_issue_id FK
+  4. Jira webhooks process issue/comment CRUD events with HMAC verification
+  5. Jira appears as a source in onboarding wizard step 3 and settings integrations
+  6. Integration status API includes Jira connection state
+**Plans**: 3 plans
+
+Plans:
+- [x] 25-01-PLAN.md — Database migration (jira_issues/jira_comments tables, constraint updates, context_pages FK), SQLModel classes, Provider enum, Settings config
+- [ ] 25-02-PLAN.md — Backend services (OAuth 3LO with cloudId, JQL sync, webhook handler) and router with /api/jira/* endpoints
+- [ ] 25-03-PLAN.md — Frontend: JiraLogo icon, API functions, onboarding source card, settings integration card
+
+### Phase 26: Telegram Chat Integration
+
+**Goal:** Add Telegram as a chat source alongside Slack -- Telegram Bot API integration, group/channel message ingestion, message-to-ticket linking, and Telegram source in onboarding wizard sources grid
+**Requirements**: TG-01, TG-02, TG-03, TG-04, TG-05, TG-06, TG-07
+**Depends on:** Phase 23 (parallel with 24, 25)
+**Success Criteria** (what must be TRUE):
+  1. User can connect a Telegram bot via token entry (Fathom-style, no OAuth) from onboarding wizard and settings page
+  2. Webhook endpoint receives Telegram updates with secret_token verification and stores messages
+  3. Telegram messages appear in the linking engine for message-to-ticket matching
+  4. Integration status endpoint includes Telegram
+  5. Onboarding sources grid and settings integrations section show Telegram card
+**Plans:** 3/3 plans complete
+
+Plans:
+- [ ] 26-01-PLAN.md — Database migration (telegram_messages table, CHECK constraint updates), TelegramMessage model, Provider enum, config, bot service, event processing
+- [ ] 26-02-PLAN.md — Telegram router (connect/disconnect/webhook endpoints), main.py registration, integrations status update, linking engine integration
+- [ ] 26-03-PLAN.md — Frontend: TelegramLogo SVG, API client functions, onboarding wizard card, settings page card with bot token form
+
+### Phase 27: Dashboard Homepage Intelligence Widgets
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 26
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 27 to break down)
+
+---
+
+### Phase 28: GitLab Project Selection & Code Indexing
+
+**Goal:** Add project selection UI and code indexing for GitLab, mirroring the GitHub experience — browse projects, select which to monitor, clone and index code using the existing provider-agnostic pipeline (tree-sitter parsing, embeddings).
+**Requirements**: GL-09, GL-10, GL-11
+**Depends on:** Phase 24
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 28 to break down)
+
 ---
 *Roadmap created: 2026-02-24*
 *v1.1 milestone added: 2026-03-04*

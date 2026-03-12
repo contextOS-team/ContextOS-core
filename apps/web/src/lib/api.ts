@@ -64,7 +64,10 @@ export interface IntegrationStatusResponse {
   slack: ProviderStatus
   fathom: ProviderStatus
   github: ProviderStatus
+  gitlab: ProviderStatus
   notion: ProviderStatus
+  telegram: ProviderStatus
+  jira: ProviderStatus
 }
 
 export function getIntegrationStatus(): Promise<IntegrationStatusResponse> {
@@ -251,6 +254,20 @@ export function getGithubIndexStatus(): Promise<GithubIndexStatus> {
 }
 
 // ---------------------------------------------------------------------------
+// GitLab
+// ---------------------------------------------------------------------------
+
+export function connectGitlab(): Promise<{ authorization_url: string }> {
+  return apiFetch<{ authorization_url: string }>('/api/gitlab/connect')
+}
+
+export function disconnectGitlab(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/gitlab/disconnect', {
+    method: 'POST',
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Notion
 // ---------------------------------------------------------------------------
 
@@ -312,6 +329,67 @@ export function getNotionPages(
 ): Promise<NotionPagesResponse> {
   return apiFetch<NotionPagesResponse>(
     `/api/notion/pages?page=${page}&page_size=${pageSize}`
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Telegram
+// ---------------------------------------------------------------------------
+
+export function connectTelegram(
+  botToken: string
+): Promise<{ status: string; bot_username?: string }> {
+  return apiFetch<{ status: string; bot_username?: string }>(
+    '/api/telegram/connect',
+    {
+      method: 'POST',
+      body: JSON.stringify({ bot_token: botToken }),
+    }
+  )
+}
+
+export function disconnectTelegram(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/telegram/disconnect', {
+    method: 'POST',
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Jira
+// ---------------------------------------------------------------------------
+
+export function connectJira(): Promise<{ authorization_url: string }> {
+  return apiFetch<{ authorization_url: string }>('/api/jira/connect')
+}
+
+export function disconnectJira(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/jira/disconnect', {
+    method: 'POST',
+  })
+}
+
+export interface JiraIssueSearchResult {
+  jira_id: string
+  key: string
+  summary: string
+  status: string | null
+  assignee: string | null
+  issue_type: string | null
+}
+
+export type JiraIssueSearchResponse = {
+  issues: JiraIssueSearchResult[]
+  count: number
+}
+
+export function searchJiraIssues(
+  query?: string
+): Promise<JiraIssueSearchResponse> {
+  const params = new URLSearchParams()
+  if (query) params.set('q', query)
+  const qs = params.toString()
+  return apiFetch<JiraIssueSearchResponse>(
+    `/api/jira/search${qs ? `?${qs}` : ''}`
   )
 }
 
@@ -487,6 +565,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   notion: 'Notion',
   fathom: 'Fathom',
   linear: 'Linear',
+  jira: 'Jira',
   synthesize: 'Synthesize',
 }
 

@@ -16,6 +16,16 @@ import pytest
 
 from src.services.synthesis import SYNTHESIS_TEMPLATE, _format_related_content
 
+EXPECTED_SECTIONS = [
+    "Summary",
+    "Background & Decisions",
+    "Requirements",
+    "Related Work",
+    "Relevant Code",
+    "Open Questions",
+    "Key People",
+]
+
 
 def _extract_section_text(template: str, section_number: int) -> str:
     """Extract the instruction text for a specific numbered section.
@@ -50,11 +60,10 @@ class TestSynthesisTemplateSections:
     """Verify the synthesis template has the expected section structure."""
 
     def test_template_has_seven_sections(self):
-        """SYNTHESIS_TEMPLATE must define exactly 7 numbered sections."""
-        # Count numbered section headers (1. **Summary**, 2. **Background**, etc.)
+        """SYNTHESIS_TEMPLATE must define exactly 7 ## section headers."""
         section_lines = [
             line for line in SYNTHESIS_TEMPLATE.splitlines()
-            if line.strip() and line.strip()[0].isdigit() and "**" in line
+            if line.strip().startswith("## ")
         ]
         assert len(section_lines) == 7, (
             f"Expected 7 sections, found {len(section_lines)}: "
@@ -66,28 +75,26 @@ class TestSynthesisTemplateSections:
         assert "Relevant Code" in SYNTHESIS_TEMPLATE
 
     def test_relevant_code_is_section_five(self):
-        """Relevant Code must be section 5 in the template."""
-        for line in SYNTHESIS_TEMPLATE.splitlines():
-            if "Relevant Code" in line:
-                assert line.strip().startswith("5."), (
-                    f"Relevant Code should be section 5, got: {line.strip()[:50]}"
-                )
-                break
-        else:
-            pytest.fail("Relevant Code section not found")
+        """Relevant Code must be the 5th ## section in the template."""
+        section_lines = [
+            line for line in SYNTHESIS_TEMPLATE.splitlines()
+            if line.strip().startswith("## ")
+        ]
+        assert len(section_lines) >= 5
+        assert "Relevant Code" in section_lines[4], (
+            f"Relevant Code should be section 5, got: {section_lines[4].strip()[:50]}"
+        )
 
     def test_template_section_order(self):
-        """Sections must appear in correct order: Summary, Background, Requirements, Related Work, Relevant Code, Open Questions, Key People."""
-        expected_keywords = [
-            "Summary", "Background", "Requirements", "Related Work",
-            "Relevant Code", "Open Questions", "Key People",
-        ]
+        """Sections must appear in correct order."""
         found_order = []
         for line in SYNTHESIS_TEMPLATE.splitlines():
-            for kw in expected_keywords:
-                if kw in line and line.strip()[0].isdigit():
-                    found_order.append(kw)
-        assert found_order == expected_keywords
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                section_name = stripped[3:].strip()
+                if section_name in EXPECTED_SECTIONS:
+                    found_order.append(section_name)
+        assert found_order == EXPECTED_SECTIONS
 
 
 class TestFormatRelatedContent:

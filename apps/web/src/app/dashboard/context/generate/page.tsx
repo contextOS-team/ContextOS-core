@@ -14,12 +14,13 @@ function GeneratePageContent() {
   const searchParams = useSearchParams()
   const ticket = searchParams.get('ticket')
   const linearIssueId = searchParams.get('linear_issue_id')
+  const jiraIssueId = searchParams.get('jira_issue_id')
 
   const [generation, setGeneration] = useState<GenerationState | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const startGeneration = useCallback(
-    (ticketIdentifier: string, issueId?: string | null) => {
+    (ticketIdentifier: string, opts?: { linearIssueId?: string | null; jiraIssueId?: string | null }) => {
       abortRef.current?.abort()
 
       setGeneration({
@@ -28,9 +29,11 @@ function GeneratePageContent() {
         status: 'streaming',
       })
 
-      const streamPath = issueId
-        ? `/api/context/${encodeURIComponent(ticketIdentifier)}/generate-stream?linear_issue_id=${encodeURIComponent(issueId)}`
-        : `/api/context/${encodeURIComponent(ticketIdentifier)}/generate-stream`
+      const params = new URLSearchParams()
+      if (opts?.linearIssueId) params.set('linear_issue_id', opts.linearIssueId)
+      if (opts?.jiraIssueId) params.set('jira_issue_id', opts.jiraIssueId)
+      const qs = params.toString()
+      const streamPath = `/api/context/${encodeURIComponent(ticketIdentifier)}/generate-stream${qs ? `?${qs}` : ''}`
 
       const controller = apiFetchSSE(
         streamPath,
@@ -126,12 +129,12 @@ function GeneratePageContent() {
       return
     }
 
-    startGeneration(ticket, linearIssueId)
+    startGeneration(ticket, { linearIssueId, jiraIssueId })
 
     return () => {
       abortRef.current?.abort()
     }
-    // Only run on mount — ticket/linearIssueId come from URL and don't change
+    // Only run on mount — ticket/linearIssueId/jiraIssueId come from URL and don't change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -164,7 +167,7 @@ function GeneratePageContent() {
             steps={generation.steps}
             status={generation.status}
             errorMessage={generation.errorMessage}
-            onRetry={() => startGeneration(ticket, linearIssueId)}
+            onRetry={() => startGeneration(ticket, { linearIssueId, jiraIssueId })}
             onDismiss={() => {
               abortRef.current?.abort()
               router.push('/dashboard/context')

@@ -277,6 +277,105 @@ export function LoomLogo({
 }
 
 /**
+ * GitLab tanuki logo mark.
+ * Official SVG from gitlab.com brand assets.
+ * Default fill: currentColor (parent-controlled).
+ */
+export function GitLabLogo({
+  width = 20,
+  height = 20,
+  ...props
+}: LogoProps) {
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox="0 0 380 380"
+      fill="none"
+      aria-hidden="true"
+      {...props}
+    >
+      <path
+        d="M282.83 170.73l-.27-.69-26.14-68.22a6.81 6.81 0 00-2.69-3.24 7 7 0 00-8 .43 7 7 0 00-2.32 3.52l-17.65 54h-71.47l-17.65-54a6.86 6.86 0 00-2.32-3.53 7 7 0 00-8-.43 6.87 6.87 0 00-2.69 3.24L97.44 170l-.26.69a48.54 48.54 0 0016.1 56.1l.09.07.24.17 39.82 29.82 19.7 14.91 12 9.06a8.07 8.07 0 009.76 0l12-9.06 19.7-14.91 40.06-30 .1-.08a48.56 48.56 0 0016.08-56.04Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+/**
+ * Jira logo mark -- the angular/diamond shape.
+ * Official Jira blue gradient from #0052CC to #2684FF.
+ * Default size ~20x20 matching other logos.
+ */
+export function JiraLogo({
+  width = 20,
+  height = 20,
+  ...props
+}: LogoProps) {
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox="0 0 256 256"
+      fill="none"
+      aria-hidden="true"
+      {...props}
+    >
+      <defs>
+        <linearGradient id="jira-grad-1" x1="98.031%" y1="0.161%" x2="58.888%" y2="40.766%">
+          <stop offset="18%" stopColor="#0052CC" stopOpacity="0" />
+          <stop offset="100%" stopColor="#2684FF" />
+        </linearGradient>
+        <linearGradient id="jira-grad-2" x1="100.665%" y1="0.455%" x2="55.402%" y2="44.727%">
+          <stop offset="18%" stopColor="#0052CC" stopOpacity="0" />
+          <stop offset="100%" stopColor="#2684FF" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M244.658 0H121.707a55.502 55.502 0 0 0 55.502 55.502h22.649V77.37c.02 30.625 24.841 55.447 55.5 55.502V10.993C255.358 4.923 250.228 0 244.658 0Z"
+        fill="#2684FF"
+      />
+      <path
+        d="M183.822 61.262H60.872c.019 30.625 24.84 55.447 55.501 55.502h22.649v21.868c.02 30.597 24.798 55.408 55.396 55.501V72.255c0-6.075-5.13-10.993-10.596-10.993Z"
+        fill="url(#jira-grad-1)"
+      />
+      <path
+        d="M122.943 122.524H0c0 30.653 24.86 55.502 55.502 55.502h22.72v21.868c.02 30.597 24.798 55.408 55.396 55.502V133.518c0-6.076-5.13-10.994-10.675-10.994Z"
+        fill="url(#jira-grad-2)"
+      />
+    </svg>
+  )
+}
+
+/**
+ * Telegram logo mark -- the paper plane icon.
+ * Official SVG from Simple Icons.
+ * Default fill: currentColor (parent-controlled).
+ */
+export function TelegramLogo({
+  width = 20,
+  height = 20,
+  ...props
+}: LogoProps) {
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      {...props}
+    >
+      <path
+        d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0h-.056zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+/**
  * Notion logo mark -- the "N" letterform.
  * Official SVG from notion.so brand assets.
  * Default fill: currentColor (parent-controlled).
