@@ -30,6 +30,7 @@ import {
   copyToClipboard,
   STATUS_COLORS,
 } from '@/lib/context-feed'
+import { createClient } from '@/lib/supabase/client'
 import { useContextPagesRealtime } from '@/hooks/use-context-pages-realtime'
 import { apiFetchSSE, SOURCE_LABELS } from '@/lib/api'
 import { GenerationProgress } from '@/components/generation-progress'
@@ -141,6 +142,8 @@ interface ContextPageData {
   id: string
   title: string
   ticket_identifier: string | null
+  ticket_id: string | null
+  jira_issue_id: string | null
   status: string
   content: string
   sources: Array<{ type: string; id: string; title: string; relevance_score: number }>
@@ -281,7 +284,15 @@ export default function ContextDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [generation, setGeneration] = useState<GenerationState | null>(null)
+  const [jiraSiteUrl, setJiraSiteUrl] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  // Detect provider from sources (works for all pages, even those without jira_issue_id FK)
+  const isJiraTicket = useMemo(
+    () => page?.sources?.some((s) => s.type === 'jira_issue' || s.type === 'jira_comment')
+      ?? !!page?.jira_issue_id,
+    [page?.sources, page?.jira_issue_id],
+  )
 
   const loadPage = useCallback(async () => {
     if (!id) return
@@ -295,6 +306,31 @@ export default function ContextDetailPage() {
       setIsLoading(false)
     }
   }, [id])
+
+  // Fetch Jira site URL when page is a Jira ticket
+  useEffect(() => {
+    if (!isJiraTicket) return
+    const supabase = createClient()
+    supabase
+      .from('workspace_integrations')
+      .select('config')
+      .eq('provider', 'jira')
+      .maybeSingle()
+      .then(({ data }) => {
+        const config = data?.config as Record<string, unknown> | undefined
+        // Prefer site_url (actual URL like "https://foo.atlassian.net")
+        // Fall back to external_name for configs saved before site_url was added
+        const url = config?.site_url
+        if (typeof url === 'string' && url) {
+          setJiraSiteUrl(url)
+        } else {
+          const name = config?.external_name
+          if (typeof name === 'string' && name) {
+            setJiraSiteUrl(`https://${name}.atlassian.net`)
+          }
+        }
+      })
+  }, [isJiraTicket])
 
   useEffect(() => {
     loadPage()
@@ -562,7 +598,19 @@ export default function ContextDetailPage() {
             )}
             {generation ? 'Regenerating...' : 'Regenerate'}
           </Button>
-          {page.ticket_identifier && (
+          {page.ticket_identifier && isJiraTicket && jiraSiteUrl && (
+            <Button variant="ghost" asChild>
+              <a
+                href={`${jiraSiteUrl}/browse/${page.ticket_identifier}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="h-4 w-4 mr-1.5" />
+                Open in Jira
+              </a>
+            </Button>
+          )}
+          {page.ticket_identifier && !isJiraTicket && (
             <Button variant="ghost" asChild>
               <a
                 href={`https://linear.app/issue/${page.ticket_identifier}`}
