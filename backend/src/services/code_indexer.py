@@ -486,9 +486,11 @@ async def index_workspace_repos(
             logger.info("Indexing repo %s for workspace %s (%d/%d)", full_name, workspace_id, idx + 1, total)
             try:
                 summary = await index_repo(workspace_id, full_name, session, settings, provider="github")
+                await session.commit()
                 results.append(summary)
             except Exception:
                 logger.exception("Failed to index repo %s", full_name)
+                await session.rollback()
                 results.append({
                     "repo": full_name,
                     "files_scanned": 0,
@@ -584,9 +586,11 @@ async def index_gitlab_workspace_repos(
                 summary = await index_repo(
                     workspace_id, path_with_namespace, session, settings, provider="gitlab"
                 )
+                await session.commit()
                 results.append(summary)
             except Exception:
                 logger.exception("Failed to index GitLab project %s", path_with_namespace)
+                await session.rollback()
                 results.append({
                     "repo": path_with_namespace,
                     "files_scanned": 0,

@@ -131,33 +131,34 @@ async def _process_index_message(message_data: dict) -> None:
 
     changed_chunk_ids: list = []
 
-    async with async_session() as session:
-        if repo_full_name == "__all__":
+    if repo_full_name == "__all__":
+        # Use a fresh session per repo to avoid one failure poisoning all
+        async with async_session() as session:
             if provider == "gitlab":
                 results = await index_gitlab_workspace_repos(workspace_id, session, settings)
             else:
                 results = await index_workspace_repos(workspace_id, session, settings)
-            # Collect changed IDs from all repo results
-            for r in results:
-                changed_chunk_ids.extend(r.get("changed_chunk_ids", []))
-            total_created = sum(r.get("chunks_created", 0) for r in results)
-            total_updated = sum(r.get("chunks_updated", 0) for r in results)
-            logger.info(
-                "Workspace index complete: workspace=%s provider=%s repos=%d created=%d updated=%d",
-                workspace_id, provider, len(results), total_created, total_updated,
-            )
-        else:
+            await session.commit()
+        for r in results:
+            changed_chunk_ids.extend(r.get("changed_chunk_ids", []))
+        total_created = sum(r.get("chunks_created", 0) for r in results)
+        total_updated = sum(r.get("chunks_updated", 0) for r in results)
+        logger.info(
+            "Workspace index complete: workspace=%s provider=%s repos=%d created=%d updated=%d",
+            workspace_id, provider, len(results), total_created, total_updated,
+        )
+    else:
+        async with async_session() as session:
             result = await index_repo(workspace_id, repo_full_name, session, settings, provider=provider)
-            changed_chunk_ids = result.get("changed_chunk_ids", [])
-            logger.info(
-                "Repo index complete: repo=%s provider=%s created=%d updated=%d deleted=%d",
-                repo_full_name, provider,
-                result.get("chunks_created", 0),
-                result.get("chunks_updated", 0),
-                result.get("chunks_deleted", 0),
-            )
-
-        await session.commit()
+            await session.commit()
+        changed_chunk_ids = result.get("changed_chunk_ids", [])
+        logger.info(
+            "Repo index complete: repo=%s provider=%s created=%d updated=%d deleted=%d",
+            repo_full_name, provider,
+            result.get("chunks_created", 0),
+            result.get("chunks_updated", 0),
+            result.get("chunks_deleted", 0),
+        )
 
     # Enqueue embedding jobs only for created/updated chunks (delta-only)
     if changed_chunk_ids:
