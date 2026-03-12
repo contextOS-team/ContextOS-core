@@ -391,7 +391,7 @@ async def _find_hybrid_matches(
 
 
 # Map source_type -> (model class, title+snippet extractor)
-_SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
+_SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable, callable | None]] = {
     "linear_ticket": (
         LinearTicket,
         lambda r: (r.title, (r.description or "")[:200]),
@@ -725,7 +725,7 @@ async def _find_graph_results(
             )
 
             for key, score, provenance, node_name in pending:
-                title, snippet = summaries.get(key, (key[0], ""))
+                title, snippet, url = summaries.get(key, (key[0], "", None))
                 # Fall back to graph node name when source lookup fails
                 if title == key[0]:
                     title = node_name
@@ -736,6 +736,7 @@ async def _find_graph_results(
                     snippet=snippet,
                     relevance_score=score,
                     signals=[provenance],
+                    url=url,
                 )
 
     except Exception:
@@ -875,6 +876,8 @@ async def find_content_by_source(
             if key in merged:
                 merged[key].relevance_score = min(merged[key].relevance_score + item.relevance_score, 1.0)
                 merged[key].signals.extend(item.signals)
+                if not merged[key].url and item.url:
+                    merged[key].url = item.url
             else:
                 merged[key] = item
 
@@ -974,6 +977,9 @@ async def find_related_content(
                     existing.relevance_score + item.relevance_score, 1.0
                 )
                 existing.signals.extend(item.signals)
+                # Preserve URL from whichever signal provides it
+                if not existing.url and item.url:
+                    existing.url = item.url
             else:
                 merged[key] = item
 
