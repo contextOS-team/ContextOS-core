@@ -379,7 +379,6 @@ async def index_repo(
 
 async def _update_index_status(
     workspace_id: UUID,
-    session: AsyncSession,
     index_status: str,
     last_at: str | None = None,
     provider: str = "github",
@@ -389,11 +388,14 @@ async def _update_index_status(
 ) -> None:
     """Write code indexing status to workspace_integrations.config JSONB.
 
-    Follows the same pattern used by sync_status in the sync pipeline.
+    Uses its own database session to avoid committing (or being blocked by)
+    uncommitted work on the caller's data session. This isolation ensures
+    progress updates succeed even if the indexing session is in an error
+    state, and prevents partial repo data from being committed as a
+    side-effect of a progress update.
 
     Args:
         workspace_id: Workspace to update.
-        session: Async database session.
         index_status: Status string ("indexing" or "idle").
         last_at: ISO timestamp of last indexing completion (only set on idle).
         provider: Integration provider ("github" or "gitlab").
@@ -401,33 +403,34 @@ async def _update_index_status(
         total: Total number of repos to index (only during indexing).
         current_repo: Repo currently being indexed (only during indexing).
     """
-    stmt = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == provider,
-    )
-    result = await session.execute(stmt)
-    integration = result.scalar_one_or_none()
+    from src.db import async_session
 
-    if not integration:
-        return
+    async with async_session() as status_session:
+        stmt = select(WorkspaceIntegration).where(
+            WorkspaceIntegration.workspace_id == workspace_id,
+            WorkspaceIntegration.provider == provider,
+        )
+        result = await status_session.execute(stmt)
+        integration = result.scalar_one_or_none()
 
-    config = dict(integration.config) if integration.config else {}
-    config["code_index_status"] = index_status
-    if last_at is not None:
-        config["code_index_last_at"] = last_at
-    if index_status == "indexing":
-        config["code_index_progress"] = progress
-        config["code_index_total"] = total
-        config["code_index_current_repo"] = current_repo
-    else:
-        # Clear progress fields when idle
-        config.pop("code_index_progress", None)
-        config.pop("code_index_total", None)
-        config.pop("code_index_current_repo", None)
-    integration.config = config
-    # Commit immediately so the frontend can poll and see the status change
-    # (especially "indexing" → visible before the long clone/parse work starts)
-    await session.commit()
+        if not integration:
+            return
+
+        config = dict(integration.config) if integration.config else {}
+        config["code_index_status"] = index_status
+        if last_at is not None:
+            config["code_index_last_at"] = last_at
+        if index_status == "indexing":
+            config["code_index_progress"] = progress
+            config["code_index_total"] = total
+            config["code_index_current_repo"] = current_repo
+        else:
+            # Clear progress fields when idle
+            config.pop("code_index_progress", None)
+            config.pop("code_index_total", None)
+            config.pop("code_index_current_repo", None)
+        integration.config = config
+        await status_session.commit()
 
 
 async def index_workspace_repos(
@@ -467,7 +470,7 @@ async def index_workspace_repos(
 
     # Set status to "indexing" at start with total count
     await _update_index_status(
-        workspace_id, session, "indexing", provider="github",
+        workspace_id, "indexing", provider="github",
         progress=0, total=total,
     )
 
@@ -479,7 +482,7 @@ async def index_workspace_repos(
 
             # Update progress: idx = completed count, current_repo = about to start
             await _update_index_status(
-                workspace_id, session, "indexing", provider="github",
+                workspace_id, "indexing", provider="github",
                 progress=idx, total=total, current_repo=full_name,
             )
 
@@ -504,7 +507,7 @@ async def index_workspace_repos(
         # Show completion before transitioning to idle
         if total > 0:
             await _update_index_status(
-                workspace_id, session, "indexing", provider="github",
+                workspace_id, "indexing", provider="github",
                 progress=total, total=total, current_repo=None,
             )
 
@@ -515,7 +518,7 @@ async def index_workspace_repos(
         try:
             now = datetime.now(timezone.utc).replace(tzinfo=None)
             await _update_index_status(
-                workspace_id, session, "idle", last_at=now.isoformat(), provider="github"
+                workspace_id, "idle", last_at=now.isoformat(), provider="github"
             )
         except Exception:
             logger.warning("Failed to reset index status to idle for github", exc_info=True)
@@ -563,7 +566,7 @@ async def index_gitlab_workspace_repos(
 
     # Set status to "indexing" at start with total count
     await _update_index_status(
-        workspace_id, session, "indexing", provider="gitlab",
+        workspace_id, "indexing", provider="gitlab",
         progress=0, total=total,
     )
 
@@ -575,7 +578,7 @@ async def index_gitlab_workspace_repos(
 
             # Update progress: idx = completed count, current_repo = about to start
             await _update_index_status(
-                workspace_id, session, "indexing", provider="gitlab",
+                workspace_id, "indexing", provider="gitlab",
                 progress=idx, total=total, current_repo=path_with_namespace,
             )
 
@@ -604,7 +607,7 @@ async def index_gitlab_workspace_repos(
         # Show completion before transitioning to idle
         if total > 0:
             await _update_index_status(
-                workspace_id, session, "indexing", provider="gitlab",
+                workspace_id, "indexing", provider="gitlab",
                 progress=total, total=total, current_repo=None,
             )
 
@@ -615,7 +618,7 @@ async def index_gitlab_workspace_repos(
         try:
             now = datetime.now(timezone.utc).replace(tzinfo=None)
             await _update_index_status(
-                workspace_id, session, "idle", last_at=now.isoformat(), provider="gitlab"
+                workspace_id, "idle", last_at=now.isoformat(), provider="gitlab"
             )
         except Exception:
             logger.warning("Failed to reset index status to idle for gitlab", exc_info=True)

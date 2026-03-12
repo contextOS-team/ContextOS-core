@@ -208,13 +208,22 @@ async def ensure_valid_token(
         + timedelta(seconds=expires_in)
     )
 
-    # Store new tokens in Vault
-    access_name = token_name(Provider.GITLAB, wid, "access_token")
-    await store_token(session, access_name, new_access)
-    await store_token(session, refresh_name, new_refresh)
+    # Store new tokens in an independent session so that a rollback on the
+    # caller's data session (e.g. after a failed repo index) cannot undo the
+    # token refresh.  GitLab already invalidated the old token server-side,
+    # so losing the new one from our DB would break all subsequent API calls.
+    from src.db import async_session as _async_session
 
-    # Update expiry in DB
-    oauth_token.token_expires_at = token_expires_at
-    await session.flush()
+    access_name = token_name(Provider.GITLAB, wid, "access_token")
+    async with _async_session() as token_session:
+        await store_token(token_session, access_name, new_access)
+        await store_token(token_session, refresh_name, new_refresh)
+
+        # Update expiry on a fresh copy of the OAuthToken row
+        token_stmt = select(OAuthToken).where(OAuthToken.id == oauth_token.id)
+        token_result = await token_session.execute(token_stmt)
+        fresh_token = token_result.scalar_one()
+        fresh_token.token_expires_at = token_expires_at
+        await token_session.commit()
 
     return new_access
