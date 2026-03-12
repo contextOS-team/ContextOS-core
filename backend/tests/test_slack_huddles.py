@@ -9,6 +9,8 @@ Covers:
 - poll_huddle_transcripts creates minimal record for huddles without AI notes
 - Duration calculated from room timestamps
 - Participants resolved from user IDs to display names
+- POST /api/slack/poll-huddles endpoint triggers background poll
+- POST /api/slack/poll-huddles requires authentication
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -567,3 +569,33 @@ class TestPollHuddleTranscripts:
 
         # Embedding NOT queued for no-content huddles
         mock_embedding.queue_embedding_generation.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Router endpoint tests
+# ---------------------------------------------------------------------------
+
+class TestPollHuddlesEndpoint:
+    """Tests for POST /api/slack/poll-huddles endpoint."""
+
+    def test_poll_huddles_returns_polling_status(
+        self, client, valid_auth_header, mock_session
+    ) -> None:
+        """POST /api/slack/poll-huddles returns 200 with polling status."""
+        # Mock workspace membership lookup required by get_current_user
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = UUID(TEST_WORKSPACE_ID)
+        mock_session.execute = AsyncMock(return_value=mock_result)
+
+        response = client.post("/api/slack/poll-huddles", headers=valid_auth_header)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "polling"
+        assert "background" in data["detail"].lower()
+
+    def test_poll_huddles_requires_auth(self, client) -> None:
+        """POST /api/slack/poll-huddles without auth returns 401."""
+        response = client.post("/api/slack/poll-huddles")
+
+        assert response.status_code in (401, 403)
