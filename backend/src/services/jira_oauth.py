@@ -142,10 +142,15 @@ async def exchange_code(
     # Upsert WorkspaceIntegration with cloud_id in config
     cloud_id = cloud_info["cloud_id"]
     site_name = cloud_info.get("site_name", "")
+    site_url = cloud_info.get("site_url", "")
     await upsert_workspace_integration(
         session, workspace_id, Provider.JIRA,
         external_id=cloud_id,
-        config={"cloud_id": cloud_id, "external_name": site_name},
+        config={
+            "cloud_id": cloud_id,
+            "external_name": site_name,
+            "site_url": site_url,
+        },
     )
 
     await session.commit()
