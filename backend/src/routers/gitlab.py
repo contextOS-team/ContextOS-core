@@ -402,4 +402,7 @@ async def get_index_status(
         "status": index_status,
         "last_indexed_at": last_indexed_at,
         "repos": repos,
+        "progress": config.get("code_index_progress"),
+        "total": config.get("code_index_total"),
+        "current_repo": config.get("code_index_current_repo"),
     }

@@ -313,6 +313,9 @@ export interface GitlabIndexStatus {
   status: string
   last_indexed_at: string | null
   repos: { repo: string; chunks: number }[]
+  progress: number | null
+  total: number | null
+  current_repo: string | null
 }
 
 export function getGitlabIndexStatus(): Promise<GitlabIndexStatus> {

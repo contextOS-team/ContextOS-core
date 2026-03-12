@@ -383,6 +383,9 @@ async def _update_index_status(
     index_status: str,
     last_at: str | None = None,
     provider: str = "github",
+    progress: int | None = None,
+    total: int | None = None,
+    current_repo: str | None = None,
 ) -> None:
     """Write code indexing status to workspace_integrations.config JSONB.
 
@@ -394,6 +397,9 @@ async def _update_index_status(
         index_status: Status string ("indexing" or "idle").
         last_at: ISO timestamp of last indexing completion (only set on idle).
         provider: Integration provider ("github" or "gitlab").
+        progress: Number of repos indexed so far (only during indexing).
+        total: Total number of repos to index (only during indexing).
+        current_repo: Repo currently being indexed (only during indexing).
     """
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
@@ -409,6 +415,15 @@ async def _update_index_status(
     config["code_index_status"] = index_status
     if last_at is not None:
         config["code_index_last_at"] = last_at
+    if index_status == "indexing":
+        config["code_index_progress"] = progress
+        config["code_index_total"] = total
+        config["code_index_current_repo"] = current_repo
+    else:
+        # Clear progress fields when idle
+        config.pop("code_index_progress", None)
+        config.pop("code_index_total", None)
+        config.pop("code_index_current_repo", None)
     integration.config = config
     # Commit immediately so the frontend can poll and see the status change
     # (especially "indexing" → visible before the long clone/parse work starts)
@@ -437,24 +452,38 @@ async def index_workspace_repos(
     """
     from datetime import datetime, timezone
 
-    # Set status to "indexing" at start
-    await _update_index_status(workspace_id, session, "indexing", provider="github")
+    # Build list of monitored repos first so we know the total
+    repos = await get_cached_repos(workspace_id, session)
+    monitored_repos: list[dict] = []
+    for repo in repos:
+        full_name = repo.get("full_name", "")
+        if not full_name:
+            continue
+        monitored = await is_repo_monitored(workspace_id, full_name, session)
+        if monitored:
+            monitored_repos.append(repo)
+
+    total = len(monitored_repos)
+
+    # Set status to "indexing" at start with total count
+    await _update_index_status(
+        workspace_id, session, "indexing", provider="github",
+        progress=0, total=total,
+    )
 
     try:
-        repos = await get_cached_repos(workspace_id, session)
         results: list[dict] = []
 
-        for repo in repos:
+        for idx, repo in enumerate(monitored_repos):
             full_name = repo.get("full_name", "")
-            if not full_name:
-                continue
 
-            # Check if repo is monitored
-            monitored = await is_repo_monitored(workspace_id, full_name, session)
-            if not monitored:
-                continue
+            # Update progress: idx = completed count, current_repo = about to start
+            await _update_index_status(
+                workspace_id, session, "indexing", provider="github",
+                progress=idx, total=total, current_repo=full_name,
+            )
 
-            logger.info("Indexing repo %s for workspace %s", full_name, workspace_id)
+            logger.info("Indexing repo %s for workspace %s (%d/%d)", full_name, workspace_id, idx + 1, total)
             try:
                 summary = await index_repo(workspace_id, full_name, session, settings, provider="github")
                 results.append(summary)
@@ -469,6 +498,13 @@ async def index_workspace_repos(
                     "changed_chunk_ids": [],
                     "error": "Indexing failed",
                 })
+
+        # Show completion before transitioning to idle
+        if total > 0:
+            await _update_index_status(
+                workspace_id, session, "indexing", provider="github",
+                progress=total, total=total, current_repo=None,
+            )
 
         return results
     finally:
@@ -509,25 +545,39 @@ async def index_gitlab_workspace_repos(
         is_project_monitored,
     )
 
-    # Set status to "indexing" at start
-    await _update_index_status(workspace_id, session, "indexing", provider="gitlab")
+    # Build list of monitored repos first so we know the total
+    repos = await get_gitlab_cached_repos(workspace_id, session)
+    monitored_repos: list[dict] = []
+    for repo in repos:
+        path_with_namespace = repo.get("path_with_namespace", "")
+        project_id = repo.get("id")
+        if not path_with_namespace or project_id is None:
+            continue
+        monitored = await is_project_monitored(workspace_id, project_id, session)
+        if monitored:
+            monitored_repos.append(repo)
+
+    total = len(monitored_repos)
+
+    # Set status to "indexing" at start with total count
+    await _update_index_status(
+        workspace_id, session, "indexing", provider="gitlab",
+        progress=0, total=total,
+    )
 
     try:
-        repos = await get_gitlab_cached_repos(workspace_id, session)
         results: list[dict] = []
 
-        for repo in repos:
+        for idx, repo in enumerate(monitored_repos):
             path_with_namespace = repo.get("path_with_namespace", "")
-            project_id = repo.get("id")
-            if not path_with_namespace or project_id is None:
-                continue
 
-            # Check if project is monitored
-            monitored = await is_project_monitored(workspace_id, project_id, session)
-            if not monitored:
-                continue
+            # Update progress: idx = completed count, current_repo = about to start
+            await _update_index_status(
+                workspace_id, session, "indexing", provider="gitlab",
+                progress=idx, total=total, current_repo=path_with_namespace,
+            )
 
-            logger.info("Indexing GitLab project %s for workspace %s", path_with_namespace, workspace_id)
+            logger.info("Indexing GitLab project %s for workspace %s (%d/%d)", path_with_namespace, workspace_id, idx + 1, total)
             try:
                 # Refresh token before each clone -- GitLab tokens expire in 2 hours
                 await ensure_valid_token(session, workspace_id, settings)
@@ -546,6 +596,13 @@ async def index_gitlab_workspace_repos(
                     "changed_chunk_ids": [],
                     "error": "Indexing failed",
                 })
+
+        # Show completion before transitioning to idle
+        if total > 0:
+            await _update_index_status(
+                workspace_id, session, "indexing", provider="gitlab",
+                progress=total, total=total, current_repo=None,
+            )
 
         return results
     finally:
