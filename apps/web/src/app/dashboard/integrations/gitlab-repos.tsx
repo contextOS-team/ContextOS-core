@@ -110,6 +110,21 @@ export function GitlabRepos({ onSaved }: GitlabReposProps) {
     }
   }
 
+  /** Trigger indexing and start polling. Returns true on success. */
+  async function startIndexing(): Promise<boolean> {
+    try {
+      await triggerGitlabIndex()
+      setIndexStatus((prev) => prev
+        ? { ...prev, status: 'indexing', progress: 0, total: null, current_repo: null }
+        : { status: 'indexing', last_indexed_at: null, repos: [], progress: 0, total: null, current_repo: null })
+      if (indexPollRef.current) clearTimeout(indexPollRef.current)
+      indexPollRef.current = setTimeout(pollIndexStatus, 3000)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   async function handleSave() {
     setIsSaving(true)
     setError(null)
@@ -122,15 +137,8 @@ export function GitlabRepos({ onSaved }: GitlabReposProps) {
 
       // Auto-trigger indexing after save
       if (saved.size > 0) {
-        try {
-          await triggerGitlabIndex()
-          setIndexStatus((prev) => prev ? { ...prev, status: 'indexing' } : { status: 'indexing', last_indexed_at: null, repos: [] })
-          // Start polling for progress
-          if (indexPollRef.current) clearTimeout(indexPollRef.current)
-          indexPollRef.current = setTimeout(pollIndexStatus, 3000)
-        } catch {
-          // Indexing trigger failed -- not critical, selection was saved
-        }
+        await startIndexing()
+        // Indexing trigger failure is not critical -- selection was saved
       }
     } catch (err) {
       setError(
@@ -138,6 +146,14 @@ export function GitlabRepos({ onSaved }: GitlabReposProps) {
       )
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  async function handleReindex() {
+    setError(null)
+    const ok = await startIndexing()
+    if (!ok) {
+      setError('Failed to start code indexing. Try again.')
     }
   }
 
@@ -208,31 +224,79 @@ export function GitlabRepos({ onSaved }: GitlabReposProps) {
       {/* Indexing status */}
       {savedIds.size > 0 && indexStatus && (
         <div
-          className={`flex items-center gap-2 rounded-md px-3 py-2 text-xs ${
+          className={`rounded-md px-3 py-2 text-xs ${
             isIndexing
               ? 'bg-primary/10 text-primary'
               : 'bg-muted/50 text-muted-foreground'
           }`}
         >
           {isIndexing ? (
-            <>
-              <RefreshCw className="h-3 w-3 animate-spin shrink-0" />
-              <span>Indexing projects...</span>
-            </>
+            (() => {
+              const progress = indexStatus.progress ?? 0
+              const hasTotal = indexStatus.total != null && indexStatus.total > 0
+              const percent = hasTotal ? Math.round((progress / indexStatus.total!) * 100) : 0
+              // Show last 2 segments for nested namespaces (e.g. "client-app/ios" from "hivetaxi/client-app/ios")
+              const shortRepo = indexStatus.current_repo
+                ? indexStatus.current_repo.split('/').slice(-2).join('/')
+                : null
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="h-3 w-3 animate-spin shrink-0" />
+                      <span>
+                        {shortRepo
+                          ? `Indexing ${shortRepo}...`
+                          : 'Indexing projects...'}
+                      </span>
+                    </div>
+                    {hasTotal && (
+                      <span className="font-mono text-[11px] opacity-70">
+                        {progress}/{indexStatus.total} projects
+                      </span>
+                    )}
+                  </div>
+                  {hasTotal && (
+                    <div
+                      className="h-1.5 w-full rounded-full bg-primary/20 overflow-hidden"
+                      role="progressbar"
+                      aria-valuenow={percent}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label="GitLab indexing progress"
+                    >
+                      <div
+                        className="h-full rounded-full bg-primary transition-all duration-700 ease-out relative overflow-hidden"
+                        style={{ width: `${Math.max(percent, 2)}%` }}
+                      >
+                        <div className="absolute inset-0 animate-[sync-shimmer_1.5s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })()
           ) : (
-            <>
+            <div className="flex items-center gap-2">
               <Database className="h-3 w-3 shrink-0" />
-              <span>
+              <span className="flex-1">
                 {totalChunks > 0
                   ? `${totalChunks.toLocaleString()} code symbols indexed across ${indexedRepoCount} project${indexedRepoCount !== 1 ? 's' : ''}`
                   : 'No code indexed yet'}
               </span>
+              <button
+                onClick={handleReindex}
+                className="ml-auto flex items-center gap-1 text-[11px] text-primary hover:text-primary/80 transition-colors shrink-0"
+              >
+                <RefreshCw className="h-2.5 w-2.5" />
+                Re-index
+              </button>
               {indexStatus.last_indexed_at && (
-                <span className="ml-auto text-[10px] opacity-60">
-                  Last indexed {new Date(indexStatus.last_indexed_at).toLocaleDateString()}
+                <span className="text-[10px] opacity-60">
+                  {new Date(indexStatus.last_indexed_at).toLocaleDateString()}
                 </span>
               )}
-            </>
+            </div>
           )}
         </div>
       )}
