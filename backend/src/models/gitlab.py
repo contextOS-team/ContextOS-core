@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, text
+from sqlalchemy import BigInteger, Column, String, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlmodel import Field
 
@@ -23,8 +23,11 @@ class GitlabMergeRequest(BaseModel, table=True):
     linear_ticket_id: uuid.UUID | None = Field(
         default=None, foreign_key="linear_tickets.id"
     )
-    gitlab_id: int = Field(nullable=False)
-    project_id: int = Field(nullable=False)
+    jira_issue_id: uuid.UUID | None = Field(
+        default=None, foreign_key="jira_issues.id"
+    )
+    gitlab_id: int = Field(sa_column=Column(BigInteger, nullable=False))
+    project_id: int = Field(sa_column=Column(BigInteger, nullable=False))
     project_path: str = Field(nullable=False)
     iid: int = Field(nullable=False)
     title: str = Field(nullable=False)
@@ -59,7 +62,7 @@ class GitlabReview(BaseModel, table=True):
     merge_request_id: uuid.UUID = Field(
         foreign_key="gitlab_merge_requests.id", nullable=False
     )
-    gitlab_id: int = Field(nullable=False)
+    gitlab_id: int = Field(sa_column=Column(BigInteger, nullable=False))
     author: str = Field(nullable=False)
     state: str = Field(nullable=False)
     body: str | None = Field(default=None)

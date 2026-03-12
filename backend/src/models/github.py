@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, text
+from sqlalchemy import BigInteger, Column, String, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlmodel import Field
 
@@ -23,7 +23,10 @@ class GithubPullRequest(BaseModel, table=True):
     linear_ticket_id: uuid.UUID | None = Field(
         default=None, foreign_key="linear_tickets.id"
     )
-    github_id: int = Field(nullable=False)
+    jira_issue_id: uuid.UUID | None = Field(
+        default=None, foreign_key="jira_issues.id"
+    )
+    github_id: int = Field(sa_column=Column(BigInteger, nullable=False))
     repo_full_name: str = Field(nullable=False)
     number: int = Field(nullable=False)
     title: str = Field(nullable=False)
@@ -58,7 +61,7 @@ class GithubReview(BaseModel, table=True):
     pull_request_id: uuid.UUID = Field(
         foreign_key="github_pull_requests.id", nullable=False
     )
-    github_id: int = Field(nullable=False)
+    github_id: int = Field(sa_column=Column(BigInteger, nullable=False))
     author: str = Field(nullable=False)
     state: str = Field(nullable=False)
     body: str | None = Field(default=None)
