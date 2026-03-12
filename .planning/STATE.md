@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: executing
-stopped_at: Completed 29-05-PLAN.md
-last_updated: "2026-03-11T20:52:12.154Z"
-last_activity: 2026-03-12 -- Completed 28-02 (GitLab Project Selection Frontend)
+stopped_at: Completed 28-01-PLAN.md
+last_updated: "2026-03-12T10:30:07Z"
+last_activity: 2026-03-12 -- Completed 28-01 (GitLab Code Indexing Backend)
 progress:
   total_phases: 15
   completed_phases: 11
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 Phase: 29 of 29 (Codebase Hardening)
 Plan: 5 of 6
 Status: Executing
-Last activity: 2026-03-12 -- Completed 28-02 (GitLab Project Selection Frontend)
+Last activity: 2026-03-12 -- Completed 28-01 (GitLab Code Indexing Backend)
 
 Progress: [██████████] 97%
 
@@ -187,6 +187,9 @@ Recent decisions affecting current work:
 - [Phase 29]: X-Forwarded-For trusted only from loopback/private IPs via ipaddress module
 - [Phase 29]: _lookup_ticket returns 3-tuple (ticket, fk_id, is_linear) for mock-friendly ticket type detection
 - [Phase 29]: NotionSyncSection receives isPageLoading prop to gate mount-effect sync resume
+- [Phase 28]: Provider dispatch via string param (not class hierarchy) for minimal clone auth abstraction
+- [Phase 28]: Token refresh before EACH GitLab repo clone -- OAuth tokens expire in 2 hours
+- [Phase 28]: GitLab chunks filtered by matching repo_full_name against available_projects paths
 - [Phase 28]: GitLab project selection uses numeric Set<number> for IDs, internal visibility uses dimmed Lock icon
 - [Phase 29]: makeConnectHandler/makeDisconnectHandler moved into integration-cards.tsx as module-level helpers
 - [Phase 29]: connected_sources guard pattern: None means query all (backward compat), hybrid search post-filters results
@@ -214,6 +217,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T20:46:22.741Z
-Stopped at: Completed 28-02-PLAN.md
+Last session: 2026-03-12T10:30:07Z
+Stopped at: Completed 28-01-PLAN.md
 Resume file: None

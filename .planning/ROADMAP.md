@@ -279,7 +279,7 @@ Plans:
   4. Users can browse, select, and save GitLab projects from the settings page
   5. Saving project selection auto-triggers code indexing with status polling
   6. Integrations status includes selected_repos_count for GitLab
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 28-01-PLAN.md — Backend: abstract clone auth in code_indexer, add /index and /index/status endpoints to GitLab router, update integrations status
