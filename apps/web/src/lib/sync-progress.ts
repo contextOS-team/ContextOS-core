@@ -10,23 +10,26 @@ interface SyncInput {
   syncTotal: number | null
 }
 
-interface SyncState {
+export interface SyncState {
   syncing: boolean
   percent: number | null
   label: string | null
+  phaseLabel: string | null
+  hasTotal: boolean
+  progress: number | null
 }
 
 export function computeSyncState({ isResyncing, syncProgress, syncTotal }: SyncInput): SyncState {
   if (!isResyncing) {
-    return { syncing: false, percent: null, label: null }
+    return { syncing: false, percent: null, label: null, phaseLabel: null, hasTotal: false, progress: null }
   }
 
   if (syncProgress == null || syncTotal == null || syncTotal === 0) {
-    return { syncing: true, percent: null, label: 'Syncing...' }
+    return { syncing: true, percent: null, label: 'Syncing...', phaseLabel: 'Discovering pages...', hasTotal: false, progress: null }
   }
 
   const percent = Math.round((syncProgress / syncTotal) * 100)
   const label = `${syncProgress} / ${syncTotal}`
 
-  return { syncing: true, percent, label }
+  return { syncing: true, percent, label, phaseLabel: 'Syncing pages...', hasTotal: true, progress: syncProgress }
 }
