@@ -1,153 +1,44 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { usePostHog } from "posthog-js/react";
+import dynamic from "next/dynamic";
 
-function MockContextPage() {
-  return (
-    <div
-      className="rounded-xl overflow-hidden w-full"
-      style={{
-        background: "#0F0F18",
-        border: "1px solid rgba(255,255,255,0.08)",
-        fontFamily: "monospace",
-      }}
-    >
-      {/* Browser chrome */}
+const RemotionHeroPlayer = dynamic(
+  () =>
+    import("./RemotionPlayer").then((m) => ({
+      default: m.RemotionHeroPlayer,
+    })),
+  {
+    ssr: false,
+    loading: () => (
       <div
-        className="flex items-center gap-2 px-4 py-3"
         style={{
-          background: "#141420",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          width: "100%",
+          aspectRatio: "16/9",
+          backgroundColor: "#0A0A0F",
+          borderRadius: "0 0 1rem 1rem",
         }}
-      >
-        <div className="flex gap-1.5">
-          <div className="w-3 h-3 rounded-full" style={{ background: "#FF5F57" }} />
-          <div className="w-3 h-3 rounded-full" style={{ background: "#FFBD2E" }} />
-          <div className="w-3 h-3 rounded-full" style={{ background: "#28CA41" }} />
-        </div>
-        <div
-          className="flex-1 mx-4 rounded-md px-3 py-1 text-xs text-[#6B7280]"
-          style={{ background: "#0A0A0F" }}
-        >
-          app.contextos.dev/tickets/ENG-421
-        </div>
-      </div>
+      />
+    ),
+  }
+);
 
-      {/* Content */}
-      <div className="p-5">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span
-                className="text-xs px-2 py-0.5 rounded font-mono"
-                style={{
-                  background: "rgba(0,212,170,0.1)",
-                  color: "#00D4AA",
-                  border: "1px solid rgba(0,212,170,0.2)",
-                }}
-              >
-                ENG-421
-              </span>
-              <span className="text-xs text-[#6B7280]">In Progress</span>
-            </div>
-            <h3 className="text-sm font-semibold text-white">
-              Implement real-time sync for shared workspaces
-            </h3>
-          </div>
-          <div
-            className="text-xs px-2 py-1 rounded-md flex items-center gap-1"
-            style={{
-              background: "rgba(0,212,170,0.1)",
-              color: "#00D4AA",
-              border: "1px solid rgba(0,212,170,0.2)",
-            }}
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-              <circle cx="5" cy="5" r="2" />
-            </svg>
-            Auto-generated
-          </div>
-        </div>
-
-        {/* Sections */}
-        <div className="space-y-3">
-          {/* Background */}
-          <div
-            className="rounded-lg p-3"
-            style={{ background: "#141420", border: "1px solid rgba(255,255,255,0.05)" }}
-          >
-            <div className="text-xs font-mono text-[#00D4AA] mb-2 uppercase tracking-wider">
-              Background
-            </div>
-            <p className="text-xs text-[#9CA3AF] leading-relaxed">
-              Discussed in #engineering on Nov 12. Decision was made to use WebSockets
-              over polling. See Notion doc: &ldquo;Real-time Architecture v2&rdquo;
-            </p>
-          </div>
-
-          {/* Sources grid */}
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { icon: "S", label: "4 Slack threads", color: "#4A154B" },
-              { icon: "N", label: "2 Notion docs", color: "#1e1e1e" },
-              { icon: "M", label: "1 Meeting clip", color: "#1a3a5c" },
-            ].map((s) => (
-              <div
-                key={s.label}
-                className="rounded-lg p-2 flex items-center gap-2"
-                style={{
-                  background: "#0A0A0F",
-                  border: "1px solid rgba(255,255,255,0.05)",
-                }}
-              >
-                <div
-                  className="w-5 h-5 rounded text-xs flex items-center justify-center font-bold text-white"
-                  style={{ background: s.color }}
-                >
-                  {s.icon}
-                </div>
-                <span className="text-[10px] text-[#6B7280]">{s.label}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Key decisions */}
-          <div
-            className="rounded-lg p-3"
-            style={{ background: "#141420", border: "1px solid rgba(255,255,255,0.05)" }}
-          >
-            <div className="text-xs font-mono text-[#00D4AA] mb-2 uppercase tracking-wider">
-              Key Decisions
-            </div>
-            <div className="space-y-1.5">
-              {[
-                "Use Socket.io v4 — decided Nov 10",
-                "Redis adapter for multi-instance scaling",
-                "Fallback to long polling for legacy clients",
-              ].map((d) => (
-                <div key={d} className="flex items-start gap-2">
-                  <div
-                    className="w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0"
-                    style={{ background: "#00D4AA" }}
-                  />
-                  <span className="text-xs text-[#9CA3AF]">{d}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+/** Scene boundaries in frames (must match remotion/constants.ts) */
+const SCENE_FRAMES = [0, 90, 210, 330]; // scene1 start, scene2 start, scene3 start, end
 
 export default function Hero() {
   const posthog = usePostHog();
   const [visible, setVisible] = useState(false);
   const [scrollY, setScrollY] = useState(0);
+  const [activeStep, setActiveStep] = useState(0);
   const heroRef = useRef<HTMLDivElement>(null);
+
+  const onFrameUpdate = useCallback((frame: number) => {
+    if (frame < SCENE_FRAMES[1]) setActiveStep(0);
+    else if (frame < SCENE_FRAMES[2]) setActiveStep(1);
+    else setActiveStep(2);
+  }, []);
 
   useEffect(() => {
     setTimeout(() => setVisible(true), 100);
@@ -158,13 +49,13 @@ export default function Hero() {
 
   const heroHeight = heroRef.current?.offsetHeight ?? 900;
   const progress = Math.min(scrollY / (heroHeight * 0.5), 1);
-  const rotateX = 12 * (1 - progress);
-  const scale = 0.88 + 0.12 * progress;
+  const rotateX = 6 * (1 - progress);
+  const scale = 0.94 + 0.06 * progress;
 
   return (
     <section
       ref={heroRef}
-      className="relative min-h-screen flex flex-col items-center justify-center pt-24 pb-16 px-6 overflow-hidden"
+      className="relative min-h-screen flex flex-col items-center justify-center pt-20 pb-12 px-6 overflow-hidden"
     >
       {/* Background radial glow */}
       <div
@@ -175,13 +66,13 @@ export default function Hero() {
         }}
       />
 
-      {/* Dot grid */}
+      {/* Subtle dot grid */}
       <div
-        className="absolute inset-0 pointer-events-none opacity-40"
+        className="absolute inset-0 pointer-events-none opacity-50"
         style={{
           backgroundImage:
-            "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)",
-          backgroundSize: "32px 32px",
+            "radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
         }}
       />
 
@@ -237,7 +128,7 @@ export default function Hero() {
 
         {/* CTAs */}
         <div
-          className={`flex flex-col sm:flex-row items-center justify-center gap-3 mb-16 transition-all duration-700 ${
+          className={`flex flex-col sm:flex-row items-center justify-center gap-3 mb-10 transition-all duration-700 ${
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "300ms" }}
@@ -270,24 +161,24 @@ export default function Hero() {
           </a>
         </div>
 
-        {/* Product screenshot in perspective */}
+        {/* Demo video in perspective */}
         <div
           className={`transition-all duration-700 ${
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
           }`}
           style={{ transitionDelay: "450ms" }}
         >
-          {/* Glow behind screenshot */}
+          {/* Glow behind video */}
           <div
-            className="relative mx-auto max-w-3xl"
+            className="relative mx-auto max-w-5xl"
             style={{ perspective: "1200px" }}
           >
             <div
               className="absolute -inset-8 pointer-events-none"
               style={{
                 background:
-                  "radial-gradient(ellipse at center, rgba(0,212,170,0.12) 0%, transparent 65%)",
-                filter: "blur(20px)",
+                  "radial-gradient(ellipse at center, rgba(0,212,170,0.22) 0%, transparent 65%)",
+                filter: "blur(30px)",
               }}
             />
             <div
@@ -299,15 +190,103 @@ export default function Hero() {
               }}
             >
               <div
-                className="rounded-2xl overflow-hidden"
+                className="overflow-hidden rounded-2xl"
                 style={{
                   boxShadow:
-                    "0 40px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06), 0 0 40px rgba(0,212,170,0.08)",
+                    "0 40px 80px rgba(0,0,0,0.6), 0 0 60px rgba(0,212,170,0.12)",
+                  border: "1px solid rgba(255,255,255,0.10)",
                 }}
               >
-                <MockContextPage />
+                {/* Window titlebar */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "10px 14px",
+                    background: "rgba(255,255,255,0.04)",
+                    borderBottom: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 5,
+                      background: "#FF5F57",
+                    }}
+                  />
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 5,
+                      background: "#FEBC2E",
+                    }}
+                  />
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 5,
+                      background: "#28C840",
+                    }}
+                  />
+                  <span
+                    style={{
+                      flex: 1,
+                      textAlign: "center",
+                      fontSize: 12,
+                      color: "rgba(255,255,255,0.3)",
+                      fontFamily: "system-ui, sans-serif",
+                    }}
+                  >
+                    ContextOS
+                  </span>
+                  {/* Spacer to balance the dots */}
+                  <span style={{ width: 48 }} />
+                </div>
+                <RemotionHeroPlayer onFrameUpdate={onFrameUpdate} />
               </div>
             </div>
+          </div>
+          {/* Scene step indicators — synced with animation */}
+          <div
+            className="flex items-center justify-center gap-8 mt-6"
+            style={{ fontSize: 14, fontFamily: "system-ui, sans-serif" }}
+          >
+            {[
+              { num: "1", label: "Pick a ticket" },
+              { num: "2", label: "We find sources" },
+              { num: "3", label: "You get context" },
+            ].map((step, i) => {
+              const isActive = activeStep === i;
+              return (
+                <span key={i} className="flex items-center gap-3">
+                  {i > 0 && (
+                    <span
+                      style={{
+                        color: "rgba(255,255,255,0.15)",
+                        marginRight: 4,
+                      }}
+                    >
+                      /
+                    </span>
+                  )}
+                  <span
+                    className="flex items-center gap-2"
+                    style={{
+                      color: isActive ? "#00D4AA" : "#6B7280",
+                      fontWeight: isActive ? 600 : 400,
+                      transition: "color 0.3s, font-weight 0.3s",
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>{step.num}.</span>
+                    {step.label}
+                  </span>
+                </span>
+              );
+            })}
           </div>
         </div>
       </div>

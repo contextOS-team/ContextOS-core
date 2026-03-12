@@ -4,6 +4,7 @@ Provides endpoints for generating, retrieving, and searching context pages
 that synthesize information from Linear tickets, PRs, Slack, and meetings.
 """
 
+import json
 import logging
 from typing import Annotated
 from uuid import UUID
@@ -13,13 +14,14 @@ from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
+from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from src.config import Settings, get_settings
 from src.db import async_session, get_session
 from src.dependencies import UserContext, get_current_user
 from src.models.context_page import ContextPage
 from src.models.ticket import LinearTicket
-from src.services.synthesis import generate_context_page
+from src.services.synthesis import generate_context_page, generate_context_page_stream
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,81 @@ async def get_context_page(
         "created_at": page.created_at.isoformat() if page.created_at else None,
         "updated_at": page.updated_at.isoformat() if page.updated_at else None,
     }
+
+
+@router.get("/{ticket_identifier}/generate-stream")
+async def stream_context_generation(
+    ticket_identifier: str,
+    user: UserContext = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+    linear_issue_id: str | None = Query(default=None),
+):
+    """Stream context generation progress via SSE.
+
+    CRITICAL: Create a dedicated session INSIDE the generator, not via Depends.
+    FastAPI closes Depends sessions when the response object is returned,
+    which for SSE is immediately -- before the stream ends.
+    """
+
+    async def event_generator():
+        async with async_session() as session:
+            try:
+                # Check for concurrent generation
+                stmt = select(ContextPage).where(
+                    ContextPage.workspace_id == user.workspace_id,
+                    ContextPage.ticket_identifier == ticket_identifier,
+                    ContextPage.status == "generating",
+                    ContextPage.deleted_at.is_(None),  # type: ignore[union-attr]
+                )
+                result = await session.execute(stmt)
+                if result.scalar_one_or_none():
+                    yield ServerSentEvent(
+                        data=json.dumps({"event": "error", "message": "Generation already in progress"}),
+                        event="error",
+                    )
+                    return
+
+                # Sync ticket from Linear if not found locally
+                ticket_stmt = select(LinearTicket).where(
+                    LinearTicket.workspace_id == user.workspace_id,
+                    LinearTicket.identifier == ticket_identifier,
+                    LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
+                )
+                ticket_result = await session.execute(ticket_stmt)
+                if ticket_result.scalar_one_or_none() is None and linear_issue_id:
+                    from src.services.linear_sync import sync_single_ticket
+                    from src.services.linear_oauth import get_valid_access_token
+
+                    logger.info(
+                        "SSE: Ticket %s not found locally, syncing from Linear",
+                        ticket_identifier,
+                    )
+                    access_token = await get_valid_access_token(
+                        session, user.workspace_id, user.user_id, settings
+                    )
+                    await sync_single_ticket(
+                        session, user.workspace_id, access_token, linear_issue_id
+                    )
+                    await session.commit()
+
+                async for event in generate_context_page_stream(
+                    session, user.workspace_id, ticket_identifier
+                ):
+                    yield ServerSentEvent(
+                        data=json.dumps(event),
+                        event=event["event"],
+                    )
+
+                await session.commit()
+            except Exception as e:
+                logger.exception("SSE generation failed for %s", ticket_identifier)
+                await session.rollback()
+                yield ServerSentEvent(
+                    data=json.dumps({"event": "error", "message": str(e)}),
+                    event="error",
+                )
+
+    return EventSourceResponse(event_generator())
 
 
 async def _generate_in_background(

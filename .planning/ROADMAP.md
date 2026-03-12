@@ -3,8 +3,7 @@
 ## Milestones
 
 - :white_check_mark: **v1.0 Dogfood** - Phases 1-14 (shipped 2026-03-03)
-- :white_check_mark: **v1.1 Dashboard & Onboarding** - Phases 15-21 (shipped 2026-03-06)
-- :white_check_mark: **v1.2 GraphRAG** - Phases 22-27 (shipped 2026-03-08)
+- :construction: **v1.1 Dashboard & Onboarding** - Phases 15-20 (in progress)
 
 ## Phases
 
@@ -38,8 +37,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 </details>
 
-<details>
-<summary>v1.1 Dashboard & Onboarding (Phases 15-21) - SHIPPED 2026-03-06</summary>
+### v1.1 Dashboard & Onboarding (In Progress)
+
+**Milestone Goal:** Transform the generic dashboard into a polished, brand-consistent product experience with guided onboarding, full context feed, activity timeline, and team settings -- dark theme that mirrors the landing page's teal identity but stays muted for daily use.
 
 - [x] **Phase 15: Dark Theme Token Foundation** - Brand-tinted OKLCH tokens, DarkModeApplier, JetBrains Mono, navigation restructure, skeleton states (completed 2026-03-04)
 - [x] **Phase 16: Auth Redesign + Schema Foundation** - Dark-themed auth pages, user_onboarding_state and activity_events tables, onboarding gate (completed 2026-03-04)
@@ -47,24 +47,158 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 18: Activity Timeline** - Chronological event feed with real-time updates and day-group dividers (completed 2026-03-04)
 - [x] **Phase 19: Context Feed + Dashboard Home** - Browsable context feed with filtering, search, detail view, and dashboard summary (completed 2026-03-04)
 - [x] **Phase 20: Settings Page** - API key management, workspace editing, team member view (completed 2026-03-06)
-- [x] **Phase 21: Auth Redesign + Social OAuth** - Auth redesign and social OAuth (completed 2026-03-06)
 
-</details>
+## Phase Details
 
-<details>
-<summary>v1.2 GraphRAG (Phases 22-27) - SHIPPED 2026-03-08</summary>
+### Phase 15: Dark Theme Token Foundation
+**Goal**: Every dashboard and auth surface renders in a brand-tinted dark theme with consistent tokens, navigation, and loading states -- the visual foundation every subsequent phase builds on
+**Depends on**: Phase 14 (v1.0 complete)
+**Requirements**: DS-01, DS-02, DS-03, DS-04, DS-05, DS-06, DS-07, DS-08, DS-09, NAV-01
+**Success Criteria** (what must be TRUE):
+  1. Dashboard renders dark by default with brand-tinted surfaces (not neutral gray shadcn defaults) and teal appears only on actionable/status elements
+  2. JetBrains Mono displays on all data identifiers (ticket IDs, timestamps, counts, API keys) and section labels use monospace uppercase tracking
+  3. All Radix UI portals (Dialog, Dropdown, Sheet) render correctly in dark mode without light-theme flash
+  4. Dashboard navigation holds all sections (context feed, activity, integrations, settings) with clear active state indicators
+  5. Every dashboard page shows a structured skeleton loading state that matches the populated layout shape
+**Plans**: 3 plans
 
-- [x] **Phase 22: Graph Foundation + Rule-Based Extraction** - Graph tables, traversal function, indexes, and deterministic regex extractors for structured references (completed 2026-03-06)
-- [x] **Phase 23: Identity Resolution** - Cross-source person unification via email-based deterministic matching and fuzzy candidate flagging (completed 2026-03-07)
-- [x] **Phase 24: LLM Extraction + Decision Extraction** - Semantic entity extraction via Gemini Flash batch pipeline with decision nodes as highest-value entity (completed 2026-03-07)
-- [x] **Phase 25: Graph-Enhanced Retrieval** - Graph traversal as third retrieval signal with depth-decay scoring blended into existing search (completed 2026-03-08)
-- [x] **Phase 26: Synthesis + Code-to-Discussion Linking** - Context pages enhanced with decision trails, relationship paths, people cross-references, and code provenance (completed 2026-03-08)
-- [x] **Phase 27: Graph Explorer API** - Subgraph JSON endpoint for a ticket's graph neighborhood (completed 2026-03-08)
+Plans:
+- [ ] 15-01-PLAN.md — OKLCH token system, DarkModeApplier, FOUC prevention, spring animations, grain texture, shimmer keyframe
+- [ ] 15-02-PLAN.md — Navigation restructure with Activity link, avatar dropdown, teal underline active state, wordmark gradient
+- [ ] 15-03-PLAN.md — Skeleton component, structured loading states, font-mono typography, section-label utility, Activity placeholder
 
-</details>
+### Phase 16: Auth Redesign + Schema Foundation
+**Goal**: Auth pages match the dark brand identity and the database tables required for onboarding and activity tracking exist with proper RLS, indexes, and triggers
+**Depends on**: Phase 15
+**Requirements**: AUTH-01, AUTH-02, ACT-04, ONB-07, ONB-09
+**Success Criteria** (what must be TRUE):
+  1. Login and signup pages render in the dark theme with the same teal accent, typography, and surface tokens as the dashboard
+  2. user_onboarding_state table exists with RLS, auto-created on first sign-in, queryable for onboarding completion status
+  3. activity_events table exists with workspace-scoped RLS, (workspace_id, created_at DESC) index, and 30-day retention policy
+  4. Users who have not completed onboarding are redirected away from the dashboard to the onboarding flow
+**Plans**: 3 plans
+
+Plans:
+- [ ] 16-01-PLAN.md — Database migration: user_onboarding_state + activity_events tables, trigger extension, pg_cron retention
+- [ ] 16-02-PLAN.md — Auth UI redesign: split layout with brand panel, dark-themed login/signup pages with teal CTAs
+- [ ] 16-03-PLAN.md — Onboarding gate in dashboard layout, /onboarding route placeholder, Sonner toaster, auth callback update
+
+### Phase 17: Onboarding Wizard
+**Goal**: New users experience a guided 4-step onboarding (workspace name, connect Linear, optional sources, first context page) that persists across refreshes and OAuth redirects before they ever see the dashboard
+**Depends on**: Phase 16
+**Requirements**: ONB-01, ONB-02, ONB-03, ONB-04, ONB-05, ONB-06, ONB-08
+**Success Criteria** (what must be TRUE):
+  1. After first signup, user sees a 4-step wizard (workspace name, connect Linear, optional sources, first context page) before the dashboard
+  2. User cannot proceed past step 2 without connecting Linear; optional sources in step 3 can be skipped
+  3. OAuth redirects (Linear, Slack, etc.) return the user to the correct wizard step without losing progress
+  4. Closing the browser and returning resumes the wizard at the last completed step (database-backed persistence)
+  5. Successful integration connection shows an animated checkmark confirmation
+**Plans**: 2 plans
+
+Plans:
+- [ ] 17-01-PLAN.md — Wizard shell with dot stepper, steps 1-3 (workspace naming, Linear connection, optional sources grid), success checkmark, CSS crossfade
+- [ ] 17-02-PLAN.md — Step 4 context page generation with mock fallback, completion flow, end-to-end visual verification
+
+### Phase 18: Activity Timeline
+**Goal**: Users see a live chronological feed of workspace events (syncs, context generated, integrations connected) that proves the system is working
+**Depends on**: Phase 16
+**Requirements**: ACT-01, ACT-02, ACT-03
+**Success Criteria** (what must be TRUE):
+  1. User sees a chronological feed of workspace events (syncs, context generated, integrations connected) on the dashboard
+  2. Events display with type-specific icons, relative timestamps, and day-group dividers
+  3. New events appear in real-time without page refresh via Supabase Realtime
+**Plans**: 2 plans
+
+Plans:
+- [ ] 18-01-PLAN.md — Realtime publication migration, ActivityEvent types, formatter functions (descriptions, timestamps, day labels, metadata chips)
+- [ ] 18-02-PLAN.md — Server page with SSR data fetch, ActivityTimeline client component with Realtime subscription, day-grouped rendering, pagination, animations
+
+### Phase 19: Context Feed + Dashboard Home
+**Goal**: Users can browse, filter, search, and inspect all their generated context pages from a dedicated feed view, and the dashboard home provides a summary overview
+**Depends on**: Phase 16
+**Requirements**: FEED-01, FEED-02, FEED-03, FEED-04, FEED-05, FEED-06, HOME-01
+**Success Criteria** (what must be TRUE):
+  1. User can browse all generated context pages in a scrollable list with status indicators
+  2. User can filter context pages by status (All/Ready/Generating/Stale/Error) and search by free text (title, ticket ID)
+  3. Context feed updates in real-time as page statuses change (no manual refresh needed)
+  4. User can open a context page detail view at /dashboard/context/[id] with copy-prompt and regenerate actions
+  5. Empty states show what a populated feed looks like with a clear CTA, and the dashboard home shows recent pages, integration health, and activity preview
+**Plans**: 3 plans
+
+Plans:
+- [ ] 19-01-PLAN.md — DB migration (error status + Realtime publication), npm deps (react-markdown, remark-gfm, typography), shared types/hooks
+- [ ] 19-02-PLAN.md — Context feed list page with status filters, debounced search, Realtime updates, empty state with inline generate
+- [ ] 19-03-PLAN.md — Context detail view with markdown rendering, copy-prompt, regenerate; Dashboard home Recent Context section
+
+### Phase 20: Settings Page
+**Goal**: Users can manage API keys, workspace settings, and view team members from a dedicated settings page
+**Depends on**: Phase 15
+**Requirements**: SET-01, SET-02, SET-03, SET-04
+**Success Criteria** (what must be TRUE):
+  1. User can create API keys (full key shown once on creation, then prefix-only) and revoke existing keys
+  2. User can edit their workspace name from settings
+  3. User can view connected team members
+  4. Settings page is accessible from the dashboard navigation
+**Plans**: 2 plans
+
+Plans:
+- [ ] 20-01-PLAN.md — Database migration (api_keys table + RLS), API key model/service, backend endpoints (CRUD api-keys, PATCH workspace, GET members)
+- [ ] 20-02-PLAN.md — AlertDialog component, API client functions, settings page with General/API Keys/Team/Integrations sections
+
+### Phase 21: Auth Redesign and Social OAuth
+
+**Goal:** Add Google and GitHub social OAuth login, remove magic link authentication, polish auth form styling, add password reset flow, and refresh the brand panel -- making auth pages feel premium and offering fast social login
+**Requirements**: OAUTH-01, OAUTH-02, AUTH-POLISH-01, AUTH-POLISH-02, AUTH-POLISH-03
+**Depends on:** Phase 20
+**Success Criteria** (what must be TRUE):
+  1. Google and GitHub social login buttons appear on both login and signup pages above the email/password form
+  2. Magic link authentication is completely removed
+  3. Social OAuth integrates with existing onboarding flow (new social users go through wizard)
+  4. Password reset flow works via "Forgot password?" link
+  5. Auth brand panel feels alive with animated elements and product-focused content
+  6. Input fields have teal-accented focus rings
+**Plans**: 2 plans
+
+Plans:
+- [ ] 21-01-PLAN.md — Social OAuth buttons component, provider SVG icons, rewrite login/signup pages (remove magic link, add social buttons, focus rings, fix footer)
+- [ ] 21-02-PLAN.md — Database migration for multi-provider name extraction, password reset page, brand panel refresh, visual verification
+
+### Phase 22: Real-time Context Generation Progress UI
+
+**Goal:** Replace the silent toast-based generation flow with a beautiful, animated, real-time progress experience that shows the LLM searching each integrated source (Slack, GitHub, Fathom, Notion, Linear) with live feedback. Progress is real (driven by backend events), source-aware (only shows connected integrations), and transitions smoothly into the completed context page.
+**Requirements**: GEN-01, GEN-02, GEN-03, GEN-04, GEN-05, GEN-06
+**Depends on:** Phase 19
+**Success Criteria** (what must be TRUE):
+  1. SSE endpoint streams per-source progress events during context generation
+  2. Progress UI shows vertical step list with only connected integrations
+  3. Steps animate through waiting/active/complete states with CSS transitions
+  4. On completion, progress collapses into card row then auto-navigates to detail page
+  5. Error state shows failed step with retry/dismiss buttons inline
+  6. Existing POST /generate endpoint preserved for programmatic consumers
+**Plans**: 3 plans
+
+Plans:
+- [ ] 22-01-PLAN.md — Backend: install sse-starlette, decompose per-source content finding, streaming generation function, SSE endpoint
+- [ ] 22-02-PLAN.md — Frontend: apiFetchSSE client with auth headers, GenerationProgress component, CSS animations (pulse, collapse, stagger)
+- [ ] 22-03-PLAN.md — Wire progress into context feed page, replace toast triggers, collapse-to-card transition, auto-navigate, human verification
+
+### Phase 23: Remotion Animated Hero
+
+**Goal:** Replace the static demo.mp4 hero video with a Remotion-powered 3-scene animated product walkthrough (ticket card -> source search -> context page) rendered in real-time via @remotion/player, matching the Linear/Vercel minimal aesthetic with spring animations and brand colors
+**Requirements**: HERO-ANIM-01, HERO-ANIM-02, HERO-ANIM-03, HERO-ANIM-04
+**Depends on:** Phase 22
+**Success Criteria** (what must be TRUE):
+  1. Landing page hero shows an animated 3-scene walkthrough instead of static video
+  2. Animation auto-plays, loops continuously with ~1s gap, and uses spring physics for all motion
+  3. Scroll-driven perspective effect (rotateX + scale) works on the Player container
+  4. Player is lazy-loaded with no layout shift (placeholder with matching aspect ratio)
+  5. Headline, subheadline, badge, and CTAs remain as regular HTML
+**Plans**: 2 plans
+
+Plans:
+- [ ] 23-01-PLAN.md — Install Remotion, create constants/shared components, build 3 scene compositions and root HeroComposition
+- [ ] 23-02-PLAN.md — Create RemotionPlayer wrapper, integrate into Hero.tsx replacing video, visual verification checkpoint
 
 ---
 *Roadmap created: 2026-02-24*
 *v1.1 milestone added: 2026-03-04*
-*v1.2 GraphRAG milestone added: 2026-03-07*
-*v1.2 GraphRAG shipped: 2026-03-08*

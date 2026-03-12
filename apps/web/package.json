@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@remotion/player": "^4.0.434",
     "@sentry/nextjs": "^9.47.1",
     "@supabase/ssr": "^0.6.0",
     "@supabase/supabase-js": "^2.49.0",
@@ -24,6 +25,7 @@
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "remotion": "^4.0.434",
     "sonner": "^1.7.0",
     "tailwind-merge": "^2.6.0"
   },

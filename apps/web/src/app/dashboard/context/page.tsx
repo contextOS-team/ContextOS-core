@@ -2,11 +2,22 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
+import {
+  Search,
+  AlertCircle,
+  RefreshCw,
+  Plus,
+  MessageSquare,
+  Code2,
+  GitPullRequest,
+  Video,
+  FileText,
+  CheckCircle2,
+  Zap,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { toast } from 'sonner'
 import { formatRelativeTime } from '@/lib/utils'
 import {
   type ContextPageRow,
@@ -16,10 +27,47 @@ import {
   fetchContextPages,
 } from '@/lib/context-feed'
 import { useContextPagesRealtime } from '@/hooks/use-context-pages-realtime'
-import { generateContextPage } from '@/lib/api'
+import {
+  searchLinearTickets,
+  type LinearTicketSearchResult,
+  type LinearTicketSearchResponse,
+} from '@/lib/api'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
 type RowPayload = RealtimePostgresChangesPayload<Record<string, unknown>>
+
+// ---------------------------------------------------------------------------
+// Source type → group mapping for chips
+// ---------------------------------------------------------------------------
+
+const SOURCE_GROUPS: Record<string, { group: string; icon: React.ElementType; color: string }> = {
+  linear_ticket: { group: 'Linear', icon: CheckCircle2, color: 'text-violet-400 bg-violet-400/10' },
+  linear_comment: { group: 'Linear', icon: MessageSquare, color: 'text-violet-400 bg-violet-400/10' },
+  slack_message: { group: 'Slack', icon: MessageSquare, color: 'text-pink-400 bg-pink-400/10' },
+  meeting_transcript: { group: 'Meetings', icon: Video, color: 'text-amber-400 bg-amber-400/10' },
+  meeting_segment: { group: 'Meetings', icon: Video, color: 'text-amber-400 bg-amber-400/10' },
+  github_pull_request: { group: 'GitHub', icon: GitPullRequest, color: 'text-emerald-400 bg-emerald-400/10' },
+  github_review: { group: 'GitHub', icon: GitPullRequest, color: 'text-emerald-400 bg-emerald-400/10' },
+  code_chunk: { group: 'Code', icon: Code2, color: 'text-emerald-400 bg-emerald-400/10' },
+  notion_page: { group: 'Notion', icon: FileText, color: 'text-blue-400 bg-blue-400/10' },
+}
+
+function getSourceChips(sources: ContextPageRow['sources']) {
+  if (!sources?.length) return []
+  const counts: Record<string, { count: number; icon: React.ElementType; color: string }> = {}
+  for (const s of sources) {
+    const cfg = SOURCE_GROUPS[s.type]
+    if (!cfg) continue
+    if (!counts[cfg.group]) counts[cfg.group] = { count: 0, icon: cfg.icon, color: cfg.color }
+    counts[cfg.group].count++
+  }
+  return Object.entries(counts).map(([group, { count, icon, color }]) => ({
+    group,
+    count,
+    icon,
+    color,
+  }))
+}
 
 // ---------------------------------------------------------------------------
 // useDebounce hook
@@ -37,21 +85,295 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 // ---------------------------------------------------------------------------
+// Feed Row
+// ---------------------------------------------------------------------------
+
+function FeedRow({ page, onClick }: { page: ContextPageRow; onClick: () => void }) {
+  const chips = useMemo(() => getSourceChips(page.sources), [page.sources])
+  const colors = STATUS_COLORS[page.status] ?? STATUS_COLORS.draft
+  const noSources = !page.sources?.length
+
+  // Strip "Context: " prefix if present
+  const displayTitle = page.title.replace(/^Context:\s*/i, '')
+
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left px-4 py-3.5 transition-colors duration-150 hover:bg-muted/40 border-l-2 group ${
+        colors.border ?? 'border-l-transparent'
+      }`}
+    >
+      {/* Row 1: title + status */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-foreground truncate flex-1">
+          {displayTitle}
+        </span>
+        <span
+          className={`shrink-0 h-1.5 w-1.5 rounded-full ${colors.dot}`}
+        />
+      </div>
+
+      {/* Row 2: metadata + source chips */}
+      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+        {page.ticket_identifier && (
+          <span className="text-xs font-mono text-muted-foreground">
+            {page.ticket_identifier}
+          </span>
+        )}
+        <span className="text-xs text-muted-foreground">
+          {formatRelativeTime(page.updated_at)}
+        </span>
+
+        {/* Source type chips */}
+        {chips.length > 0 ? (
+          <div className="flex items-center gap-1 ml-auto">
+            {chips.map(({ group, count, icon: Icon, color }) => (
+              <span
+                key={group}
+                className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${color}`}
+              >
+                <Icon className="h-2.5 w-2.5" />
+                {count}
+              </span>
+            ))}
+          </div>
+        ) : noSources ? (
+          <span className="text-[10px] text-muted-foreground/50 ml-auto italic">
+            description only
+          </span>
+        ) : null}
+      </div>
+    </button>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Generate Ticket Picker (separate from search)
+// ---------------------------------------------------------------------------
+
+function GenerateTicketPicker({
+  open,
+  onClose,
+  onSelect,
+}: {
+  open: boolean
+  onClose: () => void
+  onSelect: (ticket: LinearTicketSearchResult) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<LinearTicketSearchResult[]>([])
+  const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [endCursor, setEndCursor] = useState<string | null>(null)
+  const [hasNextPage, setHasNextPage] = useState(false)
+  const [pendingTicket, setPendingTicket] = useState<LinearTicketSearchResult | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<NodeJS.Timeout | null>(null)
+  const observerRef = useRef<IntersectionObserver | null>(null)
+
+  const loadTickets = useCallback(async (q?: string, cursor?: string) => {
+    if (cursor) {
+      setLoadingMore(true)
+    } else {
+      setLoading(true)
+    }
+    try {
+      const result = await searchLinearTickets(q, 20, cursor)
+      if (cursor) {
+        setResults((prev) => [...prev, ...result.tickets])
+      } else {
+        setResults(result.tickets)
+      }
+      setHasNextPage(result.has_next_page)
+      setEndCursor(result.end_cursor)
+    } catch {
+      if (!cursor) setResults([])
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }, [])
+
+  // Load assigned tickets on open
+  useEffect(() => {
+    if (open) {
+      loadTickets()
+      setPendingTicket(null)
+      setQuery('')
+    }
+  }, [open, loadTickets])
+
+  // Debounced search — reset pagination immediately on query change
+  useEffect(() => {
+    if (!open) return
+    setHasNextPage(false)
+    setEndCursor(null)
+    if (searchRef.current) clearTimeout(searchRef.current)
+    searchRef.current = setTimeout(() => {
+      loadTickets(query.trim() || undefined)
+    }, 300)
+    return () => {
+      if (searchRef.current) clearTimeout(searchRef.current)
+    }
+  }, [query, open, loadTickets])
+
+  // Infinite scroll — ref callback attaches observer when sentinel mounts
+  const loadingMoreRef = useRef(loadingMore)
+  const endCursorRef = useRef(endCursor)
+  const queryRef = useRef(query)
+  loadingMoreRef.current = loadingMore
+  endCursorRef.current = endCursor
+  queryRef.current = query
+
+  const sentinelRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (observerRef.current) {
+        observerRef.current.disconnect()
+        observerRef.current = null
+      }
+      if (!node) return
+      observerRef.current = new IntersectionObserver(
+        (entries) => {
+          if (entries[0]?.isIntersecting && !loadingMoreRef.current) {
+            loadTickets(queryRef.current.trim() || undefined, endCursorRef.current ?? undefined)
+          }
+        },
+        { threshold: 0 }
+      )
+      observerRef.current.observe(node)
+    },
+    [loadTickets]
+  )
+
+  // Close on click outside
+  useEffect(() => {
+    if (!open) return
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  return (
+    <div
+      ref={containerRef}
+      className="absolute top-full right-0 mt-2 w-80 z-50 rounded-xl border border-border bg-elevated shadow-lg overflow-hidden animate-scale-in"
+    >
+      {pendingTicket ? (
+        /* Confirmation */
+        <div className="p-4 space-y-3">
+          <p className="section-label">Generate context for</p>
+          <div className="flex items-start gap-3">
+            <span className="shrink-0 font-mono text-xs font-medium text-primary mt-0.5">
+              {pendingTicket.identifier}
+            </span>
+            <p className="text-sm text-foreground">{pendingTicket.title}</p>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPendingTicket(null)}
+            >
+              Back
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => onSelect(pendingTicket)}
+            >
+              <Zap className="h-3 w-3 mr-1" />
+              Generate
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="p-3 border-b border-border">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search Linear tickets..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="pl-8 h-8 text-sm"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {loading ? (
+              <div className="p-3 space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="h-4 w-14 shrink-0" />
+                    <Skeleton className="h-4 w-full" />
+                  </div>
+                ))}
+              </div>
+            ) : results.length > 0 ? (
+              <>
+                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  {query.trim() ? 'Results' : 'Your tickets'}
+                </div>
+                {results.map((ticket) => (
+                  <button
+                    key={ticket.id}
+                    onClick={() => setPendingTicket(ticket)}
+                    className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+                  >
+                    <span className="shrink-0 font-mono text-xs font-medium text-primary mt-0.5">
+                      {ticket.identifier}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-foreground truncate">{ticket.title}</p>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        {ticket.state && <span>{ticket.state}</span>}
+                        {ticket.assignee && (
+                          <>
+                            <span className="text-border">·</span>
+                            <span>{ticket.assignee}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+                {hasNextPage && (
+                  <div ref={sentinelRef} className="px-3 py-2 text-xs text-center text-muted-foreground">
+                    {loadingMore ? 'Loading...' : ''}
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                {query.trim() ? 'No tickets found' : 'No assigned tickets'}
+              </p>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Context Feed Page
 // ---------------------------------------------------------------------------
 
 export default function ContextFeedPage() {
   const router = useRouter()
 
-  // State management
   const [pages, setPages] = useState<ContextPageRow[]>([])
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [showGenerateForm, setShowGenerateForm] = useState(false)
-  const [generateTicketId, setGenerateTicketId] = useState('')
-  const [isGenerating, setIsGenerating] = useState(false)
+  const [generateOpen, setGenerateOpen] = useState(false)
 
   const debouncedQuery = useDebounce(searchQuery, 200)
 
@@ -91,6 +413,19 @@ export default function ContextFeedPage() {
     }, []),
   })
 
+  // Handle generate selection
+  const handleGenerateSelect = useCallback(
+    (ticket: LinearTicketSearchResult) => {
+      setGenerateOpen(false)
+      const params = new URLSearchParams({
+        ticket: ticket.identifier,
+        linear_issue_id: ticket.id,
+      })
+      router.push(`/dashboard/context/generate?${params.toString()}`)
+    },
+    [router]
+  )
+
   // Filtering logic
   const filteredPages = useMemo(() => {
     let result = pages
@@ -111,36 +446,20 @@ export default function ContextFeedPage() {
     return result
   }, [pages, statusFilter, debouncedQuery])
 
-  // Whether any filter/search is active
   const hasActiveFilters = statusFilter !== 'all' || debouncedQuery.trim().length > 0
 
-  // Generate handler
-  const handleGenerate = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault()
-      const ticketId = generateTicketId.trim()
-      if (!ticketId) return
-
-      setIsGenerating(true)
-      try {
-        await generateContextPage(ticketId.toUpperCase())
-        toast(`Generating ${ticketId.toUpperCase()}...`)
-        setGenerateTicketId('')
-        setShowGenerateForm(false)
-      } catch {
-        toast.error('Failed to start generation')
-      } finally {
-        setIsGenerating(false)
-      }
-    },
-    [generateTicketId]
-  )
-
-  // Clear filters handler
   const clearFilters = useCallback(() => {
     setStatusFilter('all')
     setSearchQuery('')
   }, [])
+
+  // Stats
+  const stats = useMemo(() => {
+    const ready = pages.filter((p) => p.status === 'ready').length
+    const total = pages.length
+    const totalSources = pages.reduce((sum, p) => sum + (p.sources?.length ?? 0), 0)
+    return { ready, total, totalSources }
+  }, [pages])
 
   // -----------------------------------------------------------------------
   // Loading skeleton
@@ -148,31 +467,30 @@ export default function ContextFeedPage() {
   if (isLoading) {
     return (
       <div className="space-y-6 animate-fade-in-up">
-        {/* Section label skeleton */}
-        <Skeleton className="h-3 w-28" />
-
-        {/* Filter pills skeleton */}
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-3 w-28" />
+          <Skeleton className="h-8 w-32" />
+        </div>
         <div className="flex gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
+          {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-4 w-16" />
           ))}
         </div>
-
-        {/* Search skeleton */}
-        <Skeleton className="h-9 w-full max-w-sm" />
-
-        {/* List skeleton */}
+        <Skeleton className="h-9 w-full max-w-xs" />
         <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="px-4 py-3 space-y-1.5">
+            <div key={i} className="px-4 py-3.5 space-y-2">
               <div className="flex items-center justify-between">
-                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-4 w-52" />
                 <Skeleton className="h-1.5 w-1.5 rounded-full" />
               </div>
               <div className="flex items-center gap-3">
                 <Skeleton className="h-3 w-16" />
                 <Skeleton className="h-3 w-12" />
-                <Skeleton className="h-3 w-16" />
+                <div className="flex gap-1 ml-auto">
+                  <Skeleton className="h-4 w-12 rounded-full" />
+                  <Skeleton className="h-4 w-10 rounded-full" />
+                </div>
               </div>
             </div>
           ))}
@@ -187,7 +505,7 @@ export default function ContextFeedPage() {
   if (error) {
     return (
       <div className="space-y-6 animate-fade-in-up">
-        <h3 className="section-label mb-3">Context Feed</h3>
+        <h3 className="section-label">Context Feed</h3>
         <div className="flex items-center gap-3 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm animate-scale-in">
           <AlertCircle className="h-4 w-4 shrink-0 text-destructive" />
           <span className="flex-1 text-destructive">{error}</span>
@@ -209,9 +527,33 @@ export default function ContextFeedPage() {
   // Main render
   // -----------------------------------------------------------------------
   return (
-    <div className="space-y-6 animate-fade-in-up">
-      {/* Section label */}
-      <h3 className="section-label mb-3">Context Feed</h3>
+    <div className="space-y-5 animate-fade-in-up">
+      {/* Header row — title + generate button */}
+      <div className="flex items-center justify-between relative">
+        <div>
+          <h3 className="section-label">Context Feed</h3>
+          {stats.total > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.ready} of {stats.total} ready · {stats.totalSources} sources linked
+            </p>
+          )}
+        </div>
+        <div className="relative">
+          <Button
+            size="sm"
+            onClick={() => setGenerateOpen(!generateOpen)}
+            className="gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Generate
+          </Button>
+          <GenerateTicketPicker
+            open={generateOpen}
+            onClose={() => setGenerateOpen(false)}
+            onSelect={handleGenerateSelect}
+          />
+        </div>
+      </div>
 
       {/* Status filter pills */}
       <div className="flex gap-4">
@@ -233,55 +575,28 @@ export default function ContextFeedPage() {
         ))}
       </div>
 
-      {/* Search input */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Filter by title or ticket ID..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-9"
-        />
+      {/* Search — purely for filtering the feed */}
+      <div className="max-w-xs">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Filter by title or ticket ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
       </div>
 
-      {/* Feed list / empty states */}
+      {/* Feed list */}
       {filteredPages.length > 0 ? (
-        /* Populated feed */
         <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border stagger-children">
           {filteredPages.map((page) => (
-            <button
+            <FeedRow
               key={page.id}
+              page={page}
               onClick={() => router.push(`/dashboard/context/${page.id}`)}
-              className={`w-full text-left px-4 py-3 transition-colors duration-150 hover:bg-muted/40 border-l-2 ${
-                STATUS_COLORS[page.status]?.border ?? 'border-l-transparent'
-              }`}
-            >
-              {/* Line 1: title + status dot */}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium text-foreground truncate">
-                  {page.title}
-                </span>
-                <span
-                  className={`shrink-0 h-1.5 w-1.5 rounded-full ${
-                    STATUS_COLORS[page.status]?.dot ?? 'bg-muted-foreground/30'
-                  }`}
-                />
-              </div>
-              {/* Line 2: ticket ID + relative time + source count */}
-              <div className="flex items-center gap-3 mt-0.5">
-                {page.ticket_identifier && (
-                  <span className="text-xs font-mono text-muted-foreground">
-                    {page.ticket_identifier}
-                  </span>
-                )}
-                <span className="text-xs text-muted-foreground">
-                  {formatRelativeTime(page.updated_at)}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {page.sources?.length ?? 0} sources
-                </span>
-              </div>
-            </button>
+            />
           ))}
         </div>
       ) : hasActiveFilters ? (
@@ -298,59 +613,24 @@ export default function ContextFeedPage() {
         </div>
       ) : (
         /* True empty state */
-        <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border">
-          {/* Skeleton preview rows */}
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="px-4 py-3 space-y-1.5 opacity-40">
-              <div className="flex items-center justify-between">
-                <Skeleton className="h-4 w-48" />
-                <Skeleton className="h-1.5 w-1.5 rounded-full" />
-              </div>
-              <div className="flex items-center gap-3">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-3 w-12" />
-                <Skeleton className="h-3 w-16" />
-              </div>
+        <div className="rounded-xl border bg-card overflow-hidden">
+          <div className="flex flex-col items-center gap-3 py-16 px-4 text-center">
+            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center mb-2">
+              <Zap className="h-5 w-5 text-primary" />
             </div>
-          ))}
-
-          {/* CTA section */}
-          <div className="flex flex-col items-center gap-2 py-8 px-4 text-center">
-            <p className="text-sm font-medium text-muted-foreground">
+            <p className="text-sm font-medium text-foreground">
               No context pages yet
             </p>
-            <p className="text-xs text-muted-foreground">
-              Generate context for a ticket to see it here.
+            <p className="text-xs text-muted-foreground max-w-[280px]">
+              Generate context for a Linear ticket to aggregate all related discussions, code, and decisions into one place.
             </p>
-
-            {!showGenerateForm ? (
-              <Button
-                className="mt-2"
-                onClick={() => setShowGenerateForm(true)}
-              >
-                Generate Context
-              </Button>
-            ) : (
-              <form
-                onSubmit={handleGenerate}
-                className="flex items-center gap-2 mt-2 w-full max-w-xs"
-              >
-                <Input
-                  placeholder="Enter ticket ID (e.g. CON-16)"
-                  value={generateTicketId}
-                  onChange={(e) => setGenerateTicketId(e.target.value)}
-                  disabled={isGenerating}
-                  autoFocus
-                />
-                <Button type="submit" disabled={isGenerating || !generateTicketId.trim()}>
-                  {isGenerating ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    'Generate'
-                  )}
-                </Button>
-              </form>
-            )}
+            <Button
+              className="mt-2 gap-1.5"
+              onClick={() => setGenerateOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Generate Context
+            </Button>
           </div>
         </div>
       )}
