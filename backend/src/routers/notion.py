@@ -598,12 +598,15 @@ async def _run_sync_inner(
                             )
                             await prog_session.commit()
 
-                # Write content and enqueue embeddings in batches
+                # Write content and enqueue embeddings in batches.
+                # Only enqueue pages that have actual content — pages with
+                # NULL content produce generic embeddings that pollute search.
                 for batch_start in range(0, len(all_pages), CONTENT_BATCH_SIZE):
                     batch_end = min(batch_start + CONTENT_BATCH_SIZE, len(all_pages))
                     batch_slice = all_pages[batch_start:batch_end]
                     batch_ids = page_ids[batch_start:batch_end]
 
+                    embeddable_ids: list[UUID] = []
                     async with async_session() as session:
                         for page_data, db_id in zip(batch_slice, batch_ids):
                             nid = page_data.get("id", "")
@@ -618,12 +621,19 @@ async def _run_sync_inner(
                                 ).scalar_one_or_none()
                                 if row:
                                     row.content = content
+                                    embeddable_ids.append(db_id)
+                            else:
+                                # Page already had content from a previous sync
+                                existing = existing_pages.get(nid)
+                                if existing and existing[1] is not None:
+                                    embeddable_ids.append(db_id)
 
-                        await enqueue_embedding_job(
-                            workspace_id,
-                            "notion_page",
-                            list(batch_ids),
-                        )
+                        if embeddable_ids:
+                            await enqueue_embedding_job(
+                                workspace_id,
+                                "notion_page",
+                                embeddable_ids,
+                            )
                         await session.commit()
 
                     srl.info(

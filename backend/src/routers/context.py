@@ -7,6 +7,7 @@ that synthesize information from Linear tickets, PRs, Slack, and meetings.
 import json
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -112,7 +113,9 @@ async def stream_context_generation(
     async def event_generator():
         async with async_session() as session:
             try:
-                # Check for concurrent generation
+                # Check for concurrent generation — but treat pages stuck in
+                # "generating" for more than 5 minutes as stale (the previous
+                # attempt likely crashed without updating status).
                 stmt = select(ContextPage).where(
                     ContextPage.workspace_id == user.workspace_id,
                     ContextPage.ticket_identifier == ticket_identifier,
@@ -120,12 +123,22 @@ async def stream_context_generation(
                     ContextPage.deleted_at.is_(None),  # type: ignore[union-attr]
                 )
                 result = await session.execute(stmt)
-                if result.scalar_one_or_none():
-                    yield ServerSentEvent(
-                        data=json.dumps({"event": "error", "message": "Generation already in progress"}),
-                        event="error",
+                generating_page = result.scalar_one_or_none()
+                if generating_page:
+                    stale_cutoff = datetime.utcnow() - timedelta(minutes=5)
+                    if generating_page.updated_at and generating_page.updated_at > stale_cutoff:
+                        yield ServerSentEvent(
+                            data=json.dumps({"event": "error", "message": "Generation already in progress"}),
+                            event="error",
+                        )
+                        return
+                    # Stale — reset status so generation can proceed
+                    logger.info(
+                        "Resetting stale generating status for %s (stuck since %s)",
+                        ticket_identifier, generating_page.updated_at,
                     )
-                    return
+                    generating_page.status = "error"
+                    await session.flush()
 
                 # Sync ticket if not found locally
                 if linear_issue_id:
