@@ -174,13 +174,12 @@ async def _lookup_ticket(
     session: AsyncSession,
     workspace_id: UUID,
     ticket_identifier: str,
-) -> tuple[LinearTicket | TicketProxy, UUID | None, bool]:
+) -> tuple[LinearTicket | TicketProxy, UUID | None, UUID | None, bool]:
     """Look up a ticket by identifier, trying Linear first then Jira.
 
     Returns:
-        (ticket, ticket_id_for_fk, is_linear) where ticket_id_for_fk is the
-        UUID to use as the ContextPage.ticket_id FK (set only for Linear rows),
-        and is_linear indicates which provider the ticket was found in.
+        (ticket, linear_ticket_id, jira_issue_id, is_linear) where the FK UUIDs
+        are set for the matching provider and None for the other.
 
     Raises:
         ValueError: If the ticket is not found in any provider.
@@ -194,7 +193,7 @@ async def _lookup_ticket(
     linear_ticket = result.scalar_one_or_none()
 
     if linear_ticket:
-        return linear_ticket, linear_ticket.id, True
+        return linear_ticket, linear_ticket.id, None, True
 
     # Fallback to Jira
     jira_stmt = select(JiraIssue).where(
@@ -206,7 +205,7 @@ async def _lookup_ticket(
     jira_issue = jira_result.scalar_one_or_none()
 
     if jira_issue:
-        return TicketProxy.from_jira(jira_issue), None, False
+        return TicketProxy.from_jira(jira_issue), None, jira_issue.id, False
 
     raise ValueError(f"Ticket {ticket_identifier} not found")
 
@@ -216,6 +215,7 @@ async def _upsert_context_page_placeholder(
     workspace_id: UUID,
     ticket: LinearTicket | TicketProxy,
     ticket_id_for_fk: UUID | None,
+    jira_issue_id: UUID | None = None,
 ) -> ContextPage:
     """Create or update a ContextPage with status='generating'.
 
@@ -232,10 +232,14 @@ async def _upsert_context_page_placeholder(
 
     if context_page:
         context_page.status = "generating"
+        # Backfill jira_issue_id for pages created before this fix
+        if jira_issue_id and not context_page.jira_issue_id:
+            context_page.jira_issue_id = jira_issue_id
     else:
         context_page = ContextPage(
             workspace_id=workspace_id,
             ticket_id=ticket_id_for_fk,
+            jira_issue_id=jira_issue_id,
             ticket_identifier=ticket.identifier,
             title=f"Context: {ticket.title}",
             content="",
@@ -305,13 +309,13 @@ async def generate_context_page(
 
     try:
         # 1. Look up ticket (Linear first, then Jira)
-        ticket, ticket_id_for_fk, _is_linear = await _lookup_ticket(
+        ticket, ticket_id_for_fk, jira_issue_id, _is_linear = await _lookup_ticket(
             session, workspace_id, ticket_identifier
         )
 
         # 2. Create/update placeholder with status="generating"
         context_page = await _upsert_context_page_placeholder(
-            session, workspace_id, ticket, ticket_id_for_fk
+            session, workspace_id, ticket, ticket_id_for_fk, jira_issue_id
         )
 
         # 3. Find related content
@@ -400,7 +404,7 @@ async def generate_context_page_stream(
     try:
         # 1. Look up ticket (Linear first, then Jira) using shared helper
         try:
-            ticket, ticket_id_for_fk, is_linear = await _lookup_ticket(
+            ticket, ticket_id_for_fk, jira_issue_id, is_linear = await _lookup_ticket(
                 session, workspace_id, ticket_identifier
             )
         except ValueError:
@@ -454,7 +458,7 @@ async def generate_context_page_stream(
 
         # 3. Create/update context page with status="generating" using shared helper
         context_page = await _upsert_context_page_placeholder(
-            session, workspace_id, ticket, ticket_id_for_fk
+            session, workspace_id, ticket, ticket_id_for_fk, jira_issue_id
         )
 
         # 4. Emit start event
