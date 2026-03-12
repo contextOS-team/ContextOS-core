@@ -105,7 +105,10 @@ export function NotionSyncSection({
           setSyncProgress(s.sync_progress ?? 0)
           setSyncTotal(s.sync_total ?? null)
           pollSyncProgress()
-        } else if (s.sync_status === 'error') {
+        } else if (s.sync_status === 'error' && !s.pages_count) {
+          // Only show error banner on mount if no pages were ever synced.
+          // If pages exist, a previous sync succeeded and the user can
+          // re-sync from the card — no need for an alarming top-level error.
           setError('Notion sync failed. You can try re-syncing.')
         }
       })
