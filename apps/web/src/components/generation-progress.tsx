@@ -15,6 +15,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   'unauthorized': 'Your session has expired. Please sign in again.',
   'not found': 'The requested ticket could not be found.',
   'already running': 'A generation is already in progress. Please wait for it to finish.',
+  'already in progress': 'A generation is already in progress. Please wait for it to finish.',
   'concurrent': 'A generation is already in progress. Please wait for it to finish.',
   'openai': 'The AI service is temporarily unavailable. Please try again shortly.',
   'anthropic': 'The AI service is temporarily unavailable. Please try again shortly.',

@@ -49,10 +49,13 @@ const SOURCE_GROUPS: Record<string, { group: string; icon: React.ElementType; co
   meeting_segment: { group: 'Meetings', icon: Video, color: 'text-amber-400 bg-amber-400/10' },
   github_pull_request: { group: 'GitHub', icon: GitPullRequest, color: 'text-emerald-400 bg-emerald-400/10' },
   github_review: { group: 'GitHub', icon: GitPullRequest, color: 'text-emerald-400 bg-emerald-400/10' },
+  gitlab_merge_request: { group: 'GitLab', icon: GitPullRequest, color: 'text-orange-400 bg-orange-400/10' },
+  gitlab_review: { group: 'GitLab', icon: GitPullRequest, color: 'text-orange-400 bg-orange-400/10' },
   code_chunk: { group: 'Code', icon: Code2, color: 'text-emerald-400 bg-emerald-400/10' },
   notion_page: { group: 'Notion', icon: FileText, color: 'text-blue-400 bg-blue-400/10' },
   jira_issue: { group: 'Jira', icon: CheckCircle2, color: 'text-blue-500 bg-blue-500/10' },
   jira_comment: { group: 'Jira', icon: MessageSquare, color: 'text-blue-500 bg-blue-500/10' },
+  telegram_message: { group: 'Telegram', icon: MessageSquare, color: 'text-sky-400 bg-sky-400/10' },
 }
 
 function getSourceChips(sources: ContextPageRow['sources']) {

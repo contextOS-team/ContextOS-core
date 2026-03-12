@@ -1,35 +1,48 @@
 /**
- * Shared utility for computing sync state from progress values.
- * Used by integration sync sections (Notion, etc.) to derive
- * syncing status, percentage, and label for the UI.
+ * Pure computation helpers for sync progress UI.
+ *
+ * Extracted so they can be unit-tested without a DOM.
  */
 
-interface SyncInput {
+export interface SyncState {
   isResyncing: boolean
   syncProgress: number | null
   syncTotal: number | null
 }
 
-export interface SyncState {
+export interface ComputedSync {
+  /** Whether a sync operation is actively running (any phase). */
   syncing: boolean
-  percent: number | null
-  label: string | null
-  phaseLabel: string | null
+  /** Whether we're in phase 2 (have a known total > 0). */
   hasTotal: boolean
-  progress: number | null
+  /** Current progress value, defaulting to 0 when null. */
+  progress: number
+  /** Percentage 0–100, or null when total is unknown (phase 1). */
+  percent: number | null
+  /** Short header label, or null when not syncing. */
+  label: string | null
+  /** Phase description for the expanded view. */
+  phaseLabel: string
 }
 
-export function computeSyncState({ isResyncing, syncProgress, syncTotal }: SyncInput): SyncState {
-  if (!isResyncing) {
-    return { syncing: false, percent: null, label: null, phaseLabel: null, hasTotal: false, progress: null }
-  }
+export function computeSyncState(state: SyncState): ComputedSync {
+  const { isResyncing, syncProgress, syncTotal } = state
+  const hasTotal = isResyncing && syncTotal != null && syncTotal > 0
+  const progress = syncProgress ?? 0
 
-  if (syncProgress == null || syncTotal == null || syncTotal === 0) {
-    return { syncing: true, percent: null, label: 'Syncing...', phaseLabel: 'Discovering pages...', hasTotal: false, progress: null }
-  }
+  const percent = hasTotal
+    ? Math.max(0, Math.min(100, Math.round((progress / syncTotal!) * 100)))
+    : null
 
-  const percent = Math.round((syncProgress / syncTotal) * 100)
-  const label = `${syncProgress} / ${syncTotal}`
+  const label = isResyncing
+    ? hasTotal
+      ? `${progress}/${syncTotal} pages`
+      : 'Fetching pages\u2026'
+    : null
 
-  return { syncing: true, percent, label, phaseLabel: 'Syncing pages...', hasTotal: true, progress: syncProgress }
+  const phaseLabel = hasTotal
+    ? 'Downloading page content\u2026'
+    : 'Fetching page metadata\u2026'
+
+  return { syncing: isResyncing, hasTotal, progress, percent, label, phaseLabel }
 }

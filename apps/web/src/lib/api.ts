@@ -619,6 +619,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   gitlab: 'GitLab',
   notion: 'Notion',
   fathom: 'Fathom',
+  slack_huddle: 'Slack Huddles',
   linear: 'Linear',
   jira: 'Jira',
   telegram: 'Telegram',

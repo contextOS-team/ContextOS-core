@@ -52,10 +52,13 @@ const SOURCE_TYPE_CONFIG: Record<
   meeting_segment: { label: 'Segment', icon: Video, group: 'Meetings' },
   github_pull_request: { label: 'Pull Request', icon: GitPullRequest, group: 'GitHub' },
   github_review: { label: 'Review', icon: GitPullRequest, group: 'GitHub' },
-  code_chunk: { label: 'Code', icon: Code2, group: 'GitHub' },
+  gitlab_merge_request: { label: 'Merge Request', icon: GitPullRequest, group: 'GitLab' },
+  gitlab_review: { label: 'Review', icon: GitPullRequest, group: 'GitLab' },
+  code_chunk: { label: 'Code', icon: Code2, group: 'Code' },
   notion_page: { label: 'Page', icon: FileText, group: 'Notion' },
   jira_issue: { label: 'Issue', icon: CheckCircle2, group: 'Jira' },
   jira_comment: { label: 'Comment', icon: MessageSquare, group: 'Jira' },
+  telegram_message: { label: 'Message', icon: MessageSquare, group: 'Telegram' },
   context_page: { label: 'Context', icon: FileText, group: 'Other' },
 }
 
@@ -64,8 +67,11 @@ const GROUP_ICONS: Record<string, React.ElementType> = {
   Slack: MessageSquare,
   Meetings: Video,
   GitHub: Code2,
+  GitLab: GitPullRequest,
+  Code: Code2,
   Notion: FileText,
   Jira: CheckCircle2,
+  Telegram: MessageSquare,
   Other: FileText,
 }
 
@@ -74,8 +80,11 @@ const GROUP_COLORS: Record<string, string> = {
   Slack: 'text-pink-400',
   Meetings: 'text-amber-400',
   GitHub: 'text-emerald-400',
+  GitLab: 'text-orange-400',
+  Code: 'text-emerald-400',
   Notion: 'text-blue-400',
   Jira: 'text-blue-500',
+  Telegram: 'text-sky-400',
   Other: 'text-muted-foreground',
 }
 
@@ -463,8 +472,12 @@ export default function ContextDetailPage() {
 
   useEffect(() => {
     if (generation?.status === 'complete') {
-      const timer = setTimeout(() => {
-        loadPage()
+      // Immediately update page status to 'ready' so the badge doesn't
+      // show stale 'error'/'generating' during the 1.5s collapse delay.
+      // loadPage() below replaces this with the full DB record.
+      setPage((prev) => prev ? { ...prev, status: 'ready' } : prev)
+      const timer = setTimeout(async () => {
+        await loadPage()
         setGeneration(null)
       }, 1500)
       return () => clearTimeout(timer)

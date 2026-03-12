@@ -344,6 +344,18 @@
   }
 }
 
+/* Sync progress bar shimmer */
+@keyframes sync-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Sync status dot pulse */
+@keyframes sync-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.3); }
+}
+
 /* Section label utility (monospace uppercase tracking) */
 .section-label {
   font-family: var(--font-mono), 'JetBrains Mono', monospace;
