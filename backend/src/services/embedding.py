@@ -21,6 +21,7 @@ from src.models.code_chunk import CodeChunk
 from src.models.context_page import ContextPage
 from src.models.embedding import Embedding
 from src.models.github import GithubPullRequest, GithubReview
+from src.models.gitlab import GitlabMergeRequest, GitlabReview
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
@@ -75,6 +76,14 @@ SOURCE_TYPE_MAP: dict[str, tuple[type, callable]] = {
     ),
     "github_review": (
         GithubReview,
+        lambda r: r.body or "",
+    ),
+    "gitlab_merge_request": (
+        GitlabMergeRequest,
+        lambda r: f"{r.title}\n\n{r.description or ''}".strip(),
+    ),
+    "gitlab_review": (
+        GitlabReview,
         lambda r: r.body or "",
     ),
     "notion_page": (

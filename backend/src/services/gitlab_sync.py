@@ -206,9 +206,29 @@ async def sync_single_project(
 
     await session.flush()
 
-    # NOTE: Embedding generation for gitlab_merge_request is not yet supported
-    # (source type not registered in SOURCE_TYPE_MAP). Will be added in Phase 28
-    # when code indexing is built with proper text extraction for MR content.
+    # Enqueue embedding generation for synced MRs and reviews
+    from src.services.embedding_worker import enqueue_embedding_job
+
+    # Collect all MR and review IDs for this project
+    mr_ids_stmt = select(GitlabMergeRequest.id).where(
+        GitlabMergeRequest.workspace_id == workspace_id,
+        GitlabMergeRequest.project_id == project_id,
+    )
+    mr_result = await session.execute(mr_ids_stmt)
+    mr_ids = [row[0] for row in mr_result.fetchall()]
+
+    review_ids_stmt = select(GitlabReview.id).where(
+        GitlabReview.workspace_id == workspace_id,
+    )
+    review_result = await session.execute(review_ids_stmt)
+    review_ids = [row[0] for row in review_result.fetchall()]
+
+    if mr_ids:
+        await enqueue_embedding_job(workspace_id, "gitlab_merge_request", mr_ids)
+        logger.info("Enqueued %d gitlab_merge_request embeddings", len(mr_ids))
+    if review_ids:
+        await enqueue_embedding_job(workspace_id, "gitlab_review", review_ids)
+        logger.info("Enqueued %d gitlab_review embeddings", len(review_ids))
 
     return mr_count, review_count
 
