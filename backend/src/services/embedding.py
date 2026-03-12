@@ -1,7 +1,7 @@
 """Embedding generation service for semantic search.
 
-Generates and stores 768-dimensional vector embeddings using OpenAI
-text-embedding-3-small (with dimensions=768 to match DB schema).
+Generates and stores 768-dimensional vector embeddings using Google Gemini
+gemini-embedding-2-preview (with output_dimensionality=768 to match DB schema).
 Provides content-hash-based deduplication to skip unchanged records,
 and bulk backfill for pending embeddings.
 """
@@ -9,8 +9,9 @@ and bulk backfill for pending embeddings.
 import logging
 from uuid import UUID
 
+from google import genai
+from google.genai import types
 from lmnr import observe
-from openai import AsyncOpenAI
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,14 +31,17 @@ from src.utils.hashing import compute_content_hash
 
 logger = logging.getLogger(__name__)
 
-# Maximum input length for text-embedding-3-small (8191 tokens ≈ ~30K chars)
+# Maximum input length for Gemini embeddings
 MAX_INPUT_CHARS = 30_000
 
 # Current model constants
-EMBEDDING_MODEL_NAME = "text-embedding-3-small"
+EMBEDDING_MODEL_NAME = "gemini-embedding-2-preview"
 EMBEDDING_MODEL_VERSION = "v1"
 
-# Batch size for embedding API calls (20-50 per CONTEXT.md; 25 is a safe middle ground)
+# Output dimensions (matching DB schema)
+EMBEDDING_DIMENSIONS = 768
+
+# Batch size for embedding API calls
 BATCH_SIZE = 25
 
 # Maximum IDs per IN clause to avoid oversized SQL queries
@@ -99,26 +103,26 @@ SOURCE_TYPE_MAP: dict[str, tuple[type, callable]] = {
     ),
 }
 
-# Lazy singleton for the OpenAI async client
-_openai_client: AsyncOpenAI | None = None
+# Lazy singleton for the Gemini client
+_gemini_client: genai.Client | None = None
 
 
-def _get_openai_client() -> AsyncOpenAI:
-    """Return a cached AsyncOpenAI client."""
-    global _openai_client  # noqa: PLW0603
-    if _openai_client is None:
+def _get_gemini_client() -> genai.Client:
+    """Return a cached Gemini client."""
+    global _gemini_client  # noqa: PLW0603
+    if _gemini_client is None:
         from src.config import get_settings
         settings = get_settings()
-        _openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-    return _openai_client
+        _gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    return _gemini_client
 
 
 @observe(name="generate_embedding")
 async def generate_embedding(text_content: str) -> list[float]:
     """Generate a 768-dimensional vector embedding for the given text.
 
-    Uses OpenAI text-embedding-3-small with dimensions=768 to match
-    the DB schema. Input is truncated to MAX_INPUT_CHARS.
+    Uses Gemini gemini-embedding-2-preview with output_dimensionality=768
+    to match the DB schema. Input is truncated to MAX_INPUT_CHARS.
 
     Args:
         text_content: The text content to embed.
@@ -127,23 +131,25 @@ async def generate_embedding(text_content: str) -> list[float]:
         768-dimensional embedding vector as a list of floats.
     """
     if not text_content.strip():
-        return [0.0] * 768
+        return [0.0] * EMBEDDING_DIMENSIONS
 
     truncated = text_content[:MAX_INPUT_CHARS]
-    client = _get_openai_client()
-    response = await client.embeddings.create(
-        model="text-embedding-3-small",
-        input=truncated,
-        dimensions=768,
+    client = _get_gemini_client()
+    response = await client.aio.models.embed_content(
+        model=EMBEDDING_MODEL_NAME,
+        contents=truncated,
+        config=types.EmbedContentConfig(
+            output_dimensionality=EMBEDDING_DIMENSIONS,
+        ),
     )
-    return list(response.data[0].embedding)
+    return list(response.embeddings[0].values)
 
 
 @observe(name="generate_embeddings_batch")
 async def generate_embeddings_batch(texts: list[str]) -> list[list[float]]:
     """Generate 768-dimensional embeddings for multiple texts in one API call.
 
-    OpenAI text-embedding-3-small supports list inputs natively.
+    Gemini embed_content supports list inputs natively.
     Results are returned in the same order as the input texts.
 
     Args:
@@ -156,15 +162,15 @@ async def generate_embeddings_batch(texts: list[str]) -> list[list[float]]:
         return []
 
     truncated = [t[:MAX_INPUT_CHARS] if t.strip() else "" for t in texts]
-    client = _get_openai_client()
-    response = await client.embeddings.create(
-        model="text-embedding-3-small",
-        input=truncated,
-        dimensions=768,
+    client = _get_gemini_client()
+    response = await client.aio.models.embed_content(
+        model=EMBEDDING_MODEL_NAME,
+        contents=truncated,
+        config=types.EmbedContentConfig(
+            output_dimensionality=EMBEDDING_DIMENSIONS,
+        ),
     )
-    # OpenAI returns data sorted by index
-    sorted_data = sorted(response.data, key=lambda d: d.index)
-    return [list(d.embedding) for d in sorted_data]
+    return [list(e.values) for e in response.embeddings]
 
 
 async def queue_embedding_generation(
