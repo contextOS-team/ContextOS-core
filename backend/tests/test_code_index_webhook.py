@@ -5,6 +5,7 @@ Verifies:
 2. _process_index_message() calls index_repo() with correct args
 3. process_push_event() enqueues a code index job for monitored repos
 4. process_push_event() skips unmonitored repos (does not enqueue)
+5. index_workspace_repos propagates original exception when session breaks in finally
 """
 
 import json
@@ -100,7 +101,7 @@ async def test_process_index_message_calls_index_repo():
         await _process_index_message(message_data)
 
     mock_index_repo.assert_called_once_with(
-        WORKSPACE_ID, REPO_FULL_NAME, mock_session, mock_settings
+        WORKSPACE_ID, REPO_FULL_NAME, mock_session, mock_settings, provider='github'
     )
 
 
@@ -184,3 +185,69 @@ async def test_process_push_event_skips_unmonitored_repo():
         await process_push_event(payload)
 
     mock_enqueue.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_index_github_propagates_original_error_when_finally_fails():
+    """When get_cached_repos raises and the session is broken so
+    _update_index_status also fails in the finally block, the ORIGINAL
+    exception must propagate — not the secondary one from the status update.
+
+    Before the fix, the finally block's await session.commit() would raise
+    a new exception that replaced the original, hiding the real cause.
+    """
+    _inject_test_settings()
+
+    from src.services.code_indexer import index_workspace_repos
+
+    mock_session = AsyncMock()
+    mock_settings = MagicMock(spec=Settings)
+
+    original_error = ConnectionError("database connection lost")
+
+    with (
+        # _update_index_status is called twice: once at start ("indexing"),
+        # then in finally ("idle"). The first must succeed, the second must fail.
+        patch(
+            "src.services.code_indexer._update_index_status",
+            new_callable=AsyncMock,
+            side_effect=[None, RuntimeError("session is broken")],
+        ),
+        # get_cached_repos raises the original error
+        patch(
+            "src.services.code_indexer.get_cached_repos",
+            new_callable=AsyncMock,
+            side_effect=original_error,
+        ),
+    ):
+        with pytest.raises(ConnectionError, match="database connection lost"):
+            await index_workspace_repos(WORKSPACE_ID, mock_session, mock_settings)
+
+
+@pytest.mark.asyncio
+async def test_index_gitlab_propagates_original_error_when_finally_fails():
+    """Same as above but for the GitLab indexing path."""
+    _inject_test_settings()
+
+    from src.services.code_indexer import index_gitlab_workspace_repos
+
+    mock_session = AsyncMock()
+    mock_settings = MagicMock(spec=Settings)
+
+    original_error = ConnectionError("database connection lost")
+
+    with (
+        patch(
+            "src.services.code_indexer._update_index_status",
+            new_callable=AsyncMock,
+            side_effect=[None, RuntimeError("session is broken")],
+        ),
+        # GitLab imports get_cached_repos from gitlab_repos at call time
+        patch(
+            "src.services.gitlab_repos.get_cached_repos",
+            new_callable=AsyncMock,
+            side_effect=original_error,
+        ),
+    ):
+        with pytest.raises(ConnectionError, match="database connection lost"):
+            await index_gitlab_workspace_repos(WORKSPACE_ID, mock_session, mock_settings)

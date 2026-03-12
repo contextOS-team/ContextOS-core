@@ -13,6 +13,7 @@ Covers:
 - Full end-to-end sync mock
 """
 
+import asyncio
 import time
 import uuid
 from collections.abc import AsyncGenerator, Generator
@@ -146,7 +147,8 @@ class TestEmbeddingSourceMap:
         assert "My Page" in result
         assert "Some content here" in result
 
-    def test_notion_page_extractor_handles_none_content(self):
+    def test_notion_page_extractor_returns_empty_for_none_content(self):
+        """Pages with NULL content should return empty string so embeddings are skipped."""
         from src.services.embedding import SOURCE_TYPE_MAP
 
         _, extract_fn = SOURCE_TYPE_MAP["notion_page"]
@@ -155,9 +157,7 @@ class TestEmbeddingSourceMap:
         mock_page.content = None
 
         result = extract_fn(mock_page)
-        assert "Empty Page" in result
-        # Should not crash or contain "None"
-        assert "None" not in result
+        assert result == ""
 
 
 # ---------- Bug 3: Concurrency guard ----------
@@ -166,14 +166,17 @@ class TestEmbeddingSourceMap:
 class TestSyncConcurrencyGuard:
     """Verify /sync and /resync reject requests when already syncing."""
 
-    def _mock_connected_and_syncing(self, mock_session):
+    def _mock_connected_and_syncing(self, mock_session, sync_started_at=None):
         """Set up mock to return a connected integration with sync_status=syncing."""
         mock_workspace_result = MagicMock()
         mock_workspace_result.scalar_one_or_none.return_value = UUID(TEST_WORKSPACE_ID)
 
         mock_integration = MagicMock()
         mock_integration.status = "connected"
-        mock_integration.config = {"sync_status": "syncing"}
+        config = {"sync_status": "syncing"}
+        if sync_started_at is not None:
+            config["sync_started_at"] = sync_started_at
+        mock_integration.config = config
         mock_integration_result = MagicMock()
         mock_integration_result.scalar_one_or_none.return_value = mock_integration
 
@@ -213,7 +216,9 @@ class TestSyncConcurrencyGuard:
     def test_sync_rejects_when_already_syncing(
         self, notion_client, mock_session
     ):
-        self._mock_connected_and_syncing(mock_session)
+        # Use a recent sync_started_at so it's treated as active, not stale
+        recent = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        self._mock_connected_and_syncing(mock_session, sync_started_at=recent)
 
         response = notion_client.post(
             "/api/notion/sync", headers=_make_auth_header()
@@ -225,7 +230,8 @@ class TestSyncConcurrencyGuard:
     def test_resync_rejects_when_already_syncing(
         self, notion_client, mock_session
     ):
-        self._mock_connected_and_syncing(mock_session)
+        recent = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        self._mock_connected_and_syncing(mock_session, sync_started_at=recent)
 
         response = notion_client.post(
             "/api/notion/resync", headers=_make_auth_header()
@@ -266,6 +272,78 @@ class TestSyncConcurrencyGuard:
         )
 
         assert response.status_code == 400
+
+    def test_stale_sync_without_started_at_resets_to_error(
+        self, notion_client, mock_session
+    ):
+        """Missing sync_started_at means we can't trust the sync — treat as stale."""
+        # No sync_started_at field at all
+        self._mock_connected_and_syncing(mock_session, sync_started_at=None)
+
+        response = notion_client.post(
+            "/api/notion/sync", headers=_make_auth_header()
+        )
+
+        assert response.status_code == 409
+        assert "stuck" in response.json()["detail"].lower() or "reset" in response.json()["detail"].lower()
+
+    def test_stale_sync_with_old_started_at_resets_to_error(
+        self, notion_client, mock_session
+    ):
+        """Sync running > 11 min should be treated as stale."""
+        from datetime import timedelta
+        old_time = (
+            datetime.now(timezone.utc) - timedelta(minutes=15)
+        ).isoformat().replace("+00:00", "Z")
+        self._mock_connected_and_syncing(mock_session, sync_started_at=old_time)
+
+        response = notion_client.post(
+            "/api/notion/sync", headers=_make_auth_header()
+        )
+
+        assert response.status_code == 409
+        assert "reset" in response.json()["detail"].lower()
+
+    def test_stale_sync_with_garbage_timestamp_resets(
+        self, notion_client, mock_session
+    ):
+        """Unparseable sync_started_at should be treated as stale."""
+        self._mock_connected_and_syncing(mock_session, sync_started_at="not-a-date")
+
+        response = notion_client.post(
+            "/api/notion/sync", headers=_make_auth_header()
+        )
+
+        assert response.status_code == 409
+        assert "reset" in response.json()["detail"].lower()
+
+    def test_error_status_allows_new_sync(self, notion_client, mock_session):
+        """sync_status=error should not block a new sync."""
+        mock_workspace_result = MagicMock()
+        mock_workspace_result.scalar_one_or_none.return_value = UUID(TEST_WORKSPACE_ID)
+
+        mock_integration = MagicMock()
+        mock_integration.status = "connected"
+        mock_integration.config = {"sync_status": "error"}
+        mock_integration_result = MagicMock()
+        mock_integration_result.scalar_one_or_none.return_value = mock_integration
+
+        call_count = 0
+
+        def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return mock_workspace_result
+            return mock_integration_result
+
+        mock_session.execute = AsyncMock(side_effect=side_effect)
+
+        response = notion_client.post(
+            "/api/notion/sync", headers=_make_auth_header()
+        )
+
+        assert response.status_code == 202
 
 
 # ---------- _extract_title ----------
@@ -615,13 +693,13 @@ class TestRunSync:
         ):
             await _run_sync(workspace_id, user_id, settings)
 
-        # Should have been called with sync_status=idle (reset on failure so retries work)
-        idle_calls = [
+        # Should have been called with sync_status=error so frontend shows failure
+        error_calls = [
             c
             for c in mock_update_config.call_args_list
-            if c[0][2].get("sync_status") == "idle"
+            if c[0][2].get("sync_status") == "error"
         ]
-        assert len(idle_calls) == 1
+        assert len(error_calls) == 1
 
     @pytest.mark.asyncio
     async def test_sync_handles_content_fetch_failure_gracefully(self):
@@ -717,6 +795,76 @@ class TestRunSync:
             if c[0][2].get("sync_status") == "complete"
         ]
         assert len(complete_calls) == 1
+
+
+# ---------- Global sync timeout ----------
+
+
+class TestSyncGlobalTimeout:
+    """Verify _run_sync enforces a global timeout and sets error status."""
+
+    @pytest.mark.asyncio
+    async def test_sync_timeout_sets_error_status(self):
+        """If sync exceeds the global timeout, status should be set to error."""
+        from src.routers.notion import _run_sync, SYNC_GLOBAL_TIMEOUT_SECONDS
+
+        workspace_id = UUID(TEST_WORKSPACE_ID)
+        user_id = UUID(TEST_USER_ID)
+        settings = _make_test_settings(
+            NOTION_CLIENT_ID=NOTION_CLIENT_ID,
+            NOTION_CLIENT_SECRET=NOTION_CLIENT_SECRET,
+        )
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+        mock_session.flush = AsyncMock()
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        # Make _run_sync_inner hang forever
+        async def hang_forever(*args, **kwargs):
+            await asyncio.sleep(999999)
+
+        with (
+            patch(
+                "src.routers.notion._run_sync_inner",
+                new_callable=AsyncMock,
+                side_effect=hang_forever,
+            ),
+            patch(
+                "src.routers.notion.SYNC_GLOBAL_TIMEOUT_SECONDS",
+                0.1,  # 100ms timeout for testing
+            ),
+            patch(
+                "src.routers.notion._update_sync_config",
+                new_callable=AsyncMock,
+            ) as mock_update_config,
+            patch(
+                "src.routers.notion.update_cursor_status",
+                new_callable=AsyncMock,
+            ) as mock_cursor,
+            patch(
+                "src.routers.notion.async_session",
+                return_value=mock_cm,
+            ),
+        ):
+            await _run_sync(workspace_id, user_id, settings)
+
+        # Verify error status was set in both config and cursor
+        error_config_calls = [
+            c for c in mock_update_config.call_args_list
+            if c[0][2].get("sync_status") == "error"
+        ]
+        assert len(error_config_calls) == 1
+
+        error_cursor_calls = [
+            c for c in mock_cursor.call_args_list
+            if c.kwargs.get("sync_status") == "error"
+            and c.kwargs.get("error_message") == "sync timed out"
+        ]
+        assert len(error_cursor_calls) == 1
 
 
 # ---------- Bug 7: OAuth callback multi-member ----------

@@ -60,10 +60,10 @@ class TestSynthesisTemplateSections:
     """Verify the synthesis template has the expected section structure."""
 
     def test_template_has_seven_sections(self):
-        """SYNTHESIS_TEMPLATE must define exactly 7 ## section headers."""
+        """SYNTHESIS_TEMPLATE must define exactly 7 numbered section headers."""
         section_lines = [
             line for line in SYNTHESIS_TEMPLATE.splitlines()
-            if line.strip().startswith("## ")
+            if line.strip() and line.strip()[0].isdigit() and ". **" in line
         ]
         assert len(section_lines) == 7, (
             f"Expected 7 sections, found {len(section_lines)}: "
@@ -75,10 +75,10 @@ class TestSynthesisTemplateSections:
         assert "Relevant Code" in SYNTHESIS_TEMPLATE
 
     def test_relevant_code_is_section_five(self):
-        """Relevant Code must be the 5th ## section in the template."""
+        """Relevant Code must be the 5th numbered section in the template."""
         section_lines = [
             line for line in SYNTHESIS_TEMPLATE.splitlines()
-            if line.strip().startswith("## ")
+            if line.strip() and line.strip()[0].isdigit() and ". **" in line
         ]
         assert len(section_lines) >= 5
         assert "Relevant Code" in section_lines[4], (
@@ -90,10 +90,13 @@ class TestSynthesisTemplateSections:
         found_order = []
         for line in SYNTHESIS_TEMPLATE.splitlines():
             stripped = line.strip()
-            if stripped.startswith("## "):
-                section_name = stripped[3:].strip()
-                if section_name in EXPECTED_SECTIONS:
-                    found_order.append(section_name)
+            if stripped and stripped[0].isdigit() and ". **" in stripped:
+                # Extract name between ** markers: e.g. '1. **Summary** —' -> 'Summary'
+                match = re.search(r"\*\*(.+?)\*\*", stripped)
+                if match:
+                    section_name = match.group(1).strip()
+                    if section_name in EXPECTED_SECTIONS:
+                        found_order.append(section_name)
         assert found_order == EXPECTED_SECTIONS
 
 
