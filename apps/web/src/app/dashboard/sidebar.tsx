@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LogOut } from 'lucide-react'
+import { LogOut, Settings, UserCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   DropdownMenu,
@@ -104,7 +104,7 @@ export function Sidebar({ userEmail, userFullName }: TopNavProps) {
               {initials}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuContent align="end" className="w-56">
             <div className="px-2 py-1.5">
               <p className="text-sm font-medium text-foreground truncate">
                 {userFullName ?? userEmail}
@@ -113,6 +113,15 @@ export function Sidebar({ userEmail, userFullName }: TopNavProps) {
                 <p className="text-xs text-muted-foreground truncate">{userEmail}</p>
               )}
             </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => router.push('/dashboard/settings')}>
+              <UserCircle className="mr-2 h-4 w-4" />
+              Profile
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push('/dashboard/settings?tab=general')}>
+              <Settings className="mr-2 h-4 w-4" />
+              Settings
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut}>
               <LogOut className="mr-2 h-4 w-4" />

@@ -3,15 +3,18 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Skeleton } from '@/components/ui/skeleton'
+import { createClient } from '@/lib/supabase/client'
 import { getWorkspace, type WorkspaceResponse } from '@/lib/api'
+import { ProfileTab } from './tabs/profile-tab'
 import { GeneralTab } from './tabs/general-tab'
 import { ApiKeysTab } from './tabs/api-keys-tab'
 import { TeamTab } from './tabs/team-tab'
 import { IntegrationsTab } from './tabs/integrations-tab'
 
-type Tab = 'general' | 'api-keys' | 'team' | 'integrations'
+type Tab = 'profile' | 'general' | 'api-keys' | 'team' | 'integrations'
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: 'profile', label: 'Profile' },
   { id: 'general', label: 'General' },
   { id: 'api-keys', label: 'API Keys' },
   { id: 'team', label: 'Team' },
@@ -37,12 +40,15 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null)
 
+  const [userEmail, setUserEmail] = useState('')
+  const [userFullName, setUserFullName] = useState<string | null>(null)
+
   const tabParam = searchParams.get('tab') as Tab | null
-  const activeTab: Tab = tabParam && TABS.some((t) => t.id === tabParam) ? tabParam : 'general'
+  const activeTab: Tab = tabParam && TABS.some((t) => t.id === tabParam) ? tabParam : 'profile'
 
   const setActiveTab = (tab: Tab) => {
     const params = new URLSearchParams(searchParams.toString())
-    if (tab === 'general') {
+    if (tab === 'profile') {
       params.delete('tab')
     } else {
       params.set('tab', tab)
@@ -52,6 +58,15 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
+    // Load user info from Supabase
+    const supabase = createClient()
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setUserEmail(user.email ?? '')
+        setUserFullName(user.user_metadata?.full_name ?? null)
+      }
+    })
+
     getWorkspace()
       .then((ws) => {
         setWorkspace(ws)
@@ -100,6 +115,9 @@ export default function SettingsPage() {
       </nav>
 
       <div className="animate-fade-in-up" key={activeTab}>
+        {activeTab === 'profile' && (
+          <ProfileTab userEmail={userEmail} userFullName={userFullName} />
+        )}
         {activeTab === 'general' && workspace && (
           <GeneralTab workspace={workspace} onUpdate={setWorkspace} />
         )}
