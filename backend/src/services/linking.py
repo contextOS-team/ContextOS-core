@@ -391,7 +391,7 @@ async def _find_hybrid_matches(
 
 
 # Map source_type -> (model class, title+snippet extractor)
-_SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable, callable | None]] = {
+_SOURCE_SUMMARY_MAP: dict[str, tuple] = {
     "linear_ticket": (
         LinearTicket,
         lambda r: (r.title, (r.description or "")[:200]),
