@@ -283,9 +283,12 @@ async def index_repo(
         changed_chunk_ids: list[UUID] = []
         seen_keys: set[tuple[str, str, str, str]] = set()
 
-        # Collect rows that need upserting (new or changed content)
-        pending_rows: list[dict] = []
-        pending_is_update: list[bool] = []
+        # Collect rows that need upserting (new or changed content).
+        # Use a dict keyed by dedup_key so duplicate symbols (e.g. two
+        # methods with the same name in the same file) keep only the last
+        # occurrence.  Postgres rejects multi-row INSERTs where two rows
+        # hit the same unique constraint.
+        pending_by_key: dict[tuple, tuple[dict, bool]] = {}
         table = CodeChunk.__table__
 
         for file_path, chunk_data in all_chunks:
@@ -297,7 +300,7 @@ async def index_repo(
             if existing and existing[1] == content_hash:
                 continue  # Unchanged
 
-            pending_rows.append({
+            pending_by_key[dedup_key] = ({
                 "workspace_id": workspace_id,
                 "repo_full_name": repo_full_name,
                 "file_path": file_path,
@@ -310,8 +313,10 @@ async def index_repo(
                 "end_line": chunk_data.end_line,
                 "metadata": chunk_data.metadata,
                 "deleted_at": None,
-            })
-            pending_is_update.append(existing is not None)
+            }, existing is not None)
+
+        pending_rows = [row for row, _ in pending_by_key.values()]
+        pending_is_update = [is_upd for _, is_upd in pending_by_key.values()]
 
         # Batch upsert — one multi-row INSERT per batch instead of N round-trips
         total_pending = len(pending_rows)
