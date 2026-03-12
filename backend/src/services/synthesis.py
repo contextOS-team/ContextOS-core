@@ -639,6 +639,7 @@ async def generate_context_page(
                 "id": str(item.source_id),
                 "title": item.title,
                 "relevance_score": round(item.relevance_score, 3),
+                **({"url": item.url} if item.url else {}),
             }
             for item in linking_result.items
         ]
@@ -818,6 +819,7 @@ async def generate_context_page_stream(
                 "id": str(item.source_id),
                 "title": item.title,
                 "relevance_score": round(item.relevance_score, 3),
+                **({"url": item.url} if item.url else {}),
             }
             for item in all_items
         ]

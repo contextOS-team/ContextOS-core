@@ -71,6 +71,7 @@ class LinkedItem:
     snippet: str
     relevance_score: float
     signals: list[str] = field(default_factory=list)
+    url: str | None = None
 
 
 @dataclass
@@ -123,6 +124,7 @@ async def _find_explicit_refs(
                 snippet=pr_snippet,
                 relevance_score=WEIGHT_EXPLICIT,
                 signals=["explicit_link"],
+                url=pr_url,
             )
 
             # Also find reviews on linked PRs
@@ -168,6 +170,7 @@ async def _find_explicit_refs(
                 snippet=mr_snippet,
                 relevance_score=WEIGHT_EXPLICIT,
                 signals=["explicit_link"],
+                url=mr_url,
             )
 
             # Also find reviews on linked MRs
@@ -244,6 +247,7 @@ async def _find_explicit_refs(
         slack_result = await session.execute(slack_stmt)
         for msg in slack_result.scalars().all():
             key = ("slack_message", msg.id)
+            slack_permalink = f"https://slack.com/archives/{msg.channel_id}/p{msg.slack_ts.replace('.', '')}" if msg.channel_id and msg.slack_ts else None
             items[key] = LinkedItem(
                 source_type="slack_message",
                 source_id=msg.id,
@@ -251,6 +255,7 @@ async def _find_explicit_refs(
                 snippet=msg.text[:200],
                 relevance_score=WEIGHT_EXPLICIT,
                 signals=["explicit_reference"],
+                url=slack_permalink,
             )
 
     return items
@@ -344,7 +349,7 @@ async def _find_hybrid_matches(
             )
             continue
 
-        title, snippet = summaries[key]
+        title, snippet, url = summaries[key]
         score = combined_score * WEIGHT_HYBRID
 
         items[key] = LinkedItem(
@@ -354,6 +359,7 @@ async def _find_hybrid_matches(
             snippet=snippet,
             relevance_score=score,
             signals=["hybrid_search"],
+            url=url,
         )
 
     return items
@@ -361,10 +367,11 @@ async def _find_hybrid_matches(
 
 # Map source_type -> (model class, title+snippet extractor)
 _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
-    "linear_ticket": (LinearTicket, lambda r: (r.title, (r.description or "")[:200])),
+    "linear_ticket": (LinearTicket, lambda r: (r.title, (r.description or "")[:200]), None),
     "linear_comment": (
         LinearComment,
         lambda r: (f"Comment by {r.author_name or 'Unknown'}", r.body[:200]),
+        None,
     ),
     "slack_message": (
         SlackMessage,
@@ -372,10 +379,12 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
             f"Slack by {r.user_name or 'Unknown'} in #{r.channel_name or 'unknown'}",
             r.text[:200],
         ),
+        lambda r: f"https://slack.com/archives/{r.channel_id}/p{r.slack_ts.replace('.', '')}" if r.channel_id and r.slack_ts else None,
     ),
     "meeting_transcript": (
         MeetingTranscript,
         lambda r: (f"Meeting: {r.title or 'Untitled'}", r.transcript[:200]),
+        None,
     ),
     "meeting_segment": (
         MeetingSegment,
@@ -383,6 +392,7 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
             f"Segment by {r.speaker_name or 'Unknown'}",
             r.text[:200],
         ),
+        None,
     ),
     "github_pull_request": (
         GithubPullRequest,
@@ -392,6 +402,7 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
             f"**State:** {'merged' if r.github_merged_at else r.state} | **Author:** {r.author} | **Branch:** {r.branch_name} → {r.base_branch}\n"
             f"{(r.description or '')[:200]}",
         ),
+        lambda r: f"https://github.com/{r.repo_full_name}/pull/{r.number}",
     ),
     "github_review": (
         GithubReview,
@@ -399,10 +410,12 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
             f"Review by {r.author} ({r.state})",
             (r.body or "")[:200],
         ),
+        None,
     ),
     "notion_page": (
         NotionPage,
         lambda r: (r.title, (r.content or "")[:200]),
+        lambda r: r.url,
     ),
     "gitlab_merge_request": (
         GitlabMergeRequest,
@@ -412,6 +425,7 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
             f"**State:** {'merged' if r.gitlab_merged_at else r.state} | **Author:** {r.author} | **Branch:** {r.source_branch} → {r.target_branch}\n"
             f"{(r.description or '')[:200]}",
         ),
+        lambda r: f"https://gitlab.com/{r.project_path}/-/merge_requests/{r.iid}",
     ),
     "gitlab_review": (
         GitlabReview,
@@ -419,6 +433,7 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
             f"Review by {r.author} ({r.state})",
             (r.body or "")[:200],
         ),
+        None,
     ),
     "code_chunk": (
         CodeChunk,
@@ -426,6 +441,7 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
             f"{r.symbol_type}: {r.symbol_name} ({r.repo_full_name}:{r.file_path})",
             r.content[:200],
         ),
+        None,
     ),
     "telegram_message": (
         TelegramMessage,
@@ -433,14 +449,17 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
             f"Telegram by {r.from_first_name or r.from_username or 'Unknown'} in {r.chat_title or 'DM'}",
             r.text[:200],
         ),
+        None,
     ),
     "jira_issue": (
         JiraIssue,
         lambda r: (f"{r.jira_key}: {r.summary}", (r.description or "")[:200]),
+        None,
     ),
     "jira_comment": (
         JiraComment,
         lambda r: (f"Jira comment by {r.author_name or 'Unknown'}", (r.body or "")[:200]),
+        None,
     ),
 }
 
@@ -448,13 +467,13 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
 async def _bulk_lookup_source_summaries(
     session: AsyncSession,
     keys: list[tuple[str, UUID]],
-) -> dict[tuple[str, UUID], tuple[str, str]]:
-    """Bulk-fetch title/snippet for multiple source records.
+) -> dict[tuple[str, UUID], tuple[str, str, str | None]]:
+    """Bulk-fetch title/snippet/url for multiple source records.
 
     Groups IDs by source_type, performs one query per type, then
     maps results in-memory. Eliminates the N+1 from per-result lookups.
     """
-    result_map: dict[tuple[str, UUID], tuple[str, str]] = {}
+    result_map: dict[tuple[str, UUID], tuple[str, str, str | None]] = {}
     if not keys:
         return result_map
 
@@ -468,13 +487,15 @@ async def _bulk_lookup_source_summaries(
             # Unknown source type — caller should skip these
             continue
 
-        model_cls, extract = _SOURCE_SUMMARY_MAP[source_type]
+        model_cls, extract, url_fn = _SOURCE_SUMMARY_MAP[source_type]
         stmt = select(model_cls).where(model_cls.id.in_(ids))  # type: ignore[union-attr]
         db_result = await session.execute(stmt)
         records = db_result.scalars().all()
 
         for record in records:
-            result_map[(source_type, record.id)] = extract(record)
+            title, snippet = extract(record)
+            url = url_fn(record) if url_fn else None
+            result_map[(source_type, record.id)] = (title, snippet, url)
 
         # Missing IDs are intentionally NOT added to result_map.
         # Callers check membership to skip orphaned embedding hits.
@@ -496,7 +517,7 @@ async def _lookup_source_summary(
     if source_type not in _SOURCE_SUMMARY_MAP:
         return None
 
-    model_cls, extract = _SOURCE_SUMMARY_MAP[source_type]
+    model_cls, extract, _url_fn = _SOURCE_SUMMARY_MAP[source_type]
     stmt = select(model_cls).where(model_cls.id == source_id)
     result = await session.execute(stmt)
     record = result.scalar_one_or_none()
@@ -822,7 +843,7 @@ async def find_content_by_source(
     for signal_items in [explicit, hybrid]:
         for key, item in signal_items.items():
             if key in merged:
-                merged[key].relevance_score += item.relevance_score
+                merged[key].relevance_score = min(merged[key].relevance_score + item.relevance_score, 1.0)
                 merged[key].signals.extend(item.signals)
             else:
                 merged[key] = item
@@ -919,8 +940,8 @@ async def find_related_content(
         for key, item in signal_items.items():
             if key in merged:
                 existing = merged[key]
-                existing.relevance_score = max(
-                    existing.relevance_score + item.relevance_score, 0.0
+                existing.relevance_score = min(
+                    existing.relevance_score + item.relevance_score, 1.0
                 )
                 existing.signals.extend(item.signals)
             else:

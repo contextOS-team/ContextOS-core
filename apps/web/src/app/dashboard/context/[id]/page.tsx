@@ -146,7 +146,7 @@ interface ContextPageData {
   jira_issue_id: string | null
   status: string
   content: string
-  sources: Array<{ type: string; id: string; title: string; relevance_score: number }>
+  sources: Array<{ type: string; id: string; title: string; relevance_score: number; url?: string }>
   generated_at: string | null
   updated_at: string
 }
@@ -207,7 +207,7 @@ function ContentSection({
 function SourceSidebar({
   sources,
 }: {
-  sources: Array<{ type: string; id: string; title: string; relevance_score: number }>
+  sources: Array<{ type: string; id: string; title: string; relevance_score: number; url?: string }>
 }) {
   const grouped = useMemo(() => {
     const groups: Record<string, typeof sources> = {}
@@ -249,11 +249,8 @@ function SourceSidebar({
             <div className="space-y-0.5">
               {items.map((source, i) => {
                 const config = SOURCE_TYPE_CONFIG[source.type]
-                return (
-                  <div
-                    key={`${source.type}-${source.id}-${i}`}
-                    className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/30 transition-colors group"
-                  >
+                const inner = (
+                  <>
                     <span className="text-muted-foreground shrink-0 mt-0.5">
                       {config?.label ?? source.type}
                     </span>
@@ -261,8 +258,26 @@ function SourceSidebar({
                       {source.title}
                     </span>
                     <span className="font-mono text-muted-foreground/60 tabular-nums shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {(source.relevance_score * 100).toFixed(0)}%
+                      {Math.min(Math.round(source.relevance_score * 100), 100)}%
                     </span>
+                  </>
+                )
+                return source.url ? (
+                  <a
+                    key={`${source.type}-${source.id}-${i}`}
+                    href={source.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/30 transition-colors group cursor-pointer"
+                  >
+                    {inner}
+                  </a>
+                ) : (
+                  <div
+                    key={`${source.type}-${source.id}-${i}`}
+                    className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/30 transition-colors group"
+                  >
+                    {inner}
                   </div>
                 )
               })}
