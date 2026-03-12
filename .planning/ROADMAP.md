@@ -317,7 +317,7 @@ Plans:
   3. Meetings appear in the linking engine for ticket-to-meeting association (replacing/augmenting Fathom)
   4. Huddle data feeds into context page generation with meeting summaries
   5. No new OAuth scopes break existing Slack message ingestion
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 30-01-PLAN.md — Database migration (slack_huddle source CHECK), OAuth scope update (canvases:read, files:read), poll-based huddle ingestion service

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: executing
-stopped_at: Completed 30-01-PLAN.md
-last_updated: "2026-03-12T10:53:59.756Z"
+stopped_at: Completed 30-02-PLAN.md
+last_updated: "2026-03-12T11:00:03.385Z"
 last_activity: 2026-03-12 -- Completed 28-01 (GitLab Code Indexing Backend)
 progress:
   total_phases: 16
-  completed_phases: 12
+  completed_phases: 13
   total_plans: 41
-  completed_plans: 38
+  completed_plans: 39
   percent: 97
 ---
 
@@ -94,6 +94,7 @@ Progress: [██████████] 97%
 | Phase 29 P05 | 4min | 2 tasks | 3 files |
 | Phase 28 P02 | 2min | 2 tasks | 3 files |
 | Phase 30 P01 | 4min | 2 tasks | 4 files |
+| Phase 30 P02 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -197,6 +198,8 @@ Recent decisions affecting current work:
 - [Phase 30]: Canvas content retrieved via files.info content field with url_private download fallback
 - [Phase 30]: Huddles without AI notes create minimal MeetingTranscript with placeholder text, embedding skipped
 - [Phase 30]: User name resolution cached within poll run to avoid redundant Slack API calls
+- [Phase 30]: slack_huddle maps to same source types as fathom (meeting_transcript, meeting_segment) since both use MeetingTranscript model
+- [Phase 30]: slack_huddle auto-added to connected_sources when Slack is connected (piggybacks on Slack OAuth token)
 
 ### Roadmap Evolution
 
@@ -221,6 +224,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-12T10:53:59.752Z
-Stopped at: Completed 30-01-PLAN.md
+Last session: 2026-03-12T11:00:03.383Z
+Stopped at: Completed 30-02-PLAN.md
 Resume file: None
