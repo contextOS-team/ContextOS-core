@@ -276,10 +276,17 @@ async def index_repo(
             existing_map[key] = (row[0], row[5])
 
         # --- Diff and batch upsert ---
+        UPSERT_BATCH_SIZE = 500
+
         chunks_created = 0
         chunks_updated = 0
         changed_chunk_ids: list[UUID] = []
         seen_keys: set[tuple[str, str, str, str]] = set()
+
+        # Collect rows that need upserting (new or changed content)
+        pending_rows: list[dict] = []
+        pending_is_update: list[bool] = []
+        table = CodeChunk.__table__
 
         for file_path, chunk_data in all_chunks:
             content_hash = compute_content_hash(chunk_data.content)
@@ -290,10 +297,7 @@ async def index_repo(
             if existing and existing[1] == content_hash:
                 continue  # Unchanged
 
-            # Use table-level insert (not ORM insert) to avoid SQLAlchemy
-            # confusing the "metadata" column name with table MetaData object.
-            table = CodeChunk.__table__
-            values = {
+            pending_rows.append({
                 "workspace_id": workspace_id,
                 "repo_full_name": repo_full_name,
                 "file_path": file_path,
@@ -306,36 +310,43 @@ async def index_repo(
                 "end_line": chunk_data.end_line,
                 "metadata": chunk_data.metadata,
                 "deleted_at": None,
-            }
+            })
+            pending_is_update.append(existing is not None)
 
+        # Batch upsert — one multi-row INSERT per batch instead of N round-trips
+        total_pending = len(pending_rows)
+        if total_pending:
+            logger.info(
+                "Upserting %d changed chunks for %s in batches of %d",
+                total_pending, repo_full_name, UPSERT_BATCH_SIZE,
+            )
+        for i in range(0, total_pending, UPSERT_BATCH_SIZE):
+            batch = pending_rows[i:i + UPSERT_BATCH_SIZE]
+            batch_updates = pending_is_update[i:i + UPSERT_BATCH_SIZE]
+
+            stmt = insert(table).values(batch)
             upsert_stmt = (
-                insert(table)
-                .values(**values)
-                .on_conflict_do_update(
+                stmt.on_conflict_do_update(
                     index_elements=[
                         "workspace_id", "repo_full_name", "file_path", "symbol_name", "symbol_type",
                     ],
                     set_={
-                        "language": values["language"],
-                        "content": values["content"],
-                        "content_hash": values["content_hash"],
-                        "start_line": values["start_line"],
-                        "end_line": values["end_line"],
-                        "metadata": values["metadata"],
+                        "language": stmt.excluded.language,
+                        "content": stmt.excluded.content,
+                        "content_hash": stmt.excluded.content_hash,
+                        "start_line": stmt.excluded.start_line,
+                        "end_line": stmt.excluded.end_line,
+                        "metadata": stmt.excluded.metadata,
                         "deleted_at": None,
                     },
                 )
                 .returning(table.c.id)
             )
-            upsert_result = await session.execute(upsert_stmt)
-            row = upsert_result.first()
-            if row:
-                changed_chunk_ids.append(row[0])
+            result = await session.execute(upsert_stmt)
+            changed_chunk_ids.extend(row[0] for row in result.fetchall())
 
-            if existing:
-                chunks_updated += 1
-            else:
-                chunks_created += 1
+            chunks_created += sum(1 for u in batch_updates if not u)
+            chunks_updated += sum(1 for u in batch_updates if u)
 
         # Soft-delete chunks that no longer exist in the repo (bulk)
         stale_ids = [
