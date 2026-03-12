@@ -628,7 +628,20 @@ async def generate_context_page_stream(
         # 6. Synthesize
         yield {"event": "step_start", "source": "synthesize"}
 
-        related_text = _format_related_content(all_items)
+        # Separate graph items from non-graph items
+        graph_items = [
+            item for item in all_items
+            if any(s.startswith("graph:") for s in item.signals)
+        ]
+        non_graph_items = [
+            item for item in all_items
+            if not any(s.startswith("graph:") for s in item.signals)
+        ]
+
+        code_provenance = await _get_code_provenance(session, workspace_id, non_graph_items)
+        related_text = _format_related_content(non_graph_items, code_provenance=code_provenance)
+        graph_text = _format_graph_section(graph_items)
+
         prompt = SYNTHESIS_TEMPLATE.format(
             identifier=ticket.identifier,
             title=ticket.title,
@@ -638,6 +651,7 @@ async def generate_context_page_stream(
             labels=", ".join(ticket.labels) if ticket.labels else "None",
             description=ticket.description or "No description provided.",
             related_content=related_text,
+            graph_section=graph_text,
         )
 
         llm = get_llm_client()
