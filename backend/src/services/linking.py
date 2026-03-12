@@ -44,6 +44,7 @@ DEPTH_DECAY = 0.6  # Exponential decay factor for graph depth scoring
 # all results are ranked by combined_score, with a low floor (0.15) to
 # exclude completely irrelevant items without filtering good matches.
 HYBRID_SEARCH_LIMIT = 10
+HYBRID_SEARCH_CODE_LIMIT = 5  # Dedicated budget for code_chunk results
 HYBRID_SCORE_FLOOR = 0.15
 
 # Graph entity type to source type mapping for source-backed entities
@@ -289,14 +290,17 @@ async def _find_hybrid_matches(
         return items
 
     # Call hybrid_search() SQL function — use a low floor to exclude noise,
-    # but rely primarily on top-k ranking rather than a strict threshold
+    # but rely primarily on top-k ranking rather than a strict threshold.
+    # We run two searches: one general (all types) and one dedicated for
+    # code_chunk, because code chunks would otherwise be crowded out when
+    # other source types (MRs, comments, messages) fill the top-k slots.
     match_stmt = text("""
         SELECT id, source_type, source_id, similarity, keyword_rank, combined_score, metadata
         FROM hybrid_search(
             CAST(:query_embedding AS vector),
             :query_text,
             CAST(:workspace_id AS uuid),
-            NULL,
+            :source_type,
             0.7,
             0.3,
             :floor,
@@ -304,19 +308,22 @@ async def _find_hybrid_matches(
         )
     """)
 
+    common_params = {
+        "query_embedding": str(query_embedding),
+        "query_text": ticket.title,
+        "workspace_id": str(workspace_id),
+        "floor": HYBRID_SCORE_FLOOR,
+    }
+
+    # General search (all source types)
     result = await session.execute(
         match_stmt,
-        {
-            "query_embedding": str(query_embedding),
-            "query_text": ticket.title,
-            "workspace_id": str(workspace_id),
-            "floor": HYBRID_SCORE_FLOOR,
-            "limit": HYBRID_SEARCH_LIMIT,
-        },
+        {**common_params, "source_type": None, "limit": HYBRID_SEARCH_LIMIT},
     )
 
     # Collect all hybrid hits first (skip self-matches)
     hits: list[tuple[str, UUID, float]] = []
+    seen_keys: set[tuple[str, UUID]] = set()
     for row in result.fetchall():
         source_type = row[1]
         source_id = row[2]
@@ -331,6 +338,23 @@ async def _find_hybrid_matches(
             continue
 
         hits.append((source_type, source_id, combined_score))
+        seen_keys.add((source_type, source_id))
+
+    # Dedicated code_chunk search — ensures code results aren't crowded out
+    # by higher-scoring MRs/comments in the general search.
+    if allowed_types is None or "code_chunk" in allowed_types:
+        code_result = await session.execute(
+            match_stmt,
+            {**common_params, "source_type": "code_chunk", "limit": HYBRID_SEARCH_CODE_LIMIT},
+        )
+        for row in code_result.fetchall():
+            source_type = row[1]
+            source_id = row[2]
+            key = (source_type, source_id)
+            if key in seen_keys:
+                continue
+            hits.append((source_type, source_id, row[5]))
+            seen_keys.add(key)
 
     # Bulk-fetch summaries for all hits
     summaries = await _bulk_lookup_source_summaries(
@@ -807,8 +831,9 @@ def _apply_token_budget(
 
 SOURCE_TYPE_MAP = {
     "slack": ["slack_message"],
-    "github": ["github_pull_request", "github_review", "code_chunk"],
+    "github": ["github_pull_request", "github_review"],
     "gitlab": ["gitlab_merge_request", "gitlab_review"],
+    "code": ["code_chunk"],
     "notion": ["notion_page"],
     "fathom": ["meeting_transcript", "meeting_segment"],
     "slack_huddle": ["meeting_transcript", "meeting_segment"],
@@ -863,15 +888,12 @@ async def find_content_by_source(
         if source_name == "github":
             prs = sum(1 for i in source_items if i.source_type == "github_pull_request")
             reviews = sum(1 for i in source_items if i.source_type == "github_review")
-            code = sum(1 for i in source_items if i.source_type == "code_chunk")
             parts = []
             if prs:
                 parts.append(f"{prs} PR{'s' if prs > 1 else ''}")
             if reviews:
                 parts.append(f"{reviews} review{'s' if reviews > 1 else ''}")
-            if code:
-                parts.append(f"{code} code file{'s' if code > 1 else ''}")
-            detail = f"Found {', '.join(parts)}" if parts else "No PRs or code found"
+            detail = f"Found {', '.join(parts)}" if parts else "No PRs found"
         elif source_name == "slack":
             n = len(source_items)
             detail = f"Found {n} message{'s' if n != 1 else ''}" if n else "No messages found"
@@ -886,7 +908,10 @@ async def find_content_by_source(
                 parts.append(f"{mrs} MR{'s' if mrs > 1 else ''}")
             if reviews:
                 parts.append(f"{reviews} review{'s' if reviews > 1 else ''}")
-            detail = f"Found {', '.join(parts)}" if parts else "No MRs or reviews found"
+            detail = f"Found {', '.join(parts)}" if parts else "No MRs found"
+        elif source_name == "code":
+            n = len(source_items)
+            detail = f"Found {n} code file{'s' if n != 1 else ''}" if n else "No code found"
         elif source_name in ("fathom", "slack_huddle"):
             n = len(source_items)
             detail = f"Found {n} meeting segment{'s' if n != 1 else ''}" if n else "No meetings found"
