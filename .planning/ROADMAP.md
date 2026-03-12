@@ -272,10 +272,18 @@ Plans:
 **Goal:** Add project selection UI and code indexing for GitLab, mirroring the GitHub experience — browse projects, select which to monitor, clone and index code using the existing provider-agnostic pipeline (tree-sitter parsing, embeddings).
 **Requirements**: GL-09, GL-10, GL-11
 **Depends on:** Phase 24
-**Plans:** 0 plans
+**Success Criteria** (what must be TRUE):
+  1. Code indexing pipeline supports both GitHub and GitLab with provider-aware clone authentication
+  2. POST /api/gitlab/index triggers indexing for selected GitLab projects via Redis Stream worker
+  3. GET /api/gitlab/index/status returns indexing state and per-project chunk counts
+  4. Users can browse, select, and save GitLab projects from the settings page
+  5. Saving project selection auto-triggers code indexing with status polling
+  6. Integrations status includes selected_repos_count for GitLab
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 28 to break down)
+- [ ] 28-01-PLAN.md — Backend: abstract clone auth in code_indexer, add /index and /index/status endpoints to GitLab router, update integrations status
+- [ ] 28-02-PLAN.md — Frontend: GitLab API client functions, GitlabRepos project selection component, wire into settings integration cards
 
 ### Phase 29: Codebase Hardening - Security, Bug Fixes, Architecture, and UI/UX Polish
 
