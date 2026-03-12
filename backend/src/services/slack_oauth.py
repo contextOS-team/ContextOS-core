@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
 SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access"
 
-# Bot scopes for reading channel messages, user info, and user emails
-SLACK_BOT_SCOPES = "channels:read,channels:history,groups:read,groups:history,users:read,users:read.email"
+# Bot scopes for reading channel messages, user info, user emails, and canvas/file access
+SLACK_BOT_SCOPES = "channels:read,channels:history,groups:read,groups:history,users:read,users:read.email,canvases:read,files:read"
 
 
 class SlackOAuthError(Exception):

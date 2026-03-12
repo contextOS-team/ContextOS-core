@@ -5,6 +5,33 @@ import { Button } from '@/components/ui/button'
 import type { GenerationStep } from '@/lib/api'
 import { SOURCE_LABELS } from '@/lib/api'
 
+// ---------------------------------------------------------------------------
+// Friendly error message mapping
+// ---------------------------------------------------------------------------
+
+const ERROR_MESSAGES: Record<string, string> = {
+  'rate limit': 'Too many requests. Please wait a moment and try again.',
+  'timeout': 'The request took too long. Please try again.',
+  'unauthorized': 'Your session has expired. Please sign in again.',
+  'not found': 'The requested ticket could not be found.',
+  'already running': 'A generation is already in progress. Please wait for it to finish.',
+  'concurrent': 'A generation is already in progress. Please wait for it to finish.',
+  'openai': 'The AI service is temporarily unavailable. Please try again shortly.',
+  'anthropic': 'The AI service is temporarily unavailable. Please try again shortly.',
+  'connection': 'Could not connect to the server. Check your internet connection.',
+  'network': 'Could not connect to the server. Check your internet connection.',
+  'internal server error': 'Something went wrong on our end. Please try again.',
+  'token': 'Your integration token has expired. Reconnect the integration in Settings.',
+}
+
+function friendlyError(raw: string): string {
+  const lower = raw.toLowerCase()
+  for (const [key, message] of Object.entries(ERROR_MESSAGES)) {
+    if (lower.includes(key)) return message
+  }
+  return 'Something went wrong during generation. Please try again.'
+}
+
 interface GenerationProgressProps {
   ticketIdentifier: string
   steps: GenerationStep[]
@@ -14,13 +41,15 @@ interface GenerationProgressProps {
   onDismiss?: () => void
 }
 
-function StepIcon({ status, hasResults }: { status: GenerationStep['status']; hasResults: boolean }) {
+function StepIcon({ status, hasResults, syncing }: { status: GenerationStep['status']; hasResults: boolean; syncing?: boolean }) {
   switch (status) {
     case 'waiting':
       return <Circle className="h-4 w-4 text-muted-foreground/40" />
     case 'active':
       return <Loader2 className="h-4 w-4 text-primary animate-spin" />
     case 'complete':
+      if (syncing)
+        return <Loader2 className="h-4 w-4 text-amber-400 animate-spin" />
       return hasResults
         ? <Check className="h-4 w-4 text-emerald-400" />
         : <Check className="h-4 w-4 text-muted-foreground/50" />
@@ -54,7 +83,7 @@ export function GenerationProgress({
   const sourceSteps = steps.filter((s) => s.source !== 'synthesize')
   const synthesizeStep = steps.find((s) => s.source === 'synthesize')
   const allSourcesEmpty = sourceSteps.length > 0 &&
-    sourceSteps.every((s) => s.status === 'complete' && (s.count ?? 0) === 0)
+    sourceSteps.every((s) => s.status === 'complete' && (s.count ?? 0) === 0 && !s.syncing)
 
   return (
     <div
@@ -84,7 +113,8 @@ export function GenerationProgress({
       <div className="space-y-0.5">
         {sourceSteps.map((step, index) => {
           const hasResults = step.status === 'complete' && (step.count ?? 0) > 0
-          const isEmpty = step.status === 'complete' && (step.count ?? 0) === 0
+          const isSyncing = step.status === 'complete' && step.syncing
+          const isEmpty = step.status === 'complete' && (step.count ?? 0) === 0 && !isSyncing
           return (
             <div
               key={step.source}
@@ -116,7 +146,7 @@ export function GenerationProgress({
                 animationDelay: `${index * 100}ms`,
               }}
             >
-              <StepIcon status={step.status} hasResults={hasResults} />
+              <StepIcon status={step.status} hasResults={hasResults} syncing={step.syncing} />
               <span className="text-sm font-medium">
                 {SOURCE_LABELS[step.source] ?? step.source}
               </span>
@@ -191,7 +221,7 @@ export function GenerationProgress({
       {status === 'error' && (
         <div className="mt-3 flex items-center gap-2">
           {errorMessage && (
-            <p className="text-xs text-destructive flex-1">{errorMessage}</p>
+            <p className="text-xs text-destructive flex-1">{friendlyError(errorMessage)}</p>
           )}
           {onRetry && (
             <Button variant="ghost" size="sm" onClick={onRetry}>

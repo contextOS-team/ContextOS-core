@@ -1,6 +1,11 @@
-"""API key generation, hashing, listing, and revocation."""
+"""API key generation, hashing, listing, and revocation.
+
+SEC-04: New keys use per-key salt for SHA-256 hashing. Existing keys
+with NULL salt verify using the legacy unsalted hash path.
+"""
 
 import hashlib
+import os
 import secrets
 from datetime import datetime, timezone
 from uuid import UUID
@@ -11,20 +16,55 @@ from sqlmodel import select
 from src.models.api_key import ApiKey
 
 
-def generate_api_key() -> tuple[str, str, str]:
-    """Generate a random API key.
+def _hash_key(key: str, salt: str | None = None) -> str:
+    """Hash an API key with optional salt.
+
+    Args:
+        key: The full API key string.
+        salt: Per-key salt (hex string). If None, uses unsalted hash.
 
     Returns:
-        Tuple of (full_key, prefix, hash) where:
+        SHA-256 hex digest.
+    """
+    if salt:
+        return hashlib.sha256((salt + key).encode()).hexdigest()
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def generate_api_key() -> tuple[str, str, str, str]:
+    """Generate a random API key with per-key salt.
+
+    Returns:
+        Tuple of (full_key, prefix, hash, salt) where:
         - full_key: cos_{random_hex} (shown once at creation)
         - prefix: cos_{first_8_chars} (stored for display)
-        - hash: SHA-256 hex digest of full_key (stored for validation)
+        - hash: SHA-256 hex digest of salt + full_key (stored for validation)
+        - salt: Random 16-byte hex salt (stored alongside hash)
     """
     raw = secrets.token_hex(32)
     full_key = f"cos_{raw}"
     prefix = f"cos_{raw[:8]}"
-    key_hash = hashlib.sha256(full_key.encode()).hexdigest()
-    return full_key, prefix, key_hash
+    salt = os.urandom(16).hex()
+    key_hash = _hash_key(full_key, salt)
+    return full_key, prefix, key_hash, salt
+
+
+def verify_api_key(full_key: str, stored_hash: str, salt: str | None = None) -> bool:
+    """Verify an API key against its stored hash.
+
+    Handles both salted (new) and unsalted (legacy) keys based on
+    whether salt is present.
+
+    Args:
+        full_key: The full API key to verify.
+        stored_hash: The stored SHA-256 hash.
+        salt: Per-key salt (None for legacy unsalted keys).
+
+    Returns:
+        True if the key matches.
+    """
+    computed = _hash_key(full_key, salt)
+    return secrets.compare_digest(computed, stored_hash)
 
 
 async def create_api_key(
@@ -35,11 +75,13 @@ async def create_api_key(
 ) -> tuple[ApiKey, str]:
     """Create a new API key for a workspace.
 
+    SEC-04: New keys are hashed with a per-key random salt.
+
     Returns:
         Tuple of (ApiKey model, full_key). The full key is only
         available at creation time and must be shown to the user once.
     """
-    full_key, prefix, key_hash = generate_api_key()
+    full_key, prefix, key_hash, salt = generate_api_key()
 
     api_key = ApiKey(
         workspace_id=workspace_id,
@@ -47,6 +89,7 @@ async def create_api_key(
         name=name,
         key_prefix=prefix,
         key_hash=key_hash,
+        salt=salt,
     )
     session.add(api_key)
     await session.commit()

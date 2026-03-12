@@ -41,9 +41,15 @@ async def get_current_user(
         )
 
     # Look up the user's workspace membership
-    stmt = select(WorkspaceMember.workspace_id).where(
-        WorkspaceMember.user_id == payload.sub,
-        WorkspaceMember.deleted_at.is_(None),  # type: ignore[union-attr]
+    # REL-02: ORDER BY + LIMIT 1 ensures deterministic result for single-workspace assumption
+    stmt = (
+        select(WorkspaceMember.workspace_id)
+        .where(
+            WorkspaceMember.user_id == payload.sub,
+            WorkspaceMember.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        .order_by(WorkspaceMember.created_at.asc())  # type: ignore[union-attr]
+        .limit(1)
     )
     result = await session.execute(stmt)
     membership = result.scalar_one_or_none()

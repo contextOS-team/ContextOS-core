@@ -24,7 +24,7 @@ from src.services.linear_oauth import (
     exchange_code,
     get_valid_access_token,
 )
-from src.services.oauth_common import sign_oauth_state, verify_state_or_raise
+from src.services.oauth_common import sign_oauth_state, verify_state_or_raise, is_user_onboarding
 from src.services.linear_graphql import LinearAPIError, LinearGraphQLClient
 from src.services.linear_sync import fetch_teams, sync_tickets_for_teams
 
@@ -100,6 +100,11 @@ async def callback(
         )
         jira_result = await session.execute(jira_stmt)
         if jira_result.scalar_one_or_none() is not None:
+            if await is_user_onboarding(session, user_id):
+                return RedirectResponse(
+                    url=f"{frontend_url}/onboarding?oauth_error=linear&reason=provider_conflict",
+                    status_code=status.HTTP_302_FOUND,
+                )
             return RedirectResponse(
                 url=f"{frontend_url}/dashboard/settings?tab=integrations&linear=error&reason=provider_conflict",
                 status_code=status.HTTP_302_FOUND,
@@ -108,12 +113,25 @@ async def callback(
         org_info = await exchange_code(code, session, workspace_id, user_id, settings)
         org_name = org_info.get("name", "")
 
+        if await is_user_onboarding(session, user_id):
+            return RedirectResponse(
+                url=f"{frontend_url}/onboarding",
+                status_code=status.HTTP_302_FOUND,
+            )
+
         return RedirectResponse(
             url=f"{frontend_url}/dashboard/settings?tab=integrations&linear=connected&org={org_name}",
             status_code=status.HTTP_302_FOUND,
         )
     except OAuthError as e:
         logger.error("OAuth code exchange failed: %s", e)
+
+        if user_id and await is_user_onboarding(session, user_id):
+            return RedirectResponse(
+                url=f"{frontend_url}/onboarding?oauth_error=linear&reason=exchange_failed",
+                status_code=status.HTTP_302_FOUND,
+            )
+
         return RedirectResponse(
             url=f"{frontend_url}/dashboard/settings?tab=integrations&linear=error&reason=exchange_failed",
             status_code=status.HTTP_302_FOUND,

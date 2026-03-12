@@ -6,6 +6,7 @@ that synthesize information from Linear tickets, PRs, Slack, and meetings.
 
 import json
 import logging
+import re
 from typing import Annotated
 from uuid import UUID
 
@@ -24,6 +25,27 @@ from src.models.ticket import LinearTicket
 from src.services.synthesis import generate_context_page, generate_context_page_stream
 
 logger = logging.getLogger(__name__)
+
+# SEC-01: JQL injection prevention -- only valid Jira/Linear ticket identifiers pass
+TICKET_ID_PATTERN = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
+
+
+def _validate_ticket_identifier(identifier: str) -> str:
+    """Validate ticket identifier matches KEY-123 format.
+
+    Prevents JQL injection by rejecting any identifier that does not
+    match the strict allowlist pattern.
+
+    Raises:
+        HTTPException(400): If identifier format is invalid.
+    """
+    if not TICKET_ID_PATTERN.match(identifier):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid ticket identifier format. Expected KEY-123.",
+        )
+    return identifier
+
 
 router = APIRouter(prefix="/api/context", tags=["context"])
 
@@ -83,6 +105,9 @@ async def stream_context_generation(
     FastAPI closes Depends sessions when the response object is returned,
     which for SSE is immediately -- before the stream ends.
     """
+
+    # SEC-01: Validate before any JQL interpolation
+    _validate_ticket_identifier(ticket_identifier)
 
     async def event_generator():
         async with async_session() as session:
@@ -259,6 +284,9 @@ async def trigger_context_generation(
     If linear_issue_id is provided and the ticket doesn't exist locally,
     it will be synced from Linear first.
     """
+    # SEC-01: Validate before any JQL interpolation
+    _validate_ticket_identifier(ticket_identifier)
+
     background_tasks.add_task(
         _generate_in_background,
         user.workspace_id,

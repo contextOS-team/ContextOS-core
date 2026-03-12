@@ -31,6 +31,7 @@ from src.services.slack_channels import (
     save_channel_selection,
 )
 from src.services.slack_events import process_event, verify_signature
+from src.services.slack_huddles import poll_huddle_transcripts
 from src.services.slack_oauth import (
     SlackOAuthError,
     build_auth_url,
@@ -336,3 +337,40 @@ async def _process_event_background(
                 workspace_id,
             )
             await session.rollback()
+
+
+@router.post("/poll-huddles")
+async def trigger_huddle_poll(
+    background_tasks: BackgroundTasks,
+    user: UserContext = Depends(get_current_user),
+) -> dict:
+    """Trigger a manual poll for Slack huddle transcripts.
+
+    Scans monitored channels for completed huddles with AI-generated
+    notes (canvases). Runs in background and returns 202 Accepted.
+    Requires Slack integration with canvases:read scope.
+    """
+    background_tasks.add_task(
+        _poll_huddles_background,
+        user.workspace_id,
+    )
+    return {"status": "polling", "detail": "Huddle transcript poll started in background"}
+
+
+async def _poll_huddles_background(workspace_id) -> None:
+    """Run huddle transcript poll in the background."""
+    from src.db import async_session
+
+    async with async_session() as session:
+        try:
+            result = await poll_huddle_transcripts(session, workspace_id)
+            logger.info(
+                "Huddle poll completed for workspace %s: %s",
+                workspace_id,
+                result,
+            )
+        except Exception:
+            logger.exception(
+                "Error polling huddle transcripts for workspace %s",
+                workspace_id,
+            )

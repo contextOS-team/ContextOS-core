@@ -98,9 +98,9 @@ async def reconcile_notion(workspace_id: UUID) -> None:
                         stored_updated = check_result.scalar_one_or_none()
 
                         if notion_last_edited and stored_updated:
-                            from src.routers.notion import _parse_notion_datetime
+                            from src.utils.datetime import parse_notion_datetime
 
-                            new_updated = _parse_notion_datetime(notion_last_edited)
+                            new_updated = parse_notion_datetime(notion_last_edited)
                             # Normalize to naive UTC for comparison
                             cmp_stored = stored_updated
                             if cmp_stored.tzinfo is not None:

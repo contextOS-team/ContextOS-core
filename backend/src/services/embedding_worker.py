@@ -15,6 +15,8 @@ Usage:
 import asyncio
 import json
 import logging
+import os
+import socket
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -27,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 STREAM_KEY = "embedding:jobs"
 GROUP_NAME = "embedding-workers"
-CONSUMER_NAME = "worker-1"
+CONSUMER_NAME = f"worker-{socket.gethostname()}-{os.getpid()}"
 BATCH_READ_COUNT = 10  # Number of stream messages to read at once
 BLOCK_MS = 5000  # Block for 5s waiting for new messages
 

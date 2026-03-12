@@ -26,6 +26,9 @@ class ContextPage(BaseModel, table=True):
     ticket_id: uuid.UUID | None = Field(
         default=None, foreign_key="linear_tickets.id"
     )
+    jira_issue_id: uuid.UUID | None = Field(
+        default=None, foreign_key="jira_issues.id"
+    )
     ticket_identifier: str | None = Field(default=None)
     title: str = Field(nullable=False)
     content: str = Field(nullable=False)

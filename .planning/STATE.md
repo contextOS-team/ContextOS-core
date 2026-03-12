@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
-status: completed
-stopped_at: Completed 26-03-PLAN.md
-last_updated: "2026-03-10T10:35:00.000Z"
-last_activity: 2026-03-10 -- Completed Phase 26 (Telegram Chat Integration)
+status: executing
+stopped_at: Completed 30-02-PLAN.md
+last_updated: "2026-03-12T14:05:02.862Z"
+last_activity: 2026-03-12 -- Completed 28-01 (GitLab Code Indexing Backend)
 progress:
-  total_phases: 13
-  completed_phases: 8
-  total_plans: 31
-  completed_plans: 23
-  percent: 92
+  total_phases: 22
+  completed_phases: 19
+  total_plans: 54
+  completed_plans: 52
+  percent: 97
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 
 ## Current Position
 
-Phase: 26 of 27 (Telegram Chat Integration)
-Plan: 3 of 3 (26-03 complete)
-Status: Phase Complete
-Last activity: 2026-03-10 -- Completed Phase 26 (Telegram Chat Integration)
+Phase: 29 of 29 (Codebase Hardening)
+Plan: 5 of 6
+Status: Executing
+Last activity: 2026-03-12 -- Completed 28-01 (GitLab Code Indexing Backend)
 
-Progress: [█████████░] 92%
+Progress: [██████████] 97%
 
 ## Performance Metrics
 
@@ -86,6 +86,15 @@ Progress: [█████████░] 92%
 | Phase 26 P01 | 3min | 2 tasks | 7 files |
 | Phase 26 P02 | 4min | 2 tasks | 7 files |
 | Phase 26 P03 | 4min | 2 tasks | 4 files |
+| Phase 29 P01 | 5min | 2 tasks | 11 files |
+| Phase 29 P03 | 3min | 2 tasks | 8 files |
+| Phase 29 P02 | 8min | 2 tasks | 10 files |
+| Phase 29 P04 | 5min | 2 tasks | 3 files |
+| Phase 29 P06 | 3min | 2 tasks | 4 files |
+| Phase 29 P05 | 4min | 2 tasks | 3 files |
+| Phase 28 P02 | 2min | 2 tasks | 3 files |
+| Phase 30 P01 | 4min | 2 tasks | 4 files |
+| Phase 30 P02 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -167,6 +176,30 @@ Recent decisions affecting current work:
 - [Phase 26]: Background task pattern for webhook processing (same as Fathom _poll_background)
 - [Phase 26]: TelegramConnect mirrors FathomConnect pattern for consistency
 - [Phase 26]: Telegram brand color #26A5E4 for settings icon, no external BotFather link
+- [Phase 29]: AlertDialog uses controlled state for disconnect confirmation (not AlertDialogTrigger wrapper)
+- [Phase 29]: friendlyError maps known error substrings to user-friendly messages with generic fallback
+- [Phase 29]: isResyncingRef pattern resolves eslint-disable in integrations tab without re-triggering effects
+- [Phase 29]: Settings page decomposed from 1,030 lines to 112-line shell + 4 tab components
+- [Phase 29]: Renamed jira migration to 00019b (not 00020) because 00020 is occupied by telegram_messages
+- [Phase 29]: Kept backward-compatible _parse_notion_datetime alias in notion.py router
+- [Phase 29]: Redis rate limiter fails open on Redis errors -- never blocks API due to Redis outage
+- [Phase 29]: OAUTH_STATE_SECRET falls back to provider client_secret for backward compatibility
+- [Phase 29]: Legacy API keys with NULL salt verify via unsalted hash path -- no migration needed
+- [Phase 29]: TICKET_ID_PATTERN strict allowlist (^[A-Z][A-Z0-9]+-\d+$) for JQL injection prevention
+- [Phase 29]: X-Forwarded-For trusted only from loopback/private IPs via ipaddress module
+- [Phase 29]: _lookup_ticket returns 3-tuple (ticket, fk_id, is_linear) for mock-friendly ticket type detection
+- [Phase 29]: NotionSyncSection receives isPageLoading prop to gate mount-effect sync resume
+- [Phase 28]: Provider dispatch via string param (not class hierarchy) for minimal clone auth abstraction
+- [Phase 28]: Token refresh before EACH GitLab repo clone -- OAuth tokens expire in 2 hours
+- [Phase 28]: GitLab chunks filtered by matching repo_full_name against available_projects paths
+- [Phase 28]: GitLab project selection uses numeric Set<number> for IDs, internal visibility uses dimmed Lock icon
+- [Phase 29]: makeConnectHandler/makeDisconnectHandler moved into integration-cards.tsx as module-level helpers
+- [Phase 29]: connected_sources guard pattern: None means query all (backward compat), hybrid search post-filters results
+- [Phase 30]: Canvas content retrieved via files.info content field with url_private download fallback
+- [Phase 30]: Huddles without AI notes create minimal MeetingTranscript with placeholder text, embedding skipped
+- [Phase 30]: User name resolution cached within poll run to avoid redundant Slack API calls
+- [Phase 30]: slack_huddle maps to same source types as fathom (meeting_transcript, meeting_segment) since both use MeetingTranscript model
+- [Phase 30]: slack_huddle auto-added to connected_sources when Slack is connected (piggybacks on Slack OAuth token)
 
 ### Roadmap Evolution
 
@@ -176,6 +209,8 @@ Recent decisions affecting current work:
 - Phase 25 added: Jira Integration
 - Phase 26 added: Telegram Chat Integration
 - Phase 27 added: Dashboard Homepage Intelligence Widgets
+- Phase 29 added: Codebase Hardening - Security, Bug Fixes, Architecture, and UI/UX Polish
+- Phase 30 added: Slack Huddle Transcript Ingestion
 
 ### Pending Todos
 
@@ -189,6 +224,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-10T10:35:00.000Z
-Stopped at: Completed 26-03-PLAN.md
+Last session: 2026-03-12T11:00:03.383Z
+Stopped at: Completed 30-02-PLAN.md
 Resume file: None

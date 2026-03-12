@@ -22,8 +22,9 @@ from src.config import Settings
 from src.models.code_chunk import CodeChunk
 from src.models.integration import WorkspaceIntegration
 from src.services.code_parser import CodeChunkData, detect_language, parse_file
-from src.services.github_oauth import get_installation_token
+from src.services.github_oauth import GitHubOAuthError, get_installation_token
 from src.services.github_repos import get_cached_repos, is_repo_monitored
+from src.services.gitlab_common import ensure_valid_token
 from src.utils.hashing import compute_content_hash
 
 logger = logging.getLogger(__name__)
@@ -95,16 +96,56 @@ def _is_binary_file(file_path: Path) -> bool:
 CLONE_TIMEOUT_SECONDS = 300  # 5 minutes
 
 
+async def _get_clone_credentials(
+    provider: str,
+    workspace_id: UUID,
+    session: AsyncSession,
+    settings: Settings,
+) -> tuple[str, str] | None:
+    """Get clone URL prefix and token for the given provider.
+
+    Args:
+        provider: "github" or "gitlab".
+        workspace_id: Workspace that owns the repo.
+        session: Async database session.
+        settings: Application settings.
+
+    Returns:
+        Tuple of (clone_url_prefix, token) or None on auth failure.
+    """
+    if provider == "gitlab":
+        try:
+            token = await ensure_valid_token(session, workspace_id, settings)
+        except Exception as exc:
+            logger.warning(
+                "GitLab token retrieval failed for workspace %s: %s",
+                workspace_id, exc,
+            )
+            return None
+        return (f"https://oauth2:{token}@gitlab.com/", token)
+    else:
+        try:
+            token = await get_installation_token(workspace_id, session, settings)
+        except GitHubOAuthError as exc:
+            logger.warning(
+                "GitHub token retrieval failed for workspace %s: %s",
+                workspace_id, exc,
+            )
+            return None
+        return (f"https://x-access-token:{token}@github.com/", token)
+
+
 async def index_repo(
     workspace_id: UUID,
     repo_full_name: str,
     session: AsyncSession,
     settings: Settings,
+    provider: str = "github",
 ) -> dict:
     """Clone a repo, parse all source files, and upsert code chunks.
 
-    Main entry point for repo code indexing. Uses the GitHub App
-    installation token for authenticated clone, tree-sitter for parsing,
+    Main entry point for repo code indexing. Uses provider-aware
+    authentication for cloning, tree-sitter for parsing,
     and content-hash deduplication for efficient re-indexing.
 
     Args:
@@ -112,6 +153,7 @@ async def index_repo(
         repo_full_name: Full repo name (e.g., "org/repo").
         session: Async database session.
         settings: Application settings.
+        provider: "github" or "gitlab" (default: "github").
 
     Returns:
         Summary dict with repo, files_scanned, chunks_created,
@@ -131,11 +173,19 @@ async def index_repo(
     }
 
     try:
-        # Get installation token for authenticated clone
-        token = await get_installation_token(workspace_id, session, settings)
+        # Get clone credentials for the provider
+        credentials = await _get_clone_credentials(provider, workspace_id, session, settings)
+        if credentials is None:
+            logger.warning(
+                "Skipping repo %s for workspace %s: no valid credentials",
+                repo_full_name, workspace_id,
+            )
+            return _empty_result
+
+        clone_url_prefix, _token = credentials
 
         # Shallow clone the repo (with timeout)
-        clone_url = f"https://x-access-token:{token}@github.com/{repo_full_name}.git"
+        clone_url = f"{clone_url_prefix}{repo_full_name}.git"
         clone_dir = os.path.join(tmp_dir, repo_full_name.replace("/", "_"))
 
         logger.info("Cloning repo %s for workspace %s", repo_full_name, workspace_id)
@@ -332,6 +382,7 @@ async def _update_index_status(
     session: AsyncSession,
     index_status: str,
     last_at: str | None = None,
+    provider: str = "github",
 ) -> None:
     """Write code indexing status to workspace_integrations.config JSONB.
 
@@ -342,10 +393,11 @@ async def _update_index_status(
         session: Async database session.
         index_status: Status string ("indexing" or "idle").
         last_at: ISO timestamp of last indexing completion (only set on idle).
+        provider: Integration provider ("github" or "gitlab").
     """
     stmt = select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == workspace_id,
-        WorkspaceIntegration.provider == "github",
+        WorkspaceIntegration.provider == provider,
     )
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()
@@ -384,7 +436,7 @@ async def index_workspace_repos(
     from datetime import datetime, timezone
 
     # Set status to "indexing" at start
-    await _update_index_status(workspace_id, session, "indexing")
+    await _update_index_status(workspace_id, session, "indexing", provider="github")
 
     repos = await get_cached_repos(workspace_id, session)
     results: list[dict] = []
@@ -401,7 +453,7 @@ async def index_workspace_repos(
 
         logger.info("Indexing repo %s for workspace %s", full_name, workspace_id)
         try:
-            summary = await index_repo(workspace_id, full_name, session, settings)
+            summary = await index_repo(workspace_id, full_name, session, settings, provider="github")
             results.append(summary)
         except Exception:
             logger.exception("Failed to index repo %s", full_name)
@@ -418,7 +470,79 @@ async def index_workspace_repos(
     # Set status to "idle" with last_at timestamp on completion
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     await _update_index_status(
-        workspace_id, session, "idle", last_at=now.isoformat()
+        workspace_id, session, "idle", last_at=now.isoformat(), provider="github"
+    )
+
+    return results
+
+
+async def index_gitlab_workspace_repos(
+    workspace_id: UUID,
+    session: AsyncSession,
+    settings: Settings,
+) -> list[dict]:
+    """Index all selected/monitored GitLab projects for a workspace.
+
+    Retrieves the cached project list, filters to monitored projects,
+    and indexes them sequentially. Refreshes the OAuth token before each
+    repo clone since GitLab tokens expire in 2 hours.
+
+    Args:
+        workspace_id: Workspace to index projects for.
+        session: Async database session.
+        settings: Application settings.
+
+    Returns:
+        List of per-repo summary dicts.
+    """
+    from datetime import datetime, timezone
+
+    from src.services.gitlab_repos import (
+        get_cached_repos as get_gitlab_cached_repos,
+        is_project_monitored,
+    )
+
+    # Set status to "indexing" at start
+    await _update_index_status(workspace_id, session, "indexing", provider="gitlab")
+
+    repos = await get_gitlab_cached_repos(workspace_id, session)
+    results: list[dict] = []
+
+    for repo in repos:
+        path_with_namespace = repo.get("path_with_namespace", "")
+        project_id = repo.get("id")
+        if not path_with_namespace or project_id is None:
+            continue
+
+        # Check if project is monitored
+        monitored = await is_project_monitored(workspace_id, project_id, session)
+        if not monitored:
+            continue
+
+        logger.info("Indexing GitLab project %s for workspace %s", path_with_namespace, workspace_id)
+        try:
+            # Refresh token before each clone -- GitLab tokens expire in 2 hours
+            await ensure_valid_token(session, workspace_id, settings)
+            summary = await index_repo(
+                workspace_id, path_with_namespace, session, settings, provider="gitlab"
+            )
+            results.append(summary)
+        except Exception:
+            logger.exception("Failed to index GitLab project %s", path_with_namespace)
+            results.append({
+                "repo": path_with_namespace,
+                "files_scanned": 0,
+                "chunks_created": 0,
+                "chunks_updated": 0,
+                "chunks_deleted": 0,
+                "changed_chunk_ids": [],
+                "error": "Indexing failed",
+            })
+
+    # Set status to "idle" with last_at timestamp on completion
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    await _update_index_status(
+        workspace_id, session, "idle", last_at=now.isoformat(), provider="gitlab"
     )
 
     return results

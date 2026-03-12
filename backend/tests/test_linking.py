@@ -11,6 +11,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from src.models.ticket import LinearTicket
+
 from tests.conftest import TEST_WORKSPACE_ID
 
 WORKSPACE_ID = UUID(TEST_WORKSPACE_ID)
@@ -21,8 +23,8 @@ def _make_ticket(
     title: str = "Implement context synthesis",
     description: str = "Build the AI context page generation pipeline.",
 ) -> MagicMock:
-    """Create a mock LinearTicket."""
-    ticket = MagicMock()
+    """Create a mock LinearTicket that passes isinstance checks."""
+    ticket = MagicMock(spec=LinearTicket)
     ticket.id = uuid4()
     ticket.workspace_id = WORKSPACE_ID
     ticket.identifier = identifier
@@ -51,6 +53,10 @@ async def test_find_explicit_refs_linked_prs() -> None:
     mock_review_result = MagicMock()
     mock_review_result.scalars.return_value.all.return_value = []
 
+    # Mock GitLab MR query (no MRs)
+    mock_gl_mr_result = MagicMock()
+    mock_gl_mr_result.scalars.return_value.all.return_value = []
+
     # Mock comment query (no comments)
     mock_comment_result = MagicMock()
     mock_comment_result.scalars.return_value.all.return_value = []
@@ -60,10 +66,11 @@ async def test_find_explicit_refs_linked_prs() -> None:
     mock_slack_result.scalars.return_value.all.return_value = []
 
     mock_session.execute.side_effect = [
-        mock_pr_result,
-        mock_review_result,
-        mock_comment_result,
-        mock_slack_result,
+        mock_pr_result,       # 1. GitHub PRs
+        mock_review_result,   # 2. Reviews on PR
+        mock_gl_mr_result,    # 3. GitLab MRs
+        mock_comment_result,  # 4. Linear comments
+        mock_slack_result,    # 5. Slack messages
     ]
 
     from src.services.linking import _find_explicit_refs
@@ -87,6 +94,10 @@ async def test_find_explicit_refs_slack_mentions() -> None:
     mock_pr_result = MagicMock()
     mock_pr_result.scalars.return_value.all.return_value = []
 
+    # Mock GitLab MR query (no MRs)
+    mock_gl_mr_result = MagicMock()
+    mock_gl_mr_result.scalars.return_value.all.return_value = []
+
     # Mock comment query (no comments)
     mock_comment_result = MagicMock()
     mock_comment_result.scalars.return_value.all.return_value = []
@@ -102,9 +113,10 @@ async def test_find_explicit_refs_slack_mentions() -> None:
     mock_slack_result.scalars.return_value.all.return_value = [mock_msg]
 
     mock_session.execute.side_effect = [
-        mock_pr_result,
-        mock_comment_result,
-        mock_slack_result,
+        mock_pr_result,       # 1. GitHub PRs
+        mock_gl_mr_result,    # 2. GitLab MRs
+        mock_comment_result,  # 3. Linear comments
+        mock_slack_result,    # 4. Slack messages
     ]
 
     from src.services.linking import _find_explicit_refs
@@ -203,6 +215,9 @@ async def test_combined_scoring_multi_signal() -> None:
     # PR: none
     mock_pr_result = MagicMock()
     mock_pr_result.scalars.return_value.all.return_value = []
+    # GitLab MR: none
+    mock_gl_mr_result = MagicMock()
+    mock_gl_mr_result.scalars.return_value.all.return_value = []
     # Comments: none
     mock_comment_result = MagicMock()
     mock_comment_result.scalars.return_value.all.return_value = []
@@ -225,8 +240,9 @@ async def test_combined_scoring_multi_signal() -> None:
 
     mock_session.execute.side_effect = [
         # Explicit refs
-        mock_pr_result,       # PRs
-        mock_comment_result,  # Comments
+        mock_pr_result,       # GitHub PRs
+        mock_gl_mr_result,    # GitLab MRs
+        mock_comment_result,  # Linear comments
         mock_slack_result,    # Slack mentions
         # Hybrid matches
         mock_match_result,    # hybrid_search
@@ -251,3 +267,110 @@ async def test_combined_scoring_multi_signal() -> None:
     assert len(top_item.signals) >= 2
     # Score should be explicit (1.0) + hybrid (0.655 * 0.8) > 1.0
     assert top_item.relevance_score > 1.0
+
+
+@pytest.mark.asyncio
+async def test_find_content_by_source_skips_disconnected() -> None:
+    """Only connected sources should be yielded when connected_sources is provided."""
+    mock_session = AsyncMock()
+    ticket = _make_ticket(identifier="CON-50")
+
+    # Mock explicit refs: Linear comment only
+    mock_pr_result = MagicMock()
+    mock_pr_result.scalars.return_value.all.return_value = []
+
+    mock_comment = MagicMock()
+    mock_comment.id = uuid4()
+    mock_comment.body = "A linear comment"
+    mock_comment.author_name = "alice"
+    mock_comment_result = MagicMock()
+    mock_comment_result.scalars.return_value.all.return_value = [mock_comment]
+
+    # Hybrid search: returns a slack_message hit
+    mock_match_result = MagicMock()
+    slack_id = uuid4()
+    mock_match_result.fetchall.return_value = [
+        (uuid4(), "slack_message", slack_id, 0.80, 0.10, 0.55, {}),
+    ]
+    mock_slack_msg = MagicMock()
+    mock_slack_msg.id = slack_id
+    mock_slack_msg.text = "Slack about CON-50"
+    mock_slack_msg.user_name = "bob"
+    mock_slack_msg.channel_name = "dev"
+    mock_bulk_result = MagicMock()
+    mock_bulk_result.scalars.return_value.all.return_value = [mock_slack_msg]
+
+    mock_session.execute.side_effect = [
+        # _find_explicit_refs with connected_sources={"linear"}:
+        # Only Linear comments query runs (no github, gitlab, slack blocks)
+        mock_comment_result,  # Linear comments
+        # _find_hybrid_matches
+        mock_match_result,    # hybrid_search SQL
+        mock_bulk_result,     # bulk source lookup (empty after filtering)
+    ]
+
+    mock_embedding = [0.1] * 768
+
+    with patch(
+        "src.services.linking.generate_embedding",
+        new_callable=AsyncMock,
+        return_value=mock_embedding,
+    ):
+        from src.services.linking import find_content_by_source
+
+        yielded_sources: list[str] = []
+        async for source_name, items, detail in find_content_by_source(
+            mock_session, WORKSPACE_ID, ticket, connected_sources={"linear"}
+        ):
+            yielded_sources.append(source_name)
+
+    # Only "linear" should be yielded — slack, github, etc. skipped
+    assert "linear" in yielded_sources
+    assert "slack" not in yielded_sources
+    assert "github" not in yielded_sources
+
+
+@pytest.mark.asyncio
+async def test_find_content_by_source_none_returns_all() -> None:
+    """When connected_sources is None, all sources should be yielded."""
+    mock_session = AsyncMock()
+    ticket = _make_ticket(identifier="CON-51")
+
+    # Mock all queries returning empty results
+    empty_result = MagicMock()
+    empty_result.scalars.return_value.all.return_value = []
+
+    # Hybrid search: no matches
+    mock_match_result = MagicMock()
+    mock_match_result.fetchall.return_value = []
+
+    mock_session.execute.side_effect = [
+        # _find_explicit_refs (all blocks run when connected_sources=None):
+        empty_result,  # GitHub PRs
+        empty_result,  # GitLab MRs
+        empty_result,  # Linear comments
+        empty_result,  # Slack messages
+        # _find_hybrid_matches
+        mock_match_result,
+    ]
+
+    mock_embedding = [0.1] * 768
+
+    with patch(
+        "src.services.linking.generate_embedding",
+        new_callable=AsyncMock,
+        return_value=mock_embedding,
+    ):
+        from src.services.linking import find_content_by_source
+
+        yielded_sources: list[str] = []
+        async for source_name, items, detail in find_content_by_source(
+            mock_session, WORKSPACE_ID, ticket, connected_sources=None
+        ):
+            yielded_sources.append(source_name)
+
+    # All source names from SOURCE_TYPE_MAP should be yielded
+    from src.services.linking import SOURCE_TYPE_MAP
+
+    for source_name in SOURCE_TYPE_MAP:
+        assert source_name in yielded_sources, f"{source_name} missing from yielded sources"

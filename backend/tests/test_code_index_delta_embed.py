@@ -27,12 +27,8 @@ def _inject_test_settings():
             DATABASE_URL="postgresql+asyncpg://test:test@localhost:5432/test",
             SUPABASE_JWT_SECRET="test-secret",
             ENVIRONMENT="dev",
-            NGROK_DOMAIN="",
             BACKEND_URL="http://localhost:8000",
-            LINEAR_REDIRECT_URI="",
             SLACK_REDIRECT_URI="",
-            GITHUB_REDIRECT_URI="",
-            NOTION_REDIRECT_URI="",
             REDIS_URL="redis://localhost:6379/0",
         )
 

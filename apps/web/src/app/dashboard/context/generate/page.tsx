@@ -72,6 +72,7 @@ function GeneratePageContent() {
                           status: 'complete' as const,
                           count: event.count,
                           detail: event.detail,
+                          syncing: event.syncing,
                         }
                       : s
                   ),
@@ -134,9 +135,10 @@ function GeneratePageContent() {
     return () => {
       abortRef.current?.abort()
     }
-    // Only run on mount — ticket/linearIssueId/jiraIssueId come from URL and don't change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    // startGeneration is stable (useCallback with [] deps).
+    // ticket/linearIssueId/jiraIssueId come from URL search params and don't change.
+    // router is stable per Next.js docs.
+  }, [ticket, linearIssueId, jiraIssueId, startGeneration, router])
 
   // On completion, redirect to detail page
   useEffect(() => {

@@ -36,24 +36,13 @@ def _reset_settings():
 
 
 def _make_test_settings(**overrides: str) -> Settings:
-    """Create a Settings instance with test defaults.
-
-    Explicitly blanks NGROK_DOMAIN and all *_REDIRECT_URI fields so that
-    pydantic doesn't leak values from the real .env file into test settings.
-    Without this, derived properties like linear_redirect_uri would silently
-    use whatever NGROK_DOMAIN is in the developer's .env.
-    """
+    """Create a Settings instance with test defaults."""
     defaults = {
         "SUPABASE_JWT_SECRET": TEST_JWT_SECRET,
         "DATABASE_URL": TEST_DATABASE_URL,
         "ENVIRONMENT": "dev",
-        # Prevent .env file leakage into derived OAuth redirect URIs
-        "NGROK_DOMAIN": "",
         "BACKEND_URL": "http://localhost:8000",
-        "LINEAR_REDIRECT_URI": "",
         "SLACK_REDIRECT_URI": "",
-        "GITHUB_REDIRECT_URI": "",
-        "NOTION_REDIRECT_URI": "",
     }
     defaults.update(overrides)
     return Settings(**defaults)

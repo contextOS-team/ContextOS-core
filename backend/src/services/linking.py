@@ -21,6 +21,7 @@ from sqlmodel import select
 from src.config import CONTEXT_TOKEN_BUDGET, GRAPH_MAX_DEPTH
 from src.models.code_chunk import CodeChunk
 from src.models.github import GithubPullRequest, GithubReview
+from src.models.gitlab import GitlabMergeRequest, GitlabReview
 from src.models.graph_node import GraphNode
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.notion import NotionPage
@@ -85,80 +86,166 @@ async def _find_explicit_refs(
     session: AsyncSession,
     workspace_id: UUID,
     ticket: LinearTicket,
+    connected_sources: set[str] | None = None,
 ) -> dict[tuple[str, UUID], LinkedItem]:
-    """Find content with explicit references to the ticket."""
+    """Find content with explicit references to the ticket.
+
+    The ``ticket`` param may be a real LinearTicket or a TicketProxy wrapping
+    a Jira issue.  FK-based lookups (GitHub PRs, GitLab MRs, Linear comments)
+    only work for Linear tickets because the FK columns reference
+    linear_tickets.id.  For Jira tickets we query Jira comments instead.
+    """
     items: dict[tuple[str, UUID], LinkedItem] = {}
+    is_linear = isinstance(ticket, LinearTicket)
 
-    # 1. PRs linked via linear_ticket_id FK
-    pr_stmt = select(GithubPullRequest).where(
-        GithubPullRequest.workspace_id == workspace_id,
-        GithubPullRequest.linear_ticket_id == ticket.id,
-        GithubPullRequest.deleted_at.is_(None),  # type: ignore[union-attr]
-    )
-    pr_result = await session.execute(pr_stmt)
-    for pr in pr_result.scalars().all():
-        key = ("github_pull_request", pr.id)
-        items[key] = LinkedItem(
-            source_type="github_pull_request",
-            source_id=pr.id,
-            title=f"PR #{pr.number}: {pr.title}",
-            snippet=(pr.description or "")[:200],
-            relevance_score=WEIGHT_EXPLICIT,
-            signals=["explicit_link"],
-        )
+    # 1. GitHub PRs linked via FK (linear_ticket_id or jira_issue_id)
+    if connected_sources is None or "github" in connected_sources:
+        if is_linear:
+            pr_fk_filter = GithubPullRequest.linear_ticket_id == ticket.id
+        else:
+            pr_fk_filter = GithubPullRequest.jira_issue_id == ticket.id
 
-        # Also find reviews on linked PRs
-        review_stmt = select(GithubReview).where(
-            GithubReview.pull_request_id == pr.id,
-            GithubReview.deleted_at.is_(None),  # type: ignore[union-attr]
+        pr_stmt = select(GithubPullRequest).where(
+            GithubPullRequest.workspace_id == workspace_id,
+            pr_fk_filter,
+            GithubPullRequest.deleted_at.is_(None),  # type: ignore[union-attr]
         )
-        review_result = await session.execute(review_stmt)
-        for review in review_result.scalars().all():
-            if review.body:
-                rkey = ("github_review", review.id)
-                items[rkey] = LinkedItem(
-                    source_type="github_review",
-                    source_id=review.id,
-                    title=f"Review by {review.author} ({review.state})",
-                    snippet=(review.body or "")[:200],
+        pr_result = await session.execute(pr_stmt)
+        for pr in pr_result.scalars().all():
+            key = ("github_pull_request", pr.id)
+            items[key] = LinkedItem(
+                source_type="github_pull_request",
+                source_id=pr.id,
+                title=f"PR #{pr.number}: {pr.title}",
+                snippet=(pr.description or "")[:200],
+                relevance_score=WEIGHT_EXPLICIT,
+                signals=["explicit_link"],
+            )
+
+            # Also find reviews on linked PRs
+            review_stmt = select(GithubReview).where(
+                GithubReview.pull_request_id == pr.id,
+                GithubReview.deleted_at.is_(None),  # type: ignore[union-attr]
+            )
+            review_result = await session.execute(review_stmt)
+            for review in review_result.scalars().all():
+                if review.body:
+                    rkey = ("github_review", review.id)
+                    items[rkey] = LinkedItem(
+                        source_type="github_review",
+                        source_id=review.id,
+                        title=f"Review by {review.author} ({review.state})",
+                        snippet=(review.body or "")[:200],
+                        relevance_score=WEIGHT_EXPLICIT,
+                        signals=["explicit_link"],
+                    )
+
+    # 2. GitLab MRs linked via FK (linear_ticket_id or jira_issue_id)
+    if connected_sources is None or "gitlab" in connected_sources:
+        if is_linear:
+            mr_fk_filter = GitlabMergeRequest.linear_ticket_id == ticket.id
+        else:
+            mr_fk_filter = GitlabMergeRequest.jira_issue_id == ticket.id
+
+        gl_mr_stmt = select(GitlabMergeRequest).where(
+            GitlabMergeRequest.workspace_id == workspace_id,
+            mr_fk_filter,
+            GitlabMergeRequest.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        gl_mr_result = await session.execute(gl_mr_stmt)
+        for mr in gl_mr_result.scalars().all():
+            key = ("gitlab_merge_request", mr.id)
+            items[key] = LinkedItem(
+                source_type="gitlab_merge_request",
+                source_id=mr.id,
+                title=f"MR !{mr.iid}: {mr.title}",
+                snippet=(mr.description or "")[:200],
+                relevance_score=WEIGHT_EXPLICIT,
+                signals=["explicit_link"],
+            )
+
+            # Also find reviews on linked MRs
+            gl_review_stmt = select(GitlabReview).where(
+                GitlabReview.merge_request_id == mr.id,
+                GitlabReview.deleted_at.is_(None),  # type: ignore[union-attr]
+            )
+            gl_review_result = await session.execute(gl_review_stmt)
+            for review in gl_review_result.scalars().all():
+                if review.body:
+                    rkey = ("gitlab_review", review.id)
+                    items[rkey] = LinkedItem(
+                        source_type="gitlab_review",
+                        source_id=review.id,
+                        title=f"Review by {review.author} ({review.state})",
+                        snippet=(review.body or "")[:200],
+                        relevance_score=WEIGHT_EXPLICIT,
+                        signals=["explicit_link"],
+                    )
+
+    # 3. Ticket comments via FK
+    if is_linear and (connected_sources is None or "linear" in connected_sources):
+        # Linear comments linked via ticket_id FK
+        comment_stmt = select(LinearComment).where(
+            LinearComment.ticket_id == ticket.id,
+            LinearComment.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        comment_result = await session.execute(comment_stmt)
+        for comment in comment_result.scalars().all():
+            key = ("linear_comment", comment.id)
+            items[key] = LinkedItem(
+                source_type="linear_comment",
+                source_id=comment.id,
+                title=f"Comment by {comment.author_name or 'Unknown'}",
+                snippet=comment.body[:200],
+                relevance_score=WEIGHT_EXPLICIT,
+                signals=["explicit_link"],
+            )
+    elif not is_linear and (connected_sources is None or "jira" in connected_sources):
+        # Jira comments linked via issue_id FK
+        jira_comment_stmt = select(JiraComment).where(
+            JiraComment.issue_id == ticket.id,
+            JiraComment.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        jira_comment_result = await session.execute(jira_comment_stmt)
+        for comment in jira_comment_result.scalars().all():
+            if comment.body:
+                key = ("jira_comment", comment.id)
+                items[key] = LinkedItem(
+                    source_type="jira_comment",
+                    source_id=comment.id,
+                    title=f"Comment by {comment.author_name or 'Unknown'}",
+                    snippet=comment.body[:200],
                     relevance_score=WEIGHT_EXPLICIT,
                     signals=["explicit_link"],
                 )
 
-    # 2. Comments on this ticket via ticket_id FK
-    comment_stmt = select(LinearComment).where(
-        LinearComment.ticket_id == ticket.id,
-        LinearComment.deleted_at.is_(None),  # type: ignore[union-attr]
-    )
-    comment_result = await session.execute(comment_stmt)
-    for comment in comment_result.scalars().all():
-        key = ("linear_comment", comment.id)
-        items[key] = LinkedItem(
-            source_type="linear_comment",
-            source_id=comment.id,
-            title=f"Comment by {comment.author_name or 'Unknown'}",
-            snippet=comment.body[:200],
-            relevance_score=WEIGHT_EXPLICIT,
-            signals=["explicit_link"],
+    # 4. Slack messages containing the ticket identifier
+    if connected_sources is None or "slack" in connected_sources:
+        # TODO: PERF-03 — The ILIKE '%...%' below triggers a sequential scan because
+        # there is no index on slack_messages.text for leading-wildcard patterns.
+        # For workspaces with many Slack messages this becomes a bottleneck.
+        # Recommended fix: create a GIN trigram index
+        #   CREATE INDEX idx_slack_messages_text_trgm ON slack_messages
+        #     USING gin (text gin_trgm_ops);
+        # or delegate to the hybrid_search() function which already uses the
+        # embeddings GIN index.  Deferred from this hardening phase to avoid
+        # schema churn — tracked for a future migration.
+        slack_stmt = select(SlackMessage).where(
+            SlackMessage.workspace_id == workspace_id,
+            SlackMessage.text.ilike(f"%{ticket.identifier}%"),  # type: ignore[union-attr]
+            SlackMessage.deleted_at.is_(None),  # type: ignore[union-attr]
         )
-
-    # 3. Slack messages containing the ticket identifier
-    slack_stmt = select(SlackMessage).where(
-        SlackMessage.workspace_id == workspace_id,
-        SlackMessage.text.ilike(f"%{ticket.identifier}%"),  # type: ignore[union-attr]
-        SlackMessage.deleted_at.is_(None),  # type: ignore[union-attr]
-    )
-    slack_result = await session.execute(slack_stmt)
-    for msg in slack_result.scalars().all():
-        key = ("slack_message", msg.id)
-        items[key] = LinkedItem(
-            source_type="slack_message",
-            source_id=msg.id,
-            title=f"Slack message by {msg.user_name or 'Unknown'} in #{msg.channel_name or 'unknown'}",
-            snippet=msg.text[:200],
-            relevance_score=WEIGHT_EXPLICIT,
-            signals=["explicit_reference"],
-        )
+        slack_result = await session.execute(slack_stmt)
+        for msg in slack_result.scalars().all():
+            key = ("slack_message", msg.id)
+            items[key] = LinkedItem(
+                source_type="slack_message",
+                source_id=msg.id,
+                title=f"Slack message by {msg.user_name or 'Unknown'} in #{msg.channel_name or 'unknown'}",
+                snippet=msg.text[:200],
+                relevance_score=WEIGHT_EXPLICIT,
+                signals=["explicit_reference"],
+            )
 
     return items
 
@@ -167,9 +254,18 @@ async def _find_hybrid_matches(
     session: AsyncSession,
     workspace_id: UUID,
     ticket: LinearTicket,
+    connected_sources: set[str] | None = None,
 ) -> dict[tuple[str, UUID], LinkedItem]:
     """Find related content via hybrid vector + full-text search."""
     items: dict[tuple[str, UUID], LinkedItem] = {}
+
+    # Build allowed source_types from connected_sources for post-filtering
+    allowed_types: set[str] | None = None
+    if connected_sources is not None:
+        allowed_types = set()
+        for src_name, src_types in SOURCE_TYPE_MAP.items():
+            if src_name in connected_sources:
+                allowed_types.update(src_types)
 
     query_text = f"{ticket.title}\n\n{ticket.description or ''}"
     try:
@@ -215,7 +311,12 @@ async def _find_hybrid_matches(
         source_id = row[2]
         combined_score = row[5]
 
-        if source_type == "linear_ticket" and source_id == ticket.id:
+        # Skip self-match (the ticket itself appearing as a search hit)
+        if source_id == ticket.id and source_type in ("linear_ticket", "jira_issue"):
+            continue
+
+        # Skip hits from disconnected sources
+        if allowed_types is not None and source_type not in allowed_types:
             continue
 
         hits.append((source_type, source_id, combined_score))
@@ -227,8 +328,18 @@ async def _find_hybrid_matches(
 
     for source_type, source_id, combined_score in hits:
         key = (source_type, source_id)
+
+        # Skip hits whose source record no longer exists in the DB.
+        # This happens when an embedding references a deleted/missing record.
+        if key not in summaries:
+            logger.debug(
+                "Dropping hybrid hit %s/%s — source record not found",
+                source_type, source_id,
+            )
+            continue
+
+        title, snippet = summaries[key]
         score = combined_score * WEIGHT_HYBRID
-        title, snippet = summaries.get(key, (source_type, ""))
 
         items[key] = LinkedItem(
             source_type=source_type,
@@ -282,6 +393,17 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
         NotionPage,
         lambda r: (r.title, (r.content or "")[:200]),
     ),
+    "gitlab_merge_request": (
+        GitlabMergeRequest,
+        lambda r: (f"MR !{r.iid}: {r.title}", (r.description or "")[:200]),
+    ),
+    "gitlab_review": (
+        GitlabReview,
+        lambda r: (
+            f"Review by {r.author} ({r.state})",
+            (r.body or "")[:200],
+        ),
+    ),
     "code_chunk": (
         CodeChunk,
         lambda r: (
@@ -327,8 +449,7 @@ async def _bulk_lookup_source_summaries(
 
     for source_type, ids in grouped.items():
         if source_type not in _SOURCE_SUMMARY_MAP:
-            for sid in ids:
-                result_map[(source_type, sid)] = (source_type, "")
+            # Unknown source type — caller should skip these
             continue
 
         model_cls, extract = _SOURCE_SUMMARY_MAP[source_type]
@@ -339,11 +460,8 @@ async def _bulk_lookup_source_summaries(
         for record in records:
             result_map[(source_type, record.id)] = extract(record)
 
-        # Fill missing IDs
-        fetched_ids = {r.id for r in records}
-        for sid in ids:
-            if sid not in fetched_ids:
-                result_map[(source_type, sid)] = (source_type, "")
+        # Missing IDs are intentionally NOT added to result_map.
+        # Callers check membership to skip orphaned embedding hits.
 
     return result_map
 
@@ -352,21 +470,22 @@ async def _lookup_source_summary(
     session: AsyncSession,
     source_type: str,
     source_id: UUID,
-) -> tuple[str, str]:
+) -> tuple[str, str] | None:
     """Look up a human-readable title and snippet for a single source record.
 
+    Returns None if the source type is unknown or the record doesn't exist.
     Uses the shared _SOURCE_SUMMARY_MAP. Prefer _bulk_lookup_source_summaries
     when fetching multiple records to avoid N+1 queries.
     """
     if source_type not in _SOURCE_SUMMARY_MAP:
-        return (source_type, "")
+        return None
 
     model_cls, extract = _SOURCE_SUMMARY_MAP[source_type]
     stmt = select(model_cls).where(model_cls.id == source_id)
     result = await session.execute(stmt)
     record = result.scalar_one_or_none()
     if record is None:
-        return (source_type, "")
+        return None
     return extract(record)
 
 
@@ -652,8 +771,10 @@ def _apply_token_budget(
 SOURCE_TYPE_MAP = {
     "slack": ["slack_message"],
     "github": ["github_pull_request", "github_review", "code_chunk"],
+    "gitlab": ["gitlab_merge_request", "gitlab_review"],
     "notion": ["notion_page"],
     "fathom": ["meeting_transcript", "meeting_segment"],
+    "slack_huddle": ["meeting_transcript", "meeting_segment"],
     "linear": ["linear_comment"],
     "telegram": ["telegram_message"],
     "jira": ["jira_issue", "jira_comment"],
@@ -664,15 +785,21 @@ async def find_content_by_source(
     session: AsyncSession,
     workspace_id: UUID,
     ticket: LinearTicket,
+    connected_sources: set[str] | None = None,
 ) -> AsyncGenerator[tuple[str, list[LinkedItem], str], None]:
     """Find related content and yield results grouped by source.
 
     Yields (source_name, items, detail_string) tuples for each source
     that has content. Runs all queries upfront, then groups by source.
+
+    Args:
+        connected_sources: If provided, skip queries for source types
+            not in this set.  When ``None``, query all sources (backward
+            compatible).  Source names match keys in ``SOURCE_TYPE_MAP``.
     """
-    # Run existing queries
-    explicit = await _find_explicit_refs(session, workspace_id, ticket)
-    hybrid = await _find_hybrid_matches(session, workspace_id, ticket)
+    # Run existing queries — forward connected_sources to skip DB queries early
+    explicit = await _find_explicit_refs(session, workspace_id, ticket, connected_sources)
+    hybrid = await _find_hybrid_matches(session, workspace_id, ticket, connected_sources)
 
     # Merge
     merged: dict[tuple[str, UUID], LinkedItem] = {}
@@ -684,8 +811,11 @@ async def find_content_by_source(
             else:
                 merged[key] = item
 
-    # Group by source
+    # Group by source — skip disconnected providers when caller provides the set
     for source_name, source_types in SOURCE_TYPE_MAP.items():
+        if connected_sources is not None and source_name not in connected_sources:
+            continue
+
         source_items = [
             item for item in merged.values()
             if item.source_type in source_types
@@ -711,7 +841,16 @@ async def find_content_by_source(
         elif source_name == "notion":
             n = len(source_items)
             detail = f"Found {n} page{'s' if n != 1 else ''}" if n else "No pages found"
-        elif source_name == "fathom":
+        elif source_name == "gitlab":
+            mrs = sum(1 for i in source_items if i.source_type == "gitlab_merge_request")
+            reviews = sum(1 for i in source_items if i.source_type == "gitlab_review")
+            parts = []
+            if mrs:
+                parts.append(f"{mrs} MR{'s' if mrs > 1 else ''}")
+            if reviews:
+                parts.append(f"{reviews} review{'s' if reviews > 1 else ''}")
+            detail = f"Found {', '.join(parts)}" if parts else "No MRs or reviews found"
+        elif source_name in ("fathom", "slack_huddle"):
             n = len(source_items)
             detail = f"Found {n} meeting segment{'s' if n != 1 else ''}" if n else "No meetings found"
         elif source_name == "linear":
@@ -720,6 +859,9 @@ async def find_content_by_source(
         elif source_name == "telegram":
             n = len(source_items)
             detail = f"Found {n} message{'s' if n != 1 else ''}" if n else "No messages found"
+        elif source_name == "jira":
+            n = len(source_items)
+            detail = f"Found {n} item{'s' if n != 1 else ''}" if n else "No items found"
         else:
             detail = f"Found {len(source_items)} items" if source_items else "No items found"
 

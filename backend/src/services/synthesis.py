@@ -4,6 +4,7 @@ Generates AI-powered context pages for Linear tickets (and Jira issues)
 by combining linked content from multiple sources into a structured document.
 """
 
+import json
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
@@ -17,13 +18,18 @@ from sqlmodel import select
 from src.models.context_page import ContextPage
 from src.models.integration import OAuthToken, WorkspaceIntegration
 from src.models.jira import JiraIssue
+from src.models.sync import SyncCursor
 from src.models.ticket import LinearTicket
 from src.services.graph_ops import compute_fingerprint
-from src.services.linking import find_related_content
 from src.services.linking import LinkedItem, find_content_by_source, find_related_content
 from src.services.llm_client import get_llm_client
 
 logger = logging.getLogger(__name__)
+
+# Maximum characters for the synthesis prompt's related content section.
+# ~25k tokens at ~4 chars/token.  Exceeding this risks hitting model context
+# limits and increasing latency/cost with diminishing returns.
+MAX_PROMPT_CHARS = 100_000
 
 
 @dataclass
@@ -92,7 +98,6 @@ Based on the ticket and related content above, produce a context page. Do NOT st
 5. **Relevant Code** — Code snippets from across the codebase that are relevant to this ticket. Include function signatures, class definitions, and route handlers with file paths and repo names. This helps engineers understand existing implementations even from repos they have never worked in. If any code snippets have associated discussion provenance (noted as "Discussed in:" annotations in the Related Content), include that context so engineers know where this code was talked about.
 6. **Open Questions** — Unresolved questions or ambiguities that need clarification
 7. **Key People** — Who is involved and their roles (assignee, reviewers, participants in discussions). If graph data shows a person's involvement across multiple sources (e.g., authored ticket, discussed in Slack, reviewed PR), list their cross-source involvement to show the full picture of their engagement."""
-from src.services.linking import LinkedItem, find_content_by_source, find_related_content
 
 
 def _format_decision_node(name: str, properties: dict) -> str:
@@ -144,7 +149,6 @@ def _format_graph_section(items: list) -> str:
     sections = []
     for item in items:
         if item.source_type == "Decision":
-            # Decision items already have [DECISION] format in their snippet
             path_signal = next((s for s in item.signals if s.startswith("graph:")), "")
             section = f"**{path_signal}**\n{item.snippet}"
         else:
@@ -161,20 +165,16 @@ def _format_related_content(
 ) -> str:
     """Format linked items into a structured text block for the LLM prompt.
 
-    Args:
-        items: List of LinkedItems to format.
-        code_provenance: Optional dict mapping code_chunk source_id to list of
-            discussion annotation strings. When provided, code_chunk items with
-            matching source_ids get 'Discussed in:' annotations appended.
-
-    Returns:
-        Formatted markdown text block for the synthesis prompt.
+    Respects MAX_PROMPT_CHARS budget — once the next item would exceed the
+    limit, a truncation notice is appended and remaining items are skipped.
     """
     if not items:
         return "No related content found."
 
-    sections = []
-    for item in items:
+    sections: list[str] = []
+    char_count = 0
+
+    for idx, item in enumerate(items):
         if item.source_type == "code_chunk":
             # Build optional provenance annotation
             annotation = ""
@@ -193,7 +193,16 @@ def _format_related_content(
                 f"**Relevance:** {item.relevance_score:.2f} | **Signals:** {', '.join(item.signals)}\n\n"
                 f"{item.snippet}"
             )
+
+        # Check token budget before adding
+        separator_len = len("\n\n---\n\n") if sections else 0
+        if char_count + separator_len + len(section) > MAX_PROMPT_CHARS:
+            remaining = len(items) - idx
+            sections.append(f"[Truncated: {remaining} more items omitted]")
+            break
+
         sections.append(section)
+        char_count += separator_len + len(section)
 
     return "\n\n---\n\n".join(sections)
 
@@ -210,6 +219,131 @@ def _priority_label(priority: int | str | None) -> str:
         return priority
     labels = {0: "None", 1: "Urgent", 2: "High", 3: "Normal", 4: "Low"}
     return labels.get(priority, "Unknown")
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers — used by both generate_context_page and
+# generate_context_page_stream to eliminate duplication (ARCH-02).
+# ---------------------------------------------------------------------------
+
+
+async def _lookup_ticket(
+    session: AsyncSession,
+    workspace_id: UUID,
+    ticket_identifier: str,
+) -> tuple[LinearTicket | TicketProxy, UUID | None, UUID | None, bool]:
+    """Look up a ticket by identifier, trying Linear first then Jira.
+
+    Returns:
+        (ticket, linear_ticket_id, jira_issue_id, is_linear) where the FK UUIDs
+        are set for the matching provider and None for the other.
+
+    Raises:
+        ValueError: If the ticket is not found in any provider.
+    """
+    stmt = select(LinearTicket).where(
+        LinearTicket.workspace_id == workspace_id,
+        LinearTicket.identifier == ticket_identifier,
+        LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    result = await session.execute(stmt)
+    linear_ticket = result.scalar_one_or_none()
+
+    if linear_ticket:
+        return linear_ticket, linear_ticket.id, None, True
+
+    # Fallback to Jira
+    jira_stmt = select(JiraIssue).where(
+        JiraIssue.workspace_id == workspace_id,
+        JiraIssue.jira_key == ticket_identifier,
+        JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    jira_result = await session.execute(jira_stmt)
+    jira_issue = jira_result.scalar_one_or_none()
+
+    if jira_issue:
+        return TicketProxy.from_jira(jira_issue), None, jira_issue.id, False
+
+    raise ValueError(f"Ticket {ticket_identifier} not found")
+
+
+async def _upsert_context_page_placeholder(
+    session: AsyncSession,
+    workspace_id: UUID,
+    ticket: LinearTicket | TicketProxy,
+    ticket_id_for_fk: UUID | None,
+    jira_issue_id: UUID | None = None,
+) -> ContextPage:
+    """Create or update a ContextPage with status='generating'.
+
+    Flushes and commits immediately so that the placeholder is visible to
+    other sessions (e.g. Realtime subscribers) before the LLM call starts.
+    """
+    existing_stmt = select(ContextPage).where(
+        ContextPage.workspace_id == workspace_id,
+        ContextPage.ticket_identifier == ticket.identifier,
+        ContextPage.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    existing_result = await session.execute(existing_stmt)
+    context_page = existing_result.scalar_one_or_none()
+
+    if context_page:
+        context_page.status = "generating"
+        # Backfill jira_issue_id for pages created before this fix
+        if jira_issue_id and not context_page.jira_issue_id:
+            context_page.jira_issue_id = jira_issue_id
+    else:
+        context_page = ContextPage(
+            workspace_id=workspace_id,
+            ticket_id=ticket_id_for_fk,
+            jira_issue_id=jira_issue_id,
+            ticket_identifier=ticket.identifier,
+            title=f"Context: {ticket.title}",
+            content="",
+            status="generating",
+            sources=[],
+        )
+        session.add(context_page)
+
+    await session.flush()
+    await session.commit()
+    return context_page
+
+
+def _build_synthesis_prompt(
+    ticket: LinearTicket | TicketProxy,
+    related_items: list[LinkedItem],
+    code_provenance: dict[UUID, list[str]] | None = None,
+) -> str:
+    """Format the SYNTHESIS_TEMPLATE with ticket info and related content.
+
+    Separates graph items from non-graph items and formats them into
+    distinct sections for the synthesis prompt.
+    """
+    # Separate graph items from non-graph items
+    graph_items = [
+        item for item in related_items
+        if any(s.startswith("graph:") for s in item.signals)
+    ]
+    non_graph_items = [
+        item for item in related_items
+        if not any(s.startswith("graph:") for s in item.signals)
+    ]
+
+    related_text = _format_related_content(non_graph_items, code_provenance=code_provenance)
+    graph_text = _format_graph_section(graph_items)
+
+    return SYNTHESIS_TEMPLATE.format(
+        identifier=ticket.identifier,
+        title=ticket.title,
+        status=ticket.status or "Unknown",
+        assignee=ticket.assignee_name or "Unassigned",
+        priority=_priority_label(ticket.priority),
+        labels=", ".join(ticket.labels) if ticket.labels else "None",
+        description=ticket.description or "No description provided.",
+        related_content=related_text,
+        graph_section=graph_text,
+    )
 
 
 # Entity types considered "discussion" sources for provenance annotations
@@ -231,18 +365,8 @@ async def _get_code_provenance(
     via 'mentions' or 'discussed_in' edges, and builds annotation strings.
 
     Fail-silent: returns empty dict on any error.
-
-    Args:
-        session: Async database session.
-        workspace_id: Workspace to query graph in.
-        items: List of LinkedItems (filters for code_chunk source_type).
-
-    Returns:
-        Dict mapping code_chunk source_id to list of discussion annotation strings
-        (e.g., ["#backend-chat", "Meeting: Sprint Review"]).
     """
     try:
-        # Filter for code_chunk items only
         code_items = [item for item in items if item.source_type == "code_chunk"]
         if not code_items:
             return {}
@@ -250,13 +374,11 @@ async def _get_code_provenance(
         from src.models.graph_edge import GraphEdge
         from src.models.graph_node import GraphNode
 
-        # Build fingerprint -> source_id mapping for batch lookup
         fp_to_source_id: dict[str, UUID] = {}
         for item in code_items:
             fp = compute_fingerprint("CodeChunk", f"chunk:{item.source_id}")
             fp_to_source_id[fp] = item.source_id
 
-        # Batch query: find GraphNode records matching those fingerprints
         fingerprints = list(fp_to_source_id.keys())
         node_stmt = select(GraphNode).where(
             GraphNode.workspace_id == workspace_id,
@@ -269,20 +391,13 @@ async def _get_code_provenance(
         if not chunk_nodes:
             return {}
 
-        # Map node_id -> source_id for result building
         node_id_to_source_id: dict[UUID, UUID] = {}
         chunk_node_ids = []
         for node in chunk_nodes:
             chunk_node_ids.append(node.id)
-            # Reverse lookup: node fingerprint -> original source_id
-            fp = compute_fingerprint(node.entity_type, f"chunk:{fp_to_source_id.get(node.fingerprint, '')}")
-            # Direct lookup via fingerprint
             if node.fingerprint in fp_to_source_id:
                 node_id_to_source_id[node.id] = fp_to_source_id[node.fingerprint]
 
-        # Batch query: find edges where these chunk nodes are the TARGET
-        # (source_node --(mentions/discussed_in)--> chunk_node)
-        # We want to find what SOURCE nodes point to our code chunks
         edge_stmt = select(GraphEdge).where(
             GraphEdge.workspace_id == workspace_id,
             GraphEdge.target_node_id.in_(chunk_node_ids),  # type: ignore[union-attr]
@@ -295,14 +410,12 @@ async def _get_code_provenance(
         if not edges:
             return {}
 
-        # Collect source node IDs (the discussion nodes) and map to chunk node IDs
         source_node_ids = set()
-        chunk_to_sources: dict[UUID, list[UUID]] = {}  # chunk_node_id -> [source_node_ids]
+        chunk_to_sources: dict[UUID, list[UUID]] = {}
         for edge in edges:
             source_node_ids.add(edge.source_node_id)
             chunk_to_sources.setdefault(edge.target_node_id, []).append(edge.source_node_id)
 
-        # Look up the source nodes to get their entity types and names
         disc_stmt = select(GraphNode).where(
             GraphNode.id.in_(list(source_node_ids)),  # type: ignore[union-attr]
             GraphNode.entity_type.in_(_DISCUSSION_ENTITY_TYPES),  # type: ignore[union-attr]
@@ -311,7 +424,6 @@ async def _get_code_provenance(
         disc_result = await session.execute(disc_stmt)
         disc_nodes = disc_result.scalars().all()
 
-        # Build node_id -> annotation string map
         disc_annotations: dict[UUID, str] = {}
         for node in disc_nodes:
             if node.entity_type == "SlackThread":
@@ -321,7 +433,6 @@ async def _get_code_provenance(
             else:
                 disc_annotations[node.id] = node.name
 
-        # Build final result: source_id -> list of annotation strings
         result: dict[UUID, list[str]] = {}
         for chunk_node_id, source_ids in chunk_to_sources.items():
             source_id = node_id_to_source_id.get(chunk_node_id)
@@ -343,6 +454,11 @@ async def _get_code_provenance(
             exc_info=True,
         )
         return {}
+
+
+# ---------------------------------------------------------------------------
+# Public generation functions
+# ---------------------------------------------------------------------------
 
 
 async def generate_context_page(
@@ -370,140 +486,84 @@ async def generate_context_page(
     Raises:
         ValueError: If ticket not found.
     """
-    # 1. Look up ticket (Linear first, then Jira)
-    ticket = None
-    ticket_id_for_fk = None
+    context_page: ContextPage | None = None
 
-    stmt = select(LinearTicket).where(
-        LinearTicket.workspace_id == workspace_id,
-        LinearTicket.identifier == ticket_identifier,
-        LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
-    )
-    result = await session.execute(stmt)
-    linear_ticket = result.scalar_one_or_none()
-
-    if linear_ticket:
-        ticket = linear_ticket
-        ticket_id_for_fk = linear_ticket.id
-    else:
-        jira_stmt = select(JiraIssue).where(
-            JiraIssue.workspace_id == workspace_id,
-            JiraIssue.jira_key == ticket_identifier,
-            JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
+    try:
+        # 1. Look up ticket (Linear first, then Jira)
+        ticket, ticket_id_for_fk, jira_issue_id, _is_linear = await _lookup_ticket(
+            session, workspace_id, ticket_identifier
         )
-        jira_result = await session.execute(jira_stmt)
-        jira_issue = jira_result.scalar_one_or_none()
-        if jira_issue:
-            ticket = TicketProxy.from_jira(jira_issue)
 
-    if ticket is None:
-        raise ValueError(f"Ticket {ticket_identifier} not found")
+        # 2. Create/update placeholder with status="generating"
+        context_page = await _upsert_context_page_placeholder(
+            session, workspace_id, ticket, ticket_id_for_fk, jira_issue_id
+        )
 
-    # Mark existing context page as generating
-    existing_stmt = select(ContextPage).where(
-        ContextPage.workspace_id == workspace_id,
-        ContextPage.ticket_identifier == ticket_identifier,
-        ContextPage.deleted_at.is_(None),  # type: ignore[union-attr]
-    )
-    existing_result = await session.execute(existing_stmt)
-    existing_page = existing_result.scalar_one_or_none()
+        # 3. Find related content
+        linking_result = await find_related_content(session, workspace_id, ticket)
 
-    if existing_page:
-        existing_page.status = "generating"
-        await session.flush()
-        await session.commit()
-    else:
-        # Create a placeholder so the page appears in the feed immediately
-        existing_page = ContextPage(
+        # 3b. Query code provenance for code_chunk items
+        code_provenance = await _get_code_provenance(session, workspace_id, linking_result.items)
+
+        # 4. Build prompt
+        prompt = _build_synthesis_prompt(ticket, linking_result.items, code_provenance=code_provenance)
+
+        # 5. Call LLM
+        llm = get_llm_client()
+        llm_response = await llm.generate(
+            prompt=prompt,
+            system_prompt=SYNTHESIS_SYSTEM_PROMPT,
             workspace_id=workspace_id,
-            ticket_id=ticket_id_for_fk,
-            ticket_identifier=ticket.identifier,
-            title=f"Context: {ticket.title}",
-            content="",
-            status="generating",
-            sources=[],
+            ticket_identifier=ticket_identifier,
         )
-        session.add(existing_page)
+
+        # Build sources list for the context page
+        sources_list = [
+            {
+                "type": item.source_type,
+                "id": str(item.source_id),
+                "title": item.title,
+                "relevance_score": round(item.relevance_score, 3),
+            }
+            for item in linking_result.items
+        ]
+
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        # 6. Update the context page with LLM results
+        context_page.title = f"Context: {ticket.title}"
+        context_page.content = llm_response.text
+        context_page.summary = llm_response.text[:500]
+        context_page.status = "ready"
+        context_page.sources = sources_list
+        context_page.generated_at = now
+        context_page.generation_model = llm_response.model
+        context_page.generation_tokens_used = llm_response.total_tokens
+
+        # BUG-03 fix: flush AND commit so the caller doesn't need to commit
         await session.flush()
         await session.commit()
 
-    # 2. Find related content
-    linking_result = await find_related_content(session, workspace_id, ticket)
+        logger.info(
+            "Generated context page for %s (tokens=%d, sources=%d)",
+            ticket_identifier,
+            llm_response.total_tokens,
+            len(sources_list),
+        )
 
-    # 3. Separate graph items from non-graph items
-    graph_items = [
-        item for item in linking_result.items
-        if any(s.startswith("graph:") for s in item.signals)
-    ]
-    non_graph_items = [
-        item for item in linking_result.items
-        if not any(s.startswith("graph:") for s in item.signals)
-    ]
+        return context_page
 
-    # Query code provenance for non-graph code_chunk items (CODE-03)
-    code_provenance = await _get_code_provenance(session, workspace_id, non_graph_items)
-
-    # Build prompt with both sections
-    related_text = _format_related_content(non_graph_items, code_provenance=code_provenance)
-    graph_text = _format_graph_section(graph_items)
-
-    prompt = SYNTHESIS_TEMPLATE.format(
-        identifier=ticket.identifier,
-        title=ticket.title,
-        status=ticket.status or "Unknown",
-        assignee=ticket.assignee_name or "Unassigned",
-        priority=_priority_label(ticket.priority),
-        labels=", ".join(ticket.labels) if ticket.labels else "None",
-        description=ticket.description or "No description provided.",
-        related_content=related_text,
-        graph_section=graph_text,
-    )
-
-    # 4. Call LLM
-    llm = get_llm_client()
-    llm_response = await llm.generate(
-        prompt=prompt,
-        system_prompt=SYNTHESIS_SYSTEM_PROMPT,
-        workspace_id=workspace_id,
-        ticket_identifier=ticket_identifier,
-    )
-
-    # Build sources list for the context page
-    import json
-    sources_list = [
-        {
-            "type": item.source_type,
-            "id": str(item.source_id),
-            "title": item.title,
-            "relevance_score": round(item.relevance_score, 3),
-        }
-        for item in linking_result.items
-    ]
-    sources = sources_list
-
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-
-    # 5. Update the context page (placeholder was created above)
-    existing_page.title = f"Context: {ticket.title}"
-    existing_page.content = llm_response.text
-    existing_page.summary = llm_response.text[:500]
-    existing_page.status = "ready"
-    existing_page.sources = sources
-    existing_page.generated_at = now
-    existing_page.generation_model = llm_response.model
-    existing_page.generation_tokens_used = llm_response.total_tokens
-    context_page = existing_page
-
-    await session.flush()
-
-    logger.info(
-        "Generated context page for %s (tokens=%d, sources=%d)",
-        ticket_identifier,
-        llm_response.total_tokens,
-        len(sources),
-    )
-
-    return context_page
+    except Exception as e:
+        logger.exception("Generation failed for %s", ticket_identifier)
+        # BUG-01 fix: persist error status so page doesn't stay stuck in "generating"
+        try:
+            if context_page:
+                context_page.status = "error"
+                await session.flush()
+                await session.commit()
+        except Exception:
+            logger.warning("Failed to persist error status for %s", ticket_identifier)
+        raise
 
 
 async def generate_context_page_stream(
@@ -523,35 +583,15 @@ async def generate_context_page_stream(
     - {"event": "complete", "context_page_id": "..."}
     - {"event": "error", "message": "..."}
     """
+    context_page: ContextPage | None = None
+
     try:
-        # 1. Look up ticket (Linear first, then Jira)
-        ticket = None
-        ticket_id_for_fk = None  # Only set for LinearTicket (FK constraint)
-
-        stmt = select(LinearTicket).where(
-            LinearTicket.workspace_id == workspace_id,
-            LinearTicket.identifier == ticket_identifier,
-            LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
-        )
-        result = await session.execute(stmt)
-        linear_ticket = result.scalar_one_or_none()
-
-        if linear_ticket:
-            ticket = linear_ticket
-            ticket_id_for_fk = linear_ticket.id
-        else:
-            # Try Jira
-            jira_stmt = select(JiraIssue).where(
-                JiraIssue.workspace_id == workspace_id,
-                JiraIssue.jira_key == ticket_identifier,
-                JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
+        # 1. Look up ticket (Linear first, then Jira) using shared helper
+        try:
+            ticket, ticket_id_for_fk, jira_issue_id, is_linear = await _lookup_ticket(
+                session, workspace_id, ticket_identifier
             )
-            jira_result = await session.execute(jira_stmt)
-            jira_issue = jira_result.scalar_one_or_none()
-            if jira_issue:
-                ticket = TicketProxy.from_jira(jira_issue)
-
-        if ticket is None:
+        except ValueError:
             yield {"event": "error", "message": f"Ticket {ticket_identifier} not found"}
             return
 
@@ -573,36 +613,42 @@ async def generate_context_page_stream(
         integration_result = await session.execute(integration_stmt)
         connected_providers.update(row[0] for row in integration_result.fetchall())
 
-        # linear is always connected (required by onboarding)
-        connected_sources = ["linear"]
-        for provider in ["slack", "github", "notion", "fathom", "jira"]:
+        # Build connected sources from actual OAuth tokens / integrations.
+        # The ticket provider (linear or jira) is determined by which one the
+        # ticket was found in, NOT by hardcoding.
+        connected_sources: list[str] = []
+
+        # Add the ticket provider based on the ticket type
+        if is_linear:
+            connected_sources.append("linear")
+        elif ticket is not None:
+            # Jira ticket — only show Jira, not Linear
+            connected_sources.append("jira")
+
+        for provider in ["slack", "github", "gitlab", "notion", "fathom", "telegram"]:
             if provider in connected_providers:
                 connected_sources.append(provider)
 
-        # 3. Create/update context page with status="generating"
-        existing_stmt = select(ContextPage).where(
-            ContextPage.workspace_id == workspace_id,
-            ContextPage.ticket_identifier == ticket_identifier,
-            ContextPage.deleted_at.is_(None),  # type: ignore[union-attr]
-        )
-        existing_result = await session.execute(existing_stmt)
-        context_page = existing_result.scalar_one_or_none()
+        # Slack huddles piggyback on the Slack OAuth token -- if Slack is
+        # connected, huddle transcripts are also available for linking.
+        if "slack" in connected_sources:
+            connected_sources.append("slack_huddle")
 
-        if context_page:
-            context_page.status = "generating"
-            await session.flush()
-        else:
-            context_page = ContextPage(
-                workspace_id=workspace_id,
-                ticket_id=ticket_id_for_fk,
-                ticket_identifier=ticket.identifier,
-                title=f"Context: {ticket.title}",
-                content="",
-                status="generating",
-                sources=[],
+        # 2b. Check sync status for connected providers
+        syncing_providers: set[str] = set()
+        if connected_sources:
+            sync_stmt = select(SyncCursor.provider, SyncCursor.sync_status).where(
+                SyncCursor.workspace_id == workspace_id,
+                SyncCursor.provider.in_(connected_sources),
+                SyncCursor.sync_status == "syncing",
             )
-            session.add(context_page)
-            await session.flush()
+            sync_result = await session.execute(sync_stmt)
+            syncing_providers = {row[0] for row in sync_result.fetchall()}
+
+        # 3. Create/update context page with status="generating" using shared helper
+        context_page = await _upsert_context_page_placeholder(
+            session, workspace_id, ticket, ticket_id_for_fk, jira_issue_id
+        )
 
         # 4. Emit start event
         yield {"event": "start", "steps": connected_sources + ["synthesize"]}
@@ -611,48 +657,36 @@ async def generate_context_page_stream(
         all_items: list[LinkedItem] = []
 
         async for source_name, items, detail in find_content_by_source(
-            session, workspace_id, ticket
+            session, workspace_id, ticket, connected_sources=set(connected_sources)
         ):
+            # Belt-and-suspenders: find_content_by_source also filters internally
             if source_name not in connected_sources:
                 continue
 
             yield {"event": "step_start", "source": source_name}
             all_items.extend(items)
-            yield {
+
+            # Append sync warning if provider is still syncing
+            step_detail = detail
+            is_syncing = source_name in syncing_providers
+            if is_syncing and len(items) == 0:
+                step_detail = "Sync in progress — data not yet available"
+
+            event: dict = {
                 "event": "step_complete",
                 "source": source_name,
                 "count": len(items),
-                "detail": detail,
+                "detail": step_detail,
             }
+            if is_syncing:
+                event["syncing"] = True
+            yield event
 
         # 6. Synthesize
         yield {"event": "step_start", "source": "synthesize"}
 
-        # Separate graph items from non-graph items
-        graph_items = [
-            item for item in all_items
-            if any(s.startswith("graph:") for s in item.signals)
-        ]
-        non_graph_items = [
-            item for item in all_items
-            if not any(s.startswith("graph:") for s in item.signals)
-        ]
-
-        code_provenance = await _get_code_provenance(session, workspace_id, non_graph_items)
-        related_text = _format_related_content(non_graph_items, code_provenance=code_provenance)
-        graph_text = _format_graph_section(graph_items)
-
-        prompt = SYNTHESIS_TEMPLATE.format(
-            identifier=ticket.identifier,
-            title=ticket.title,
-            status=ticket.status or "Unknown",
-            assignee=ticket.assignee_name or "Unassigned",
-            priority=_priority_label(ticket.priority),
-            labels=", ".join(ticket.labels) if ticket.labels else "None",
-            description=ticket.description or "No description provided.",
-            related_content=related_text,
-            graph_section=graph_text,
-        )
+        code_provenance = await _get_code_provenance(session, workspace_id, all_items)
+        prompt = _build_synthesis_prompt(ticket, all_items, code_provenance=code_provenance)
 
         llm = get_llm_client()
         llm_response = await llm.generate(
@@ -684,6 +718,7 @@ async def generate_context_page_stream(
         context_page.generation_tokens_used = llm_response.total_tokens
 
         await session.flush()
+        await session.commit()
 
         yield {"event": "step_complete", "source": "synthesize", "detail": "Context generated"}
         yield {"event": "complete", "context_page_id": str(context_page.id)}
@@ -697,6 +732,14 @@ async def generate_context_page_stream(
 
     except Exception as e:
         logger.exception("Stream generation failed for %s", ticket_identifier)
+        # BUG-01 fix: persist error status so page doesn't stay stuck in "generating"
+        try:
+            if context_page:
+                context_page.status = "error"
+                await session.flush()
+                await session.commit()
+        except Exception:
+            logger.warning("Failed to persist error status for %s", ticket_identifier)
         yield {"event": "error", "message": str(e)}
 
 

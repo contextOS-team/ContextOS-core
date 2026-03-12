@@ -267,6 +267,58 @@ export function disconnectGitlab(): Promise<{ status: string }> {
   })
 }
 
+export interface GitlabProject {
+  id: number
+  path_with_namespace: string
+  name: string
+  visibility: 'private' | 'internal' | 'public'
+  web_url: string
+  description?: string | null
+}
+
+export interface GitlabReposResponse {
+  repos: GitlabProject[]
+  selected_projects: number[]
+}
+
+export function getGitlabRepos(): Promise<GitlabReposResponse> {
+  return apiFetch<GitlabReposResponse>('/api/gitlab/repos')
+}
+
+export function refreshGitlabRepos(): Promise<GitlabReposResponse> {
+  return apiFetch<GitlabReposResponse>('/api/gitlab/repos/refresh', {
+    method: 'POST',
+  })
+}
+
+export function selectGitlabRepos(
+  projectIds: number[]
+): Promise<{ selected_projects: number[] }> {
+  return apiFetch<{ selected_projects: number[] }>(
+    '/api/gitlab/repos/select',
+    {
+      method: 'POST',
+      body: JSON.stringify({ project_ids: projectIds }),
+    }
+  )
+}
+
+export function triggerGitlabIndex(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/gitlab/index', {
+    method: 'POST',
+  })
+}
+
+export interface GitlabIndexStatus {
+  status: string
+  last_indexed_at: string | null
+  repos: { repo: string; chunks: number }[]
+}
+
+export function getGitlabIndexStatus(): Promise<GitlabIndexStatus> {
+  return apiFetch<GitlabIndexStatus>('/api/gitlab/index/status')
+}
+
 // ---------------------------------------------------------------------------
 // Notion
 // ---------------------------------------------------------------------------
@@ -301,6 +353,7 @@ export interface NotionSyncStatus {
   pages_count: number
   sync_progress: number | null
   sync_total: number | null
+  sync_started_at: string | null
   last_sync_at: string | null
 }
 
@@ -548,12 +601,13 @@ export interface GenerationStep {
   status: 'waiting' | 'active' | 'complete' | 'error'
   detail?: string
   count?: number
+  syncing?: boolean
 }
 
 export type SSEEventData =
   | { event: 'start'; steps: string[] }
   | { event: 'step_start'; source: string }
-  | { event: 'step_complete'; source: string; count: number; detail: string }
+  | { event: 'step_complete'; source: string; count: number; detail: string; syncing?: boolean }
   | { event: 'step_error'; source: string; error: string }
   | { event: 'complete'; context_page_id: string }
   | { event: 'error'; message: string }
@@ -562,10 +616,12 @@ export type SSEEventData =
 export const SOURCE_LABELS: Record<string, string> = {
   slack: 'Slack',
   github: 'GitHub',
+  gitlab: 'GitLab',
   notion: 'Notion',
   fathom: 'Fathom',
   linear: 'Linear',
   jira: 'Jira',
+  telegram: 'Telegram',
   synthesize: 'Synthesize',
 }
 
