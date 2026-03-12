@@ -34,6 +34,7 @@ import { ticketProviderDisabledReason } from '@/lib/ticket-provider'
 import { SlackChannels } from '../../integrations/slack-channels'
 import { FathomConnect } from '../../integrations/fathom-connect'
 import { GithubRepos } from '../../integrations/github-repos'
+import { GitlabRepos } from '../../integrations/gitlab-repos'
 import { TelegramConnect } from './telegram-connect'
 import { NotionSyncSection } from './notion-sync-section'
 
@@ -243,7 +244,9 @@ export function IntegrationCards({
             connectedAt={gitlab.connected_at}
             onConnect={handleConnectGitlab}
             onDisconnect={handleDisconnectGitlab}
-          />
+          >
+            <GitlabRepos onSaved={fetchStatuses} />
+          </IntegrationCard>
         </div>
       </div>
     </div>
