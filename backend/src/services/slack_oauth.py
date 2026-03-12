@@ -31,7 +31,7 @@ SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
 SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access"
 
 # Bot scopes for reading channel messages and user info
-SLACK_BOT_SCOPES = "channels:read,channels:history,groups:read,groups:history,users:read"
+SLACK_BOT_SCOPES = "channels:read,channels:history,groups:read,groups:history,users:read,canvases:read,files:read"
 
 
 class SlackOAuthError(Exception):
