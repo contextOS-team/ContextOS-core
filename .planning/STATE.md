@@ -5,7 +5,7 @@ milestone_name: Dashboard & Onboarding
 status: executing
 stopped_at: Completed 29-05-PLAN.md
 last_updated: "2026-03-11T20:52:12.154Z"
-last_activity: 2026-03-12 -- Completed 29-05 (PERF-02 Gap Closure)
+last_activity: 2026-03-12 -- Completed 28-02 (GitLab Project Selection Frontend)
 progress:
   total_phases: 15
   completed_phases: 11
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 Phase: 29 of 29 (Codebase Hardening)
 Plan: 5 of 6
 Status: Executing
-Last activity: 2026-03-12 -- Completed 29-05 (PERF-02 Gap Closure)
+Last activity: 2026-03-12 -- Completed 28-02 (GitLab Project Selection Frontend)
 
 Progress: [██████████] 97%
 
@@ -92,6 +92,7 @@ Progress: [██████████] 97%
 | Phase 29 P04 | 5min | 2 tasks | 3 files |
 | Phase 29 P06 | 3min | 2 tasks | 4 files |
 | Phase 29 P05 | 4min | 2 tasks | 3 files |
+| Phase 28 P02 | 2min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -186,6 +187,7 @@ Recent decisions affecting current work:
 - [Phase 29]: X-Forwarded-For trusted only from loopback/private IPs via ipaddress module
 - [Phase 29]: _lookup_ticket returns 3-tuple (ticket, fk_id, is_linear) for mock-friendly ticket type detection
 - [Phase 29]: NotionSyncSection receives isPageLoading prop to gate mount-effect sync resume
+- [Phase 28]: GitLab project selection uses numeric Set<number> for IDs, internal visibility uses dimmed Lock icon
 - [Phase 29]: makeConnectHandler/makeDisconnectHandler moved into integration-cards.tsx as module-level helpers
 - [Phase 29]: connected_sources guard pattern: None means query all (backward compat), hybrid search post-filters results
 
@@ -198,6 +200,7 @@ Recent decisions affecting current work:
 - Phase 26 added: Telegram Chat Integration
 - Phase 27 added: Dashboard Homepage Intelligence Widgets
 - Phase 29 added: Codebase Hardening - Security, Bug Fixes, Architecture, and UI/UX Polish
+- Phase 30 added: Slack Huddle Transcript Ingestion
 
 ### Pending Todos
 
@@ -212,5 +215,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-11T20:46:22.741Z
-Stopped at: Completed 29-05-PLAN.md
+Stopped at: Completed 28-02-PLAN.md
 Resume file: None
