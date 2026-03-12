@@ -85,6 +85,9 @@ If you infer a connection, mark it with [inferred] and state your reasoning.
 - Every factual claim must trace to a specific source. Use inline citations: \
 **(Slack: #channel-name)**, **(PR: repo#123)**, **(Meeting: title)**, \
 **(Notion: page-title)**, **(Comment: author)**, **(Code: repo/path/file.ext)**.
+- When a PR or MR has a URL in its related content (marked as **URL:**), always \
+include it as a clickable markdown link: [PR #123: title](url). This lets both \
+humans and AI agents navigate directly to the source.
 - When multiple sources corroborate the same fact, cite all of them to show \
 convergence: "Auth must use PKCE flow **(Slack: #backend-auth, PR: core#412 \
 review comment, Notion: Auth RFC v2)**."

@@ -113,11 +113,14 @@ async def _find_explicit_refs(
         pr_result = await session.execute(pr_stmt)
         for pr in pr_result.scalars().all():
             key = ("github_pull_request", pr.id)
+            pr_url = f"https://github.com/{pr.repo_full_name}/pull/{pr.number}"
+            pr_state = "merged" if pr.github_merged_at else pr.state
+            pr_snippet = f"**URL:** {pr_url}\n**State:** {pr_state} | **Author:** {pr.author} | **Branch:** {pr.branch_name} → {pr.base_branch}\n{(pr.description or '')[:200]}"
             items[key] = LinkedItem(
                 source_type="github_pull_request",
                 source_id=pr.id,
                 title=f"PR #{pr.number}: {pr.title}",
-                snippet=(pr.description or "")[:200],
+                snippet=pr_snippet,
                 relevance_score=WEIGHT_EXPLICIT,
                 signals=["explicit_link"],
             )
@@ -155,11 +158,14 @@ async def _find_explicit_refs(
         gl_mr_result = await session.execute(gl_mr_stmt)
         for mr in gl_mr_result.scalars().all():
             key = ("gitlab_merge_request", mr.id)
+            mr_url = f"https://gitlab.com/{mr.project_path}/-/merge_requests/{mr.iid}"
+            mr_state = "merged" if mr.gitlab_merged_at else mr.state
+            mr_snippet = f"**URL:** {mr_url}\n**State:** {mr_state} | **Author:** {mr.author} | **Branch:** {mr.source_branch} → {mr.target_branch}\n{(mr.description or '')[:200]}"
             items[key] = LinkedItem(
                 source_type="gitlab_merge_request",
                 source_id=mr.id,
                 title=f"MR !{mr.iid}: {mr.title}",
-                snippet=(mr.description or "")[:200],
+                snippet=mr_snippet,
                 relevance_score=WEIGHT_EXPLICIT,
                 signals=["explicit_link"],
             )
@@ -380,7 +386,12 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
     ),
     "github_pull_request": (
         GithubPullRequest,
-        lambda r: (f"PR #{r.number}: {r.title}", (r.description or "")[:200]),
+        lambda r: (
+            f"PR #{r.number}: {r.title}",
+            f"**URL:** https://github.com/{r.repo_full_name}/pull/{r.number}\n"
+            f"**State:** {'merged' if r.github_merged_at else r.state} | **Author:** {r.author} | **Branch:** {r.branch_name} → {r.base_branch}\n"
+            f"{(r.description or '')[:200]}",
+        ),
     ),
     "github_review": (
         GithubReview,
@@ -395,7 +406,12 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
     ),
     "gitlab_merge_request": (
         GitlabMergeRequest,
-        lambda r: (f"MR !{r.iid}: {r.title}", (r.description or "")[:200]),
+        lambda r: (
+            f"MR !{r.iid}: {r.title}",
+            f"**URL:** https://gitlab.com/{r.project_path}/-/merge_requests/{r.iid}\n"
+            f"**State:** {'merged' if r.gitlab_merged_at else r.state} | **Author:** {r.author} | **Branch:** {r.source_branch} → {r.target_branch}\n"
+            f"{(r.description or '')[:200]}",
+        ),
     ),
     "gitlab_review": (
         GitlabReview,
