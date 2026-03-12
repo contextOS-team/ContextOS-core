@@ -142,6 +142,40 @@ within each section to show how understanding evolved.
 - Use relative time markers when helpful: "3 days before the ticket was created", \
 "after the PR was merged."
 
+### Implementation Status Awareness
+- Critically assess whether the work described in this ticket has already been \
+done — fully or partially — by examining PRs, merged branches, code snippets, \
+and commit references in the related content.
+- If a PR or MR exists that implements this ticket's requirements:
+  - Lead the Summary with the implementation status: "✅ **Already implemented** \
+in PR repo#456 (merged 2024-12-03)" or "🔄 **Partially implemented** in \
+PR repo#789 (open, 3 of 5 requirements addressed)."
+  - In the Requirements section, annotate each requirement with its status: \
+**[DONE — PR repo#456]**, **[IN PROGRESS — PR repo#789]**, or **[NOT STARTED]**.
+  - In the Related Work section, clearly distinguish between PRs that implement \
+this ticket vs. PRs that are merely related or adjacent.
+- If code snippets in the related content show the feature already exists in the \
+codebase (even without an explicit PR link), flag it: "⚠️ **Possibly already \
+implemented** — `repo/path/file.ext::function_name` appears to fulfill this \
+requirement. Verify against the ticket's acceptance criteria."
+- If the ticket is marked as done/closed but no implementation evidence is found \
+in the sources, flag this discrepancy: "**[GAP]** Ticket is marked {status} but \
+no PRs or code changes were found in the provided sources."
+- Never assume a ticket is unstarted work when evidence of implementation exists. \
+An AI agent reading this page should immediately know whether it needs to write \
+code, review existing code, or skip this ticket entirely.
+
+### Duplicate & Overlap Detection
+- If the related content reveals other tickets, PRs, or discussions that address \
+the same problem or feature, surface the overlap explicitly:
+  - "⚠️ **Potential duplicate:** Ticket PROJ-234 describes the same auth flow \
+change **(Linear: PROJ-234)**. Confirm whether these should be consolidated."
+  - "🔗 **Overlapping work:** PR repo#567 (linked to PROJ-234) modifies the same \
+files and endpoints as this ticket's requirements."
+- When multiple tickets reference the same codebase area, flag the coordination \
+risk: "**[RISK]** Three tickets (PROJ-100, PROJ-234, PROJ-301) touch the \
+auth middleware — merge conflicts or design contradictions are likely."
+
 ### Machine-Readable Markers
 - Use consistent semantic markers that downstream AI agents can parse:
   - **[DECISION]** for confirmed decisions.
@@ -149,7 +183,11 @@ within each section to show how understanding evolved.
   - **[RISK]** for identified risks or concerns.
   - **[GAP]** for missing information that should exist.
   - **[ACTION]** for explicit next steps or to-dos extracted from discussions.
-  - **[CONFLICT]** for contradictory information across sources."""
+  - **[CONFLICT]** for contradictory information across sources.
+  - **[IMPLEMENTED]** for requirements already fulfilled by merged PRs or \
+existing code.
+  - **[IN PROGRESS]** for requirements with open PRs or partial implementation.
+  - **[DUPLICATE]** for tickets or work that overlaps with this ticket."""
 
 SYNTHESIS_TEMPLATE = """\
 {identifier} | {title} | {status} | {assignee} | {priority} | {labels}
@@ -167,8 +205,8 @@ Based on the ticket and related content above, produce a context page. Do NOT st
 
 1. **Summary** — 2-3 sentence overview of what this ticket is about and why it matters
 2. **Background & Decisions** — Key decisions, discussions, and context from Slack, meetings, and comments. If the Graph Connections section above contains [DECISION] items, weave each into the narrative as a decision trail: state what was decided, who decided it (citing the person), where it was discussed (citing the source like Slack thread name or meeting title), and which tickets it affects. Include the confidence level (e.g., "confirmed" for high confidence, "likely decided" for lower). Always cite the source so engineers can verify. Show all decisions regardless of confidence.
-3. **Requirements** — What needs to be built or fixed, extracted from the ticket and discussions
-4. **Related Work** — PRs, linked tickets, and other relevant engineering artifacts. If the Graph Connections section above shows relationships between items, explain WHY they are connected in natural language (e.g., "This PR was discussed in Slack thread #deploy-v2 by @alex, who also authored the spec in Notion") rather than listing raw connections. Focus on the most important relationship paths and skip mechanical hops.
+3. **Requirements** — What needs to be built or fixed, extracted from the ticket and discussions. For each requirement, tag its implementation status: **[DONE — PR ref]** if a PR or code already fulfills it, **[IN PROGRESS — PR ref]** if work is underway, or **[NOT STARTED]** if no implementation evidence exists. This is critical — an AI agent must instantly know what still needs building.
+4. **Related Work** — PRs, linked tickets, and other relevant engineering artifacts. Separate into: (a) **Implementing PRs** — PRs that directly implement this ticket's requirements (state merged/open/draft and what they cover), (b) **Related PRs** — PRs in the same area but not directly implementing this ticket, (c) **Linked Tickets** — other tickets that overlap, depend on, or duplicate this work. If the Graph Connections section above shows relationships between items, explain WHY they are connected in natural language rather than listing raw connections.
 5. **Relevant Code** — Code snippets from across the codebase that are relevant to this ticket. Include function signatures, class definitions, and route handlers with file paths and repo names. This helps engineers understand existing implementations even from repos they have never worked in. If any code snippets have associated discussion provenance (noted as "Discussed in:" annotations in the Related Content), include that context so engineers know where this code was talked about.
 6. **Open Questions** — Unresolved questions or ambiguities that need clarification
 7. **Key People** — Who is involved and their roles (assignee, reviewers, participants in discussions). If graph data shows a person's involvement across multiple sources (e.g., authored ticket, discussed in Slack, reviewed PR), list their cross-source involvement to show the full picture of their engagement."""
