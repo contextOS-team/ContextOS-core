@@ -209,6 +209,7 @@ async def _find_explicit_refs(
                 snippet=comment.body[:200],
                 relevance_score=WEIGHT_EXPLICIT,
                 signals=["explicit_link"],
+                url=f"https://linear.app/issue/{ticket.identifier}",
             )
     elif not is_linear and (connected_sources is None or "jira" in connected_sources):
         # Jira comments linked via issue_id FK
@@ -391,11 +392,15 @@ async def _find_hybrid_matches(
 
 # Map source_type -> (model class, title+snippet extractor)
 _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
-    "linear_ticket": (LinearTicket, lambda r: (r.title, (r.description or "")[:200]), None),
+    "linear_ticket": (
+        LinearTicket,
+        lambda r: (r.title, (r.description or "")[:200]),
+        lambda r: f"https://linear.app/issue/{r.identifier}",
+    ),
     "linear_comment": (
         LinearComment,
         lambda r: (f"Comment by {r.author_name or 'Unknown'}", r.body[:200]),
-        None,
+        lambda r: f"https://linear.app/issue/{r.raw_data.get('issue', {}).get('identifier', '')}" if r.raw_data.get("issue") else None,
     ),
     "slack_message": (
         SlackMessage,
@@ -478,7 +483,7 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple[type, callable]] = {
     "jira_issue": (
         JiraIssue,
         lambda r: (f"{r.jira_key}: {r.summary}", (r.description or "")[:200]),
-        None,
+        lambda r: r.raw_data.get("url") or (f"{r.raw_data['self'].split('/rest/')[0]}/browse/{r.jira_key}" if r.raw_data.get("self") else None),
     ),
     "jira_comment": (
         JiraComment,
