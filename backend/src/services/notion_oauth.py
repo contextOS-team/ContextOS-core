@@ -27,7 +27,7 @@ from src.services.oauth_common import (
     upsert_oauth_token,
     upsert_workspace_integration,
 )
-from src.services.vault import read_token, store_token, token_name
+from src.services.vault import delete_token, read_token, store_token, token_name
 
 logger = logging.getLogger(__name__)
 
@@ -277,6 +277,16 @@ async def get_valid_access_token(
     """
     access_name = token_name(Provider.NOTION, workspace_id, "access")
     token_value = await read_token(session, access_name)
+
+    # Fallback: try legacy name format from before the Provider enum fix.
+    if not token_value:
+        legacy_name = f"oauth_Provider.NOTION_{workspace_id}_access"
+        token_value = await read_token(session, legacy_name)
+        if token_value:
+            await store_token(session, access_name, token_value)
+            await delete_token(session, legacy_name)
+            await session.commit()
+            logger.info("Migrated Notion token from legacy vault name for workspace %s", workspace_id)
 
     if not token_value:
         raise NotionOAuthError("No Notion access token found for this workspace")

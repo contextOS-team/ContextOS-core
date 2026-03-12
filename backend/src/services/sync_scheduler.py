@@ -13,9 +13,13 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+from datetime import timedelta
+
+from sqlalchemy import update
 from sqlmodel import select
 
 from src.db import async_session
+from src.models.context_page import ContextPage
 from src.models.integration import Provider, WorkspaceIntegration
 from src.services.sync_adapter import SyncRunLogger
 
@@ -23,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 15 * 60  # 15 minutes per CONTEXT.md decision
 CODE_INDEX_INTERVAL_SECONDS = 60 * 60  # 60 minutes for code re-indexing
+STALE_GENERATION_MINUTES = 5  # Pages stuck in "generating" longer than this are marked as error
 
 
 async def _get_connected_workspaces(provider: Provider) -> list[UUID]:
@@ -177,6 +182,30 @@ async def _check_code_index_freshness(workspace_id: UUID) -> None:
         )
 
 
+async def _expire_stale_generations() -> None:
+    """Mark context pages stuck in 'generating' for too long as 'error'.
+
+    If a generation crashes without updating status, the page stays in
+    'generating' forever — blocking regeneration and showing incorrect
+    status in the feed.
+    """
+    cutoff = datetime.utcnow() - timedelta(minutes=STALE_GENERATION_MINUTES)
+    async with async_session() as session:
+        stmt = (
+            update(ContextPage)
+            .where(
+                ContextPage.status == "generating",
+                ContextPage.updated_at < cutoff,
+                ContextPage.deleted_at.is_(None),  # type: ignore[union-attr]
+            )
+            .values(status="error")
+        )
+        result = await session.execute(stmt)
+        if result.rowcount:  # type: ignore[union-attr]
+            logger.info("Expired %d stale generating context pages", result.rowcount)
+        await session.commit()
+
+
 async def run_polling_fallback() -> None:
     """Run the polling fallback loop indefinitely.
 
@@ -185,8 +214,17 @@ async def run_polling_fallback() -> None:
     """
     logger.info("Polling fallback scheduler started (interval=%ds)", POLL_INTERVAL_SECONDS)
 
+    # Expire stale generations immediately on startup
+    try:
+        await _expire_stale_generations()
+    except Exception:
+        logger.exception("Initial stale generation cleanup failed")
+
     while True:
         try:
+            # Expire stale context page generations
+            await _expire_stale_generations()
+
             # Notion reconciliation
             notion_workspaces = await _get_connected_workspaces(Provider.NOTION)
             for ws_id in notion_workspaces:

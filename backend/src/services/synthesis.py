@@ -4,14 +4,12 @@ Generates AI-powered context pages for Linear tickets (and Jira issues)
 by combining linked content from multiple sources into a structured document.
 """
 
-import json
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -263,7 +261,7 @@ def _format_graph_section(items: list) -> str:
 
     sections = []
     for item in items:
-        if item.source_type == "Decision":
+        if item.source_type == "decision":
             path_signal = next((s for s in item.signals if s.startswith("graph:")), "")
             section = f"**{path_signal}**\n{item.snippet}"
         else:
@@ -568,6 +566,9 @@ async def _get_code_provenance(
             workspace_id,
             exc_info=True,
         )
+        # A failed query (e.g. missing graph_nodes table) poisons the
+        # SQLAlchemy session — rollback so subsequent queries can proceed.
+        await session.rollback()
         return {}
 
 
@@ -750,6 +751,11 @@ async def generate_context_page_stream(
         if "slack" in connected_sources:
             connected_sources.append("slack_huddle")
 
+        # Code chunks are indexed from both GitHub and GitLab repos —
+        # include the "code" virtual source when either git provider is connected.
+        if "github" in connected_sources or "gitlab" in connected_sources:
+            connected_sources.append("code")
+
         # 2b. Check sync status for connected providers
         syncing_providers: set[str] = set()
         if connected_sources:
@@ -766,24 +772,48 @@ async def generate_context_page_stream(
             session, workspace_id, ticket, ticket_id_for_fk, jira_issue_id
         )
 
-        # 4. Emit start event
-        yield {"event": "start", "steps": connected_sources + ["synthesize"]}
+        # 4. Emit start event — "code" is an internal source that gets folded
+        # into the git provider step (github/gitlab), so exclude it from
+        # the visible steps list sent to the frontend.
+        visible_steps = [s for s in connected_sources if s != "code"]
+        yield {"event": "start", "steps": visible_steps + ["synthesize"]}
 
-        # 5. Find content by source, yielding progress events
+        # 5. Find content by source.
+        # Collect all results first so we can fold code counts into the
+        # git provider step (SOURCE_TYPE_MAP yields "code" after "gitlab",
+        # so we can't stream git provider details until code is counted).
         all_items: list[LinkedItem] = []
+        source_results: list[tuple[str, list[LinkedItem], str]] = []
 
         async for source_name, items, detail in find_content_by_source(
             session, workspace_id, ticket, connected_sources=set(connected_sources)
         ):
-            # Belt-and-suspenders: find_content_by_source also filters internally
             if source_name not in connected_sources:
+                continue
+            all_items.extend(items)
+            source_results.append((source_name, items, detail))
+
+        # Count code results and determine which git provider to fold them into
+        code_count = 0
+        git_provider = None
+        for src_name, items, _ in source_results:
+            if src_name == "code":
+                code_count = len(items)
+            elif src_name in ("github", "gitlab") and git_provider is None:
+                git_provider = src_name
+
+        # 6. Emit progress events for each source (skipping "code")
+        for source_name, items, detail in source_results:
+            if source_name == "code":
                 continue
 
             yield {"event": "step_start", "source": source_name}
-            all_items.extend(items)
 
-            # Append sync warning if provider is still syncing
             step_detail = detail
+            # Fold code file count into the git provider's detail string
+            if source_name == git_provider and code_count > 0:
+                step_detail += f", {code_count} code file{'s' if code_count != 1 else ''}"
+
             is_syncing = source_name in syncing_providers
             if is_syncing and len(items) == 0:
                 step_detail = "Sync in progress — data not yet available"
