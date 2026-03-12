@@ -367,18 +367,13 @@ class TestPollHuddleTranscripts:
                 ],
             }
 
-            # files.info
+            # files.info -- content returned directly, no download needed
             mock_file_resp = MagicMock()
             mock_file_resp.status_code = 200
             mock_file_resp.json.return_value = {
                 "ok": True,
                 "content": "Sprint retrospective notes.",
             }
-
-            # download canvas content
-            mock_download_resp = MagicMock()
-            mock_download_resp.status_code = 200
-            mock_download_resp.text = "Sprint retrospective notes."
 
             # users.info for U001 and U002
             mock_user1_resp = MagicMock()
@@ -399,7 +394,6 @@ class TestPollHuddleTranscripts:
                     mock_history_resp,
                     mock_replies_resp,
                     mock_file_resp,
-                    mock_download_resp,
                     mock_user1_resp,
                     mock_user2_resp,
                 ]
