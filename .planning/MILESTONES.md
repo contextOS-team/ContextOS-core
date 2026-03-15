@@ -1,5 +1,23 @@
 # Milestones
 
+## v1.1 Dashboard & Onboarding (Shipped: 2026-03-15)
+
+**Phases completed:** 23 phases, 59 plans, 2 tasks
+
+**Key accomplishments:**
+- Dark theme token system with brand-tinted OKLCH surfaces, JetBrains Mono typography, and skeleton loading states
+- 4-step onboarding wizard with database-backed state and OAuth redirect preservation
+- Real-time activity timeline and context feed with Supabase Realtime subscriptions
+- Social OAuth (Google/GitHub), GitLab, Jira, and Telegram integrations
+- Real-time context generation progress UI with SSE streaming
+- Remotion animated hero replacing static video on landing page
+- Dashboard intelligence widgets (attention, resurfaced, weekly summary, sprint progress)
+- Codebase hardening: security patches, synthesis pipeline overhaul, settings decomposition
+- GitLab/GitHub sync performance optimization with concurrent fetching and incremental cursors
+- Slack huddle transcript ingestion via canvas/file API
+
+---
+
 ## v1.2 GraphRAG (Shipped: 2026-03-08)
 
 **Phases:** 22-27 (6 phases, 13 plans)

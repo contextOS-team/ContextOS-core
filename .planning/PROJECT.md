@@ -16,11 +16,10 @@ First users are the founding team (dogfooding). The product is in daily use with
 
 ## Current State
 
-**Shipped:** v1.0 Dogfood (2026-03-03), v1.1 Dashboard & Onboarding (2026-03-06), v1.2 GraphRAG (2026-03-08)
-**Backend LOC:** 35,442 Python
+**Shipped:** v1.0 Dogfood (2026-03-03), v1.1 Dashboard & Onboarding (2026-03-15), v1.2 GraphRAG (2026-03-08)
 **Tech stack:** Next.js 15, FastAPI, Supabase (Postgres + Auth + Realtime), Redis, pgvector, knowledge graph (plain PG tables + recursive CTEs)
-**Integrations:** Linear, Slack, GitHub, Notion, Fathom (meeting transcripts)
-**Next milestone:** Planning
+**Integrations:** Linear, Slack, GitHub, GitLab, Jira, Notion, Fathom, Telegram, Slack Huddles
+**Next milestone:** v1.3 (planning)
 
 ## Core Value
 
@@ -59,6 +58,18 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 - ✓ Graph-enhanced retrieval as 3rd signal with depth-decay scoring and token budget -- v1.2
 - ✓ Context pages with decision trails, relationship paths, people cross-references, code provenance -- v1.2
 - ✓ Graph Explorer API endpoint for subgraph JSON -- v1.2
+
+- ✓ Dark theme with OKLCH tokens, onboarding wizard, activity timeline, context feed, settings page -- v1.1
+- ✓ Social OAuth (Google/GitHub), password reset, auth brand panel -- v1.1
+- ✓ Real-time SSE context generation progress UI -- v1.1
+- ✓ Remotion animated hero on landing page -- v1.1
+- ✓ GitLab integration (OAuth, MR sync, webhooks, code indexing) -- v1.1
+- ✓ Jira integration (OAuth 3LO, JQL sync, webhooks) -- v1.1
+- ✓ Telegram chat integration (Bot API, message ingestion) -- v1.1
+- ✓ Dashboard intelligence widgets (attention, resurfaced, weekly, sprint) -- v1.1
+- ✓ Security hardening (JQL injection, OAuth state signing, rate limiting) -- v1.1
+- ✓ Concurrent sync optimization for GitLab/GitHub -- v1.1
+- ✓ Slack huddle transcript ingestion -- v1.1
 
 ### Active
 
@@ -127,4 +138,4 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 | 2,000 token unified budget for retrieval | Signal diversity first trimming prevents graph context flooding | ✓ Good |
 
 ---
-*Last updated: 2026-03-08 after v1.2 GraphRAG milestone*
+*Last updated: 2026-03-15 after v1.1 Dashboard & Onboarding milestone*
