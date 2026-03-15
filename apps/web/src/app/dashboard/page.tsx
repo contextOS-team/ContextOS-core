@@ -10,15 +10,18 @@ import {
   LinearLogo,
   SlackLogo,
   GitHubLogo,
+  GitLabLogo,
   FathomLogo,
   NotionLogo,
   JiraLogo,
+  TelegramLogo,
 } from '@/components/icons/brand-logos'
 import {
   getIntegrationStatus,
   connectLinear,
   connectSlack,
   connectGithub,
+  connectGitlab,
   connectNotion,
   connectJira,
   type IntegrationStatusResponse,
@@ -67,6 +70,22 @@ const INTEGRATIONS = [
     brandColor: 'bg-foreground',
     brandBorder: 'border-l-foreground',
     logoClass: 'text-foreground dark:text-foreground',
+  },
+  {
+    key: 'gitlab' as const,
+    name: 'GitLab',
+    logo: GitLabLogo,
+    brandColor: 'bg-orange-500',
+    brandBorder: 'border-l-orange-500',
+    logoClass: '',
+  },
+  {
+    key: 'telegram' as const,
+    name: 'Telegram',
+    logo: TelegramLogo,
+    brandColor: 'bg-sky-500',
+    brandBorder: 'border-l-sky-500',
+    logoClass: '',
   },
   {
     key: 'jira' as const,
@@ -133,6 +152,9 @@ export default function DashboardPage() {
         } else if (key === 'github') {
           const { installation_url } = await connectGithub()
           window.location.href = installation_url
+        } else if (key === 'gitlab') {
+          const { authorization_url } = await connectGitlab()
+          window.location.href = authorization_url
         } else if (key === 'notion') {
           const { authorization_url } = await connectNotion()
           window.location.href = authorization_url
@@ -211,7 +233,7 @@ export default function DashboardPage() {
           {getGreeting()}{firstName ? `, ${firstName}` : ''}
         </p>
         <span className="text-xs text-muted-foreground font-mono tabular-nums">
-          {connectedCount}/6 connected
+          {connectedCount}/{INTEGRATIONS.length} connected
         </span>
       </div>
 
@@ -338,7 +360,7 @@ export default function DashboardPage() {
                     >
                       Reconnect
                     </button>
-                  ) : integration.key === 'fathom' ? (
+                  ) : integration.key === 'fathom' || integration.key === 'telegram' ? (
                     <button
                       onClick={() => router.push('/dashboard/settings?tab=integrations')}
                       className="text-xs text-primary hover:text-primary/80 transition-colors duration-150"

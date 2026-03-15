@@ -13,8 +13,8 @@ import tempfile
 from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import update
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import type_coerce, update
+from sqlalchemy.dialects.postgresql import JSONB as PG_JSONB, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -409,48 +409,46 @@ async def _update_index_status(
 ) -> None:
     """Write code indexing status to workspace_integrations.config JSONB.
 
-    Uses its own database session to avoid committing (or being blocked by)
-    uncommitted work on the caller's data session. This isolation ensures
-    progress updates succeed even if the indexing session is in an error
-    state, and prevents partial repo data from being committed as a
-    side-effect of a progress update.
+    Uses a SQL-level ``config || :patch`` merge so that only the indexing
+    keys are touched.  This avoids a read-modify-write race with other
+    writers (e.g. token refresh in ``ensure_valid_token``) that may update
+    different keys in the same JSONB column concurrently.
 
-    Args:
-        workspace_id: Workspace to update.
-        index_status: Status string ("indexing" or "idle").
-        last_at: ISO timestamp of last indexing completion (only set on idle).
-        provider: Integration provider ("github" or "gitlab").
-        progress: Number of repos indexed so far (only during indexing).
-        total: Total number of repos to index (only during indexing).
-        current_repo: Repo currently being indexed (only during indexing).
+    Uses its own database session to avoid committing (or being blocked by)
+    uncommitted work on the caller's data session.
     """
     from src.db import async_session
 
+    # Build the patch dict — only the keys we own
+    patch: dict = {"code_index_status": index_status}
+    if last_at is not None:
+        patch["code_index_last_at"] = last_at
+    if index_status == "indexing":
+        patch["code_index_progress"] = progress
+        patch["code_index_total"] = total
+        patch["code_index_current_repo"] = current_repo
+    else:
+        # Set progress fields to JSON null. The API endpoint uses
+        # dict.get() which returns None for both absent and null keys,
+        # so this is equivalent to the old dict.pop() behavior.
+        patch["code_index_progress"] = None
+        patch["code_index_total"] = None
+        patch["code_index_current_repo"] = None
+
     async with async_session() as status_session:
-        stmt = select(WorkspaceIntegration).where(
-            WorkspaceIntegration.workspace_id == workspace_id,
-            WorkspaceIntegration.provider == provider,
+        stmt = (
+            update(WorkspaceIntegration)
+            .where(
+                WorkspaceIntegration.workspace_id == workspace_id,
+                WorkspaceIntegration.provider == provider,
+            )
+            .values(
+                config=WorkspaceIntegration.config.op("||")(  # type: ignore[union-attr]
+                    type_coerce(patch, PG_JSONB)
+                )
+            )
         )
-        result = await status_session.execute(stmt)
-        integration = result.scalar_one_or_none()
-
-        if not integration:
-            return
-
-        config = dict(integration.config) if integration.config else {}
-        config["code_index_status"] = index_status
-        if last_at is not None:
-            config["code_index_last_at"] = last_at
-        if index_status == "indexing":
-            config["code_index_progress"] = progress
-            config["code_index_total"] = total
-            config["code_index_current_repo"] = current_repo
-        else:
-            # Clear progress fields when idle
-            config.pop("code_index_progress", None)
-            config.pop("code_index_total", None)
-            config.pop("code_index_current_repo", None)
-        integration.config = config
+        await status_session.execute(stmt)
         await status_session.commit()
 
 
@@ -554,13 +552,6 @@ async def index_workspace_repos(
                 })
             else:
                 results.append(r)
-
-        # Show completion before transitioning to idle
-        if total > 0:
-            await _update_index_status(
-                workspace_id, "indexing", provider="github",
-                progress=total, total=total, current_repo=None,
-            )
 
         return results
     finally:
@@ -682,13 +673,6 @@ async def index_gitlab_workspace_repos(
                 })
             else:
                 results.append(r)
-
-        # Show completion before transitioning to idle
-        if total > 0:
-            await _update_index_status(
-                workspace_id, "indexing", provider="gitlab",
-                progress=total, total=total, current_repo=None,
-            )
 
         return results
     finally:

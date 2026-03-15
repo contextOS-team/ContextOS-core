@@ -474,11 +474,10 @@ export default function ContextDetailPage() {
     if (generation?.status === 'complete') {
       // Immediately update page status to 'ready' so the badge doesn't
       // show stale 'error'/'generating' during the 1.5s collapse delay.
-      // loadPage() below replaces this with the full DB record.
+      // The full DB record replaces this when loadPage() resolves below.
       setPage((prev) => prev ? { ...prev, status: 'ready' } : prev)
-      const timer = setTimeout(async () => {
-        await loadPage()
-        setGeneration(null)
+      const timer = setTimeout(() => {
+        loadPage().finally(() => setGeneration(null))
       }, 1500)
       return () => clearTimeout(timer)
     }

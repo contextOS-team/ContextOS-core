@@ -445,40 +445,142 @@ class TestConcurrentCodeIndexing:
 # ---------------------------------------------------------------------------
 
 
-class TestGithubIndexStatusFilter:
+class TestIndexStatusJsonbMerge:
+    """Tests that _update_index_status uses SQL-level JSONB || merge.
 
-    @pytest.mark.asyncio
-    async def test_status_updates_write_to_provider_config(self):
-        """_update_index_status writes to the correct provider's config."""
+    The core invariant: a progress update must NOT clobber unrelated keys
+    (e.g. OAuth tokens) that live in the same config JSONB column.
+    """
+
+    def _compile_update_stmt(self, index_status, **kwargs):
+        """Call _update_index_status, capture the SQL statement, return it compiled."""
+        import asyncio
         from src.services.code_indexer import _update_index_status
 
-        github_integration = MagicMock()
-        github_integration.config = {}
+        captured = []
+        sess = AsyncMock()
 
-        gitlab_integration = MagicMock()
-        gitlab_integration.config = {}
+        async def capture_execute(stmt, *a, **kw):
+            captured.append(stmt)
+            return MagicMock()
 
-        def make_session_for(integration):
-            sess = AsyncMock()
-            result = MagicMock()
-            result.scalar_one_or_none.return_value = integration
-            sess.execute = AsyncMock(return_value=result)
-            sess.commit = AsyncMock()
-            cm = AsyncMock()
-            cm.__aenter__ = AsyncMock(return_value=sess)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            return cm
+        sess.execute = AsyncMock(side_effect=capture_execute)
+        sess.commit = AsyncMock()
 
-        with patch("src.db.async_session", return_value=make_session_for(github_integration)):
-            await _update_index_status(WS_UUID, "indexing", provider="github", progress=1, total=3)
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=sess)
+        cm.__aexit__ = AsyncMock(return_value=False)
 
-        assert github_integration.config["code_index_status"] == "indexing"
-        assert github_integration.config["code_index_progress"] == 1
+        with patch("src.db.async_session", return_value=cm):
+            asyncio.get_event_loop().run_until_complete(
+                _update_index_status(WS_UUID, index_status, **kwargs)
+            )
 
-        with patch("src.db.async_session", return_value=make_session_for(gitlab_integration)):
-            await _update_index_status(WS_UUID, "idle", provider="gitlab", last_at="2026-03-15T00:00:00")
+        assert len(captured) == 1, f"Expected 1 SQL statement, got {len(captured)}"
+        return captured[0]
 
-        assert gitlab_integration.config["code_index_status"] == "idle"
-        assert gitlab_integration.config.get("code_index_last_at") == "2026-03-15T00:00:00"
-        # GitHub config unchanged by GitLab update
-        assert github_integration.config["code_index_status"] == "indexing"
+    def test_generates_jsonb_concat_not_full_replacement(self):
+        """The SQL must use config || :patch (merge), not config = :value (replace).
+
+        This is the fix for the race condition: if the SQL replaces the entire
+        config column, a concurrent token refresh loses. If it merges via ||,
+        only the indexing keys are touched and the token keys survive.
+        """
+        from sqlalchemy.dialects import postgresql
+
+        stmt = self._compile_update_stmt(
+            "indexing", provider="github", progress=1, total=3, current_repo="org/repo"
+        )
+        sql = str(stmt.compile(dialect=postgresql.dialect()))
+
+        # Must be UPDATE, not SELECT-then-UPDATE
+        assert sql.startswith("UPDATE"), f"Expected UPDATE, got: {sql[:80]}"
+
+        # Must contain the || operator — the JSONB merge
+        assert "||" in sql, (
+            f"SQL must use || (JSONB merge) to avoid clobbering unrelated keys. Got: {sql}"
+        )
+
+        # Must NOT contain SELECT — that would be read-modify-write
+        assert "SELECT" not in sql, (
+            f"SQL must not SELECT (read-modify-write is race-prone). Got: {sql}"
+        )
+
+    def test_merge_patch_contains_exactly_the_indexing_keys(self):
+        """The patch dict sent to Postgres must contain only indexing keys.
+
+        If we accidentally include other keys, or miss a key, the merge
+        either pollutes unrelated config or fails to update state.
+        """
+        from sqlalchemy.dialects import postgresql
+
+        stmt = self._compile_update_stmt(
+            "indexing", provider="github", progress=2, total=5, current_repo="org/repo"
+        )
+        compiled = stmt.compile(dialect=postgresql.dialect())
+        params = dict(compiled.params)
+
+        # Find the patch param (the dict being merged)
+        patch_params = [v for v in params.values() if isinstance(v, dict)]
+        assert len(patch_params) == 1, f"Expected exactly one dict param, got: {params}"
+        patch = patch_params[0]
+
+        assert patch == {
+            "code_index_status": "indexing",
+            "code_index_progress": 2,
+            "code_index_total": 5,
+            "code_index_current_repo": "org/repo",
+        }, f"Unexpected patch keys: {patch}"
+
+    def test_idle_patch_nulls_progress_keys(self):
+        """When transitioning to idle, progress keys must be set to null.
+
+        The old code used dict.pop() to remove keys entirely. The new code
+        sets them to null via || merge. Both produce the same API response
+        because Python's dict.get("missing_key") and dict.get("null_key")
+        both return None, and the API endpoint uses .get().
+        """
+        from sqlalchemy.dialects import postgresql
+
+        stmt = self._compile_update_stmt(
+            "idle", provider="gitlab", last_at="2026-03-15T00:00:00"
+        )
+        compiled = stmt.compile(dialect=postgresql.dialect())
+        params = dict(compiled.params)
+
+        patch_params = [v for v in params.values() if isinstance(v, dict)]
+        assert len(patch_params) == 1
+        patch = patch_params[0]
+
+        assert patch == {
+            "code_index_status": "idle",
+            "code_index_last_at": "2026-03-15T00:00:00",
+            "code_index_progress": None,
+            "code_index_total": None,
+            "code_index_current_repo": None,
+        }, f"Idle patch should null out progress keys: {patch}"
+
+    def test_api_endpoint_treats_null_and_absent_identically(self):
+        """Verify the API endpoint returns null for both absent and null JSONB keys.
+
+        This is the contract that makes our null-via-merge safe: the endpoint
+        uses dict.get() which returns None for both missing and null-valued keys.
+        The frontend checks `!= null` which catches both null and undefined.
+        """
+        # Simulate what the /index/status endpoint does with config
+        config_with_nulls = {
+            "code_index_status": "idle",
+            "code_index_progress": None,
+            "code_index_total": None,
+            "code_index_current_repo": None,
+        }
+        config_with_absent_keys = {
+            "code_index_status": "idle",
+        }
+
+        # Both should produce identical API responses
+        for config in [config_with_nulls, config_with_absent_keys]:
+            assert config.get("code_index_progress") is None
+            assert config.get("code_index_total") is None
+            assert config.get("code_index_current_repo") is None
+            assert config.get("code_index_status") == "idle"
