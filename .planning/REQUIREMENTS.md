@@ -12,7 +12,7 @@ Requirements for the live intelligence milestone. Each maps to roadmap phases.
 - [ ] **ACT-05**: All integration sync services (Linear, Slack, GitHub, GitLab, Jira, Notion, Telegram) emit events to activity_events on sync completion
 - [ ] **ACT-06**: Integration connect/disconnect actions emit activity events
 - [ ] **ACT-07**: Context page generation (start, complete, error) emits activity events
-- [ ] **ACT-08**: Activity tab shows events in real-time via existing Supabase Realtime subscription
+- [x] **ACT-08**: Activity tab shows events in real-time via existing Supabase Realtime subscription
 
 ### Graph Visualization
 
@@ -80,7 +80,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ACT-05 | Phase 32 | Pending |
 | ACT-06 | Phase 32 | Pending |
 | ACT-07 | Phase 32 | Pending |
-| ACT-08 | Phase 32 | Pending |
+| ACT-08 | Phase 32 | Complete |
 | GRAPH-01 | Phase 33 | Pending |
 | GRAPH-02 | Phase 33 | Pending |
 | GRAPH-03 | Phase 33 | Pending |
