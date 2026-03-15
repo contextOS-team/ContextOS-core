@@ -1,0 +1,30 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            cd /opt/contextos
+            git pull origin main
+
+            # Build frontend
+            cd apps/web
+            npm run build
+
+            # Restart services
+            systemctl restart contextos-app
+
+            # Verify service is running
+            sleep 3
+            systemctl is-active contextos-app
