@@ -19,6 +19,7 @@ from google import genai
 from google.genai import types
 
 from src.observability.laminar import observe, set_laminar_metadata
+from src.observability.langfuse_client import langfuse_observe
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class LLMClient:
         self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
     @observe(name="llm_generate")
+    @langfuse_observe(name="llm_generate")
     async def generate(
         self,
         prompt: str,

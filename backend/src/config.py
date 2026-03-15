@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     # Laminar (observability)
     LAMINAR_API_KEY: str = ""
 
+    # Langfuse (observability)
+    LANGFUSE_SECRET_KEY: str = ""
+    LANGFUSE_PUBLIC_KEY: str = ""
+    LANGFUSE_HOST: str = "https://cloud.langfuse.com"
+
     # Sentry (error tracking)
     SENTRY_DSN: str = ""
 

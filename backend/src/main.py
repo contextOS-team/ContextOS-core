@@ -12,6 +12,7 @@ from src.config import Environment, get_settings
 from src.middleware.correlation import CorrelationIdMiddleware
 from src.middleware.rate_limit import RateLimitMiddleware
 from src.observability.laminar import init_laminar
+from src.observability.langfuse_client import init_langfuse
 from src.observability.logging import configure_logging
 from src.middleware.security_headers import SecurityHeadersMiddleware
 from src.observability.sentry import SentryContextMiddleware, init_sentry
@@ -38,8 +39,9 @@ settings.validate_for_production()
 # Initialize Sentry BEFORE app creation (must init early to capture all errors)
 init_sentry(settings)
 
-# Initialize Laminar for LLM observability (no-ops safely without API key)
+# Initialize LLM observability (no-ops safely without API keys)
 init_laminar(settings)
+init_langfuse(settings)
 
 # Configure structured logging
 configure_logging(settings.ENVIRONMENT)

@@ -14,9 +14,15 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
+          command_timeout: 10m
           script: |
             cd /opt/contextos
             git pull origin main
+
+            # Install backend dependencies if pyproject.toml changed
+            cd backend
+            uv sync --frozen 2>/dev/null || uv sync || pip install -e .
+            cd ..
 
             # Build frontend
             cd apps/web
@@ -24,7 +30,9 @@ jobs:
 
             # Restart services
             systemctl restart contextos-app
+            systemctl restart contextos-api
 
-            # Verify service is running
+            # Verify services are running
             sleep 3
             systemctl is-active contextos-app
+            systemctl is-active contextos-api

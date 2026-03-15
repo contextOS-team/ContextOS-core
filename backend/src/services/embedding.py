@@ -12,6 +12,7 @@ from uuid import UUID
 from google import genai
 from google.genai import types
 from lmnr import observe
+from src.observability.langfuse_client import langfuse_observe
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -130,6 +131,7 @@ def _get_gemini_client() -> genai.Client:
 
 
 @observe(name="generate_embedding")
+@langfuse_observe(name="generate_embedding")
 async def generate_embedding(text_content: str) -> list[float]:
     """Generate a 768-dimensional vector embedding for the given text.
 
@@ -158,6 +160,7 @@ async def generate_embedding(text_content: str) -> list[float]:
 
 
 @observe(name="generate_embeddings_batch")
+@langfuse_observe(name="generate_embeddings_batch")
 async def generate_embeddings_batch(texts: list[str]) -> list[list[float]]:
     """Generate 768-dimensional embeddings for multiple texts in one API call.
 
