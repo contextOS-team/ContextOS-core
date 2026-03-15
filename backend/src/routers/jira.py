@@ -94,6 +94,7 @@ async def callback(
         linear_stmt = select(WorkspaceIntegration).where(
             WorkspaceIntegration.workspace_id == workspace_id,
             WorkspaceIntegration.provider == Provider.LINEAR,
+            WorkspaceIntegration.status == "connected",
         )
         linear_result = await session.execute(linear_stmt)
         if linear_result.scalar_one_or_none() is not None:

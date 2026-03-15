@@ -97,6 +97,7 @@ async def callback(
         jira_stmt = select(WorkspaceIntegration).where(
             WorkspaceIntegration.workspace_id == workspace_id,
             WorkspaceIntegration.provider == Provider.JIRA,
+            WorkspaceIntegration.status == "connected",
         )
         jira_result = await session.execute(jira_stmt)
         if jira_result.scalar_one_or_none() is not None:
