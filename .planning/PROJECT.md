@@ -19,7 +19,19 @@ First users are the founding team (dogfooding). The product is in daily use with
 **Shipped:** v1.0 Dogfood (2026-03-03), v1.1 Dashboard & Onboarding (2026-03-15), v1.2 GraphRAG (2026-03-08)
 **Tech stack:** Next.js 15, FastAPI, Supabase (Postgres + Auth + Realtime), Redis, pgvector, knowledge graph (plain PG tables + recursive CTEs)
 **Integrations:** Linear, Slack, GitHub, GitLab, Jira, Notion, Fathom, Telegram, Slack Huddles
-**Next milestone:** v1.3 (planning)
+**Next milestone:** v1.3 Live Intelligence
+
+## Current Milestone: v1.3 Live Intelligence
+
+**Goal:** Make ContextOS alive -- activity feed that actually shows events, interactive graph visualization, Chrome extension published to Web Store with Linear/Jira integration, privacy-first architecture for enterprise trust, and landing page refresh.
+
+**Target features:**
+- Activity events emission from all integrations (fix dead Activity tab)
+- Context graph visualization UI (interactive node/edge explorer)
+- Chrome extension: publish to Chrome Web Store, design Linear/Jira page integration
+- Privacy/self-hosted architecture (data stays on customer infrastructure)
+- Landing page update (9 integrations + polish)
+- RAG improvements (TBD, Dulat's scope)
 
 ## Core Value
 
@@ -73,7 +85,13 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 
 ### Active
 
-(No active requirements -- planning next milestone)
+- [ ] Activity events emitted by all integration sync services
+- [ ] Interactive graph visualization for ticket context
+- [ ] Chrome extension published to Chrome Web Store
+- [ ] Chrome extension surfaces context on Linear/Jira ticket pages
+- [ ] Privacy-first deployment option (customer data stays local)
+- [ ] Landing page updated with all 9 integrations
+- [ ] RAG quality improvements (TBD)
 
 ### Out of Scope
 
@@ -87,7 +105,7 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 - Microsoft GraphRAG Leiden clustering -- Corpus-scale overkill, ContextOS has structured data
 - Real-time LLM extraction on every webhook -- Burns API budget, two-tier (regex inline, LLM batch) is better
 - Person-centric aggregation UI -- Emerges from graph data in context pages, dedicated UI deferred
-- Graph explorer frontend (GAPI-02) -- API ships in v1.2, React visualization deferred
+- ~~Graph explorer frontend (GAPI-02)~~ -- Moved to v1.3 Active scope
 
 ## Context
 
@@ -138,4 +156,4 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 | 2,000 token unified budget for retrieval | Signal diversity first trimming prevents graph context flooding | ✓ Good |
 
 ---
-*Last updated: 2026-03-15 after v1.1 Dashboard & Onboarding milestone*
+*Last updated: 2026-03-15 after v1.3 Live Intelligence milestone started*
