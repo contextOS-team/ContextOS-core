@@ -25,14 +25,13 @@ jobs:
             # Run database migrations before deploying new code
             bash scripts/run-migrations.sh
 
+            # Install uv if not present (single binary, no deps)
+            command -v uv &>/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
+            export PATH="$HOME/.local/bin:$PATH"
+
             # Install backend dependencies
             cd backend
-            if command -v uv &>/dev/null; then
-              uv sync --frozen 2>/dev/null || uv sync
-            else
-              [ -d .venv ] || python3 -m venv .venv
-              .venv/bin/pip install -e .
-            fi
+            uv sync --frozen 2>/dev/null || uv sync
             cd ..
 
             # Build frontend (must succeed before restarting services)
