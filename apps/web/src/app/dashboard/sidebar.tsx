@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LogOut, Settings, UserCircle } from 'lucide-react'
+import { Activity, Home, Layers, LogOut, Settings, UserCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   DropdownMenu,
@@ -32,9 +32,9 @@ function getInitials(fullName: string | null | undefined, email: string): string
 }
 
 const navItems = [
-  { href: '/dashboard', label: 'Home' },
-  { href: '/dashboard/context', label: 'Context' },
-  { href: '/dashboard/activity', label: 'Activity' },
+  { href: '/dashboard', label: 'Home', icon: Home },
+  { href: '/dashboard/context', label: 'Context', icon: Layers },
+  { href: '/dashboard/activity', label: 'Activity', icon: Activity },
 ]
 
 export function Sidebar({ userEmail, userFullName }: TopNavProps) {
@@ -69,23 +69,27 @@ export function Sidebar({ userEmail, userFullName }: TopNavProps) {
         </span>
       </Link>
 
+      {/* Divider between brand and nav */}
+      <div className="ml-6 h-4 w-px bg-border" />
+
       {/* Nav links */}
-      <div className="ml-8 flex items-center gap-1">
-        {navItems.map(({ href, label }) => {
+      <div className="ml-4 flex items-center gap-0.5">
+        {navItems.map(({ href, label, icon: Icon }) => {
           const active = isActive(href)
           return (
             <Link
               key={href}
               href={href}
-              className={`relative px-3 py-1.5 text-[13px] font-medium transition-colors duration-150 ${
+              className={`relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium transition-all duration-150 ${
                 active
-                  ? 'text-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary/10 text-foreground'
+                  : 'text-muted-foreground/70 hover:text-foreground hover:bg-muted/50'
               }`}
             >
+              <Icon className="h-3.5 w-3.5" />
               {label}
               {active && (
-                <span className="absolute bottom-0 left-3 right-3 h-[2px] rounded-full bg-primary translate-y-[9px]" />
+                <span className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full bg-primary translate-y-[9px]" />
               )}
             </Link>
           )
