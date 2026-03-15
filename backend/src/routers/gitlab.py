@@ -13,7 +13,7 @@ import logging
 import httpx
 import sqlalchemy.exc
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +35,7 @@ from src.services.gitlab_repos import (
     save_selected_repos,
 )
 from src.services.code_index_worker import enqueue_workspace_index_job
-from src.services.gitlab_sync import sync_projects
+from src.services.gitlab_sync_worker import enqueue_gitlab_sync_job
 from src.services.gitlab_webhook import process_gitlab_event, verify_webhook_token
 from src.services.oauth_common import sign_oauth_state
 
@@ -204,12 +204,18 @@ async def select_repos(
     """Select projects to monitor for MR sync and webhooks.
 
     Validates the provided project IDs against the cached available
-    projects list and saves the selection. Uses numeric IDs.
+    projects list and saves the selection. Auto-triggers MR sync
+    for the selected projects via Redis Stream.
     """
     try:
         selected = await save_selected_repos(
             user.workspace_id, body.project_ids, session
         )
+
+        # Auto-trigger MR sync for selected projects
+        if selected:
+            await enqueue_gitlab_sync_job(user.workspace_id, selected)
+
         return {"selected_projects": selected}
     except GitLabOAuthError as e:
         raise HTTPException(
@@ -223,18 +229,15 @@ async def select_repos(
 
 @router.post("/sync", status_code=status.HTTP_202_ACCEPTED)
 async def trigger_sync(
-    background_tasks: BackgroundTasks,
     user: UserContext = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Trigger MR sync for selected projects.
 
-    Runs the sync in a background task and returns 202 immediately.
+    Enqueues a sync job via Redis Stream for crash resilience.
     Check GET /sync/status for progress.
     """
     from sqlmodel import select as sm_select
-
-    settings = config_module.get_settings()
 
     # Get selected projects from config
     stmt = sm_select(WorkspaceIntegration).where(
@@ -257,19 +260,7 @@ async def trigger_sync(
             detail="No projects selected for sync",
         )
 
-    # Import async session factory for background task isolation
-    from src.db import async_session
-
-    async def _run_sync():
-        async with async_session() as bg_session:
-            await sync_projects(
-                user.workspace_id, selected_projects, bg_session, settings
-            )
-
-    # TODO(Phase 28): Replace BackgroundTasks with Redis queue for durability.
-    # FastAPI BackgroundTasks are lost on server restart, unlike the GitHub
-    # integration which uses Redis Streams for reliable background processing.
-    background_tasks.add_task(_run_sync)
+    await enqueue_gitlab_sync_job(user.workspace_id, selected_projects)
 
     return {"status": "sync_started", "projects": selected_projects}
 
@@ -279,11 +270,15 @@ async def get_sync_status(
     user: UserContext = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Get per-project sync status.
+    """Get MR sync status with total counts from DB.
 
-    Reads project_sync_status from workspace_integrations.config JSONB.
+    Returns per-project sync status from JSONB plus aggregate MR/review
+    counts queried from the database for accurate totals.
     """
+    from sqlalchemy import func
     from sqlmodel import select as sm_select
+
+    from src.models.gitlab import GitlabMergeRequest, GitlabReview
 
     stmt = sm_select(WorkspaceIntegration).where(
         WorkspaceIntegration.workspace_id == user.workspace_id,
@@ -292,11 +287,38 @@ async def get_sync_status(
     result = await session.execute(stmt)
     integration = result.scalar_one_or_none()
 
-    if not integration or not integration.config:
-        return {"project_sync_status": {}}
+    project_sync_status = {}
+    if integration and integration.config:
+        project_sync_status = integration.config.get("project_sync_status", {})
+
+    # Get actual MR and review counts from DB
+    mr_count_result = await session.execute(
+        sm_select(func.count(GitlabMergeRequest.id)).where(
+            GitlabMergeRequest.workspace_id == user.workspace_id,
+            GitlabMergeRequest.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+    )
+    total_mrs = mr_count_result.scalar() or 0
+
+    review_count_result = await session.execute(
+        sm_select(func.count(GitlabReview.id)).where(
+            GitlabReview.workspace_id == user.workspace_id,
+            GitlabReview.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+    )
+    total_reviews = review_count_result.scalar() or 0
+
+    # Check if any project is currently syncing
+    is_syncing = any(
+        p.get("status") == "syncing"
+        for p in project_sync_status.values()
+    )
 
     return {
-        "project_sync_status": integration.config.get("project_sync_status", {})
+        "project_sync_status": project_sync_status,
+        "total_mrs": total_mrs,
+        "total_reviews": total_reviews,
+        "is_syncing": is_syncing,
     }
 
 
