@@ -32,6 +32,11 @@ export async function GET(request: Request) {
       const forwardedHost = request.headers.get('x-forwarded-host')
       const isLocalEnv = process.env.NODE_ENV === 'development'
 
+      // For password recovery, append query param so the page knows to show the update form
+      if (next === '/reset-password') {
+        destination = '/reset-password?type=recovery'
+      }
+
       if (isLocalEnv) {
         return NextResponse.redirect(`${origin}${destination}`)
       } else if (forwardedHost) {

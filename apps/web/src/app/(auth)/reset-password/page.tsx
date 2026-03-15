@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,8 @@ type Mode = 'request' | 'update'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
-  const [mode, setMode] = useState<Mode>('request')
+  const searchParams = useSearchParams()
+  const [mode, setMode] = useState<Mode>(searchParams.get('type') === 'recovery' ? 'update' : 'request')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
