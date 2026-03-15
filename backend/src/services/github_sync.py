@@ -1,17 +1,21 @@
-"""GitHub PR sync service with 60-day backfill.
+"""GitHub PR sync service with incremental cursor-based sync.
 
 Fetches pull requests and reviews from the GitHub API for selected repos,
 upserts them into the database, and links PRs to Linear tickets via
 branch name pattern parsing.
 
 Per user decisions:
-- Sequential sync with rate limit awareness
-- 60-day backfill window for initial sync
+- Concurrent review fetching via asyncio.gather + semaphore
+- Incremental sync using persisted cursor_value (falls back to 60-day backfill)
+- State filter support (all/open/closed)
+- Per-repo 5-minute timeout with partial data preservation
+- Per-page progress emission
 - Bot accounts filtered (dependabot[bot], renovate[bot], github-actions[bot])
 - Draft PRs included
 - Unlinked PRs stored gracefully (null linear_ticket_id)
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -43,13 +47,17 @@ from src.services.github_oauth import GitHubOAuthError, get_installation_token
 from src.services.sync_adapter import (
     SyncAdapter,
     SyncRunLogger,
+    get_or_create_cursor,
     update_cursor_status,
 )
 
 logger = logging.getLogger(__name__)
 
-# Backfill window: 60 days per user decision
+# Backfill window: 60 days for initial sync (no cursor yet)
 BACKFILL_DAYS = 60
+
+# Per-repo sync timeout in seconds (5 minutes)
+REPO_SYNC_TIMEOUT = 300
 
 
 async def sync_repos(
@@ -57,6 +65,7 @@ async def sync_repos(
     selected_repos: list[str],
     session: AsyncSession,
     settings: Settings,
+    state_filter: str = "all",
 ) -> dict:
     """Sync PRs for all selected repos sequentially.
 
@@ -69,6 +78,7 @@ async def sync_repos(
         selected_repos: List of repo full_name strings to sync.
         session: Async database session.
         settings: Application settings.
+        state_filter: PR state to fetch -- "all", "open", or "closed".
 
     Returns:
         Summary dict with total counts and per-repo results.
@@ -89,9 +99,11 @@ async def sync_repos(
                     sync_status="syncing",
                 )
 
-                pr_count, review_count = await sync_single_repo(
-                    workspace_id, repo, session, settings
-                )
+                async with asyncio.timeout(REPO_SYNC_TIMEOUT):
+                    pr_count, review_count = await sync_single_repo(
+                        workspace_id, repo, session, settings,
+                        state_filter=state_filter,
+                    )
 
                 # Update both JSONB and sync_cursors
                 await _update_repo_sync_status(
@@ -108,6 +120,18 @@ async def sync_repos(
                 results[repo] = {"status": "synced", "prs": pr_count, "reviews": review_count}
 
                 srl.info("Synced repo %s: %d PRs" % (repo, pr_count))
+
+            except TimeoutError:
+                srl.error("Sync timed out for repo %s after %ds" % (repo, REPO_SYNC_TIMEOUT))
+                await _update_repo_sync_status(
+                    session, workspace_id, repo, "timeout", 0, 0
+                )
+                await update_cursor_status(
+                    session, workspace_id, "github", repo,
+                    sync_status="timeout",
+                    error_message="Sync timed out after %ds" % REPO_SYNC_TIMEOUT,
+                )
+                results[repo] = {"status": "timeout", "error": "Timed out after %ds" % REPO_SYNC_TIMEOUT}
 
             except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError) as e:
                 srl.error("Sync failed for repo %s: %s" % (repo, e))
@@ -153,18 +177,20 @@ async def sync_single_repo(
     repo_full_name: str,
     session: AsyncSession,
     settings: Settings,
+    state_filter: str = "all",
 ) -> tuple[int, int]:
     """Sync PRs and reviews for a single repo.
 
-    Fetches all PRs updated within the 60-day backfill window,
-    filters bot accounts, upserts PR and review records, and
-    attempts Linear ticket linking for each PR.
+    Uses incremental cursors (falls back to 60-day backfill on first sync),
+    fetches reviews concurrently via asyncio.gather, and emits progress
+    per page.
 
     Args:
         workspace_id: Workspace to sync into.
         repo_full_name: Full name of the repo (e.g., "org/repo").
         session: Async database session.
         settings: Application settings.
+        state_filter: PR state to fetch -- "all", "open", or "closed".
 
     Returns:
         Tuple of (pr_count, review_count).
@@ -172,14 +198,25 @@ async def sync_single_repo(
     token = await get_installation_token(workspace_id, session, settings)
 
     owner, repo = repo_full_name.split("/", 1)
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=BACKFILL_DAYS)
+
+    # Incremental cursor: use persisted cursor_value if available, else 60-day backfill
+    cursor = await get_or_create_cursor(session, workspace_id, "github", repo_full_name)
+    sync_start = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    if cursor.cursor_value:
+        try:
+            cutoff = datetime.fromisoformat(cursor.cursor_value.replace("Z", "+00:00")).replace(tzinfo=None)
+        except (ValueError, AttributeError):
+            cutoff = sync_start - timedelta(days=BACKFILL_DAYS)
+    else:
+        cutoff = sync_start - timedelta(days=BACKFILL_DAYS)
 
     pr_count = 0
     review_count = 0
 
     url: str | None = (
         f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls"
-        f"?state=all&sort=updated&direction=desc&per_page=100"
+        f"?state={state_filter}&sort=updated&direction=desc&per_page=100"
     )
 
     async with create_github_client() as client:
@@ -198,8 +235,10 @@ async def sync_single_repo(
             prs = response.json()
             reached_cutoff = False
 
+            # First pass: filter PRs and collect non-bot entries
+            page_prs: list[dict] = []
             for pr_data in prs:
-                # Check if PR is older than backfill window
+                # Check if PR is older than cursor cutoff
                 updated_at = parse_github_timestamp(pr_data.get("updated_at"))
                 if updated_at and updated_at < cutoff:
                     reached_cutoff = True
@@ -210,18 +249,33 @@ async def sync_single_repo(
                 if is_bot_author(author):
                     continue
 
-                # Upsert the PR
+                page_prs.append(pr_data)
+
+            # Concurrent review fetching for all PRs in this page
+            review_tasks = [
+                _fetch_reviews_bounded(client, token, owner, repo, pr_data["number"])
+                for pr_data in page_prs
+            ]
+            review_results = await asyncio.gather(*review_tasks, return_exceptions=True)
+
+            # Sequential DB writes: upsert PRs, reviews, and link tickets
+            for pr_data, reviews_or_exc in zip(page_prs, review_results):
                 pr_record = await _upsert_pr(
                     session, workspace_id, repo_full_name, pr_data
                 )
                 pr_count += 1
 
-                # Fetch and upsert reviews
-                pr_number = pr_data["number"]
-                reviews = await _fetch_reviews(
-                    client, token, owner, repo, pr_number
-                )
-                for review_data in reviews:
+                # Handle exceptions from gather gracefully
+                if isinstance(reviews_or_exc, Exception):
+                    logger.warning(
+                        "Failed to fetch reviews for %s#%d: %s",
+                        repo_full_name, pr_data["number"], reviews_or_exc,
+                    )
+                    reviews_list: list[dict] = []
+                else:
+                    reviews_list = reviews_or_exc
+
+                for review_data in reviews_list:
                     await _upsert_review(
                         session, workspace_id, pr_record.id, review_data
                     )
@@ -230,11 +284,11 @@ async def sync_single_repo(
                 # Attempt Linear ticket linking
                 await link_pr_to_ticket(pr_record, workspace_id, session)
 
-                # Update progress
-                await _update_repo_sync_status(
-                    session, workspace_id, repo_full_name,
-                    "syncing", pr_count, 0
-                )
+            # Per-page progress emission (instead of per-PR)
+            await _update_repo_sync_status(
+                session, workspace_id, repo_full_name,
+                "syncing", pr_count, 0
+            )
 
             if reached_cutoff:
                 break
@@ -243,6 +297,13 @@ async def sync_single_repo(
             url = parse_link_next(response.headers.get("link"))
 
     await session.flush()
+
+    # Persist cursor with sync_start timestamp for next incremental sync
+    await update_cursor_status(
+        session, workspace_id, "github", repo_full_name,
+        sync_status="complete",
+        cursor_value=sync_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
 
     # Queue embedding generation stub for PR descriptions
     if pr_count > 0:
@@ -332,14 +393,19 @@ async def _upsert_pr(
     return pr_result.scalar_one()
 
 
-async def _fetch_reviews(
+async def _fetch_reviews_bounded(
     client: httpx.AsyncClient,
     token: str,
     owner: str,
     repo: str,
     pr_number: int,
 ) -> list[dict]:
-    """Fetch reviews for a specific PR."""
+    """Fetch reviews for a specific PR, bounded by the shared semaphore.
+
+    This wrapper is designed for use with asyncio.gather to enable
+    concurrent review fetching across multiple PRs on a page while
+    respecting the global GitHub API concurrency limit.
+    """
     url = f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/reviews"
     async with _github_semaphore:
         response = await client.get(url, headers=github_headers(token))
@@ -353,6 +419,17 @@ async def _fetch_reviews(
 
     await check_rate_limit(response)
     return response.json()
+
+
+async def _fetch_reviews(
+    client: httpx.AsyncClient,
+    token: str,
+    owner: str,
+    repo: str,
+    pr_number: int,
+) -> list[dict]:
+    """Fetch reviews for a specific PR (legacy sequential interface)."""
+    return await _fetch_reviews_bounded(client, token, owner, repo, pr_number)
 
 
 async def _upsert_review(
