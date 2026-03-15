@@ -80,6 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler for startup/shutdown."""
     from src.services.code_index_worker import run_code_index_worker
     from src.services.embedding_worker import run_embedding_worker
+    from src.services.gitlab_sync_worker import run_gitlab_sync_worker
     from src.services.sync_scheduler import run_polling_fallback
 
     # Startup: clear any stale sync locks left from previous crashes
@@ -100,8 +101,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     embedding_task = asyncio.create_task(_supervised("embedding_worker", run_embedding_worker))
     polling_task = asyncio.create_task(_supervised("polling_fallback", run_polling_fallback))
     code_index_task = asyncio.create_task(_supervised("code_index_worker", run_code_index_worker))
+    gitlab_sync_task = asyncio.create_task(_supervised("gitlab_sync_worker", run_gitlab_sync_worker))
 
-    logger.info("Background workers started: embedding_worker, polling_fallback, code_index_worker")
+    logger.info("Background workers started: embedding_worker, polling_fallback, code_index_worker, gitlab_sync_worker")
 
     yield
 
@@ -109,8 +111,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     embedding_task.cancel()
     polling_task.cancel()
     code_index_task.cancel()
+    gitlab_sync_task.cancel()
 
-    for task in [embedding_task, polling_task, code_index_task]:
+    for task in [embedding_task, polling_task, code_index_task, gitlab_sync_task]:
         try:
             await task
         except asyncio.CancelledError:
