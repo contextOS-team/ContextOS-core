@@ -35,7 +35,6 @@ const navItems = [
   { href: '/dashboard', label: 'Home' },
   { href: '/dashboard/context', label: 'Context' },
   { href: '/dashboard/activity', label: 'Activity' },
-  { href: '/dashboard/settings', label: 'Settings' },
 ]
 
 export function Sidebar({ userEmail, userFullName }: TopNavProps) {
