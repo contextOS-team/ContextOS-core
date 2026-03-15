@@ -1,3 +1,5 @@
+import Link from 'next/link'
+import { Plus } from 'lucide-react'
 import type { IntegrationStatusResponse } from '@/lib/api'
 
 const INTEGRATIONS = [
@@ -35,6 +37,8 @@ export function IntegrationDots({ statuses }: IntegrationDotsProps) {
     return a.name.localeCompare(b.name)
   })
 
+  const disconnectedCount = visible.filter((i) => !isConnected(i.key)).length
+
   return (
     <div className="flex flex-wrap items-center gap-3">
       {sorted.map((integration) => {
@@ -67,6 +71,16 @@ export function IntegrationDots({ statuses }: IntegrationDotsProps) {
           </div>
         )
       })}
+      {disconnectedCount > 0 && (
+        <Link
+          href="/dashboard/settings"
+          className="flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:border-muted-foreground/40 transition-colors ml-1"
+          title="Connect more integrations"
+        >
+          <Plus className="h-3 w-3" />
+          <span>Add</span>
+        </Link>
+      )}
     </div>
   )
 }
