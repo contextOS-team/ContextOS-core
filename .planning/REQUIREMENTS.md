@@ -77,31 +77,31 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ACT-05 | TBD | Pending |
-| ACT-06 | TBD | Pending |
-| ACT-07 | TBD | Pending |
-| ACT-08 | TBD | Pending |
-| GRAPH-01 | TBD | Pending |
-| GRAPH-02 | TBD | Pending |
-| GRAPH-03 | TBD | Pending |
-| GRAPH-04 | TBD | Pending |
-| EXT-01 | TBD | Pending |
-| EXT-02 | TBD | Pending |
-| EXT-03 | TBD | Pending |
-| EXT-04 | TBD | Pending |
-| LAND-01 | TBD | Pending |
-| LAND-02 | TBD | Pending |
-| LAND-03 | TBD | Pending |
-| ONB-10 | TBD | Pending |
-| ONB-11 | TBD | Pending |
-| PRIV-01 | TBD | Pending |
-| RAG-01 | TBD | Pending |
+| ACT-05 | Phase 32 | Pending |
+| ACT-06 | Phase 32 | Pending |
+| ACT-07 | Phase 32 | Pending |
+| ACT-08 | Phase 32 | Pending |
+| GRAPH-01 | Phase 33 | Pending |
+| GRAPH-02 | Phase 33 | Pending |
+| GRAPH-03 | Phase 33 | Pending |
+| GRAPH-04 | Phase 33 | Pending |
+| ONB-10 | Phase 34 | Pending |
+| ONB-11 | Phase 34 | Pending |
+| EXT-01 | Phase 35 | Pending |
+| EXT-02 | Phase 35 | Pending |
+| EXT-03 | Phase 35 | Pending |
+| EXT-04 | Phase 35 | Pending |
+| LAND-01 | Phase 36 | Pending |
+| LAND-02 | Phase 36 | Pending |
+| LAND-03 | Phase 36 | Pending |
+| PRIV-01 | Phase 37 | Pending |
+| RAG-01 | Phase 38 | Pending |
 
 **Coverage:**
 - v1.3 requirements: 19 total
-- Mapped to phases: 0
-- Unmapped: 19
+- Mapped to phases: 19
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-15*
-*Last updated: 2026-03-15 after initial definition*
+*Last updated: 2026-03-15 after roadmap creation*
