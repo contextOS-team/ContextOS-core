@@ -12,7 +12,7 @@ from uuid import UUID
 from google import genai
 from google.genai import types
 from lmnr import observe
-from src.observability.langfuse_client import langfuse_observe
+from src.observability.langfuse_client import langfuse_observe, update_generation
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -148,6 +148,9 @@ async def generate_embedding(text_content: str) -> list[float]:
         return [0.0] * EMBEDDING_DIMENSIONS
 
     truncated = text_content[:MAX_INPUT_CHARS]
+
+    update_generation(model=EMBEDDING_MODEL_NAME)
+
     client = _get_gemini_client()
     response = await client.aio.models.embed_content(
         model=EMBEDDING_MODEL_NAME,
@@ -177,6 +180,12 @@ async def generate_embeddings_batch(texts: list[str]) -> list[list[float]]:
         return []
 
     truncated = [t[:MAX_INPUT_CHARS] if t.strip() else "" for t in texts]
+
+    update_generation(
+        model=EMBEDDING_MODEL_NAME,
+        usage={"input": len(texts)},
+    )
+
     client = _get_gemini_client()
     response = await client.aio.models.embed_content(
         model=EMBEDDING_MODEL_NAME,
