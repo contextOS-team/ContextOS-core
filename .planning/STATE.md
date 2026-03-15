@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: executing
-stopped_at: Completed 30-02-PLAN.md
-last_updated: "2026-03-12T14:05:02.862Z"
+stopped_at: Completed 31-03-PLAN.md
+last_updated: "2026-03-15T10:15:01.378Z"
 last_activity: 2026-03-12 -- Completed 28-01 (GitLab Code Indexing Backend)
 progress:
-  total_phases: 22
+  total_phases: 23
   completed_phases: 19
-  total_plans: 54
-  completed_plans: 52
+  total_plans: 57
+  completed_plans: 53
   percent: 97
 ---
 
@@ -95,6 +95,7 @@ Progress: [██████████] 97%
 | Phase 28 P02 | 2min | 2 tasks | 3 files |
 | Phase 30 P01 | 4min | 2 tasks | 4 files |
 | Phase 30 P02 | 4min | 2 tasks | 4 files |
+| Phase 31 P03 | 2min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -200,6 +201,8 @@ Recent decisions affecting current work:
 - [Phase 30]: User name resolution cached within poll run to avoid redundant Slack API calls
 - [Phase 30]: slack_huddle maps to same source types as fathom (meeting_transcript, meeting_segment) since both use MeetingTranscript model
 - [Phase 30]: slack_huddle auto-added to connected_sources when Slack is connected (piggybacks on Slack OAuth token)
+- [Phase 31]: Semaphore created inside each function (not module-level) to avoid cross-function interference
+- [Phase 31]: Each concurrent task creates its own async_session for DB session isolation
 
 ### Roadmap Evolution
 
@@ -211,6 +214,7 @@ Recent decisions affecting current work:
 - Phase 27 added: Dashboard Homepage Intelligence Widgets
 - Phase 29 added: Codebase Hardening - Security, Bug Fixes, Architecture, and UI/UX Polish
 - Phase 30 added: Slack Huddle Transcript Ingestion
+- Phase 31 added: GitLab & GitHub Sync Performance Optimization
 
 ### Pending Todos
 
@@ -224,6 +228,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-12T11:00:03.383Z
-Stopped at: Completed 30-02-PLAN.md
+Last session: 2026-03-15T10:15:01.369Z
+Stopped at: Completed 31-03-PLAN.md
 Resume file: None

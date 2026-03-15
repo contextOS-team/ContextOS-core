@@ -335,7 +335,7 @@ Plans:
   4. Sync operations have per-project timeouts with graceful partial-commit (completed projects saved even if one times out)
   5. Open vs closed MR fetch uses state filter to avoid fetching all MRs when only open ones are needed
   6. Progress events emitted during sync for frontend status visibility
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] 31-01-PLAN.md — GitLab sync: concurrent note fetching, incremental cursor, state filter, per-project timeout
