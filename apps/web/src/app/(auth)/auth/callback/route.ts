@@ -23,7 +23,8 @@ export async function GET(request: Request) {
           .single()
 
         // If onboarding row exists and not completed, redirect to onboarding
-        if (onboardingState && !onboardingState.completed_at) {
+        // But never override password recovery flow
+        if (onboardingState && !onboardingState.completed_at && next !== '/reset-password') {
           destination = '/onboarding'
         }
       }

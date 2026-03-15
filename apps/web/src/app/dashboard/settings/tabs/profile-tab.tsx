@@ -45,7 +45,7 @@ export function ProfileTab({ userEmail, userFullName }: ProfileTabProps) {
     try {
       const supabase = createClient()
       const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
-        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard/settings?tab=profile`,
+        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
       })
       if (error) throw error
       setResetSent(true)
