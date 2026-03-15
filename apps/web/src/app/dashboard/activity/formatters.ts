@@ -11,8 +11,13 @@ export function formatEventDescription(event: ActivityEvent): string {
     case 'sync_started':
       return `${meta.integration ?? 'Unknown'} sync started`
     case 'sync_completed':
+      if (meta.error) return `${meta.integration ?? 'Unknown'} sync failed`
       return `${meta.integration ?? 'Unknown'} sync completed`
     case 'context_generated':
+      if (meta.error)
+        return `Context generation failed${meta.ticket_id ? ` for ${meta.ticket_id}` : ''}`
+      if (meta.ticket_id)
+        return `Context generated for ${meta.ticket_id} \u00b7 ${meta.source_count ?? '?'} sources`
       return `Context generated from ${meta.source_count ?? '?'} sources`
     case 'integration_connected':
       return `${meta.integration ?? 'Unknown'} connected`
@@ -20,6 +25,14 @@ export function formatEventDescription(event: ActivityEvent): string {
       return `${meta.integration ?? 'Unknown'} disconnected`
     case 'user_signed_up':
       return 'Workspace created'
+    case 'ticket_created':
+      return `New ticket: ${meta.ticket_id ?? ''} ${meta.title ?? ''}`.trim()
+    case 'pr_merged':
+      return `PR merged: ${meta.repo ?? ''}#${meta.pr_number ?? ''} ${meta.title ?? ''}`.trim()
+    case 'meeting_recorded':
+      return `Meeting recorded: ${meta.title ?? 'Untitled'}`
+    case 'page_created':
+      return `New page: ${meta.page_title ?? 'Untitled'}`
     default:
       return 'Unknown event'
   }
@@ -35,6 +48,8 @@ export function getMetadataChip(event: ActivityEvent): string | null {
 
   switch (event.event_type) {
     case 'sync_completed':
+      if (meta.error && typeof meta.error_message === 'string')
+        return meta.error_message.slice(0, 60)
       if (typeof meta.items_count === 'number')
         return `${meta.items_count} items`
       if (typeof meta.duration_ms === 'number')
@@ -46,6 +61,16 @@ export function getMetadataChip(event: ActivityEvent): string | null {
           ? `${(meta.token_count / 1000).toFixed(1)}k tokens`
           : `${meta.token_count} tokens`
       }
+      return null
+    case 'ticket_created':
+      return null
+    case 'pr_merged':
+      return null
+    case 'meeting_recorded':
+      if (typeof meta.duration_minutes === 'number')
+        return `${meta.duration_minutes}min`
+      return null
+    case 'page_created':
       return null
     default:
       return null
