@@ -386,23 +386,29 @@ async def get_index_status(
     index_status = config.get("code_index_status", "idle")
     last_indexed_at = config.get("code_index_last_at")
 
-    # Get per-repo chunk counts
-    chunk_stmt = (
-        sm_select(
-            CodeChunk.repo_full_name,
-            func.count(CodeChunk.id).label("chunk_count"),
+    # Build set of GitHub repo names to filter chunks (exclude GitLab repos)
+    available_repos = config.get("available_repos", [])
+    github_repo_names = {r.get("full_name", "") for r in available_repos if r.get("full_name")}
+
+    repos: list[dict] = []
+    if github_repo_names:
+        chunk_stmt = (
+            sm_select(
+                CodeChunk.repo_full_name,
+                func.count(CodeChunk.id).label("chunk_count"),
+            )
+            .where(
+                CodeChunk.workspace_id == user.workspace_id,
+                CodeChunk.deleted_at.is_(None),  # type: ignore[union-attr]
+                CodeChunk.repo_full_name.in_(github_repo_names),  # type: ignore[union-attr]
+            )
+            .group_by(CodeChunk.repo_full_name)
         )
-        .where(
-            CodeChunk.workspace_id == user.workspace_id,
-            CodeChunk.deleted_at.is_(None),  # type: ignore[union-attr]
-        )
-        .group_by(CodeChunk.repo_full_name)
-    )
-    chunk_result = await session.execute(chunk_stmt)
-    repos = [
-        {"repo": row.repo_full_name, "chunks": row.chunk_count}
-        for row in chunk_result.fetchall()
-    ]
+        chunk_result = await session.execute(chunk_stmt)
+        repos = [
+            {"repo": row.repo_full_name, "chunks": row.chunk_count}
+            for row in chunk_result.fetchall()
+        ]
 
     return {
         "status": index_status,
