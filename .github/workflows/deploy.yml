@@ -25,9 +25,14 @@ jobs:
             # Run database migrations before deploying new code
             bash scripts/run-migrations.sh
 
-            # Install backend dependencies if pyproject.toml changed
+            # Install backend dependencies
             cd backend
-            uv sync --frozen 2>/dev/null || uv sync || .venv/bin/pip install -e .
+            if command -v uv &>/dev/null; then
+              uv sync --frozen 2>/dev/null || uv sync
+            else
+              [ -d .venv ] || python3 -m venv .venv
+              .venv/bin/pip install -e .
+            fi
             cd ..
 
             # Build frontend (must succeed before restarting services)
