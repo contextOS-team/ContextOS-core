@@ -257,13 +257,20 @@ Plans:
 
 ### Phase 27: Dashboard Homepage Intelligence Widgets
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Transform the passive dashboard homepage into an intelligence hub with 5 widget sections -- Needs Attention alerts, Resurfaced forgotten context, This Week timeline, Sprint progress, and demoted integration dots -- answering "what do I need to know?" with cross-source intelligence
+**Requirements**: WIDGET-01, WIDGET-02, WIDGET-03, WIDGET-04, WIDGET-05, API-01, API-02, API-03, API-04
 **Depends on:** Phase 26
-**Plans:** 3 plans
+**Success Criteria** (what must be TRUE):
+  1. Dashboard homepage shows attention items (stale contexts, open PRs/MRs) with count badge and navigation links
+  2. Resurfaced widget surfaces forgotten Slack decisions/ideas with no ticket follow-through
+  3. This Week timeline groups activity, contexts, and merged PRs by day
+  4. Sprint badge shows current Linear cycle progress with days remaining
+  5. Integrations demoted from full list to compact status dots footer
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 27 to break down)
+- [ ] 27-01-PLAN.md -- Backend: dashboard router with 4 aggregation endpoints (attention, weekly-summary, sprint, resurfaced)
+- [ ] 27-02-PLAN.md -- Frontend: 5 widget components, dashboard page rewrite with intelligence layout
 
 ---
 
