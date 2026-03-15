@@ -269,7 +269,7 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 27-01-PLAN.md -- Backend: dashboard router with 4 aggregation endpoints (attention, weekly-summary, sprint, resurfaced)
+- [x] 27-01-PLAN.md -- Backend: dashboard router with 4 aggregation endpoints (attention, weekly-summary, sprint, resurfaced)
 - [ ] 27-02-PLAN.md -- Frontend: 5 widget components, dashboard page rewrite with intelligence layout
 
 ---

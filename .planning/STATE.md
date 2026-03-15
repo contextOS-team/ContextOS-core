@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: executing
-stopped_at: Completed 31-02-PLAN.md
-last_updated: "2026-03-15T10:20:06.269Z"
-last_activity: 2026-03-12 -- Completed 28-01 (GitLab Code Indexing Backend)
+stopped_at: Completed 27-01-PLAN.md
+last_updated: "2026-03-15T17:41:38Z"
+last_activity: 2026-03-15 -- Completed 27-01 (Dashboard Intelligence Widget APIs)
 progress:
   total_phases: 23
   completed_phases: 20
   total_plans: 57
-  completed_plans: 55
-  percent: 97
+  completed_plans: 56
+  percent: 98
 ---
 
 # Project State
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-03-04)
 Phase: 29 of 29 (Codebase Hardening)
 Plan: 5 of 6
 Status: Executing
-Last activity: 2026-03-12 -- Completed 28-01 (GitLab Code Indexing Backend)
+Last activity: 2026-03-15 -- Completed 27-01 (Dashboard Intelligence Widget APIs)
 
-Progress: [██████████] 97%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
@@ -98,6 +98,7 @@ Progress: [██████████] 97%
 | Phase 31 P03 | 2min | 1 tasks | 1 files |
 | Phase 31 P01 | 2min | 1 tasks | 1 files |
 | Phase 31 P02 | 2min | 1 tasks | 1 files |
+| Phase 27 P01 | 3min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -208,6 +209,9 @@ Recent decisions affecting current work:
 - [Phase 31]: Semaphore(5) for GitLab note concurrency -- conservative for 10 req/sec rate limit
 - [Phase 31]: sync_start timestamp for cursor (not max updated_at) to handle MRs updated during sync
 - [Phase 31]: Reuse existing _github_semaphore(10) for review concurrency; cursor_value parsed as ISO datetime; per-page progress replaces per-PR
+- [Phase 27]: Sprint endpoint uses get_valid_access_token from linear_oauth with user_id for Linear token retrieval
+- [Phase 27]: Resurfaced v1 uses heuristic keyword matching (15 patterns) -- deterministic, fast, free; swappable to LLM later
+- [Phase 27]: Weekly summary uses raw SQL for activity_events (no SQLModel model) and ORM for other tables
 
 ### Roadmap Evolution
 
@@ -233,6 +237,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-15T10:15:46.353Z
-Stopped at: Completed 31-02-PLAN.md
+Last session: 2026-03-15T17:41:38Z
+Stopped at: Completed 27-01-PLAN.md
 Resume file: None
