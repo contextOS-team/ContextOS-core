@@ -260,7 +260,7 @@ Plans:
 **Goal:** [To be planned]
 **Requirements**: TBD
 **Depends on:** Phase 26
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
 - [ ] TBD (run /gsd:plan-phase 27 to break down)
@@ -322,6 +322,25 @@ Plans:
 Plans:
 - [ ] 30-01-PLAN.md — Database migration (slack_huddle source CHECK), OAuth scope update (canvases:read, files:read), poll-based huddle ingestion service
 - [ ] 30-02-PLAN.md — Wire slack_huddle into linking engine and synthesis pipeline, add POST /api/slack/poll-huddles endpoint
+
+### Phase 31: GitLab & GitHub Sync Performance Optimization
+
+**Goal:** Dramatically reduce GitLab/GitHub MR sync and code indexing times by introducing concurrent API fetching, incremental sync with cursor-based pagination, parallel repository cloning/parsing, and async note/review batch fetching -- eliminating the per-MR API call bottleneck and sequential repo processing that caused production timeouts
+**Requirements**: PERF-SYNC-01, PERF-SYNC-02, PERF-SYNC-03, PERF-SYNC-04, PERF-SYNC-05, PERF-SYNC-06
+**Depends on:** Phase 30
+**Success Criteria** (what must be TRUE):
+  1. MR/PR sync fetches notes/reviews concurrently (asyncio.gather with concurrency limit) instead of one-by-one, reducing sync time by 5-10x
+  2. Incremental sync uses `updated_after` cursor persisted per-project so re-syncs only fetch changed MRs, not the full history
+  3. Code indexing clones and parses multiple repositories concurrently (configurable parallelism) instead of sequentially
+  4. Sync operations have per-project timeouts with graceful partial-commit (completed projects saved even if one times out)
+  5. Open vs closed MR fetch uses state filter to avoid fetching all MRs when only open ones are needed
+  6. Progress events emitted during sync for frontend status visibility
+**Plans:** 3 plans
+
+Plans:
+- [ ] 31-01-PLAN.md — GitLab sync: concurrent note fetching, incremental cursor, state filter, per-project timeout
+- [ ] 31-02-PLAN.md — GitHub sync: concurrent review fetching, incremental cursor, state filter, per-repo timeout
+- [ ] 31-03-PLAN.md — Concurrent code indexing for both providers with configurable parallelism and per-repo timeout
 
 ---
 *Roadmap created: 2026-02-24*
