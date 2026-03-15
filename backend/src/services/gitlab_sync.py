@@ -1,17 +1,24 @@
-"""GitLab MR sync service with 60-day backfill.
+"""GitLab MR sync service with concurrent notes, incremental cursors, and timeouts.
 
 Fetches merge requests and notes from the GitLab API for selected projects,
 upserts them into the database, and links MRs to Linear tickets via
 branch name pattern parsing.
 
+Performance optimizations:
+- Concurrent note fetching via asyncio.gather with Semaphore(5)
+- Incremental sync using cursor_value (sync_start timestamp)
+- State filter parameter (all/opened/closed/merged)
+- Per-project 5-minute timeout with partial data commit
+- Per-page progress emission
+
 Per user decisions:
-- Sequential sync with rate limit awareness
-- 60-day backfill window for initial sync
+- 60-day backfill window for initial sync (when no cursor exists)
 - Bot accounts filtered via is_bot_user
 - Draft MRs included
 - Unlinked MRs stored gracefully (null linear_ticket_id)
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -36,12 +43,18 @@ from src.services.gitlab_common import (
     parse_link_next,
 )
 from src.services.gitlab_linking import link_mr_to_ticket
-from src.services.sync_adapter import SyncRunLogger, update_cursor_status
+from src.services.sync_adapter import SyncRunLogger, get_or_create_cursor, update_cursor_status
 
 logger = logging.getLogger(__name__)
 
-# Backfill window: 60 days per user decision
+# Backfill window: 60 days per user decision (used when no cursor exists)
 BACKFILL_DAYS = 60
+
+# Per-project sync timeout in seconds (5 minutes)
+PROJECT_SYNC_TIMEOUT = 300
+
+# Semaphore for concurrent note fetching (5 concurrent, conservative for GitLab 10 req/sec)
+_NOTE_FETCH_SEMAPHORE = asyncio.Semaphore(5)
 
 
 async def sync_projects(
@@ -49,10 +62,12 @@ async def sync_projects(
     project_ids: list[int],
     session: AsyncSession,
     settings: Settings,
+    state_filter: str = "all",
 ) -> dict:
-    """Sync MRs for all selected projects sequentially.
+    """Sync MRs for all selected projects sequentially with per-project timeout.
 
     Processes projects sequentially for rate limit awareness.
+    Each project has a 5-minute timeout; timed-out projects save partial data.
     Tracks per-project sync status in workspace_integrations.config JSONB.
 
     Args:
@@ -60,6 +75,7 @@ async def sync_projects(
         project_ids: List of numeric GitLab project IDs to sync.
         session: Async database session.
         settings: Application settings.
+        state_filter: MR state filter (all, opened, closed, merged).
 
     Returns:
         Summary dict with total counts and per-project results.
@@ -79,9 +95,11 @@ async def sync_projects(
                     sync_status="syncing",
                 )
 
-                mr_count, review_count = await sync_single_project(
-                    workspace_id, project_id, session, settings
-                )
+                async with asyncio.timeout(PROJECT_SYNC_TIMEOUT):
+                    mr_count, review_count = await sync_single_project(
+                        workspace_id, project_id, session, settings,
+                        state_filter=state_filter,
+                    )
 
                 await _update_project_sync_status(
                     session, workspace_id, project_id, "synced", mr_count, mr_count
@@ -101,6 +119,21 @@ async def sync_projects(
                 }
 
                 srl.info("Synced project %d: %d MRs" % (project_id, mr_count))
+
+            except TimeoutError:
+                srl.warning(
+                    "Sync timed out for project %d after %ds (partial data saved)"
+                    % (project_id, PROJECT_SYNC_TIMEOUT)
+                )
+                await _update_project_sync_status(
+                    session, workspace_id, project_id, "timeout", 0, 0
+                )
+                await update_cursor_status(
+                    session, workspace_id, "gitlab", str(project_id),
+                    sync_status="timeout",
+                    error_message=f"Timed out after {PROJECT_SYNC_TIMEOUT}s",
+                )
+                results[str(project_id)] = {"status": "timeout"}
 
             except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError) as e:
                 srl.error("Sync failed for project %d: %s" % (project_id, e))
@@ -131,33 +164,41 @@ async def sync_single_project(
     project_id: int,
     session: AsyncSession,
     settings: Settings,
+    state_filter: str = "all",
 ) -> tuple[int, int]:
     """Sync MRs and notes for a single project.
 
-    Fetches all MRs updated within the 60-day backfill window,
-    filters bot accounts, upserts MR and review records, and
-    attempts Linear ticket linking for each MR.
+    Uses incremental cursors to only fetch MRs updated since last sync.
+    Fetches notes concurrently via asyncio.gather with a semaphore.
 
     Args:
         workspace_id: Workspace to sync into.
         project_id: Numeric GitLab project ID.
         session: Async database session.
         settings: Application settings.
+        state_filter: MR state filter (all, opened, closed, merged).
 
     Returns:
         Tuple of (mr_count, review_count).
     """
     token = await ensure_valid_token(session, workspace_id, settings)
 
-    cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=BACKFILL_DAYS)
-    updated_after = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Incremental cursor: use cursor_value if available, else 60-day backfill
+    cursor = await get_or_create_cursor(session, workspace_id, "gitlab", str(project_id))
+    sync_start = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    if cursor.cursor_value:
+        updated_after = cursor.cursor_value
+    else:
+        cutoff = sync_start - timedelta(days=BACKFILL_DAYS)
+        updated_after = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     mr_count = 0
     review_count = 0
 
     url: str | None = (
         f"{GITLAB_API_BASE}/projects/{project_id}/merge_requests"
-        f"?state=all&order_by=updated_at&sort=desc&per_page=100"
+        f"?state={state_filter}&order_by=updated_at&sort=desc&per_page=100"
         f"&updated_after={updated_after}"
     )
 
@@ -173,24 +214,40 @@ async def sync_single_project(
 
             mrs = response.json()
 
+            # Filter bot accounts and collect MRs to process
+            non_bot_mrs: list[dict] = []
             for mr_data in mrs:
-                # Filter bot accounts
                 author_data = mr_data.get("author", {})
                 if is_bot_user(author_data):
                     continue
+                non_bot_mrs.append(mr_data)
 
-                # Upsert the MR
+            # Upsert MRs first (sequential DB writes)
+            mr_records: list[tuple[GitlabMergeRequest, dict]] = []
+            for mr_data in non_bot_mrs:
                 mr_record = await _upsert_mr(
                     session, workspace_id, project_id, mr_data
                 )
+                mr_records.append((mr_record, mr_data))
                 mr_count += 1
 
-                # Fetch and upsert notes (skip system notes)
-                iid = mr_data["iid"]
-                notes = await _fetch_notes(
-                    client, token, project_id, iid
-                )
-                for note_data in notes:
+            # Fetch notes concurrently for all MRs in this page
+            note_tasks = [
+                _fetch_notes_bounded(client, token, project_id, mr_data["iid"])
+                for _, mr_data in mr_records
+            ]
+            note_results = await asyncio.gather(*note_tasks, return_exceptions=True)
+
+            # Process note results sequentially (DB writes)
+            for (mr_record, mr_data), notes_or_exc in zip(mr_records, note_results):
+                if isinstance(notes_or_exc, Exception):
+                    logger.warning(
+                        "Failed to fetch notes for project %d MR !%d: %s",
+                        project_id, mr_data["iid"], notes_or_exc,
+                    )
+                    continue
+
+                for note_data in notes_or_exc:
                     await _upsert_review(
                         session, workspace_id, mr_record.id, note_data
                     )
@@ -201,10 +258,22 @@ async def sync_single_project(
                     workspace_id, mr_data.get("source_branch", ""), mr_record.id, session
                 )
 
+            # Emit per-page progress
+            await _update_project_sync_status(
+                session, workspace_id, project_id, "syncing", mr_count, 0
+            )
+
             # Parse Link header for next page
             url = parse_link_next(response.headers.get("link"))
 
     await session.flush()
+
+    # Persist incremental cursor with sync_start timestamp
+    await update_cursor_status(
+        session, workspace_id, "gitlab", str(project_id),
+        sync_status="complete",
+        cursor_value=sync_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
 
     # Enqueue embedding generation for synced MRs and reviews
     from src.services.embedding_worker import enqueue_embedding_job
@@ -307,6 +376,21 @@ async def _upsert_mr(
     mr_stmt = select(GitlabMergeRequest).where(GitlabMergeRequest.id == mr_uuid)
     mr_result = await session.execute(mr_stmt)
     return mr_result.scalar_one()
+
+
+async def _fetch_notes_bounded(
+    client: httpx.AsyncClient,
+    token: str,
+    project_id: int,
+    mr_iid: int,
+) -> list[dict]:
+    """Fetch notes for an MR with semaphore-bounded concurrency.
+
+    Wraps _fetch_notes with a semaphore to limit concurrent API calls
+    to 5 (conservative for GitLab's 10 req/sec rate limit).
+    """
+    async with _NOTE_FETCH_SEMAPHORE:
+        return await _fetch_notes(client, token, project_id, mr_iid)
 
 
 async def _fetch_notes(
