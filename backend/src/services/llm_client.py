@@ -16,7 +16,7 @@ from google import genai
 from google.genai import types
 
 from src.observability.laminar import observe, set_laminar_metadata
-from src.observability.langfuse_client import langfuse_observe
+from src.observability.langfuse_client import langfuse_observe, update_generation
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class LLMClient:
         settings = get_settings()
         self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-    @langfuse_observe(name="llm_generate")
+    @langfuse_observe(name="llm_generate", as_type="generation")
     @observe(name="llm_generate")
     async def generate(
         self,
@@ -81,6 +81,17 @@ class LLMClient:
         total_tokens = usage.total_token_count if usage else 0
 
         text = response.text or ""
+
+        # Update Langfuse generation with model, usage, and output
+        update_generation(
+            model=self.model_name,
+            usage={
+                "input": prompt_tokens,
+                "output": completion_tokens,
+                "total": total_tokens,
+            },
+            output=text[:1000],
+        )
 
         return LLMResponse(
             text=text,

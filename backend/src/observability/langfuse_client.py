@@ -28,12 +28,11 @@ def init_langfuse(settings: Settings) -> None:
         return
 
     try:
-        # Langfuse v4 reads from env vars automatically
         os.environ["LANGFUSE_SECRET_KEY"] = settings.LANGFUSE_SECRET_KEY
         os.environ["LANGFUSE_PUBLIC_KEY"] = settings.LANGFUSE_PUBLIC_KEY
         os.environ["LANGFUSE_HOST"] = settings.LANGFUSE_HOST
 
-        from langfuse import observe  # noqa: F401 -- verify import works
+        from langfuse import observe  # noqa: F401
 
         _langfuse_enabled = True
         logger.info("Langfuse initialized successfully (host=%s)", settings.LANGFUSE_HOST)
@@ -41,16 +40,16 @@ def init_langfuse(settings: Settings) -> None:
         logger.warning("Langfuse initialization failed", exc_info=True)
 
 
-def update_langfuse_trace(
+def update_generation(
     *,
-    name: str | None = None,
-    input: object | None = None,
+    model: str | None = None,
+    usage: dict | None = None,
     output: object | None = None,
     metadata: dict | None = None,
-    user_id: str | None = None,
 ) -> None:
-    """Update the current Langfuse trace with input, output, and metadata.
+    """Update the current Langfuse generation span with model, usage, and output.
 
+    Must be called inside a function decorated with @langfuse_observe(as_type="generation").
     No-op if Langfuse is not enabled.
     """
     if not _langfuse_enabled:
@@ -59,20 +58,34 @@ def update_langfuse_trace(
         from langfuse import get_client
 
         client = get_client()
-        # In Langfuse v4, trace updates happen through the span context
-        # The @observe decorator handles this automatically
+        update = {}
+        if model is not None:
+            update["model"] = model
+        if usage is not None:
+            update["usage"] = usage
+        if output is not None:
+            update["output"] = output
+        if metadata is not None:
+            update["metadata"] = metadata
+        if update:
+            client.update_current_generation(**update)
     except Exception:
         pass
 
 
-def langfuse_observe(name: str) -> object:
+def langfuse_observe(name: str, as_type: str | None = None) -> object:
     """Decorator that wraps a function with Langfuse's @observe.
 
-    Falls back to a no-op decorator if Langfuse is not installed.
+    Args:
+        name: Name for the trace/span.
+        as_type: Observation type - "generation" for LLM calls, "embedding" for embeddings.
     """
     try:
         from langfuse import observe as lf_observe
-        return lf_observe(name=name)
+        kwargs = {"name": name}
+        if as_type is not None:
+            kwargs["as_type"] = as_type
+        return lf_observe(**kwargs)
     except ImportError:
         def noop(func):
             return func
