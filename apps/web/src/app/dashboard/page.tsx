@@ -26,6 +26,7 @@ import { Resurfaced } from './widgets/resurfaced'
 import { ThisWeek } from './widgets/this-week'
 import { SprintBadge } from './widgets/sprint-badge'
 import { IntegrationDots } from './widgets/integration-dots'
+import { EmptyState } from './widgets/empty-state'
 
 function getGreeting(): string {
   const hour = new Date().getHours()
@@ -132,6 +133,12 @@ export default function DashboardPage() {
     )
   }
 
+  const widgetsEmpty =
+    attentionItems.length === 0 &&
+    resurfacedItems.length === 0 &&
+    weeklySummary.filter(d => d.activity_count > 0 || d.contexts_updated > 0 || d.prs_merged > 0).length === 0
+  const isTrulyEmpty = widgetsEmpty && recentPages.length === 0
+
   return (
     <div className="space-y-6 animate-fade-in-up">
       {/* Header: greeting with summary + sprint badge */}
@@ -165,72 +172,77 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Intelligence widgets */}
-      <NeedsAttention items={attentionItems} />
-      <Resurfaced items={resurfacedItems} />
-      <ThisWeek days={weeklySummary} />
+      {/* Empty state for first-time users with no data */}
+      {isTrulyEmpty ? (
+        <EmptyState statuses={statuses} firstName={firstName} />
+      ) : (
+        <>
+          {/* Intelligence widgets */}
+          <NeedsAttention items={attentionItems} />
+          <Resurfaced items={resurfacedItems} />
+          <ThisWeek days={weeklySummary} />
 
-      {/* All-clear state when no intelligence widgets rendered */}
-      {attentionItems.length === 0 &&
-        resurfacedItems.length === 0 &&
-        weeklySummary.filter(d => d.activity_count > 0 || d.contexts_updated > 0 || d.prs_merged > 0).length === 0 && (
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-4">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500/70" />
-          <p className="text-sm text-muted-foreground">
-            All caught up. No stale contexts, no forgotten decisions.
-          </p>
-        </div>
-      )}
+          {/* All-clear state when no intelligence widgets rendered but user has history */}
+          {widgetsEmpty && (
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-4">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500/70" />
+              <p className="text-sm text-muted-foreground">
+                All caught up. No stale contexts, no forgotten decisions.
+              </p>
+            </div>
+          )}
 
-      {/* Recent Context (condensed) */}
-      {recentPages.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="section-label">Recent Context</h3>
-            <Link
-              href="/dashboard/context"
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              View all
-            </Link>
-          </div>
-          <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border">
-            {recentPages.map((page) => {
-              const colors = STATUS_COLORS[page.status] ?? STATUS_COLORS.draft
-              const isRecent = Date.now() - new Date(page.updated_at).getTime() < 86_400_000
-              const displayTitle = page.title.replace(/^Context:\s*/i, '')
-              return (
-                <button
-                  key={page.id}
-                  onClick={() => router.push(`/dashboard/context/${page.id}`)}
-                  className={`w-full text-left px-4 py-3 transition-colors duration-150 hover:bg-muted/40 border-l-2 ${colors.border}`}
+          {/* Recent Context (condensed) */}
+          {recentPages.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="section-label">Recent Context</h3>
+                <Link
+                  href="/dashboard/context"
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className={`text-sm truncate ${isRecent ? 'font-medium text-foreground' : 'font-normal text-foreground/70'}`}>
-                      {displayTitle}
-                    </span>
-                    <span className={`shrink-0 h-2 w-2 rounded-full ${colors.dot}`} />
-                  </div>
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <span className="text-xs font-mono text-muted-foreground">
-                      {page.ticket_identifier}
-                    </span>
-                    <span className="text-xs font-mono text-muted-foreground">
-                      {formatRelativeTime(page.updated_at)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {page.sources?.length ?? 0} sources
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
+                  View all
+                </Link>
+              </div>
+              <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border">
+                {recentPages.map((page) => {
+                  const colors = STATUS_COLORS[page.status] ?? STATUS_COLORS.draft
+                  const isRecent = Date.now() - new Date(page.updated_at).getTime() < 86_400_000
+                  const displayTitle = page.title.replace(/^Context:\s*/i, '')
+                  return (
+                    <button
+                      key={page.id}
+                      onClick={() => router.push(`/dashboard/context/${page.id}`)}
+                      className={`w-full text-left px-4 py-3 transition-colors duration-150 hover:bg-muted/40 border-l-2 ${colors.border}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className={`text-sm truncate ${isRecent ? 'font-medium text-foreground' : 'font-normal text-foreground/70'}`}>
+                          {displayTitle}
+                        </span>
+                        <span className={`shrink-0 h-2 w-2 rounded-full ${colors.dot}`} />
+                      </div>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <span className="text-xs font-mono text-muted-foreground">
+                          {page.ticket_identifier}
+                        </span>
+                        <span className="text-xs font-mono text-muted-foreground">
+                          {formatRelativeTime(page.updated_at)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {page.sources?.length ?? 0} sources
+                        </span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
-      {/* Integration dots footer */}
-      {statuses && <IntegrationDots statuses={statuses} />}
+          {/* Integration dots footer */}
+          {statuses && <IntegrationDots statuses={statuses} />}
+        </>
+      )}
     </div>
   )
 }
