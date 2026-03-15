@@ -26,7 +26,7 @@ jobs:
 
             # Install backend dependencies if pyproject.toml changed
             cd backend
-            uv sync --frozen 2>/dev/null || uv sync || pip install -e .
+            uv sync --frozen 2>/dev/null || uv sync || .venv/bin/pip install -e .
             cd ..
 
             # Build frontend (must succeed before restarting services)
