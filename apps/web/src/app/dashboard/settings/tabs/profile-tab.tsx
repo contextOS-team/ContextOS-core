@@ -52,8 +52,9 @@ export function ProfileTab({ userEmail, userFullName }: ProfileTabProps) {
         return
       }
       setResetSent(true)
-    } catch (err: any) {
-      setResetError(err?.message || 'Failed to send reset email')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to send reset email'
+      setResetError(message)
     } finally {
       setIsResetting(false)
     }
