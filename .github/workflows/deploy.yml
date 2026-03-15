@@ -19,10 +19,11 @@ jobs:
             set -e  # fail fast on any error
 
             cd /opt/contextos
+            git checkout -- .
             git pull origin main
 
-            # Run database migrations (non-blocking — skip if supabase CLI not available)
-            bash scripts/run-migrations.sh || echo "⚠ Migrations skipped (supabase CLI not configured)"
+            # Run database migrations before deploying new code
+            bash scripts/run-migrations.sh
 
             # Install backend dependencies if pyproject.toml changed
             cd backend
