@@ -39,6 +39,7 @@ from src.services.slack_oauth import (
     exchange_code,
 )
 from src.services.oauth_common import sign_oauth_state, verify_state_or_raise
+from src.services.sync_adapter import emit_activity
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,12 @@ async def callback(
         team_info = await exchange_code(code, session, workspace_id, user_id, settings)
         team_name = team_info.get("name", "")
 
+        await emit_activity(
+            session, workspace_id, "integration_connected",
+            metadata={"integration": "slack"},
+            actor_id=user_id,
+        )
+
         return RedirectResponse(
             url=f"{frontend_url}/dashboard/settings?tab=integrations&slack=connected&team={team_name}",
             status_code=status.HTTP_302_FOUND,
@@ -127,6 +134,11 @@ async def disconnect_slack(
     Existing message data is preserved.
     """
     await disconnect(session, user.workspace_id, user.user_id)
+    await emit_activity(
+        session, user.workspace_id, "integration_disconnected",
+        metadata={"integration": "slack"},
+        actor_id=user.user_id,
+    )
     return {"status": "disconnected"}
 
 

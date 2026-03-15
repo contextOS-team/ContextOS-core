@@ -30,7 +30,7 @@ from src.services.notion_oauth import (
     get_valid_access_token,
 )
 from src.services.oauth_common import sign_oauth_state, verify_state_or_raise
-from src.services.sync_adapter import SyncRunLogger, update_cursor_status
+from src.services.sync_adapter import SyncRunLogger, emit_activity, update_cursor_status
 from src.utils.datetime import parse_notion_datetime
 
 logger = logging.getLogger(__name__)
@@ -105,6 +105,12 @@ async def callback(
         ws_info = await exchange_code(code, session, workspace_id, user_id, settings)
         ws_name = ws_info.get("workspace_name", "")
 
+        await emit_activity(
+            session, workspace_id, "integration_connected",
+            metadata={"integration": "notion"},
+            actor_id=user_id,
+        )
+
         return RedirectResponse(
             url=f"{frontend_url}/dashboard/settings?tab=integrations&notion=connected&workspace={ws_name}",
             status_code=status.HTTP_302_FOUND,
@@ -128,6 +134,11 @@ async def disconnect_notion(
     Existing page data is preserved.
     """
     await disconnect(session, user.workspace_id, user.user_id)
+    await emit_activity(
+        session, user.workspace_id, "integration_disconnected",
+        metadata={"integration": "notion"},
+        actor_id=user.user_id,
+    )
     return {"status": "disconnected"}
 
 

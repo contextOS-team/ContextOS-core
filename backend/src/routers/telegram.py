@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import get_settings
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
+from src.services.sync_adapter import emit_activity
 from src.services.telegram_bot import TelegramError, connect_telegram_bot, disconnect_telegram_bot
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,11 @@ async def connect(
         result = await connect_telegram_bot(
             session, user.workspace_id, user.user_id, bot_token, get_settings()
         )
+        await emit_activity(
+            session, user.workspace_id, "integration_connected",
+            metadata={"integration": "telegram"},
+            actor_id=user.user_id,
+        )
         return {"status": "connected", "bot_username": result.get("username")}
     except TelegramError as e:
         raise HTTPException(
@@ -67,6 +73,11 @@ async def disconnect(
     and marks the integration as disconnected.
     """
     await disconnect_telegram_bot(session, user.workspace_id)
+    await emit_activity(
+        session, user.workspace_id, "integration_disconnected",
+        metadata={"integration": "telegram"},
+        actor_id=user.user_id,
+    )
     return {"status": "disconnected"}
 
 

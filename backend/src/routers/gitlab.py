@@ -37,7 +37,8 @@ from src.services.gitlab_repos import (
 from src.services.code_index_worker import enqueue_workspace_index_job
 from src.services.gitlab_sync_worker import enqueue_gitlab_sync_job
 from src.services.gitlab_webhook import process_gitlab_event, verify_webhook_token
-from src.services.oauth_common import sign_oauth_state
+from src.services.oauth_common import sign_oauth_state, verify_state_or_raise
+from src.services.sync_adapter import emit_activity
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,17 @@ async def callback(
             settings=settings,
         )
         account = result.get("account", "")
+
+        # Emit integration_connected event
+        try:
+            workspace_id = verify_state_or_raise(state, settings.GITLAB_CLIENT_SECRET, GitLabOAuthError)
+            await emit_activity(
+                session, workspace_id, "integration_connected",
+                metadata={"integration": "gitlab"},
+            )
+        except Exception:
+            pass  # Non-critical
+
         return RedirectResponse(
             url=f"{frontend_url}/dashboard/settings?tab=integrations&gitlab=connected&account={account}",
             status_code=status.HTTP_302_FOUND,
@@ -115,6 +127,11 @@ async def disconnect_gitlab(
     """
     settings = config_module.get_settings()
     await disconnect(session, user.workspace_id, user.user_id, settings)
+    await emit_activity(
+        session, user.workspace_id, "integration_disconnected",
+        metadata={"integration": "gitlab"},
+        actor_id=user.user_id,
+    )
     return {"status": "disconnected"}
 
 

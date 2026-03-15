@@ -29,7 +29,8 @@ from src.services.github_oauth import (
     get_status,
     handle_callback,
 )
-from src.services.oauth_common import sign_oauth_state
+from src.services.oauth_common import sign_oauth_state, verify_state_or_raise
+from src.services.sync_adapter import emit_activity
 from src.services.code_index_worker import enqueue_code_index_job, enqueue_workspace_index_job
 from src.services.github_repos import (
     get_cached_repos,
@@ -87,6 +88,17 @@ async def callback(
             settings=settings,
         )
         account = result.get("account", "")
+
+        # Emit integration_connected event (workspace_id extracted from state)
+        try:
+            workspace_id = verify_state_or_raise(state, settings.GITHUB_CLIENT_SECRET, GitHubOAuthError)
+            await emit_activity(
+                session, workspace_id, "integration_connected",
+                metadata={"integration": "github"},
+            )
+        except Exception:
+            pass  # Non-critical, don't break the callback flow
+
         return RedirectResponse(
             url=f"{frontend_url}/dashboard/settings?tab=integrations&github=connected&account={account}",
             status_code=status.HTTP_302_FOUND,
@@ -119,6 +131,11 @@ async def disconnect_github(
     """
     settings = config_module.get_settings()
     await disconnect(session, user.workspace_id, user.user_id, settings)
+    await emit_activity(
+        session, user.workspace_id, "integration_disconnected",
+        metadata={"integration": "github"},
+        actor_id=user.user_id,
+    )
     return {"status": "disconnected"}
 
 

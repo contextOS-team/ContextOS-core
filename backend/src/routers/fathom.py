@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
+from src.services.sync_adapter import emit_activity
 from src.services.fathom import (
     FathomError,
     connect_fathom,
@@ -52,6 +53,11 @@ async def connect(
 
     try:
         result = await connect_fathom(session, user.workspace_id, api_key)
+        await emit_activity(
+            session, user.workspace_id, "integration_connected",
+            metadata={"integration": "fathom"},
+            actor_id=user.user_id,
+        )
         return result
     except FathomError as e:
         raise HTTPException(
@@ -71,6 +77,11 @@ async def disconnect(
     Existing transcript data is preserved.
     """
     await disconnect_fathom(session, user.workspace_id)
+    await emit_activity(
+        session, user.workspace_id, "integration_disconnected",
+        metadata={"integration": "fathom"},
+        actor_id=user.user_id,
+    )
     return {"status": "disconnected"}
 
 

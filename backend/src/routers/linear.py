@@ -27,6 +27,7 @@ from src.services.linear_oauth import (
 from src.services.oauth_common import sign_oauth_state, verify_state_or_raise, is_user_onboarding
 from src.services.linear_graphql import LinearAPIError, LinearGraphQLClient
 from src.services.linear_sync import fetch_teams, sync_tickets_for_teams
+from src.services.sync_adapter import emit_activity
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,12 @@ async def callback(
         org_info = await exchange_code(code, session, workspace_id, user_id, settings)
         org_name = org_info.get("name", "")
 
+        await emit_activity(
+            session, workspace_id, "integration_connected",
+            metadata={"integration": "linear"},
+            actor_id=user_id,
+        )
+
         if await is_user_onboarding(session, user_id):
             return RedirectResponse(
                 url=f"{frontend_url}/onboarding",
@@ -150,6 +157,11 @@ async def disconnect_linear(
     Existing ticket data is preserved.
     """
     await disconnect(session, user.workspace_id, user.user_id)
+    await emit_activity(
+        session, user.workspace_id, "integration_disconnected",
+        metadata={"integration": "linear"},
+        actor_id=user.user_id,
+    )
     return {"status": "disconnected"}
 
 

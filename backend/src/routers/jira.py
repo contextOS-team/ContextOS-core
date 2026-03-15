@@ -26,6 +26,7 @@ from src.services.jira_oauth import (
     get_valid_token,
 )
 from src.services.oauth_common import sign_oauth_state, verify_state_or_raise, is_user_onboarding
+from src.services.sync_adapter import emit_activity
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,12 @@ async def callback(
         cloud_info = await exchange_code(code, session, workspace_id, user_id, settings)
         site_name = cloud_info.get("site_name", "")
 
+        await emit_activity(
+            session, workspace_id, "integration_connected",
+            metadata={"integration": "jira"},
+            actor_id=user_id,
+        )
+
         if await is_user_onboarding(session, user_id):
             return RedirectResponse(
                 url=f"{frontend_url}/onboarding",
@@ -147,6 +154,11 @@ async def disconnect_jira(
     Existing issue data is preserved.
     """
     await disconnect(session, user.workspace_id, user.user_id)
+    await emit_activity(
+        session, user.workspace_id, "integration_disconnected",
+        metadata={"integration": "jira"},
+        actor_id=user.user_id,
+    )
     return {"status": "disconnected"}
 
 
