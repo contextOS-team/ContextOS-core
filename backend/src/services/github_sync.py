@@ -24,6 +24,7 @@ import httpx
 import sqlalchemy.exc
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 from src.config import Settings
@@ -98,6 +99,7 @@ async def sync_repos(
                     session, workspace_id, "github", repo,
                     sync_status="syncing",
                 )
+                await session.commit()
 
                 async with asyncio.timeout(REPO_SYNC_TIMEOUT):
                     pr_count, review_count = await sync_single_repo(
@@ -114,6 +116,7 @@ async def sync_repos(
                     sync_status="complete",
                     records_synced=pr_count,
                 )
+                await session.commit()
 
                 total_prs += pr_count
                 total_reviews += review_count
@@ -131,9 +134,11 @@ async def sync_repos(
                     sync_status="timeout",
                     error_message="Sync timed out after %ds" % REPO_SYNC_TIMEOUT,
                 )
+                await session.commit()
                 results[repo] = {"status": "timeout", "error": "Timed out after %ds" % REPO_SYNC_TIMEOUT}
 
             except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError) as e:
+                await session.rollback()
                 srl.error("Sync failed for repo %s: %s" % (repo, e))
                 await _update_repo_sync_status(
                     session, workspace_id, repo, "error", 0, 0
@@ -143,6 +148,7 @@ async def sync_repos(
                     sync_status="error",
                     error_message=str(e),
                 )
+                await session.commit()
                 results[repo] = {"status": "error", "error": str(e)}
 
         srl.info("GitHub sync complete: %d PRs across %d repos" % (total_prs, len(selected_repos)))
@@ -296,8 +302,6 @@ async def sync_single_repo(
             # Parse Link header for next page
             url = parse_link_next(response.headers.get("link"))
 
-    await session.flush()
-
     # Persist cursor with sync_start timestamp for next incremental sync
     await update_cursor_status(
         session, workspace_id, "github", repo_full_name,
@@ -305,7 +309,10 @@ async def sync_single_repo(
         cursor_value=sync_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
 
-    # Queue embedding generation stub for PR descriptions
+    # Single commit for PR data + cursor together (atomic)
+    await session.commit()
+
+    # Queue embedding generation for PR descriptions
     if pr_count > 0:
         stmt = select(GithubPullRequest.id).where(
             GithubPullRequest.workspace_id == workspace_id,
@@ -499,6 +506,7 @@ async def _update_repo_sync_status(
         }
         config["repo_sync_status"] = repo_sync
         integration.config = config
+        flag_modified(integration, "config")
         await session.flush()
 
 

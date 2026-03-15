@@ -27,6 +27,7 @@ import httpx
 import sqlalchemy.exc
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 from src.config import Settings
@@ -94,6 +95,7 @@ async def sync_projects(
                     session, workspace_id, "gitlab", str(project_id),
                     sync_status="syncing",
                 )
+                await session.commit()
 
                 async with asyncio.timeout(PROJECT_SYNC_TIMEOUT):
                     mr_count, review_count = await sync_single_project(
@@ -109,6 +111,7 @@ async def sync_projects(
                     sync_status="complete",
                     records_synced=mr_count,
                 )
+                await session.commit()
 
                 total_mrs += mr_count
                 total_reviews += review_count
@@ -133,9 +136,11 @@ async def sync_projects(
                     sync_status="timeout",
                     error_message=f"Timed out after {PROJECT_SYNC_TIMEOUT}s",
                 )
+                await session.commit()
                 results[str(project_id)] = {"status": "timeout"}
 
             except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError) as e:
+                await session.rollback()
                 srl.error("Sync failed for project %d: %s" % (project_id, e))
                 await _update_project_sync_status(
                     session, workspace_id, project_id, "error", 0, 0
@@ -145,6 +150,7 @@ async def sync_projects(
                     sync_status="error",
                     error_message=str(e),
                 )
+                await session.commit()
                 results[str(project_id)] = {"status": "error", "error": str(e)}
 
         srl.info(
@@ -266,8 +272,6 @@ async def sync_single_project(
             # Parse Link header for next page
             url = parse_link_next(response.headers.get("link"))
 
-    await session.flush()
-
     # Persist incremental cursor with sync_start timestamp
     await update_cursor_status(
         session, workspace_id, "gitlab", str(project_id),
@@ -275,10 +279,13 @@ async def sync_single_project(
         cursor_value=sync_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
     )
 
+    # Single commit for MR data + cursor together (atomic)
+    await session.commit()
+
     # Enqueue embedding generation for synced MRs and reviews
     from src.services.embedding_worker import enqueue_embedding_job
 
-    # Collect all MR and review IDs for this project
+    # Collect MR IDs for this project
     mr_ids_stmt = select(GitlabMergeRequest.id).where(
         GitlabMergeRequest.workspace_id == workspace_id,
         GitlabMergeRequest.project_id == project_id,
@@ -286,18 +293,20 @@ async def sync_single_project(
     mr_result = await session.execute(mr_ids_stmt)
     mr_ids = [row[0] for row in mr_result.fetchall()]
 
-    review_ids_stmt = select(GitlabReview.id).where(
-        GitlabReview.workspace_id == workspace_id,
-    )
-    review_result = await session.execute(review_ids_stmt)
-    review_ids = [row[0] for row in review_result.fetchall()]
-
+    # Collect review IDs scoped to this project's MRs only
     if mr_ids:
+        review_ids_stmt = select(GitlabReview.id).where(
+            GitlabReview.workspace_id == workspace_id,
+            GitlabReview.merge_request_id.in_(mr_ids),  # type: ignore[union-attr]
+        )
+        review_result = await session.execute(review_ids_stmt)
+        review_ids = [row[0] for row in review_result.fetchall()]
+
         await enqueue_embedding_job(workspace_id, "gitlab_merge_request", mr_ids)
         logger.info("Enqueued %d gitlab_merge_request embeddings", len(mr_ids))
-    if review_ids:
-        await enqueue_embedding_job(workspace_id, "gitlab_review", review_ids)
-        logger.info("Enqueued %d gitlab_review embeddings", len(review_ids))
+        if review_ids:
+            await enqueue_embedding_job(workspace_id, "gitlab_review", review_ids)
+            logger.info("Enqueued %d gitlab_review embeddings", len(review_ids))
 
     return mr_count, review_count
 
@@ -520,4 +529,5 @@ async def _update_project_sync_status(
         }
         config["project_sync_status"] = project_sync
         integration.config = config
+        flag_modified(integration, "config")
         await session.flush()
