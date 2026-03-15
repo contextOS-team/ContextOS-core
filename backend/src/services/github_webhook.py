@@ -35,6 +35,7 @@ from src.services.embedding import queue_embedding_generation
 from src.services.github_linking import link_pr_to_ticket
 from src.services.github_repos import is_repo_monitored
 from src.services.graph_extractor import extract_and_populate_graph
+from src.services.sync_adapter import emit_activity
 
 logger = logging.getLogger(__name__)
 
@@ -238,6 +239,15 @@ async def handle_pull_request_event(
         logger.warning(
             "Graph extraction failed for PR #%d", pr_record.number, exc_info=True
         )
+
+    # Emit pr_merged activity event only for actual merges
+    if state == "merged":
+        await emit_activity(session, workspace_id, "pr_merged", metadata={
+            "integration": "github",
+            "pr_number": pr_record.number,
+            "title": pr_record.title,
+            "repo": repo_full_name,
+        })
 
     logger.info(
         "Upserted PR #%d (%s) state=%s for workspace %s",

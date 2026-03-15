@@ -32,6 +32,7 @@ from src.services.gitlab_common import (
 )
 from src.services.gitlab_linking import link_mr_to_ticket
 from src.services.gitlab_repos import is_project_monitored
+from src.services.sync_adapter import emit_activity
 
 logger = logging.getLogger(__name__)
 
@@ -241,6 +242,15 @@ async def _handle_merge_request_event(
     await link_mr_to_ticket(
         workspace_id, obj_attrs.get("source_branch", ""), mr_record.id, session
     )
+
+    # Emit pr_merged activity event only for actual merges
+    if state == "merged":
+        await emit_activity(session, workspace_id, "pr_merged", metadata={
+            "integration": "gitlab",
+            "pr_number": mr_record.iid,
+            "title": mr_record.title,
+            "repo": project_path,
+        })
 
     logger.info(
         "Upserted MR !%d (%s) state=%s for workspace %s",

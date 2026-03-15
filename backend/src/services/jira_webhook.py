@@ -21,6 +21,7 @@ from src.models.integration import Provider, WorkspaceIntegration
 from src.models.jira import JiraComment, JiraIssue
 from src.services import embedding
 from src.services.jira_sync import _parse_iso
+from src.services.sync_adapter import emit_activity
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,13 @@ async def _handle_issue_created(
         await embedding.queue_embedding_generation(
             session, workspace_id, "jira_issue", [issue.id]
         )
+
+        # Emit ticket_created activity event
+        await emit_activity(session, workspace_id, "ticket_created", metadata={
+            "integration": "jira",
+            "ticket_id": issue.jira_key,
+            "title": issue.summary,
+        })
 
 
 async def _handle_issue_updated(

@@ -205,12 +205,30 @@ async def run_full_sync(workspace_id: UUID, user_id: UUID) -> None:
                 page_ids: list[UUID] = []
                 synced_count = 0
 
+                # Query existing page notion_ids to detect new pages
+                existing_stmt = select(NotionPage.notion_id).where(
+                    NotionPage.workspace_id == workspace_id,
+                    NotionPage.deleted_at.is_(None),
+                )
+                existing_result = await session.execute(existing_stmt)
+                existing_notion_ids = {row[0] for row in existing_result.all()}
+                new_page_events_emitted = 0
+
                 for page_data in pages:
                     page_record = await sync_single_page(
                         session, client, workspace_id, page_data
                     )
                     page_ids.append(page_record.id)
                     synced_count += 1
+
+                    # Emit page_created for truly new pages (limit to 5 per sync)
+                    notion_id = page_data.get("id", "")
+                    if notion_id not in existing_notion_ids and new_page_events_emitted < 5:
+                        await emit_activity(session, workspace_id, "page_created", metadata={
+                            "integration": "notion",
+                            "page_title": page_record.title,
+                        })
+                        new_page_events_emitted += 1
 
                 await session.flush()
 

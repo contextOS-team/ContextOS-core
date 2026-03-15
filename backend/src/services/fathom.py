@@ -25,6 +25,7 @@ from sqlmodel import select
 from src.models.integration import Provider, WorkspaceIntegration
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.services import embedding
+from src.services.sync_adapter import emit_activity
 from src.services.vault import delete_token, read_token, store_token
 
 logger = logging.getLogger(__name__)
@@ -400,6 +401,13 @@ async def poll_transcripts(
                 await embedding.queue_embedding_generation(
                     session, workspace_id, "meeting_transcript", [meeting.id]
                 )
+
+                # Emit meeting_recorded activity event
+                await emit_activity(session, workspace_id, "meeting_recorded", metadata={
+                    "title": title,
+                    "duration_minutes": duration_minutes,
+                    "participants_count": len(participant_names) if participant_names else None,
+                })
 
                 ingested_count += 1
                 logger.info(

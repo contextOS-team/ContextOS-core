@@ -27,6 +27,7 @@ from src.services import embedding
 from src.services.graph_extractor import extract_and_populate_graph
 from src.services.linear_oauth import get_valid_access_token
 from src.services.linear_sync import sync_single_ticket
+from src.services.sync_adapter import emit_activity
 
 logger = logging.getLogger(__name__)
 
@@ -215,6 +216,13 @@ async def handle_issue_create(session: AsyncSession, workspace_id: UUID, data: d
         )
     except Exception:
         logger.warning("Graph extraction failed for ticket %s", ticket.identifier, exc_info=True)
+
+    # Emit ticket_created activity event
+    await emit_activity(session, workspace_id, "ticket_created", metadata={
+        "integration": "linear",
+        "ticket_id": ticket.identifier,
+        "title": ticket.title,
+    })
 
     # Check if team is synced to decide on embedding
     team_id = data.get("teamId") or (data.get("team", {}) or {}).get("id")
