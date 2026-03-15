@@ -5,11 +5,13 @@ helpers for sync state management, run correlation, and error handling.
 """
 
 import contextvars
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Protocol, runtime_checkable
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -129,6 +131,36 @@ async def update_cursor_status(
         cursor.error_message = None
 
     await session.flush()
+
+
+async def emit_activity(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    event_type: str,
+    metadata: dict | None = None,
+    actor_id: uuid.UUID | None = None,
+) -> None:
+    """Insert an activity event row. Fail-silent -- never breaks callers."""
+    try:
+        await session.execute(
+            text(
+                "INSERT INTO activity_events (workspace_id, actor_id, event_type, metadata)"
+                " VALUES (:workspace_id, :actor_id, :event_type, :metadata::jsonb)"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "actor_id": actor_id,
+                "event_type": event_type,
+                "metadata": json.dumps(metadata or {}),
+            },
+        )
+    except Exception:
+        logger.warning(
+            "emit_activity failed: type=%s workspace=%s",
+            event_type,
+            workspace_id,
+            exc_info=True,
+        )
 
 
 async def get_cursor_status(
