@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ActivityEvent, EventType } from './types'
-import { EVENT_ICONS } from './types'
+import { EVENT_ICONS, INTEGRATION_COLORS } from './types'
 import {
   formatEventDescription,
   getMetadataChip,
@@ -285,6 +285,10 @@ function EventRow({
   const timestamp = formatTimelineTimestamp(event.created_at)
   const fullTimestamp = formatFullTimestamp(event.created_at)
 
+  const integration = event.metadata.integration as string | undefined
+  const brandColor = integration ? INTEGRATION_COLORS[integration] : undefined
+  const isError = event.metadata.error === true
+
   return (
     <div
       className={`flex items-center gap-3 h-10 px-2 rounded-md transition-colors duration-150 hover:bg-muted/50 ${
@@ -292,7 +296,12 @@ function EventRow({
       }`}
     >
       {/* Icon */}
-      {Icon && <Icon className="h-4 w-4 text-muted-foreground shrink-0" />}
+      {Icon && (
+        <Icon
+          className={`h-4 w-4 shrink-0 ${isError ? 'text-destructive' : !brandColor ? 'text-muted-foreground' : ''}`}
+          style={!isError && brandColor ? { color: brandColor } : undefined}
+        />
+      )}
 
       {/* Description + chip */}
       <span className="text-sm text-foreground truncate">
@@ -306,6 +315,20 @@ function EventRow({
           </>
         )}
       </span>
+
+      {/* Error badge */}
+      {isError && (
+        <span className="text-[10px] font-medium bg-destructive/15 text-destructive rounded px-1.5 py-0.5 shrink-0">
+          failed
+        </span>
+      )}
+
+      {/* Error message */}
+      {isError && typeof event.metadata.error_message === 'string' && (
+        <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+          {(event.metadata.error_message as string).slice(0, 80)}
+        </span>
+      )}
 
       {/* Timestamp */}
       <span
