@@ -322,6 +322,26 @@ export function getGitlabIndexStatus(): Promise<GitlabIndexStatus> {
   return apiFetch<GitlabIndexStatus>('/api/gitlab/index/status')
 }
 
+export function triggerGitlabSync(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/gitlab/sync', {
+    method: 'POST',
+  })
+}
+
+export interface GitlabSyncStatus {
+  project_sync_status: Record<
+    string,
+    { status: string; synced: number; total: number }
+  >
+  total_mrs: number
+  total_reviews: number
+  is_syncing: boolean
+}
+
+export function getGitlabSyncStatus(): Promise<GitlabSyncStatus> {
+  return apiFetch<GitlabSyncStatus>('/api/gitlab/sync/status')
+}
+
 // ---------------------------------------------------------------------------
 // Notion
 // ---------------------------------------------------------------------------

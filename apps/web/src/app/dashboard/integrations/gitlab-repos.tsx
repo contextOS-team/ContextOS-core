@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Lock, Globe, RefreshCw, Search, Database, Check } from 'lucide-react'
+import { Lock, Globe, RefreshCw, Search, Database, Check, GitMerge } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -10,8 +10,11 @@ import {
   selectGitlabRepos,
   triggerGitlabIndex,
   getGitlabIndexStatus,
+  triggerGitlabSync,
+  getGitlabSyncStatus,
   type GitlabProject,
   type GitlabIndexStatus,
+  type GitlabSyncStatus,
 } from '@/lib/api'
 
 interface GitlabReposProps {
@@ -28,7 +31,10 @@ export function GitlabRepos({ onSaved }: GitlabReposProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [indexStatus, setIndexStatus] = useState<GitlabIndexStatus | null>(null)
+  const [syncStatus, setSyncStatus] = useState<GitlabSyncStatus | null>(null)
+  const [isSyncing, setIsSyncing] = useState(false)
   const indexPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const syncPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(true)
 
   useEffect(() => {
@@ -36,6 +42,7 @@ export function GitlabRepos({ onSaved }: GitlabReposProps) {
     return () => {
       mountedRef.current = false
       if (indexPollRef.current) clearTimeout(indexPollRef.current)
+      if (syncPollRef.current) clearTimeout(syncPollRef.current)
     }
   }, [])
 
@@ -90,10 +97,28 @@ export function GitlabRepos({ onSaved }: GitlabReposProps) {
     }
   }, [])
 
+  const pollSyncStatus = useCallback(async () => {
+    if (!mountedRef.current) return
+    try {
+      const status = await getGitlabSyncStatus()
+      if (!mountedRef.current) return
+      setSyncStatus(status)
+      if (status.is_syncing) {
+        setIsSyncing(true)
+        syncPollRef.current = setTimeout(pollSyncStatus, 3000)
+      } else {
+        setIsSyncing(false)
+      }
+    } catch {
+      // Silently ignore
+    }
+  }, [])
+
   useEffect(() => {
     fetchRepos()
     pollIndexStatus()
-  }, [fetchRepos, pollIndexStatus])
+    pollSyncStatus()
+  }, [fetchRepos, pollIndexStatus, pollSyncStatus])
 
   async function handleRefresh() {
     setIsRefreshing(true)
@@ -135,10 +160,14 @@ export function GitlabRepos({ onSaved }: GitlabReposProps) {
       setSelectedIds(saved)
       onSaved?.()
 
-      // Auto-trigger indexing after save
+      // Auto-trigger indexing and MR sync after save
       if (saved.size > 0) {
         await startIndexing()
-        // Indexing trigger failure is not critical -- selection was saved
+        // MR sync is auto-triggered by backend on repo selection
+        // Start polling for sync status
+        setIsSyncing(true)
+        if (syncPollRef.current) clearTimeout(syncPollRef.current)
+        syncPollRef.current = setTimeout(pollSyncStatus, 3000)
       }
     } catch (err) {
       setError(
@@ -199,6 +228,20 @@ export function GitlabRepos({ onSaved }: GitlabReposProps) {
   const isIndexing = indexStatus?.status === 'indexing'
   const totalChunks = indexStatus?.repos?.reduce((sum, r) => sum + r.chunks, 0) ?? 0
   const indexedRepoCount = indexStatus?.repos?.length ?? 0
+
+  // Build MR sync status summary
+  const totalMRsSynced = syncStatus?.total_mrs ?? 0
+
+  async function handleResync() {
+    setIsSyncing(true)
+    try {
+      await triggerGitlabSync()
+      if (syncPollRef.current) clearTimeout(syncPollRef.current)
+      syncPollRef.current = setTimeout(pollSyncStatus, 3000)
+    } catch {
+      setIsSyncing(false)
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -281,7 +324,7 @@ export function GitlabRepos({ onSaved }: GitlabReposProps) {
               <Database className="h-3 w-3 shrink-0" />
               <span className="flex-1">
                 {totalChunks > 0
-                  ? `${totalChunks.toLocaleString()} code symbols indexed across ${indexedRepoCount} project${indexedRepoCount !== 1 ? 's' : ''}`
+                  ? `${totalChunks.toLocaleString()} code symbols indexed across ${indexedRepoCount} of ${savedIds.size} project${savedIds.size !== 1 ? 's' : ''}`
                   : 'No code indexed yet'}
               </span>
               <button
@@ -296,6 +339,40 @@ export function GitlabRepos({ onSaved }: GitlabReposProps) {
                   {new Date(indexStatus.last_indexed_at).toLocaleDateString()}
                 </span>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* MR sync status */}
+      {savedIds.size > 0 && (
+        <div
+          className={`rounded-md px-3 py-2 text-xs ${
+            isSyncing
+              ? 'bg-primary/10 text-primary'
+              : 'bg-muted/50 text-muted-foreground'
+          }`}
+        >
+          {isSyncing ? (
+            <div className="flex items-center gap-2">
+              <RefreshCw className="h-3 w-3 animate-spin shrink-0" />
+              <span>Syncing merge requests...</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <GitMerge className="h-3 w-3 shrink-0" />
+              <span className="flex-1">
+                {totalMRsSynced > 0
+                  ? `${totalMRsSynced.toLocaleString()} merge requests synced`
+                  : 'No merge requests synced yet'}
+              </span>
+              <button
+                onClick={handleResync}
+                className="ml-auto flex items-center gap-1 text-[11px] text-primary hover:text-primary/80 transition-colors shrink-0"
+              >
+                <RefreshCw className="h-2.5 w-2.5" />
+                Re-sync
+              </button>
             </div>
           )}
         </div>
