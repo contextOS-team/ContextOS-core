@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: executing
-stopped_at: Completed 27-01-PLAN.md
-last_updated: "2026-03-15T17:41:38Z"
+stopped_at: Completed 27-02-PLAN.md
+last_updated: "2026-03-15T17:47:27.628Z"
 last_activity: 2026-03-15 -- Completed 27-01 (Dashboard Intelligence Widget APIs)
 progress:
   total_phases: 23
-  completed_phases: 20
-  total_plans: 57
-  completed_plans: 56
+  completed_phases: 21
+  total_plans: 59
+  completed_plans: 57
   percent: 98
 ---
 
@@ -99,6 +99,7 @@ Progress: [██████████] 98%
 | Phase 31 P01 | 2min | 1 tasks | 1 files |
 | Phase 31 P02 | 2min | 1 tasks | 1 files |
 | Phase 27 P01 | 3min | 2 tasks | 6 files |
+| Phase 27 P02 | 4min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -212,6 +213,9 @@ Recent decisions affecting current work:
 - [Phase 27]: Sprint endpoint uses get_valid_access_token from linear_oauth with user_id for Linear token retrieval
 - [Phase 27]: Resurfaced v1 uses heuristic keyword matching (15 patterns) -- deterministic, fast, free; swappable to LLM later
 - [Phase 27]: Weekly summary uses raw SQL for activity_events (no SQLModel model) and ORM for other tables
+- [Phase 27]: Promise.allSettled for all 7 dashboard data sources -- one slow/failed widget never blocks others
+- [Phase 27]: Empty widgets return null (hidden) rather than showing empty state cards
+- [Phase 27]: Integration list demoted to compact dots footer -- detail belongs in Settings
 
 ### Roadmap Evolution
 
@@ -237,6 +241,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-15T17:41:38Z
-Stopped at: Completed 27-01-PLAN.md
+Last session: 2026-03-15T17:47:27.625Z
+Stopped at: Completed 27-02-PLAN.md
 Resume file: None

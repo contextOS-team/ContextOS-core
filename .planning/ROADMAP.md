@@ -266,7 +266,7 @@ Plans:
   3. This Week timeline groups activity, contexts, and merged PRs by day
   4. Sprint badge shows current Linear cycle progress with days remaining
   5. Integrations demoted from full list to compact status dots footer
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 27-01-PLAN.md -- Backend: dashboard router with 4 aggregation endpoints (attention, weekly-summary, sprint, resurfaced)
