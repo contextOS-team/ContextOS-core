@@ -4,6 +4,7 @@ Provides pre-aggregated data for the dashboard homepage widgets:
 - Attention items (stale contexts + open PRs/MRs)
 - Weekly summary (activity counts by day)
 - Sprint progress (Linear active cycle)
+- Resurfaced forgotten context (decision-like Slack messages)
 """
 
 import logging
@@ -15,6 +16,7 @@ from src.db import get_session
 from src.dependencies import UserContext, get_current_user
 from src.services.dashboard_attention import get_attention_items
 from src.services.dashboard_sprint import get_active_sprint
+from src.services.dashboard_resurfaced import get_resurfaced_items
 from src.services.dashboard_summary import get_weekly_summary
 
 logger = logging.getLogger(__name__)
@@ -47,3 +49,12 @@ async def sprint(
 ) -> dict | None:
     """Get Linear active cycle progress, or null if not connected."""
     return await get_active_sprint(session, user.workspace_id, user.user_id)
+
+
+@router.get("/resurfaced")
+async def resurfaced(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """Get forgotten context candidates from Slack messages."""
+    return await get_resurfaced_items(session, user.workspace_id)
