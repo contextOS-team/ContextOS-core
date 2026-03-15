@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.config import Settings
+from src.db import async_session
 from src.models.code_chunk import CodeChunk
 from src.models.integration import WorkspaceIntegration
 from src.services.code_parser import CodeChunkData, detect_language, parse_file
@@ -94,6 +95,10 @@ def _is_binary_file(file_path: Path) -> bool:
 
 
 CLONE_TIMEOUT_SECONDS = 300  # 5 minutes
+
+# Concurrent indexing limits
+MAX_CONCURRENT_CLONES = 3  # Max repos cloned/parsed in parallel
+REPO_INDEX_TIMEOUT = 600  # 10 minutes per repo (cloning is I/O heavy)
 
 
 async def _get_clone_credentials(
@@ -491,34 +496,64 @@ async def index_workspace_repos(
     )
 
     try:
-        results: list[dict] = []
+        _clone_semaphore = asyncio.Semaphore(MAX_CONCURRENT_CLONES)
 
-        for idx, repo in enumerate(monitored_repos):
+        async def _index_one(idx: int, repo: dict) -> dict:
             full_name = repo.get("full_name", "")
+            async with _clone_semaphore:
+                await _update_index_status(
+                    workspace_id, "indexing", provider="github",
+                    progress=idx, total=total, current_repo=full_name,
+                )
+                logger.info(
+                    "Indexing repo %s for workspace %s (%d/%d)",
+                    full_name, workspace_id, idx + 1, total,
+                )
+                try:
+                    async with asyncio.timeout(REPO_INDEX_TIMEOUT):
+                        async with async_session() as task_session:
+                            summary = await index_repo(
+                                workspace_id, full_name, task_session, settings, provider="github",
+                            )
+                            await task_session.commit()
+                            return summary
+                except TimeoutError:
+                    logger.error(
+                        "Repo indexing timed out after %ds for %s",
+                        REPO_INDEX_TIMEOUT, full_name,
+                    )
+                    return {
+                        "repo": full_name, "files_scanned": 0,
+                        "chunks_created": 0, "chunks_updated": 0,
+                        "chunks_deleted": 0, "changed_chunk_ids": [],
+                        "error": f"Indexing timed out after {REPO_INDEX_TIMEOUT}s",
+                    }
+                except Exception:
+                    logger.exception("Failed to index repo %s", full_name)
+                    return {
+                        "repo": full_name, "files_scanned": 0,
+                        "chunks_created": 0, "chunks_updated": 0,
+                        "chunks_deleted": 0, "changed_chunk_ids": [],
+                        "error": "Indexing failed",
+                    }
 
-            # Update progress: idx = completed count, current_repo = about to start
-            await _update_index_status(
-                workspace_id, "indexing", provider="github",
-                progress=idx, total=total, current_repo=full_name,
-            )
+        tasks = [_index_one(idx, repo) for idx, repo in enumerate(monitored_repos)]
+        gathered = await asyncio.gather(*tasks, return_exceptions=True)
 
-            logger.info("Indexing repo %s for workspace %s (%d/%d)", full_name, workspace_id, idx + 1, total)
-            try:
-                summary = await index_repo(workspace_id, full_name, session, settings, provider="github")
-                await session.commit()
-                results.append(summary)
-            except Exception:
-                logger.exception("Failed to index repo %s", full_name)
-                await session.rollback()
+        # Convert any unexpected Exception results to error dicts
+        results: list[dict] = []
+        for i, r in enumerate(gathered):
+            if isinstance(r, Exception):
+                full_name = monitored_repos[i].get("full_name", "")
+                logger.exception("Unexpected error indexing repo %s", full_name, exc_info=r)
                 results.append({
-                    "repo": full_name,
-                    "files_scanned": 0,
-                    "chunks_created": 0,
-                    "chunks_updated": 0,
-                    "chunks_deleted": 0,
-                    "changed_chunk_ids": [],
-                    "error": "Indexing failed",
+                    "repo": full_name, "files_scanned": 0,
+                    "chunks_created": 0, "chunks_updated": 0,
+                    "chunks_deleted": 0, "changed_chunk_ids": [],
+                    "error": str(r),
                 })
+            else:
+                results.append(r)
 
         # Show completion before transitioning to idle
         if total > 0:
@@ -587,38 +622,66 @@ async def index_gitlab_workspace_repos(
     )
 
     try:
-        results: list[dict] = []
+        _clone_semaphore = asyncio.Semaphore(MAX_CONCURRENT_CLONES)
 
-        for idx, repo in enumerate(monitored_repos):
+        async def _index_one_gitlab(idx: int, repo: dict) -> dict:
             path_with_namespace = repo.get("path_with_namespace", "")
-
-            # Update progress: idx = completed count, current_repo = about to start
-            await _update_index_status(
-                workspace_id, "indexing", provider="gitlab",
-                progress=idx, total=total, current_repo=path_with_namespace,
-            )
-
-            logger.info("Indexing GitLab project %s for workspace %s (%d/%d)", path_with_namespace, workspace_id, idx + 1, total)
-            try:
-                # Refresh token before each clone -- GitLab tokens expire in 2 hours
-                await ensure_valid_token(session, workspace_id, settings)
-                summary = await index_repo(
-                    workspace_id, path_with_namespace, session, settings, provider="gitlab"
+            async with _clone_semaphore:
+                await _update_index_status(
+                    workspace_id, "indexing", provider="gitlab",
+                    progress=idx, total=total, current_repo=path_with_namespace,
                 )
-                await session.commit()
-                results.append(summary)
-            except Exception:
-                logger.exception("Failed to index GitLab project %s", path_with_namespace)
-                await session.rollback()
+                logger.info(
+                    "Indexing GitLab project %s for workspace %s (%d/%d)",
+                    path_with_namespace, workspace_id, idx + 1, total,
+                )
+                try:
+                    async with asyncio.timeout(REPO_INDEX_TIMEOUT):
+                        async with async_session() as task_session:
+                            # Refresh token before each clone -- GitLab tokens expire in 2 hours
+                            await ensure_valid_token(task_session, workspace_id, settings)
+                            summary = await index_repo(
+                                workspace_id, path_with_namespace, task_session, settings, provider="gitlab",
+                            )
+                            await task_session.commit()
+                            return summary
+                except TimeoutError:
+                    logger.error(
+                        "GitLab project indexing timed out after %ds for %s",
+                        REPO_INDEX_TIMEOUT, path_with_namespace,
+                    )
+                    return {
+                        "repo": path_with_namespace, "files_scanned": 0,
+                        "chunks_created": 0, "chunks_updated": 0,
+                        "chunks_deleted": 0, "changed_chunk_ids": [],
+                        "error": f"Indexing timed out after {REPO_INDEX_TIMEOUT}s",
+                    }
+                except Exception:
+                    logger.exception("Failed to index GitLab project %s", path_with_namespace)
+                    return {
+                        "repo": path_with_namespace, "files_scanned": 0,
+                        "chunks_created": 0, "chunks_updated": 0,
+                        "chunks_deleted": 0, "changed_chunk_ids": [],
+                        "error": "Indexing failed",
+                    }
+
+        tasks = [_index_one_gitlab(idx, repo) for idx, repo in enumerate(monitored_repos)]
+        gathered = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Convert any unexpected Exception results to error dicts
+        results: list[dict] = []
+        for i, r in enumerate(gathered):
+            if isinstance(r, Exception):
+                path_with_namespace = monitored_repos[i].get("path_with_namespace", "")
+                logger.exception("Unexpected error indexing GitLab project %s", path_with_namespace, exc_info=r)
                 results.append({
-                    "repo": path_with_namespace,
-                    "files_scanned": 0,
-                    "chunks_created": 0,
-                    "chunks_updated": 0,
-                    "chunks_deleted": 0,
-                    "changed_chunk_ids": [],
-                    "error": "Indexing failed",
+                    "repo": path_with_namespace, "files_scanned": 0,
+                    "chunks_created": 0, "chunks_updated": 0,
+                    "chunks_deleted": 0, "changed_chunk_ids": [],
+                    "error": str(r),
                 })
+            else:
+                results.append(r)
 
         # Show completion before transitioning to idle
         if total > 0:
