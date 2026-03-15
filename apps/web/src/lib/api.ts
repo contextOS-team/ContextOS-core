@@ -615,6 +615,66 @@ export function listTeamMembers(): Promise<{ members: TeamMember[] }> {
 }
 
 // ---------------------------------------------------------------------------
+// Dashboard Intelligence Widgets
+// ---------------------------------------------------------------------------
+
+export interface AttentionItem {
+  type: 'stale_context' | 'no_sources' | 'pr_review' | 'mr_review'
+  id: string
+  title: string
+  ticket_identifier?: string
+  repo_full_name?: string
+  project_path?: string
+  number?: number
+  author?: string
+  age?: string
+  status?: string
+}
+
+export interface DaySummary {
+  date: string
+  activity_count: number
+  contexts_updated: number
+  prs_merged: number
+}
+
+export interface SprintData {
+  team_name: string
+  cycle_name: string
+  cycle_number: number
+  starts_at: string
+  ends_at: string
+  completed: number
+  total: number
+  progress: number
+}
+
+export interface ResurfacedItem {
+  id: string
+  text: string
+  channel_name: string | null
+  user_name: string | null
+  created_at: string
+  type: 'resurfaced'
+}
+
+export function getDashboardAttention() {
+  return apiFetch<AttentionItem[]>('/api/dashboard/attention')
+}
+
+export function getDashboardWeeklySummary() {
+  return apiFetch<DaySummary[]>('/api/dashboard/weekly-summary')
+}
+
+export function getDashboardSprint() {
+  return apiFetch<SprintData | null>('/api/dashboard/sprint')
+}
+
+export function getDashboardResurfaced() {
+  return apiFetch<ResurfacedItem[]>('/api/dashboard/resurfaced')
+}
+
+// ---------------------------------------------------------------------------
 // SSE Generation Progress
 // ---------------------------------------------------------------------------
 
