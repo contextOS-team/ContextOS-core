@@ -84,7 +84,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. When a user connects or disconnects an integration in Settings, an activity event appears in the timeline
   3. When a context page is generated (or fails), the Activity tab shows a generation event with status
   4. Events arrive in real-time without page refresh (existing Supabase Realtime subscription works)
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 Plans:
 - [ ] 32-01-PLAN.md -- DB migration + emit_activity() helper + sync events for 7 providers + context generation events
 - [ ] 32-02-PLAN.md -- Curated webhook events (ticket_created, pr_merged, meeting_recorded, page_created) + connect/disconnect events
@@ -157,7 +157,7 @@ Note: Phases 35, 36, 37, 38 are independent and can execute in parallel after Ph
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 32. Activity Events Emission | 1/3 | In Progress|  |
+| 32. Activity Events Emission | 2/3 | In Progress|  |
 | 33. Graph Visualization | 0/TBD | Not started | - |
 | 34. Onboarding Graph Preview | 0/TBD | Not started | - |
 | 35. Chrome Extension Publishing | 0/TBD | Not started | - |

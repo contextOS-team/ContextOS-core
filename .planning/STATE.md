@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Live Intelligence
 status: executing
-stopped_at: Completed 32-03-PLAN.md
-last_updated: "2026-03-15T21:03:05.517Z"
-last_activity: 2026-03-15 -- Roadmap created for v1.3
+stopped_at: Completed 32-01-PLAN.md
+last_updated: "2026-03-15T21:06:56.588Z"
+last_activity: 2026-03-15 -- Completed 32-03 activity frontend enhancement
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
-  percent: 0
+  completed_plans: 2
+  percent: 96
 ---
 
 # Project State
@@ -37,6 +37,9 @@ Progress: [██████████] 96%
 
 ### Decisions
 
+- [32-01] Slack and Telegram skipped -- no full_sync functions exist (event-driven only)
+- [32-01] emit_activity placed before session.commit() in synthesis.py for transactional consistency
+- [32-01] GitHub/GitLab emit sync_completed at end of sync_repos/sync_projects (covers partial success)
 - [32-03] Use inline style for integration brand colors (Tailwind can't accept dynamic color vars)
 - [32-03] GitHub brand color #8b949e (muted) instead of #24292f for dark theme visibility
 - [32-03] Notion uses neutral gray #9CA3AF for dark theme compatibility
@@ -56,6 +59,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T21:02:28Z
-Stopped at: Completed 32-03-PLAN.md
-Resume file: .planning/phases/32-activity-events-emission/32-03-SUMMARY.md
+Last session: 2026-03-15T21:06:53.032Z
+Stopped at: Completed 32-01-PLAN.md
+Resume file: None
