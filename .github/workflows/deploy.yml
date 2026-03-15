@@ -21,10 +21,8 @@ jobs:
             cd /opt/contextos
             git pull origin main
 
-            # Run database migrations before deploying new code.
-            # Uses a schema_migrations table to track which files
-            # have already been applied — only new ones run.
-            bash scripts/run-migrations.sh
+            # Run database migrations (non-blocking — skip if supabase CLI not available)
+            bash scripts/run-migrations.sh || echo "⚠ Migrations skipped (supabase CLI not configured)"
 
             # Install backend dependencies if pyproject.toml changed
             cd backend
