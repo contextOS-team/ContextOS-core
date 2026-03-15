@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, RefreshCw } from 'lucide-react'
+import { AlertCircle, RefreshCw, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { formatRelativeTime } from '@/lib/utils'
@@ -32,6 +32,19 @@ function getGreeting(): string {
   if (hour < 12) return 'Good morning'
   if (hour < 18) return 'Good afternoon'
   return 'Good evening'
+}
+
+function getSummaryLine(
+  attentionCount: number,
+  activeDayCount: number,
+): string | null {
+  const parts: string[] = []
+  if (attentionCount > 0)
+    parts.push(`${attentionCount} item${attentionCount === 1 ? '' : 's'} need${attentionCount === 1 ? 's' : ''} attention`)
+  if (activeDayCount > 0)
+    parts.push(`${activeDayCount} active day${activeDayCount === 1 ? '' : 's'} this week`)
+  if (parts.length === 0) return null
+  return parts.join(' · ')
 }
 
 export default function DashboardPage() {
@@ -121,11 +134,22 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 animate-fade-in-up">
-      {/* Header: greeting + sprint badge */}
+      {/* Header: greeting with summary + sprint badge */}
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {getGreeting()}{firstName ? `, ${firstName}` : ''}
-        </p>
+        <div>
+          <p className="text-sm text-foreground font-medium">
+            {getGreeting()}{firstName ? `, ${firstName}` : ''}
+          </p>
+          {(() => {
+            const activeDays = weeklySummary.filter(
+              (d) => d.activity_count > 0 || d.contexts_updated > 0 || d.prs_merged > 0
+            )
+            const summary = getSummaryLine(attentionItems.length, activeDays.length)
+            return summary ? (
+              <p className="text-xs text-muted-foreground mt-0.5">{summary}</p>
+            ) : null
+          })()}
+        </div>
         <SprintBadge sprint={sprintData} />
       </div>
 
@@ -146,6 +170,18 @@ export default function DashboardPage() {
       <Resurfaced items={resurfacedItems} />
       <ThisWeek days={weeklySummary} />
 
+      {/* All-clear state when no intelligence widgets rendered */}
+      {attentionItems.length === 0 &&
+        resurfacedItems.length === 0 &&
+        weeklySummary.filter(d => d.activity_count > 0 || d.contexts_updated > 0 || d.prs_merged > 0).length === 0 && (
+        <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-4">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500/70" />
+          <p className="text-sm text-muted-foreground">
+            All caught up. No stale contexts, no forgotten decisions.
+          </p>
+        </div>
+      )}
+
       {/* Recent Context (condensed) */}
       {recentPages.length > 0 && (
         <div>
@@ -161,6 +197,8 @@ export default function DashboardPage() {
           <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border">
             {recentPages.map((page) => {
               const colors = STATUS_COLORS[page.status] ?? STATUS_COLORS.draft
+              const isRecent = Date.now() - new Date(page.updated_at).getTime() < 86_400_000
+              const displayTitle = page.title.replace(/^Context:\s*/i, '')
               return (
                 <button
                   key={page.id}
@@ -168,10 +206,10 @@ export default function DashboardPage() {
                   className={`w-full text-left px-4 py-3 transition-colors duration-150 hover:bg-muted/40 border-l-2 ${colors.border}`}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-medium text-foreground truncate">
-                      {page.title}
+                    <span className={`text-sm truncate ${isRecent ? 'font-medium text-foreground' : 'font-normal text-foreground/70'}`}>
+                      {displayTitle}
                     </span>
-                    <span className={`shrink-0 h-1.5 w-1.5 rounded-full ${colors.dot}`} />
+                    <span className={`shrink-0 h-2 w-2 rounded-full ${colors.dot}`} />
                   </div>
                   <div className="flex items-center gap-3 mt-0.5">
                     <span className="text-xs font-mono text-muted-foreground">
