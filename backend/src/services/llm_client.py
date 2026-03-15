@@ -1,11 +1,8 @@
-"""Centralized LLM client with Laminar observability tracing.
+"""Centralized LLM client with Laminar + Langfuse observability tracing.
 
 All LLM calls in ContextOS go through this client so that every call is
-automatically traced in Laminar with prompt, response, latency, and token
-counts.  The client uses the Google Gemini SDK.
-
-Context generation consumes ``LLMClient`` directly -- no additional
-observability wiring needed by callers.
+automatically traced with prompt, response, latency, and token counts.
+The client uses the Google Gemini SDK.
 """
 
 from __future__ import annotations
@@ -19,17 +16,14 @@ from google import genai
 from google.genai import types
 
 from src.observability.laminar import observe, set_laminar_metadata
-from src.observability.langfuse_client import langfuse_observe
+from src.observability.langfuse_client import langfuse_observe, update_langfuse_trace
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class LLMResponse:
-    """Structured response from an LLM generation call.
-
-    Captures everything needed for observability and cost tracking.
-    """
+    """Structured response from an LLM generation call."""
 
     text: str
     prompt_tokens: int
@@ -40,15 +34,7 @@ class LLMResponse:
 
 
 class LLMClient:
-    """Laminar-instrumented wrapper around Google Gemini.
-
-    All generation methods are decorated with ``@observe`` so Laminar
-    automatically records prompt, response, latency, and token counts
-    when the SDK is initialized.
-
-    Args:
-        model_name: Gemini model identifier.  Defaults to ``gemini-3.1-flash-lite-preview``.
-    """
+    """Instrumented wrapper around Google Gemini with Laminar + Langfuse tracing."""
 
     def __init__(
         self,
@@ -59,8 +45,8 @@ class LLMClient:
         settings = get_settings()
         self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-    @observe(name="llm_generate")
     @langfuse_observe(name="llm_generate")
+    @observe(name="llm_generate")
     async def generate(
         self,
         prompt: str,
@@ -68,26 +54,23 @@ class LLMClient:
         workspace_id: UUID | None = None,
         ticket_identifier: str | None = None,
     ) -> LLMResponse:
-        """Generate a response from the Gemini model.
-
-        Args:
-            prompt: User/content prompt to send.
-            system_prompt: Optional system instruction for the model.
-            workspace_id: Workspace UUID to tag on the Laminar trace.
-            ticket_identifier: Human-readable ticket ref (e.g. ``ENG-42``).
-
-        Returns:
-            An ``LLMResponse`` with text, token counts, latency, and model name.
-
-        Raises:
-            Exception: Propagates any Gemini errors (auth, quota, etc.)
-                so callers can handle them explicitly.
-        """
+        """Generate a response from the Gemini model."""
         if workspace_id is not None or ticket_identifier is not None:
             set_laminar_metadata(
                 workspace_id=str(workspace_id) if workspace_id else None,
                 ticket_identifier=ticket_identifier,
             )
+
+        # Update Langfuse trace with input and metadata
+        update_langfuse_trace(
+            name=f"context_synthesis:{ticket_identifier or 'unknown'}",
+            input={"prompt": prompt[:500], "system_prompt": system_prompt[:200] if system_prompt else None, "model": self.model_name},
+            metadata={
+                "workspace_id": str(workspace_id) if workspace_id else None,
+                "ticket_identifier": ticket_identifier,
+                "model": self.model_name,
+            },
+        )
 
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
@@ -103,13 +86,23 @@ class LLMClient:
 
         elapsed_ms = (time.monotonic() - start) * 1000
 
-        # Extract token counts from usage metadata.
         usage = response.usage_metadata
         prompt_tokens = usage.prompt_token_count if usage else 0
         completion_tokens = usage.candidates_token_count if usage else 0
         total_tokens = usage.total_token_count if usage else 0
 
         text = response.text or ""
+
+        # Update Langfuse trace with output
+        update_langfuse_trace(
+            output={
+                "text": text[:500],
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "latency_ms": round(elapsed_ms, 2),
+            },
+        )
 
         return LLMResponse(
             text=text,
@@ -129,11 +122,7 @@ _llm_client: LLMClient | None = None
 
 
 def get_llm_client() -> LLMClient:
-    """Return a cached singleton ``LLMClient`` instance.
-
-    The client is lazily created on first call so that import-time side
-    effects are avoided.
-    """
+    """Return a cached singleton ``LLMClient`` instance."""
     global _llm_client  # noqa: PLW0603
     if _llm_client is None:
         _llm_client = LLMClient()

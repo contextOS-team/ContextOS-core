@@ -130,8 +130,8 @@ def _get_gemini_client() -> genai.Client:
     return _gemini_client
 
 
-@observe(name="generate_embedding")
 @langfuse_observe(name="generate_embedding")
+@observe(name="generate_embedding")
 async def generate_embedding(text_content: str) -> list[float]:
     """Generate a 768-dimensional vector embedding for the given text.
 
@@ -159,8 +159,8 @@ async def generate_embedding(text_content: str) -> list[float]:
     return list(response.embeddings[0].values)
 
 
-@observe(name="generate_embeddings_batch")
 @langfuse_observe(name="generate_embeddings_batch")
+@observe(name="generate_embeddings_batch")
 async def generate_embeddings_batch(texts: list[str]) -> list[list[float]]:
     """Generate 768-dimensional embeddings for multiple texts in one API call.
 
