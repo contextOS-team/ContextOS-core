@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Dashboard & Onboarding
 status: executing
-stopped_at: Completed 31-03-PLAN.md
-last_updated: "2026-03-15T10:15:01.378Z"
+stopped_at: Completed 31-02-PLAN.md
+last_updated: "2026-03-15T10:15:46.356Z"
 last_activity: 2026-03-12 -- Completed 28-01 (GitLab Code Indexing Backend)
 progress:
   total_phases: 23
-  completed_phases: 19
+  completed_phases: 20
   total_plans: 57
-  completed_plans: 53
+  completed_plans: 55
   percent: 97
 ---
 
@@ -96,6 +96,8 @@ Progress: [██████████] 97%
 | Phase 30 P01 | 4min | 2 tasks | 4 files |
 | Phase 30 P02 | 4min | 2 tasks | 4 files |
 | Phase 31 P03 | 2min | 1 tasks | 1 files |
+| Phase 31 P01 | 2min | 1 tasks | 1 files |
+| Phase 31 P02 | 2min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -203,6 +205,9 @@ Recent decisions affecting current work:
 - [Phase 30]: slack_huddle auto-added to connected_sources when Slack is connected (piggybacks on Slack OAuth token)
 - [Phase 31]: Semaphore created inside each function (not module-level) to avoid cross-function interference
 - [Phase 31]: Each concurrent task creates its own async_session for DB session isolation
+- [Phase 31]: Semaphore(5) for GitLab note concurrency -- conservative for 10 req/sec rate limit
+- [Phase 31]: sync_start timestamp for cursor (not max updated_at) to handle MRs updated during sync
+- [Phase 31]: Reuse existing _github_semaphore(10) for review concurrency; cursor_value parsed as ISO datetime; per-page progress replaces per-PR
 
 ### Roadmap Evolution
 
@@ -228,6 +233,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-15T10:15:01.369Z
-Stopped at: Completed 31-03-PLAN.md
+Last session: 2026-03-15T10:15:46.353Z
+Stopped at: Completed 31-02-PLAN.md
 Resume file: None
