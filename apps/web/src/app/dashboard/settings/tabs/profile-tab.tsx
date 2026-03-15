@@ -47,10 +47,13 @@ export function ProfileTab({ userEmail, userFullName }: ProfileTabProps) {
       const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
         redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
       })
-      if (error) throw error
+      if (error) {
+        setResetError(error.message || 'Failed to send reset email')
+        return
+      }
       setResetSent(true)
-    } catch (err) {
-      setResetError(err instanceof Error ? err.message : 'Failed to send reset email')
+    } catch (err: any) {
+      setResetError(err?.message || 'Failed to send reset email')
     } finally {
       setIsResetting(false)
     }
