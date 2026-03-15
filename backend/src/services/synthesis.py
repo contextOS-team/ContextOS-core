@@ -61,6 +61,19 @@ class TicketProxy:
             labels=issue.labels,
         )
 
+    @classmethod
+    def from_linear(cls, ticket: LinearTicket) -> "TicketProxy":
+        return cls(
+            id=ticket.id,
+            identifier=ticket.identifier,
+            title=ticket.title,
+            description=ticket.description,
+            status=ticket.status,
+            assignee_name=ticket.assignee_name,
+            priority=ticket.priority,
+            labels=ticket.labels,
+        )
+
 
 SYNTHESIS_SYSTEM_PROMPT = """\
 You are a senior context synthesis engine embedded in an engineering intelligence \
@@ -618,6 +631,12 @@ async def generate_context_page(
         # 3. Find related content
         linking_result = await find_related_content(session, workspace_id, ticket)
 
+        # Detach ticket from session into a plain dataclass so that
+        # subsequent session errors (e.g. missing graph_nodes table in
+        # _get_code_provenance) don't poison attribute access.
+        if not isinstance(ticket, TicketProxy):
+            ticket = TicketProxy.from_linear(ticket)
+
         # 3b. Query code provenance for code_chunk items
         code_provenance = await _get_code_provenance(session, workspace_id, linking_result.items)
 
@@ -830,6 +849,12 @@ async def generate_context_page_stream(
 
         # 6. Synthesize
         yield {"event": "step_start", "source": "synthesize"}
+
+        # Detach ticket from session into a plain dataclass so that
+        # subsequent session errors (e.g. missing graph_nodes table in
+        # _get_code_provenance) don't poison attribute access.
+        if not isinstance(ticket, TicketProxy):
+            ticket = TicketProxy.from_linear(ticket)
 
         code_provenance = await _get_code_provenance(session, workspace_id, all_items)
         prompt = _build_synthesis_prompt(ticket, all_items, code_provenance=code_provenance)
