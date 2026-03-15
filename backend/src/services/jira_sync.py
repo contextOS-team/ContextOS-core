@@ -8,6 +8,7 @@ Uses the modern /search/jql endpoint with nextPageToken pagination
 """
 
 import logging
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -26,6 +27,7 @@ from src.services.jira_oauth import JiraOAuthError, get_valid_token
 from src.services.sync_adapter import (
     SyncAdapter,
     SyncRunLogger,
+    emit_activity,
     update_cursor_status,
 )
 
@@ -130,8 +132,10 @@ async def sync_jira_issues(
 
     total_issues = 0
     total_comments = 0
+    _sync_t0 = time.monotonic()
 
     async with SyncRunLogger("jira", workspace_id) as srl:
+        await emit_activity(session, workspace_id, "sync_started", metadata={"integration": "jira"})
         try:
             jql_query = jql or "ORDER BY updated DESC"
             next_page_token: str | None = None
@@ -211,9 +215,21 @@ async def sync_jira_issues(
                 records_synced=total_issues,
             )
 
+            _sync_duration_ms = int((time.monotonic() - _sync_t0) * 1000)
+            await emit_activity(session, workspace_id, "sync_completed", metadata={
+                "integration": "jira",
+                "items_count": total_issues,
+                "duration_ms": _sync_duration_ms,
+            })
+
             srl.info("Jira sync complete: %d issues, %d comments" % (total_issues, total_comments))
 
-        except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError):
+        except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError) as e:
+            await emit_activity(session, workspace_id, "sync_completed", metadata={
+                "integration": "jira",
+                "error": True,
+                "error_message": str(e)[:200],
+            })
             await _update_sync_status(session, workspace_id, "error", total_issues)
             await update_cursor_status(
                 session, workspace_id, "jira", "default",

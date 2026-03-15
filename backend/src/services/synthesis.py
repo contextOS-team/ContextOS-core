@@ -21,6 +21,7 @@ from src.models.ticket import LinearTicket
 from src.services.graph_ops import compute_fingerprint
 from src.services.linking import LinkedItem, find_content_by_source, find_related_content
 from src.services.llm_client import get_llm_client
+from src.services.sync_adapter import emit_activity
 
 logger = logging.getLogger(__name__)
 
@@ -676,6 +677,14 @@ async def generate_context_page(
         context_page.generation_model = llm_response.model
         context_page.generation_tokens_used = llm_response.total_tokens
 
+        # Emit activity event before commit so it's in the same transaction
+        await emit_activity(session, workspace_id, "context_generated", metadata={
+            "ticket_id": ticket_identifier,
+            "title": ticket.title,
+            "source_count": len(sources_list),
+            "token_count": llm_response.total_tokens,
+        })
+
         # BUG-03 fix: flush AND commit so the caller doesn't need to commit
         await session.flush()
         await session.commit()
@@ -691,6 +700,11 @@ async def generate_context_page(
 
     except Exception as e:
         logger.exception("Generation failed for %s", ticket_identifier)
+        await emit_activity(session, workspace_id, "context_generated", metadata={
+            "ticket_id": ticket_identifier,
+            "error": True,
+            "error_message": str(e)[:200],
+        })
         # BUG-01 fix: persist error status so page doesn't stay stuck in "generating"
         try:
             if context_page:
@@ -889,6 +903,14 @@ async def generate_context_page_stream(
         context_page.generation_model = llm_response.model
         context_page.generation_tokens_used = llm_response.total_tokens
 
+        # Emit activity event before commit so it's in the same transaction
+        await emit_activity(session, workspace_id, "context_generated", metadata={
+            "ticket_id": ticket_identifier,
+            "title": ticket.title,
+            "source_count": len(sources_list),
+            "token_count": llm_response.total_tokens,
+        })
+
         await session.flush()
         await session.commit()
 
@@ -904,6 +926,11 @@ async def generate_context_page_stream(
 
     except Exception as e:
         logger.exception("Stream generation failed for %s", ticket_identifier)
+        await emit_activity(session, workspace_id, "context_generated", metadata={
+            "ticket_id": ticket_identifier,
+            "error": True,
+            "error_message": str(e)[:200],
+        })
         # BUG-01 fix: persist error status so page doesn't stay stuck in "generating"
         try:
             if context_page:

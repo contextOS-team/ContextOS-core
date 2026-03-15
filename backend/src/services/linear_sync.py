@@ -9,6 +9,7 @@ Per user decisions:
 """
 
 import logging
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -39,6 +40,7 @@ from src.services.linear_oauth import get_valid_access_token
 from src.services.sync_adapter import (
     SyncAdapter,
     SyncRunLogger,
+    emit_activity,
     update_cursor_status,
 )
 
@@ -157,7 +159,10 @@ async def sync_tickets_for_teams(
     total_comments = 0
     synced_team_names: list[str] = []
 
+    _sync_t0 = time.monotonic()
+
     async with SyncRunLogger("linear", workspace_id) as srl:
+        await emit_activity(session, workspace_id, "sync_started", metadata={"integration": "linear"})
         try:
             for team_id in team_ids:
                 # Fetch all issues for this team with pagination
@@ -197,6 +202,13 @@ async def sync_tickets_for_teams(
                 records_synced=total_tickets,
             )
 
+            _sync_duration_ms = int((time.monotonic() - _sync_t0) * 1000)
+            await emit_activity(session, workspace_id, "sync_completed", metadata={
+                "integration": "linear",
+                "items_count": total_tickets,
+                "duration_ms": _sync_duration_ms,
+            })
+
             srl.info(
                 "Linear sync complete: %d tickets synced" % total_tickets,
             )
@@ -219,7 +231,12 @@ async def sync_tickets_for_teams(
                     exc_info=True,
                 )
 
-        except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError):
+        except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError) as e:
+            await emit_activity(session, workspace_id, "sync_completed", metadata={
+                "integration": "linear",
+                "error": True,
+                "error_message": str(e)[:200],
+            })
             await _update_sync_status(session, workspace_id, "error", total_tickets)
             await update_cursor_status(
                 session, workspace_id, "linear", "default",

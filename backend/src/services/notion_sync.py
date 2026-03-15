@@ -6,6 +6,7 @@ task isolation (same pattern as linear_webhook.py, slack_events.py).
 """
 
 import logging
+import time
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -22,6 +23,7 @@ from src.services.notion_oauth import get_valid_access_token
 from src.services.sync_adapter import (
     SyncAdapter,
     SyncRunLogger,
+    emit_activity,
     update_cursor_status,
 )
 
@@ -170,6 +172,8 @@ async def run_full_sync(workspace_id: UUID, user_id: UUID) -> None:
     """
     settings = config_module.get_settings()
 
+    _sync_t0 = time.monotonic()
+
     async with SyncRunLogger("notion", workspace_id) as srl:
         async with async_session() as session:
             try:
@@ -181,6 +185,7 @@ async def run_full_sync(workspace_id: UUID, user_id: UUID) -> None:
                     session, workspace_id, "notion", "default",
                     sync_status="syncing",
                 )
+                await emit_activity(session, workspace_id, "sync_started", metadata={"integration": "notion"})
 
                 # Get access token
                 access_token = await get_valid_access_token(
@@ -232,16 +237,28 @@ async def run_full_sync(workspace_id: UUID, user_id: UUID) -> None:
                     records_synced=synced_count,
                 )
 
+                _sync_duration_ms = int((time.monotonic() - _sync_t0) * 1000)
+                await emit_activity(session, workspace_id, "sync_completed", metadata={
+                    "integration": "notion",
+                    "items_count": synced_count,
+                    "duration_ms": _sync_duration_ms,
+                })
+
                 await session.commit()
                 srl.info(
                     "Notion full sync complete: %d pages synced",
                     synced_count=synced_count,
                 )
 
-            except Exception:
+            except Exception as e:
                 srl.exception(
                     "Notion full sync failed for workspace %s" % workspace_id
                 )
+                await emit_activity(session, workspace_id, "sync_completed", metadata={
+                    "integration": "notion",
+                    "error": True,
+                    "error_message": str(e)[:200],
+                })
                 try:
                     await _update_sync_config(
                         session,

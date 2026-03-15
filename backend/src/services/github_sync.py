@@ -17,6 +17,7 @@ Per user decisions:
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -48,6 +49,7 @@ from src.services.github_oauth import GitHubOAuthError, get_installation_token
 from src.services.sync_adapter import (
     SyncAdapter,
     SyncRunLogger,
+    emit_activity,
     get_or_create_cursor,
     update_cursor_status,
 )
@@ -87,8 +89,10 @@ async def sync_repos(
     total_prs = 0
     total_reviews = 0
     results = {}
+    _sync_t0 = time.monotonic()
 
     async with SyncRunLogger("github", workspace_id) as srl:
+        await emit_activity(session, workspace_id, "sync_started", metadata={"integration": "github"})
         for repo in selected_repos:
             try:
                 # Update both JSONB and sync_cursors
@@ -150,6 +154,13 @@ async def sync_repos(
                 )
                 await session.commit()
                 results[repo] = {"status": "error", "error": str(e)}
+
+        _sync_duration_ms = int((time.monotonic() - _sync_t0) * 1000)
+        await emit_activity(session, workspace_id, "sync_completed", metadata={
+            "integration": "github",
+            "items_count": total_prs,
+            "duration_ms": _sync_duration_ms,
+        })
 
         srl.info("GitHub sync complete: %d PRs across %d repos" % (total_prs, len(selected_repos)))
 

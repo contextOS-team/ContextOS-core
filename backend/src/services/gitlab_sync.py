@@ -20,6 +20,7 @@ Per user decisions:
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -44,7 +45,7 @@ from src.services.gitlab_common import (
     parse_link_next,
 )
 from src.services.gitlab_linking import link_mr_to_ticket
-from src.services.sync_adapter import SyncRunLogger, get_or_create_cursor, update_cursor_status
+from src.services.sync_adapter import SyncRunLogger, emit_activity, get_or_create_cursor, update_cursor_status
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +85,10 @@ async def sync_projects(
     total_mrs = 0
     total_reviews = 0
     results = {}
+    _sync_t0 = time.monotonic()
 
     async with SyncRunLogger("gitlab", workspace_id) as srl:
+        await emit_activity(session, workspace_id, "sync_started", metadata={"integration": "gitlab"})
         for project_id in project_ids:
             try:
                 await _update_project_sync_status(
@@ -152,6 +155,13 @@ async def sync_projects(
                 )
                 await session.commit()
                 results[str(project_id)] = {"status": "error", "error": str(e)}
+
+        _sync_duration_ms = int((time.monotonic() - _sync_t0) * 1000)
+        await emit_activity(session, workspace_id, "sync_completed", metadata={
+            "integration": "gitlab",
+            "items_count": total_mrs,
+            "duration_ms": _sync_duration_ms,
+        })
 
         srl.info(
             "GitLab sync complete: %d MRs across %d projects"
