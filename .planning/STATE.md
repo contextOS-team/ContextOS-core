@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Live Intelligence
 status: executing
-stopped_at: Completed 32-01-PLAN.md
-last_updated: "2026-03-15T21:06:56.588Z"
-last_activity: 2026-03-15 -- Completed 32-03 activity frontend enhancement
+stopped_at: Completed 32-02-PLAN.md
+last_updated: "2026-03-15T21:14:43Z"
+last_activity: 2026-03-15 -- Completed 32-02 webhook and connect/disconnect events
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 96
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 32 - Activity Events Emission (plan 03 complete)
+**Current focus:** Phase 32 - Activity Events Emission (all 3 plans complete)
 
 ## Current Position
 
 Milestone: v1.3 Live Intelligence
-Phase: 32 of 38 (Activity Events Emission)
-Plan: 3 of 3 in current phase (complete)
-Status: Executing phase 32
-Last activity: 2026-03-15 -- Completed 32-03 activity frontend enhancement
+Phase: 32 of 38 (Activity Events Emission) -- COMPLETE
+Plan: 3 of 3 in current phase (all complete)
+Status: Phase 32 complete
+Last activity: 2026-03-15 -- Completed 32-02 webhook and connect/disconnect events
 
-Progress: [██████████] 96%
+Progress: [██████████] 100%
 
 ## Accumulated Context
 
@@ -43,6 +43,9 @@ Progress: [██████████] 96%
 - [32-03] Use inline style for integration brand colors (Tailwind can't accept dynamic color vars)
 - [32-03] GitHub brand color #8b949e (muted) instead of #24292f for dark theme visibility
 - [32-03] Notion uses neutral gray #9CA3AF for dark theme compatibility
+- [32-02] GitHub/GitLab pr_merged guarded by state == merged to avoid emitting for closed-but-not-merged PRs
+- [32-02] Notion page_created limited to 5 events per full sync to avoid activity tab flooding
+- [32-02] GitHub/GitLab callback routers extract workspace_id from state for emit_activity
 
 ### Roadmap Evolution
 
@@ -59,6 +62,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-15T21:06:53.032Z
-Stopped at: Completed 32-01-PLAN.md
+Last session: 2026-03-15T21:14:43Z
+Stopped at: Completed 32-02-PLAN.md (Phase 32 fully complete)
 Resume file: None
