@@ -16,7 +16,7 @@ from google import genai
 from google.genai import types
 
 from src.observability.laminar import observe, set_laminar_metadata
-from src.observability.langfuse_client import langfuse_observe, update_langfuse_trace
+from src.observability.langfuse_client import langfuse_observe
 
 logger = logging.getLogger(__name__)
 
@@ -61,17 +61,6 @@ class LLMClient:
                 ticket_identifier=ticket_identifier,
             )
 
-        # Update Langfuse trace with input and metadata
-        update_langfuse_trace(
-            name=f"context_synthesis:{ticket_identifier or 'unknown'}",
-            input={"prompt": prompt[:500], "system_prompt": system_prompt[:200] if system_prompt else None, "model": self.model_name},
-            metadata={
-                "workspace_id": str(workspace_id) if workspace_id else None,
-                "ticket_identifier": ticket_identifier,
-                "model": self.model_name,
-            },
-        )
-
         config = types.GenerateContentConfig(
             system_instruction=system_prompt,
         )
@@ -92,17 +81,6 @@ class LLMClient:
         total_tokens = usage.total_token_count if usage else 0
 
         text = response.text or ""
-
-        # Update Langfuse trace with output
-        update_langfuse_trace(
-            output={
-                "text": text[:500],
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": total_tokens,
-                "latency_ms": round(elapsed_ms, 2),
-            },
-        )
 
         return LLMResponse(
             text=text,

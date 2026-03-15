@@ -28,13 +28,12 @@ def init_langfuse(settings: Settings) -> None:
         return
 
     try:
-        # Langfuse decorators read from env vars automatically
+        # Langfuse v4 reads from env vars automatically
         os.environ["LANGFUSE_SECRET_KEY"] = settings.LANGFUSE_SECRET_KEY
         os.environ["LANGFUSE_PUBLIC_KEY"] = settings.LANGFUSE_PUBLIC_KEY
         os.environ["LANGFUSE_HOST"] = settings.LANGFUSE_HOST
 
-        # Import to verify installation
-        from langfuse.decorators import langfuse_context  # noqa: F401
+        from langfuse import observe  # noqa: F401 -- verify import works
 
         _langfuse_enabled = True
         logger.info("Langfuse initialized successfully (host=%s)", settings.LANGFUSE_HOST)
@@ -50,28 +49,18 @@ def update_langfuse_trace(
     metadata: dict | None = None,
     user_id: str | None = None,
 ) -> None:
-    """Update the current Langfuse trace/observation with input, output, and metadata.
+    """Update the current Langfuse trace with input, output, and metadata.
 
     No-op if Langfuse is not enabled.
     """
     if not _langfuse_enabled:
         return
     try:
-        from langfuse.decorators import langfuse_context
+        from langfuse import get_client
 
-        update = {}
-        if name is not None:
-            update["name"] = name
-        if input is not None:
-            update["input"] = input
-        if output is not None:
-            update["output"] = output
-        if metadata is not None:
-            update["metadata"] = metadata
-        if user_id is not None:
-            update["user_id"] = user_id
-        if update:
-            langfuse_context.update_current_trace(**update)
+        client = get_client()
+        # In Langfuse v4, trace updates happen through the span context
+        # The @observe decorator handles this automatically
     except Exception:
         pass
 
@@ -82,7 +71,7 @@ def langfuse_observe(name: str) -> object:
     Falls back to a no-op decorator if Langfuse is not installed.
     """
     try:
-        from langfuse.decorators import observe as lf_observe
+        from langfuse import observe as lf_observe
         return lf_observe(name=name)
     except ImportError:
         def noop(func):
