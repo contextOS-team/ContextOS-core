@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Activity, Home, Layers, LogOut, Settings, UserCircle } from 'lucide-react'
+import { Activity, Home, Layers, LogOut, Network, Settings, UserCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import {
   DropdownMenu,
@@ -34,6 +34,7 @@ function getInitials(fullName: string | null | undefined, email: string): string
 const navItems = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/dashboard/context', label: 'Context', icon: Layers },
+  { href: '/dashboard/graph', label: 'Graph', icon: Network },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity },
 ]
 
