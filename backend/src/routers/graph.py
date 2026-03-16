@@ -146,6 +146,41 @@ async def get_workspace_graph(
             edges=[],
         )
 
+    # Step 1b: Validate Ticket nodes against actual tickets table.
+    # Text-extracted ticket references (e.g. "SHA-256" from code) that don't
+    # exist as real Linear/Jira tickets get filtered out at query time.
+    ticket_nodes = [n for n in every_node if n.entity_type == "Ticket"]
+    if ticket_nodes:
+        ticket_identifiers = {
+            n.name.split(":")[0].strip()  # Handle "CON-50: title" format
+            for n in ticket_nodes
+            if n.name
+        }
+        # Also check properties.identifier
+        for n in ticket_nodes:
+            ident = n.properties.get("identifier") if n.properties else None
+            if ident:
+                ticket_identifiers.add(str(ident))
+
+        real_ticket_stmt = select(LinearTicket.identifier).where(
+            LinearTicket.workspace_id == user.workspace_id,
+            LinearTicket.identifier.in_(ticket_identifiers),  # type: ignore[union-attr]
+            LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        real_result = await session.execute(real_ticket_stmt)
+        real_identifiers = {row[0] for row in real_result}
+
+        # Filter: keep ticket nodes only if their identifier exists in real tickets
+        def _is_real_ticket(n: GraphNode) -> bool:
+            name_id = n.name.split(":")[0].strip()
+            prop_id = n.properties.get("identifier") if n.properties else None
+            return name_id in real_identifiers or (prop_id and str(prop_id) in real_identifiers)
+
+        every_node = [
+            n for n in every_node
+            if n.entity_type != "Ticket" or _is_real_ticket(n)
+        ]
+
     every_node_lookup = {str(n.id): n for n in every_node}
     every_node_ids = set(every_node_lookup.keys())
 
