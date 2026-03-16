@@ -208,18 +208,25 @@ async def get_workspace_graph(
             return True  # Nodes without source_type (e.g. from identity resolution) pass
         return n.source_type in allowed_source_types
 
+    # Nodes from connected integrations with a real source_type are always
+    # shown (they're validated at ingestion). Text-extracted nodes (no
+    # source_type) only shown if they have edges.
+    def _should_include(n: GraphNode) -> bool:
+        if not _node_passes_source_filter(n):
+            return False
+        has_edges = total_edge_counter.get(str(n.id), 0) > 0
+        has_real_source = n.source_type is not None and n.source_type in allowed_source_types
+        return has_edges or has_real_source
+
     if type_filter:
         display_nodes = {
             str(n.id): n for n in every_node
-            if n.entity_type in type_filter
-            and total_edge_counter.get(str(n.id), 0) > 0
-            and _node_passes_source_filter(n)
+            if n.entity_type in type_filter and _should_include(n)
         }
     else:
         display_nodes = {
             str(n.id): n for n in every_node
-            if total_edge_counter.get(str(n.id), 0) > 0
-            and _node_passes_source_filter(n)
+            if _should_include(n)
         }
 
     if not display_nodes:
