@@ -2,29 +2,69 @@
 
 import { memo } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
-import type { GraphNodeData } from '../types'
+import type { EntityType, GraphNodeData } from '../types'
 import { ENTITY_COLORS, ENTITY_ICONS } from '../constants'
 
 type FullDetailNodeType = Node<GraphNodeData, 'full'>
 
+// ---------------------------------------------------------------------------
+// Shape-icon header — mini version of compact node shapes
+// ---------------------------------------------------------------------------
+
+type ShapeKind = 'diamond' | 'circle' | 'rounded-rect' | 'hexagon'
+
+const HEADER_SHAPE: Record<EntityType, ShapeKind> = {
+  Ticket: 'diamond',
+  Person: 'circle',
+  Decision: 'hexagon',
+  PR: 'rounded-rect',
+  Message: 'rounded-rect',
+  SlackThread: 'rounded-rect',
+  Code: 'rounded-rect',
+  CodeChunk: 'rounded-rect',
+  NotionPage: 'rounded-rect',
+  Meeting: 'circle',
+}
+
+function getHeaderShapeStyle(shape: ShapeKind): React.CSSProperties {
+  const size = 28
+  const base: React.CSSProperties = { width: size, height: size, flexShrink: 0 }
+  switch (shape) {
+    case 'circle':
+      return { ...base, borderRadius: '50%' }
+    case 'diamond':
+      return { ...base, clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' }
+    case 'hexagon':
+      return { ...base, clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)' }
+    case 'rounded-rect':
+      return { ...base, borderRadius: 6 }
+  }
+}
+
 /** Derive node dimensions from connection count. */
 function getFullSizeFromConnections(count: number) {
-  if (count >= 5) return { width: 280, height: 95, borderWidth: 5 }
-  if (count >= 2) return { width: 240, height: 85, borderWidth: 4 }
-  return { width: 200, height: 70, borderWidth: 4 }
+  if (count >= 5) return { width: 280, height: 95 }
+  if (count >= 2) return { width: 240, height: 85 }
+  return { width: 200, height: 70 }
 }
 
 function FullDetailNodeInner({ data }: NodeProps<FullDetailNodeType>) {
   const color = ENTITY_COLORS[data.entityType] ?? 'var(--muted-foreground)'
   const Icon = ENTITY_ICONS[data.entityType]
   const property = data.properties?.identifier ?? data.properties?.number ?? ''
-  const { width, height, borderWidth } = getFullSizeFromConnections(data.connectedCount ?? 0)
+  const { width, height } = getFullSizeFromConnections(data.connectedCount ?? 0)
+  const shape = HEADER_SHAPE[data.entityType] ?? 'circle'
 
-  const glowStyle = data.isRoot
-    ? { boxShadow: `0 0 20px 6px color-mix(in oklch, ${color} 40%, transparent)` }
-    : data.isHovered
-      ? { boxShadow: `0 0 12px 3px color-mix(in oklch, ${color} 20%, transparent)` }
-      : undefined
+  const isSelected = data.isSelected ?? false
+  const isHovered = data.isHovered ?? false
+
+  const glowShadow = data.isRoot
+    ? `0 0 20px 6px color-mix(in oklch, ${color} 40%, transparent)`
+    : isSelected
+      ? `0 0 16px 5px color-mix(in oklch, ${color} 35%, transparent)`
+      : isHovered
+        ? `0 0 12px 3px color-mix(in oklch, ${color} 20%, transparent)`
+        : 'none'
 
   return (
     <div
@@ -37,18 +77,29 @@ function FullDetailNodeInner({ data }: NodeProps<FullDetailNodeType>) {
           width,
           height,
           background: 'var(--elevated)',
-          borderLeft: `${borderWidth}px solid ${color}`,
-          ...glowStyle,
+          borderLeft: `4px solid ${color}`,
+          boxShadow: glowShadow,
+          transition: 'box-shadow 0.3s ease',
         }}
       >
-        {/* Top row: icon + name */}
+        {/* Top row: shape-icon + name */}
         <div className="flex items-center gap-2 px-3 pt-2.5">
-          {Icon && (
-            <Icon
-              size={16}
-              style={{ color, flexShrink: 0 }}
-            />
-          )}
+          {/* Shape container with icon inside */}
+          <div
+            className="flex items-center justify-center"
+            style={{
+              ...getHeaderShapeStyle(shape),
+              background: `color-mix(in oklch, ${color} 15%, transparent)`,
+            }}
+          >
+            {Icon && (
+              <Icon
+                size={14}
+                style={{ color, flexShrink: 0 }}
+                strokeWidth={1.8}
+              />
+            )}
+          </div>
           <span
             className="text-sm font-medium truncate"
             style={{ color: 'var(--foreground)' }}
@@ -80,7 +131,7 @@ function FullDetailNodeInner({ data }: NodeProps<FullDetailNodeType>) {
       </div>
 
       {/* Selected: pulse ring */}
-      {data.isSelected && (
+      {isSelected && (
         <div
           className="absolute inset-0 rounded-xl pointer-events-none"
           style={{

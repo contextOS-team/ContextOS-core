@@ -141,6 +141,6 @@ export const ZOOM_THRESHOLDS = {
 
 export const NODE_DIMENSIONS = {
   full: { width: 220, height: 80 },
-  compact: { width: 120, height: 32 },
+  compact: { width: 100, height: 70 },
   dot: { width: 24, height: 24 },
 } as const

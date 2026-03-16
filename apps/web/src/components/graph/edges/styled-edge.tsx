@@ -67,17 +67,18 @@ function StyledEdgeInner({
         }}
         markerEnd={effectiveMarkerEnd}
       />
-      {/* Floating label on hover */}
-      {hovered && (
+      {/* Floating label on hover or when highlighted (node selected) */}
+      {(hovered || isHighlighted) && (
         <EdgeLabelRenderer>
           <div
             className="pointer-events-none rounded px-1.5 py-0.5 text-[10px] font-medium"
             style={{
               position: 'absolute',
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              background: 'var(--card)',
-              color: 'var(--muted-foreground)',
+              background: isHighlighted ? 'var(--card)' : 'var(--card)',
+              color: isHighlighted ? 'var(--foreground)' : 'var(--muted-foreground)',
               border: '1px solid var(--border)',
+              opacity: isHighlighted ? 1 : 0.85,
             }}
           >
             {relationshipType}
