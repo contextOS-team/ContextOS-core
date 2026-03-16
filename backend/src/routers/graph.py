@@ -17,6 +17,7 @@ from src.db import get_session
 from src.dependencies import UserContext, get_current_user
 from src.models.graph_edge import GraphEdge
 from src.models.graph_node import GraphNode
+from src.models.integration import WorkspaceIntegration
 from src.models.ticket import LinearTicket
 from src.services.graph_ops import compute_fingerprint
 
@@ -102,6 +103,31 @@ async def get_workspace_graph(
     else:
         type_filter = DEFAULT_ENTITY_TYPES
 
+    # Map provider names to graph source_type values
+    PROVIDER_TO_SOURCE_TYPES: dict[str, list[str]] = {
+        "linear": ["linear_ticket", "linear_comment"],
+        "jira": ["jira_issue", "jira_comment"],
+        "slack": ["slack_message"],
+        "github": ["github_pr", "github_review", "github_commit"],
+        "gitlab": ["gitlab_mr", "gitlab_note"],
+        "notion": ["notion_page"],
+        "fathom": ["meeting_transcript"],
+        "telegram": ["telegram_message"],
+    }
+
+    # Look up connected integrations for this workspace
+    int_stmt = select(WorkspaceIntegration).where(
+        WorkspaceIntegration.workspace_id == user.workspace_id,
+        WorkspaceIntegration.status == "connected",
+    )
+    int_result = await session.execute(int_stmt)
+    connected_providers = {i.provider for i in int_result.scalars().all()}
+
+    # Build the set of allowed source_types from connected providers
+    allowed_source_types: set[str] = set()
+    for provider in connected_providers:
+        allowed_source_types.update(PROVIDER_TO_SOURCE_TYPES.get(provider, []))
+
     # Step 1: Get ALL workspace nodes (unfiltered) for connectivity analysis
     all_node_stmt = select(GraphNode).where(
         GraphNode.workspace_id == user.workspace_id,
@@ -140,15 +166,25 @@ async def get_workspace_graph(
             total_edge_counter[tgt] += 1
 
     # Step 4: Filter to requested entity types, keeping only connected nodes
+    # Also scope to nodes from connected integrations only
+    def _node_passes_source_filter(n: GraphNode) -> bool:
+        """Node passes if its source_type maps to a connected integration, or has no source_type."""
+        if not n.source_type:
+            return True  # Nodes without source_type (e.g. from identity resolution) pass
+        return n.source_type in allowed_source_types
+
     if type_filter:
         display_nodes = {
             str(n.id): n for n in every_node
-            if n.entity_type in type_filter and total_edge_counter.get(str(n.id), 0) > 0
+            if n.entity_type in type_filter
+            and total_edge_counter.get(str(n.id), 0) > 0
+            and _node_passes_source_filter(n)
         }
     else:
         display_nodes = {
             str(n.id): n for n in every_node
             if total_edge_counter.get(str(n.id), 0) > 0
+            and _node_passes_source_filter(n)
         }
 
     if not display_nodes:
