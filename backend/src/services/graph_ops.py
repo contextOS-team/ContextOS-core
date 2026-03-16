@@ -9,6 +9,7 @@ import hashlib
 import logging
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,7 +74,8 @@ async def upsert_node(
 
     stmt = pg_insert(GraphNode).values(**values)
     stmt = stmt.on_conflict_do_update(
-        constraint="graph_nodes_workspace_fingerprint_key",
+        index_elements=["workspace_id", "fingerprint"],
+        index_where=text("deleted_at IS NULL"),
         set_={
             "name": stmt.excluded.name,
             "source_type": stmt.excluded.source_type,
@@ -127,7 +129,8 @@ async def upsert_edge(
 
     stmt = pg_insert(GraphEdge).values(**values)
     stmt = stmt.on_conflict_do_update(
-        constraint="graph_edges_workspace_source_target_type_key",
+        index_elements=["workspace_id", "source_node_id", "target_node_id", "relationship_type"],
+        index_where=text("deleted_at IS NULL"),
         set_={
             "properties": stmt.excluded.properties,
             "deleted_at": None,
