@@ -1,0 +1,1591 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ContextOS — Graph Visualization UI Concepts</title>
+<style>
+  /* ─── ContextOS Design Tokens (OKLCH) ─── */
+  :root {
+    --bg:        oklch(0.13 0.015 270);
+    --card:      oklch(0.16 0.02 270);
+    --elevated:  oklch(0.19 0.02 270);
+    --overlay:   oklch(0.22 0.025 270);
+    --fg:        oklch(0.93 0.005 260);
+    --fg-muted:  oklch(0.55 0.02 260);
+    --fg-dim:    oklch(0.40 0.015 260);
+    --primary:   oklch(0.75 0.18 170);
+    --primary-fg: oklch(0.15 0.015 270);
+    --border:    oklch(0.26 0.015 270);
+    --destructive: oklch(0.65 0.2 25);
+
+    /* Entity type colors — tuned for dark bg luminance */
+    --ticket:    oklch(0.68 0.16 280);  /* violet */
+    --person:    oklch(0.72 0.16 340);  /* pink/rose */
+    --decision:  oklch(0.76 0.16 85);   /* amber */
+    --pr:        oklch(0.70 0.16 145);  /* green */
+    --message:   oklch(0.70 0.14 220);  /* blue */
+    --code:      oklch(0.72 0.18 170);  /* teal = primary */
+    --notion:    oklch(0.65 0.10 260);  /* cool gray-blue */
+    --meeting:   oklch(0.72 0.18 40);   /* orange */
+
+    /* Glow intensities */
+    --glow-sm: 0 0 8px;
+    --glow-md: 0 0 16px;
+    --glow-lg: 0 0 24px;
+
+    --font-sans: 'Inter', -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+    --radius: 10px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── Layout ─── */
+  .page { max-width: 1280px; margin: 0 auto; padding: 48px 32px; }
+  .section { margin-bottom: 80px; }
+  .section-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  h1 { font-size: 28px; font-weight: 600; margin-bottom: 8px; }
+  h2 { font-size: 20px; font-weight: 600; margin-bottom: 16px; color: var(--fg); }
+  h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; color: var(--fg); }
+  p { color: var(--fg-muted); font-size: 14px; margin-bottom: 16px; max-width: 680px; }
+  .subtitle { font-size: 15px; color: var(--fg-muted); margin-bottom: 40px; }
+
+  /* ─── Node Gallery ─── */
+  .node-gallery {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-bottom: 32px;
+  }
+
+  .node-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .node-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--node-color);
+  }
+
+  /* The actual node preview */
+  .node-preview {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── Full detail node (zoom > 1.5) ── */
+  .node-full {
+    background: var(--card);
+    border: 1.5px solid color-mix(in oklch, var(--node-color) 60%, transparent);
+    border-radius: 12px;
+    padding: 12px 16px;
+    min-width: 200px;
+    max-width: 240px;
+    box-shadow:
+      var(--glow-sm) color-mix(in oklch, var(--node-color) 20%, transparent),
+      0 2px 8px oklch(0 0 0 / 0.3);
+    transition: all 0.25s ease;
+  }
+  .node-full:hover {
+    box-shadow:
+      var(--glow-md) color-mix(in oklch, var(--node-color) 35%, transparent),
+      0 4px 16px oklch(0 0 0 / 0.4);
+    border-color: var(--node-color);
+  }
+  .node-full .node-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .node-full .node-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    background: color-mix(in oklch, var(--node-color) 15%, transparent);
+    color: var(--node-color);
+    flex-shrink: 0;
+  }
+  .node-full .node-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .node-full .node-meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-muted);
+  }
+  .node-full .node-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--node-color) 12%, transparent);
+    color: var(--node-color);
+    margin-top: 4px;
+  }
+
+  /* ── Compact pill node (zoom 0.6–1.5) ── */
+  .node-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--card);
+    border: 1.5px solid color-mix(in oklch, var(--node-color) 45%, transparent);
+    border-radius: 999px;
+    padding: 6px 14px 6px 8px;
+    box-shadow: var(--glow-sm) color-mix(in oklch, var(--node-color) 15%, transparent);
+    transition: all 0.2s ease;
+  }
+  .node-pill:hover {
+    box-shadow: var(--glow-md) color-mix(in oklch, var(--node-color) 30%, transparent);
+  }
+  .node-pill .pill-dot {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    background: color-mix(in oklch, var(--node-color) 20%, transparent);
+    color: var(--node-color);
+  }
+  .node-pill .pill-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg);
+    white-space: nowrap;
+  }
+
+  /* ── Dot node (zoom < 0.6) ── */
+  .node-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--node-color);
+    box-shadow: var(--glow-md) color-mix(in oklch, var(--node-color) 40%, transparent);
+    transition: all 0.2s ease;
+  }
+  .node-dot:hover {
+    transform: scale(1.5);
+    box-shadow: var(--glow-lg) color-mix(in oklch, var(--node-color) 55%, transparent);
+  }
+
+  .node-card .node-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--node-color);
+  }
+  .node-card .node-desc {
+    font-size: 11px;
+    color: var(--fg-muted);
+    text-align: center;
+  }
+
+  /* ─── Zoom Level Comparison ─── */
+  .zoom-levels {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+  .zoom-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .zoom-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .zoom-label .zoom-range {
+    background: var(--elevated);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    color: var(--fg-muted);
+  }
+
+  /* ─── Edge Styles ─── */
+  .edge-gallery {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    margin-bottom: 32px;
+  }
+  .edge-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .edge-preview {
+    width: 120px;
+    height: 40px;
+    flex-shrink: 0;
+  }
+  .edge-info .edge-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+    margin-bottom: 2px;
+  }
+  .edge-info .edge-desc {
+    font-size: 11px;
+    color: var(--fg-muted);
+  }
+
+  /* ─── Detail Panel Mockup ─── */
+  .panel-mockup {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    height: 520px;
+  }
+  .panel-graph-area {
+    background: var(--bg);
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px solid var(--border);
+  }
+  .panel-graph-area .graph-placeholder {
+    color: var(--fg-dim);
+    font-size: 13px;
+    font-family: var(--font-mono);
+  }
+  .panel-detail {
+    padding: 24px;
+    overflow-y: auto;
+    background: var(--card);
+  }
+  .panel-detail .detail-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-detail .detail-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .panel-detail .detail-title {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .panel-detail .detail-subtitle {
+    font-size: 12px;
+    color: var(--fg-muted);
+    font-family: var(--font-mono);
+  }
+  .panel-detail .detail-section {
+    margin-bottom: 20px;
+  }
+  .panel-detail .detail-section-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    margin-bottom: 10px;
+  }
+  .panel-detail .detail-text {
+    font-size: 13px;
+    color: var(--fg-muted);
+    line-height: 1.6;
+  }
+  .panel-detail .detail-connections {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .panel-detail .connection-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--elevated);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .panel-detail .connection-row:hover {
+    background: var(--overlay);
+  }
+  .panel-detail .conn-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .panel-detail .conn-label {
+    font-size: 12px;
+    color: var(--fg);
+    flex: 1;
+  }
+  .panel-detail .conn-type {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--fg-dim);
+  }
+  .panel-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg-muted);
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+  .panel-close:hover { color: var(--fg); background: var(--overlay); }
+
+  /* ─── Controls Bar ─── */
+  .controls-mockup {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 12px;
+    width: fit-content;
+    margin: 0 auto 32px;
+  }
+  .ctrl-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+  .ctrl-btn:hover {
+    background: var(--elevated);
+    color: var(--fg);
+    border-color: var(--border);
+  }
+  .ctrl-btn.active {
+    background: color-mix(in oklch, var(--primary) 15%, transparent);
+    color: var(--primary);
+    border-color: color-mix(in oklch, var(--primary) 30%, transparent);
+  }
+  .ctrl-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+  .ctrl-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--fg-dim);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    min-width: 160px;
+    cursor: text;
+    transition: all 0.15s;
+  }
+  .ctrl-search:hover {
+    border-color: var(--fg-dim);
+  }
+
+  /* Layout toggle pills */
+  .layout-toggle {
+    display: flex;
+    background: var(--elevated);
+    border-radius: 999px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .layout-opt {
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--fg-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    border: none;
+    background: transparent;
+  }
+  .layout-opt:hover { color: var(--fg); }
+  .layout-opt.active {
+    background: var(--card);
+    color: var(--fg);
+    box-shadow: 0 1px 3px oklch(0 0 0 / 0.3);
+  }
+
+  /* ─── Page Layouts ─── */
+  .layout-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+  .layout-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .layout-card .layout-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .layout-card .layout-title {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .layout-card .layout-tag {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: color-mix(in oklch, var(--primary) 12%, transparent);
+    color: var(--primary);
+  }
+  .layout-card .layout-body {
+    padding: 20px;
+    min-height: 280px;
+    position: relative;
+  }
+
+  /* ─── Context Page Embed Mockup ─── */
+  .embed-mockup {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 32px;
+  }
+  .embed-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .embed-breadcrumb {
+    font-size: 12px;
+    color: var(--fg-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .embed-breadcrumb .bc-sep { color: var(--fg-dim); }
+  .embed-breadcrumb .bc-active { color: var(--fg); font-weight: 500; }
+  .embed-body {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    min-height: 480px;
+  }
+  .embed-sidebar {
+    border-right: 1px solid var(--border);
+    padding: 16px;
+  }
+  .embed-sidebar .sidebar-section {
+    margin-bottom: 16px;
+  }
+  .embed-sidebar .sidebar-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    margin-bottom: 8px;
+  }
+  .embed-sidebar .source-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    font-size: 11px;
+    color: var(--fg-muted);
+  }
+  .embed-sidebar .source-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+  .embed-main {
+    display: flex;
+    flex-direction: column;
+  }
+  .embed-tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0 16px;
+  }
+  .embed-tab {
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    margin-bottom: -1px;
+  }
+  .embed-tab:hover { color: var(--fg); }
+  .embed-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+  }
+  .embed-content {
+    flex: 1;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg-dim);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  /* ─── Standalone Page Mockup ─── */
+  .standalone-mockup {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    min-height: 560px;
+    margin-bottom: 32px;
+  }
+  .standalone-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--card);
+  }
+  .standalone-topbar .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .standalone-topbar .topbar-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .standalone-topbar .topbar-stats {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-muted);
+  }
+  .standalone-body {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    height: 500px;
+  }
+  .standalone-body.no-panel {
+    grid-template-columns: 1fr;
+  }
+  .standalone-graph {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .standalone-controls {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+  }
+
+  /* ─── State Mockups ─── */
+  .states-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-bottom: 32px;
+  }
+  .state-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 200px;
+    gap: 12px;
+  }
+  .state-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    margin-bottom: 4px;
+  }
+  .state-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .state-desc {
+    font-size: 12px;
+    color: var(--fg-muted);
+    max-width: 240px;
+  }
+
+  /* ─── Color Swatch Row ─── */
+  .swatch-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+  }
+  .swatch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+  }
+  .swatch .swatch-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    box-shadow: var(--glow-sm) currentColor;
+  }
+  .swatch .swatch-label {
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .swatch .swatch-hex {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--fg-dim);
+  }
+
+  /* ─── Annotation Callouts ─── */
+  .callout {
+    background: color-mix(in oklch, var(--primary) 8%, transparent);
+    border: 1px solid color-mix(in oklch, var(--primary) 20%, transparent);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 13px;
+    color: var(--fg-muted);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .callout .callout-icon { color: var(--primary); font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .callout strong { color: var(--fg); }
+
+  /* Galaxy dots animation for background */
+  .galaxy-bg {
+    position: relative;
+    overflow: hidden;
+  }
+  .galaxy-bg::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 25% 35%, color-mix(in oklch, var(--ticket) 8%, transparent) 0%, transparent 50%),
+      radial-gradient(circle at 75% 60%, color-mix(in oklch, var(--pr) 6%, transparent) 0%, transparent 50%),
+      radial-gradient(circle at 50% 80%, color-mix(in oklch, var(--primary) 5%, transparent) 0%, transparent 40%);
+    pointer-events: none;
+  }
+
+  /* Skeleton loading pulse */
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 0.6; }
+  }
+  .skel {
+    background: var(--elevated);
+    border-radius: 6px;
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  /* Node pulse ring for selected state */
+  @keyframes pulse-ring {
+    0% { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(2); opacity: 0; }
+  }
+  .node-selected::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: inherit;
+    border: 2px solid var(--node-color);
+    animation: pulse-ring 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  /* Edge label on hover */
+  .edge-label-float {
+    position: absolute;
+    background: var(--overlay);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--fg-muted);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* Mini-map preview */
+  .minimap-box {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    width: 140px;
+    height: 100px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .minimap-viewport {
+    position: absolute;
+    border: 1.5px solid var(--primary);
+    border-radius: 3px;
+    background: color-mix(in oklch, var(--primary) 8%, transparent);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- HERO -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section">
+    <h1>Graph Visualization — UI/UX Concepts</h1>
+    <p class="subtitle">Phase 33 · ContextOS v1.3 Live Intelligence</p>
+    <p>Interactive knowledge graph explorer for ticket context. Nodes represent people, decisions, PRs, messages, code, and documents. The aesthetic: <strong>Neo4j Bloom meets Linear</strong> — glowing entity nodes on dark backgrounds with precise, minimal chrome.</p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 1. ENTITY COLOR PALETTE -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-title">01 — Entity Color Palette</div>
+    <p>Each entity type gets a distinct OKLCH color, tuned for equal perceptual brightness on dark backgrounds. Colors are used for node borders, icons, glow effects, and edge tinting.</p>
+
+    <div class="swatch-row">
+      <div class="swatch">
+        <div class="swatch-dot" style="background: var(--ticket); color: var(--ticket);"></div>
+        <span class="swatch-label" style="color: var(--ticket);">Ticket</span>
+        <span class="swatch-hex">oklch(0.68 0.16 280)</span>
+      </div>
+      <div class="swatch">
+        <div class="swatch-dot" style="background: var(--person); color: var(--person);"></div>
+        <span class="swatch-label" style="color: var(--person);">Person</span>
+        <span class="swatch-hex">oklch(0.72 0.16 340)</span>
+      </div>
+      <div class="swatch">
+        <div class="swatch-dot" style="background: var(--decision); color: var(--decision);"></div>
+        <span class="swatch-label" style="color: var(--decision);">Decision</span>
+        <span class="swatch-hex">oklch(0.76 0.16 85)</span>
+      </div>
+      <div class="swatch">
+        <div class="swatch-dot" style="background: var(--pr); color: var(--pr);"></div>
+        <span class="swatch-label" style="color: var(--pr);">PR / MR</span>
+        <span class="swatch-hex">oklch(0.70 0.16 145)</span>
+      </div>
+      <div class="swatch">
+        <div class="swatch-dot" style="background: var(--message); color: var(--message);"></div>
+        <span class="swatch-label" style="color: var(--message);">Message</span>
+        <span class="swatch-hex">oklch(0.70 0.14 220)</span>
+      </div>
+      <div class="swatch">
+        <div class="swatch-dot" style="background: var(--code); color: var(--code);"></div>
+        <span class="swatch-label" style="color: var(--code);">Code</span>
+        <span class="swatch-hex">oklch(0.72 0.18 170)</span>
+      </div>
+      <div class="swatch">
+        <div class="swatch-dot" style="background: var(--notion); color: var(--notion);"></div>
+        <span class="swatch-label" style="color: var(--notion);">Notion Page</span>
+        <span class="swatch-hex">oklch(0.65 0.10 260)</span>
+      </div>
+      <div class="swatch">
+        <div class="swatch-dot" style="background: var(--meeting); color: var(--meeting);"></div>
+        <span class="swatch-label" style="color: var(--meeting);">Meeting</span>
+        <span class="swatch-hex">oklch(0.72 0.18 40)</span>
+      </div>
+    </div>
+
+    <div class="callout">
+      <span class="callout-icon">◆</span>
+      <span><strong>Design principle:</strong> Colors are perceptually equiluminant in OKLCH — no entity type dominates visually. Glow effects use color-mix with 15–35% opacity for the "galaxy" feel without visual noise.</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 2. NODE DESIGNS BY ENTITY TYPE -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-title">02 — Node Designs (Full Detail View)</div>
+    <p>At high zoom (>1.5x), nodes render as full React components — rounded cards with icon, name, metadata, and type badge. Each entity type has a distinct icon and color signature.</p>
+
+    <div class="node-gallery">
+      <!-- Ticket -->
+      <div class="node-card" style="--node-color: var(--ticket);">
+        <div class="node-preview">
+          <div class="node-full" style="--node-color: var(--ticket);">
+            <div class="node-header">
+              <div class="node-icon">☑</div>
+              <div>
+                <div class="node-name">Add SSO support</div>
+                <div class="node-meta">CON-142</div>
+              </div>
+            </div>
+            <div class="node-badge">● In Progress</div>
+          </div>
+        </div>
+        <div class="node-label" style="color: var(--ticket);">Ticket</div>
+        <div class="node-desc">Shows identifier, title, status badge</div>
+      </div>
+
+      <!-- Person -->
+      <div class="node-card" style="--node-color: var(--person);">
+        <div class="node-preview">
+          <div class="node-full" style="--node-color: var(--person);">
+            <div class="node-header">
+              <div class="node-icon">👤</div>
+              <div>
+                <div class="node-name">Daulet A.</div>
+                <div class="node-meta">Backend & Integrations</div>
+              </div>
+            </div>
+            <div class="node-badge">5 connections</div>
+          </div>
+        </div>
+        <div class="node-label" style="color: var(--person);">Person</div>
+        <div class="node-desc">Shows role, connection count</div>
+      </div>
+
+      <!-- Decision -->
+      <div class="node-card" style="--node-color: var(--decision);">
+        <div class="node-preview">
+          <div class="node-full" style="--node-color: var(--decision);">
+            <div class="node-header">
+              <div class="node-icon">◇</div>
+              <div>
+                <div class="node-name">Use Supabase Auth</div>
+                <div class="node-meta">Decision</div>
+              </div>
+            </div>
+            <div class="node-badge">✓ Adopted</div>
+          </div>
+        </div>
+        <div class="node-label" style="color: var(--decision);">Decision</div>
+        <div class="node-desc">Shows rationale excerpt, status</div>
+      </div>
+
+      <!-- PR -->
+      <div class="node-card" style="--node-color: var(--pr);">
+        <div class="node-preview">
+          <div class="node-full" style="--node-color: var(--pr);">
+            <div class="node-header">
+              <div class="node-icon">⑂</div>
+              <div>
+                <div class="node-name">Fix auth middleware</div>
+                <div class="node-meta">#247 · merged</div>
+              </div>
+            </div>
+            <div class="node-badge">+142 −38</div>
+          </div>
+        </div>
+        <div class="node-label" style="color: var(--pr);">Pull Request</div>
+        <div class="node-desc">Shows PR number, merge status, diff stats</div>
+      </div>
+
+      <!-- Message -->
+      <div class="node-card" style="--node-color: var(--message);">
+        <div class="node-preview">
+          <div class="node-full" style="--node-color: var(--message);">
+            <div class="node-header">
+              <div class="node-icon">💬</div>
+              <div>
+                <div class="node-name">"We should use JWT…"</div>
+                <div class="node-meta">#eng-backend · 2h ago</div>
+              </div>
+            </div>
+            <div class="node-badge">Slack</div>
+          </div>
+        </div>
+        <div class="node-label" style="color: var(--message);">Message</div>
+        <div class="node-desc">Shows truncated text, channel, time</div>
+      </div>
+
+      <!-- Code -->
+      <div class="node-card" style="--node-color: var(--code);">
+        <div class="node-preview">
+          <div class="node-full" style="--node-color: var(--code);">
+            <div class="node-header">
+              <div class="node-icon">{ }</div>
+              <div>
+                <div class="node-name">auth_middleware.py</div>
+                <div class="node-meta">backend/src/</div>
+              </div>
+            </div>
+            <div class="node-badge">Python</div>
+          </div>
+        </div>
+        <div class="node-label" style="color: var(--code);">Code</div>
+        <div class="node-desc">Shows file path, language</div>
+      </div>
+
+      <!-- Notion -->
+      <div class="node-card" style="--node-color: var(--notion);">
+        <div class="node-preview">
+          <div class="node-full" style="--node-color: var(--notion);">
+            <div class="node-header">
+              <div class="node-icon">📄</div>
+              <div>
+                <div class="node-name">Auth Architecture</div>
+                <div class="node-meta">Engineering Wiki</div>
+              </div>
+            </div>
+            <div class="node-badge">Notion</div>
+          </div>
+        </div>
+        <div class="node-label" style="color: var(--notion);">Notion Page</div>
+        <div class="node-desc">Shows page title, workspace</div>
+      </div>
+
+      <!-- Meeting -->
+      <div class="node-card" style="--node-color: var(--meeting);">
+        <div class="node-preview">
+          <div class="node-full" style="--node-color: var(--meeting);">
+            <div class="node-header">
+              <div class="node-icon">🎙</div>
+              <div>
+                <div class="node-name">Sprint Planning</div>
+                <div class="node-meta">Mar 14, 2026 · 42min</div>
+              </div>
+            </div>
+            <div class="node-badge">Fathom</div>
+          </div>
+        </div>
+        <div class="node-label" style="color: var(--meeting);">Meeting</div>
+        <div class="node-desc">Shows title, date, duration</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 3. SEMANTIC ZOOM LEVELS -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-title">03 — Semantic Zoom Levels</div>
+    <p>Nodes change representation based on viewport zoom. Three distinct levels keep the graph readable at any scale.</p>
+
+    <div class="zoom-levels">
+      <!-- Full detail -->
+      <div class="zoom-box">
+        <div class="zoom-label">Full Detail <span class="zoom-range">zoom > 1.5</span></div>
+        <div class="node-full" style="--node-color: var(--ticket);">
+          <div class="node-header">
+            <div class="node-icon">☑</div>
+            <div>
+              <div class="node-name">Add SSO support</div>
+              <div class="node-meta">CON-142 · In Progress</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Compact pill -->
+      <div class="zoom-box">
+        <div class="zoom-label">Compact Pill <span class="zoom-range">0.6 – 1.5</span></div>
+        <div style="display: flex; flex-direction: column; gap: 8px; align-items: center;">
+          <div class="node-pill" style="--node-color: var(--ticket);">
+            <div class="pill-dot">☑</div>
+            <span class="pill-label">CON-142</span>
+          </div>
+          <div class="node-pill" style="--node-color: var(--person);">
+            <div class="pill-dot">👤</div>
+            <span class="pill-label">Daulet A.</span>
+          </div>
+          <div class="node-pill" style="--node-color: var(--pr);">
+            <div class="pill-dot">⑂</div>
+            <span class="pill-label">#247</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dot -->
+      <div class="zoom-box">
+        <div class="zoom-label">Glow Dot <span class="zoom-range">zoom < 0.6</span></div>
+        <div style="display: flex; gap: 18px; align-items: center;">
+          <div class="node-dot" style="--node-color: var(--ticket);"></div>
+          <div class="node-dot" style="--node-color: var(--person);"></div>
+          <div class="node-dot" style="--node-color: var(--pr);"></div>
+          <div class="node-dot" style="--node-color: var(--decision);"></div>
+          <div class="node-dot" style="--node-color: var(--message);"></div>
+          <div class="node-dot" style="--node-color: var(--code);"></div>
+        </div>
+        <p style="font-size: 11px; color: var(--fg-dim); margin: 0;">Galaxy overview — clusters visible by color</p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <span class="callout-icon">◆</span>
+      <span><strong>Implementation:</strong> React Flow's <code>onViewportChange</code> provides zoom level. Custom <code>nodeTypes</code> render different components per zoom threshold. Use <code>React.memo</code> heavily — only visible nodes re-render on zoom change.</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 4. EDGE STYLES -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-title">04 — Edge Styles</div>
+    <p>Edges are subtle by default, becoming prominent on hover or when connecting to a selected node. Relationship types are distinguished by line pattern and subtle color tinting.</p>
+
+    <div class="edge-gallery">
+      <div class="edge-card">
+        <svg class="edge-preview" viewBox="0 0 120 40">
+          <line x1="10" y1="20" x2="110" y2="20" stroke="oklch(0.40 0.02 260)" stroke-width="1.5" stroke-opacity="0.5"/>
+          <polygon points="105,16 115,20 105,24" fill="oklch(0.40 0.02 260)" fill-opacity="0.5"/>
+        </svg>
+        <div class="edge-info">
+          <div class="edge-name">authored / created</div>
+          <div class="edge-desc">Solid line, directional arrow. Person → Ticket/PR/Decision</div>
+        </div>
+      </div>
+
+      <div class="edge-card">
+        <svg class="edge-preview" viewBox="0 0 120 40">
+          <line x1="10" y1="20" x2="110" y2="20" stroke="oklch(0.50 0.12 220)" stroke-width="1.5" stroke-opacity="0.5" stroke-dasharray="6 4"/>
+          <polygon points="105,16 115,20 105,24" fill="oklch(0.50 0.12 220)" fill-opacity="0.5"/>
+        </svg>
+        <div class="edge-info">
+          <div class="edge-name">mentions / references</div>
+          <div class="edge-desc">Dashed line, directional. Message → Ticket, PR → Decision</div>
+        </div>
+      </div>
+
+      <div class="edge-card">
+        <svg class="edge-preview" viewBox="0 0 120 40">
+          <line x1="10" y1="20" x2="110" y2="20" stroke="oklch(0.65 0.2 25)" stroke-width="2" stroke-opacity="0.6"/>
+          <polygon points="105,16 115,20 105,24" fill="oklch(0.65 0.2 25)" fill-opacity="0.6"/>
+        </svg>
+        <div class="edge-info">
+          <div class="edge-name">blocks / depends_on</div>
+          <div class="edge-desc">Thicker line, red-tinted. Shows critical dependencies</div>
+        </div>
+      </div>
+
+      <div class="edge-card">
+        <svg class="edge-preview" viewBox="0 0 120 40">
+          <line x1="10" y1="20" x2="110" y2="20" stroke="oklch(0.55 0.08 260)" stroke-width="1" stroke-opacity="0.3"/>
+        </svg>
+        <div class="edge-info">
+          <div class="edge-name">related_to (generic)</div>
+          <div class="edge-desc">Thin, muted, no arrow. Low-confidence / semantic link</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <span class="callout-icon">◆</span>
+      <span><strong>Hover behavior:</strong> Hovering an edge reveals a floating label with the relationship type (e.g., "mentions") at the midpoint. Connected nodes brighten; unconnected nodes dim to 30% opacity. This focus effect makes individual relationships legible in dense graphs.</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 5. CONTROLS BAR -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-title">05 — Graph Controls</div>
+    <p>A floating pill bar centered at the bottom of the graph. Minimal chrome, maximum function.</p>
+
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 16px;">
+      <div class="controls-mockup">
+        <!-- Zoom -->
+        <div class="ctrl-btn" title="Zoom in">+</div>
+        <div class="ctrl-btn" title="Zoom out">−</div>
+        <div class="ctrl-btn" title="Fit view">⊡</div>
+
+        <div class="ctrl-divider"></div>
+
+        <!-- Layout toggle -->
+        <div class="layout-toggle">
+          <button class="layout-opt active">Organic</button>
+          <button class="layout-opt">Grouped</button>
+          <button class="layout-opt">Radial</button>
+        </div>
+
+        <div class="ctrl-divider"></div>
+
+        <!-- Search -->
+        <div class="ctrl-search">
+          <span>⌕</span>
+          <span>Search nodes…</span>
+          <span style="margin-left: auto; opacity: 0.5;">⌘K</span>
+        </div>
+
+        <div class="ctrl-divider"></div>
+
+        <!-- Filter -->
+        <div class="ctrl-btn" title="Filter by type">▦</div>
+        <div class="ctrl-btn" title="Toggle minimap">◫</div>
+      </div>
+
+      <p style="font-size: 11px; color: var(--fg-dim); margin: 0;">Zoom · Layout mode · Search · Filter · Minimap toggle</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 6. DETAIL PANEL -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-title">06 — Node Detail Panel</div>
+    <p>Click a node → right sidebar slides in with full entity details and connections. Never navigate away from the graph. Panel uses the same elevated surface hierarchy as the rest of the dashboard.</p>
+
+    <div class="panel-mockup">
+      <div class="panel-graph-area galaxy-bg">
+        <span class="graph-placeholder">← Graph canvas with selected node highlighted</span>
+
+        <!-- Mini-map corner -->
+        <div class="minimap-box">
+          <div class="minimap-viewport" style="width: 40px; height: 28px; top: 30px; left: 50px;"></div>
+        </div>
+      </div>
+
+      <div class="panel-detail" style="position: relative;">
+        <div class="panel-close">✕</div>
+
+        <div class="detail-header">
+          <div class="detail-icon" style="background: color-mix(in oklch, var(--ticket) 15%, transparent); color: var(--ticket);">☑</div>
+          <div>
+            <div class="detail-title">Add SSO support for enterprise</div>
+            <div class="detail-subtitle">CON-142 · In Progress</div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Description</div>
+          <div class="detail-text">Enterprise customers need SSO via SAML 2.0 and OIDC. Must support Okta, Azure AD, and Google Workspace as identity providers. Session management should respect IdP token lifetimes.</div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Properties</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div style="background: var(--elevated); border-radius: 6px; padding: 8px 12px;">
+              <div style="font-size: 10px; color: var(--fg-dim); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.1em;">Priority</div>
+              <div style="font-size: 13px; color: var(--fg); margin-top: 2px;">High</div>
+            </div>
+            <div style="background: var(--elevated); border-radius: 6px; padding: 8px 12px;">
+              <div style="font-size: 10px; color: var(--fg-dim); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.1em;">Assignee</div>
+              <div style="font-size: 13px; color: var(--fg); margin-top: 2px;">Daulet A.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-title">Connected Entities (7)</div>
+          <div class="detail-connections">
+            <div class="connection-row">
+              <div class="conn-dot" style="background: var(--person);"></div>
+              <span class="conn-label">Daulet A.</span>
+              <span class="conn-type">authored</span>
+            </div>
+            <div class="connection-row">
+              <div class="conn-dot" style="background: var(--pr);"></div>
+              <span class="conn-label">#247 Fix auth middleware</span>
+              <span class="conn-type">references</span>
+            </div>
+            <div class="connection-row">
+              <div class="conn-dot" style="background: var(--decision);"></div>
+              <span class="conn-label">Use Supabase Auth</span>
+              <span class="conn-type">decided_in</span>
+            </div>
+            <div class="connection-row">
+              <div class="conn-dot" style="background: var(--message);"></div>
+              <span class="conn-label">"We should use JWT…"</span>
+              <span class="conn-type">mentions</span>
+            </div>
+            <div class="connection-row">
+              <div class="conn-dot" style="background: var(--notion);"></div>
+              <span class="conn-label">Auth Architecture</span>
+              <span class="conn-type">references</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 7. CONTEXT PAGE EMBED -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-title">07 — Context Page Embed (GRAPH-02)</div>
+    <p>The graph embeds in the context detail page as a tab alongside the existing markdown content. The two-column layout (sources sidebar + main area) is preserved — the graph replaces the markdown area when the "Graph" tab is active.</p>
+
+    <div class="embed-mockup">
+      <div class="embed-header">
+        <div class="embed-breadcrumb">
+          <span>Context</span>
+          <span class="bc-sep">›</span>
+          <span class="bc-active">CON-142: Add SSO support</span>
+        </div>
+      </div>
+      <div class="embed-body">
+        <div class="embed-sidebar">
+          <div class="sidebar-section">
+            <div class="sidebar-label">Sources (12)</div>
+            <div class="source-item"><div class="source-dot" style="background: var(--ticket);"></div> 2 Linear</div>
+            <div class="source-item"><div class="source-dot" style="background: var(--message);"></div> 4 Slack</div>
+            <div class="source-item"><div class="source-dot" style="background: var(--pr);"></div> 3 GitHub</div>
+            <div class="source-item"><div class="source-dot" style="background: var(--notion);"></div> 1 Notion</div>
+            <div class="source-item"><div class="source-dot" style="background: var(--meeting);"></div> 2 Meetings</div>
+          </div>
+        </div>
+        <div class="embed-main">
+          <div class="embed-tab-bar">
+            <div class="embed-tab">Content</div>
+            <div class="embed-tab active">Graph</div>
+          </div>
+          <div class="embed-content galaxy-bg">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+              <span>Interactive graph renders here — same component, constrained to tab area</span>
+              <span style="font-size: 11px; color: var(--fg-dim);">Controls bar floats at bottom of this region</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <span class="callout-icon">◆</span>
+      <span><strong>Key decision:</strong> Tab-based rather than stacking graph above/below content. This preserves the full viewport for whichever view the user needs. The graph tab uses the same <code>&lt;GraphExplorer /&gt;</code> component as the standalone page — just with different container dimensions and <code>fitView</code> on mount.</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 8. STANDALONE PAGE -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-title">08 — Standalone Graph Page (/dashboard/graph) (GRAPH-03)</div>
+    <p>Full-page graph exploration. Top bar shows workspace-level stats. Graph fills the viewport. Detail panel slides in from the right on node click.</p>
+
+    <div class="standalone-mockup">
+      <div class="standalone-topbar">
+        <div class="topbar-left">
+          <div class="topbar-title">Knowledge Graph</div>
+          <div class="topbar-stats">142 nodes · 287 edges · depth 2</div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <!-- Entity type filter chips -->
+          <div style="display: flex; gap: 4px;">
+            <span style="font-size: 11px; padding: 3px 10px; border-radius: 999px; background: color-mix(in oklch, var(--ticket) 15%, transparent); color: var(--ticket); border: 1px solid color-mix(in oklch, var(--ticket) 30%, transparent);">Tickets</span>
+            <span style="font-size: 11px; padding: 3px 10px; border-radius: 999px; background: color-mix(in oklch, var(--person) 15%, transparent); color: var(--person); border: 1px solid color-mix(in oklch, var(--person) 30%, transparent);">People</span>
+            <span style="font-size: 11px; padding: 3px 10px; border-radius: 999px; background: var(--elevated); color: var(--fg-muted); border: 1px solid var(--border);">PRs</span>
+            <span style="font-size: 11px; padding: 3px 10px; border-radius: 999px; background: var(--elevated); color: var(--fg-muted); border: 1px solid var(--border);">+5 more</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="standalone-body">
+        <div class="standalone-graph galaxy-bg">
+          <span style="color: var(--fg-dim); font-family: var(--font-mono); font-size: 12px;">
+            Full viewport graph with force-directed layout
+          </span>
+
+          <!-- Controls -->
+          <div class="standalone-controls">
+            <div class="controls-mockup">
+              <div class="ctrl-btn">+</div>
+              <div class="ctrl-btn">−</div>
+              <div class="ctrl-btn">⊡</div>
+              <div class="ctrl-divider"></div>
+              <div class="layout-toggle">
+                <button class="layout-opt active">Organic</button>
+                <button class="layout-opt">Grouped</button>
+                <button class="layout-opt">Radial</button>
+              </div>
+              <div class="ctrl-divider"></div>
+              <div class="ctrl-search"><span>⌕</span> <span>Search nodes…</span> <span style="margin-left: auto; opacity: 0.5;">⌘K</span></div>
+            </div>
+          </div>
+
+          <!-- Minimap -->
+          <div class="minimap-box">
+            <div class="minimap-viewport" style="width: 50px; height: 35px; top: 25px; left: 40px;"></div>
+          </div>
+        </div>
+
+        <!-- Detail panel (slides in on node click) -->
+        <div class="panel-detail" style="border-left: 1px solid var(--border); position: relative;">
+          <div class="panel-close">✕</div>
+          <div class="detail-header">
+            <div class="detail-icon" style="background: color-mix(in oklch, var(--pr) 15%, transparent); color: var(--pr);">⑂</div>
+            <div>
+              <div class="detail-title">Fix auth middleware</div>
+              <div class="detail-subtitle">#247 · Merged · 3 days ago</div>
+            </div>
+          </div>
+          <div class="detail-section">
+            <div class="detail-section-title">Summary</div>
+            <div class="detail-text">Fixes session validation in auth middleware. Replaces custom JWT parsing with Supabase's built-in session verification. Adds rate limiting to auth endpoints.</div>
+          </div>
+          <div class="detail-section">
+            <div class="detail-section-title">Changes</div>
+            <div style="display: flex; gap: 12px; font-family: var(--font-mono); font-size: 12px;">
+              <span style="color: var(--pr);">+142</span>
+              <span style="color: var(--destructive);">−38</span>
+              <span style="color: var(--fg-dim);">4 files</span>
+            </div>
+          </div>
+          <div class="detail-section">
+            <div class="detail-section-title">Connected Entities (4)</div>
+            <div class="detail-connections">
+              <div class="connection-row">
+                <div class="conn-dot" style="background: var(--ticket);"></div>
+                <span class="conn-label">CON-142 Add SSO support</span>
+                <span class="conn-type">fixes</span>
+              </div>
+              <div class="connection-row">
+                <div class="conn-dot" style="background: var(--person);"></div>
+                <span class="conn-label">Daulet A.</span>
+                <span class="conn-type">authored</span>
+              </div>
+              <div class="connection-row">
+                <div class="conn-dot" style="background: var(--code);"></div>
+                <span class="conn-label">auth_middleware.py</span>
+                <span class="conn-type">modifies</span>
+              </div>
+              <div class="connection-row">
+                <div class="conn-dot" style="background: var(--decision);"></div>
+                <span class="conn-label">Use Supabase Auth</span>
+                <span class="conn-type">implements</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 9. EMPTY / LOADING / ERROR STATES -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-title">09 — Empty, Loading, and Error States</div>
+
+    <div class="states-grid">
+      <!-- Loading -->
+      <div class="state-card">
+        <div class="state-icon" style="background: var(--elevated);">
+          <div style="width: 24px; height: 24px; border: 2px solid var(--fg-dim); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+          <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+        </div>
+        <div class="state-title">Loading Graph</div>
+        <div class="state-desc">
+          Pulsing skeleton nodes fade in at estimated positions. Graph builds progressively as layout engine computes.
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 8px;">
+          <div class="skel" style="width: 10px; height: 10px; border-radius: 50%;"></div>
+          <div class="skel" style="width: 60px; height: 10px;"></div>
+          <div class="skel" style="width: 10px; height: 10px; border-radius: 50%;"></div>
+          <div class="skel" style="width: 40px; height: 10px;"></div>
+        </div>
+      </div>
+
+      <!-- Empty -->
+      <div class="state-card">
+        <div class="state-icon" style="background: color-mix(in oklch, var(--primary) 10%, transparent); color: var(--primary);">◌</div>
+        <div class="state-title">No Graph Data</div>
+        <div class="state-desc">
+          "This ticket hasn't been processed for graph relationships yet. Generate a context page to build its knowledge graph."
+        </div>
+        <div style="margin-top: 4px; padding: 6px 16px; border-radius: 999px; background: color-mix(in oklch, var(--primary) 12%, transparent); color: var(--primary); font-size: 12px; font-weight: 500; cursor: pointer;">
+          Generate Context
+        </div>
+      </div>
+
+      <!-- Error -->
+      <div class="state-card">
+        <div class="state-icon" style="background: color-mix(in oklch, var(--destructive) 10%, transparent); color: var(--destructive);">⚠</div>
+        <div class="state-title">Failed to Load</div>
+        <div class="state-desc">
+          "Couldn't load the knowledge graph. This might be a temporary issue."
+        </div>
+        <div style="margin-top: 4px; padding: 6px 16px; border-radius: 999px; background: var(--elevated); color: var(--fg-muted); font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid var(--border);">
+          Retry
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 10. INTERACTION SUMMARY -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-title">10 — Interaction Patterns Summary</div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+      <div style="background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px;">
+        <h3 style="margin-bottom: 12px;">Node Interactions</h3>
+        <div style="font-size: 13px; color: var(--fg-muted); line-height: 2;">
+          <div><strong style="color: var(--fg); font-family: var(--font-mono); font-size: 11px;">Click</strong> → Open detail panel</div>
+          <div><strong style="color: var(--fg); font-family: var(--font-mono); font-size: 11px;">Hover</strong> → Highlight node + connected edges, dim others</div>
+          <div><strong style="color: var(--fg); font-family: var(--font-mono); font-size: 11px;">Drag</strong> → Move node, edges follow (pin to position)</div>
+          <div><strong style="color: var(--fg); font-family: var(--font-mono); font-size: 11px;">Double-click</strong> → Focus view: recenter + zoom to node's neighborhood</div>
+          <div><strong style="color: var(--fg); font-family: var(--font-mono); font-size: 11px;">Right-click</strong> → Context menu: "Expand connections", "Navigate to source", "Pin/Unpin"</div>
+        </div>
+      </div>
+      <div style="background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px;">
+        <h3 style="margin-bottom: 12px;">Canvas Interactions</h3>
+        <div style="font-size: 13px; color: var(--fg-muted); line-height: 2;">
+          <div><strong style="color: var(--fg); font-family: var(--font-mono); font-size: 11px;">Scroll</strong> → Zoom in/out (smooth, centered on cursor)</div>
+          <div><strong style="color: var(--fg); font-family: var(--font-mono); font-size: 11px;">Click + Drag</strong> → Pan the canvas</div>
+          <div><strong style="color: var(--fg); font-family: var(--font-mono); font-size: 11px;">⌘K</strong> → Open search (highlights matching nodes)</div>
+          <div><strong style="color: var(--fg); font-family: var(--font-mono); font-size: 11px;">Esc</strong> → Close detail panel / deselect node</div>
+          <div><strong style="color: var(--fg); font-family: var(--font-mono); font-size: 11px;">⌘0</strong> → Fit all nodes in view</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- 11. DESIGN DECISIONS FOR CONTEXT.md -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div class="section">
+    <div class="section-title">11 — Design Decisions Summary</div>
+    <div style="background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; font-size: 13px; color: var(--fg-muted); line-height: 1.8;">
+      <p style="max-width: 100%; margin-bottom: 16px;">Key design decisions captured for Phase 33 CONTEXT.md:</p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+        <div>
+          <strong style="color: var(--fg); display: block; margin-bottom: 8px;">Visual Language</strong>
+          <div>• 8 entity colors in OKLCH, perceptually equiluminant on dark backgrounds</div>
+          <div>• Three-tier semantic zoom: Full card → Pill → Glow dot</div>
+          <div>• Glow effects via color-mix box-shadows (not filters — better perf)</div>
+          <div>• Edges: solid/dashed/thick by relationship type, dim at rest, bright on hover</div>
+        </div>
+        <div>
+          <strong style="color: var(--fg); display: block; margin-bottom: 8px;">Interaction</strong>
+          <div>• Click → right sidebar detail panel (never navigate away)</div>
+          <div>• Hover → highlight connected subgraph, dim rest to 30%</div>
+          <div>• Double-click → focus/recenter on node neighborhood</div>
+          <div>• Floating controls pill at bottom: zoom, layout, search, filter</div>
+        </div>
+        <div>
+          <strong style="color: var(--fg); display: block; margin-bottom: 8px;">Layout</strong>
+          <div>• Three ELK modes: Organic (force), Grouped (compound), Radial (ego)</div>
+          <div>• Layout computed in Web Worker to keep UI responsive</div>
+          <div>• MiniMap component in bottom-right corner</div>
+          <div>• Progressive disclosure: start at depth 2, expand on demand</div>
+        </div>
+        <div>
+          <strong style="color: var(--fg); display: block; margin-bottom: 8px;">Placement</strong>
+          <div>• Context detail page: Tab alongside markdown content ("Content" | "Graph")</div>
+          <div>• Standalone /dashboard/graph: Full-page with filter chips in topbar</div>
+          <div>• Same &lt;GraphExplorer /&gt; component in both, different container bounds</div>
+          <div>• Standalone page queries all workspace entities, not just one ticket</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
