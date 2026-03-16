@@ -89,3 +89,23 @@ export interface GraphNeighborhoodResponse {
     properties: Record<string, unknown>
   }>
 }
+
+export interface WorkspaceGraphResponse {
+  node_count: number
+  edge_count: number
+  truncated: boolean
+  total_available: number
+  nodes: Array<{
+    id: string
+    entity_type: string
+    name: string
+    depth: number
+    properties: Record<string, unknown>
+  }>
+  edges: Array<{
+    source: string
+    target: string
+    relationship_type: string
+    properties: Record<string, unknown>
+  }>
+}

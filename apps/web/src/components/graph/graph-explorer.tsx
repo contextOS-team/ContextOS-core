@@ -23,7 +23,7 @@ import '@xyflow/react/dist/style.css'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { fetchGraphNeighborhood } from '@/lib/api'
+import { fetchGraphNeighborhood, fetchWorkspaceGraph } from '@/lib/api'
 import type {
   EntityType,
   GraphNodeData,
@@ -61,9 +61,11 @@ const EDGE_TYPES: EdgeTypes = {
 
 function GraphExplorerInner({
   ticketIdentifier,
+  focusNodeId,
   className,
 }: {
-  ticketIdentifier: string
+  ticketIdentifier?: string
+  focusNodeId?: string
   className?: string
 }) {
   const reactFlow = useReactFlow()
@@ -92,73 +94,100 @@ function GraphExplorerInner({
   // Data fetch + layout
   // -----------------------------------------------------------------------
 
-  const fetchAndLayout = useCallback(
-    async (identifier: string) => {
+  const transformAndLayout = useCallback(
+    async (
+      apiNodes: Array<{ id: string; entity_type: string; name: string; depth: number; properties: Record<string, unknown> }>,
+      apiEdges: Array<{ source: string; target: string; relationship_type: string; properties: Record<string, unknown> }>,
+      focusId?: string,
+    ) => {
+      // Transform API nodes -> React Flow nodes
+      const rfNodes: Node<GraphNodeData>[] = apiNodes.map((n) => ({
+        id: n.id,
+        type: 'compact' as const,
+        position: { x: 0, y: 0 },
+        data: {
+          id: n.id,
+          entityType: n.entity_type as EntityType,
+          name: n.name,
+          depth: n.depth,
+          properties: n.properties,
+          isRoot: n.depth === 0,
+          connectedCount: 0,
+        },
+      }))
+
+      // Transform API edges -> React Flow edges
+      const rfEdges: Edge<GraphEdgeData>[] = apiEdges.map((e, i) => ({
+        id: `e-${e.source}-${e.target}-${i}`,
+        source: e.source,
+        target: e.target,
+        type: 'default',
+        markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+        data: {
+          relationshipType: e.relationship_type,
+          properties: e.properties,
+        },
+      }))
+
+      // Compute connected counts
+      const countMap = new Map<string, number>()
+      for (const e of rfEdges) {
+        countMap.set(e.source, (countMap.get(e.source) ?? 0) + 1)
+        countMap.set(e.target, (countMap.get(e.target) ?? 0) + 1)
+      }
+      for (const n of rfNodes) {
+        n.data.connectedCount = countMap.get(n.id) ?? 0
+      }
+
+      // Run ELK layout
+      const positioned = await computeElkLayout(rfNodes, rfEdges, 'compact')
+      setNodes(positioned)
+      setEdges(rfEdges)
+
+      // Fit view, then optionally focus on a specific node
+      setTimeout(() => {
+        reactFlow.fitView({ padding: 0.2 })
+        if (focusId) {
+          const target = positioned.find((n) => n.id === focusId)
+          if (target) {
+            setTimeout(() => {
+              reactFlow.setCenter(
+                target.position.x + (target.measured?.width ?? 60) / 2,
+                target.position.y + (target.measured?.height ?? 30) / 2,
+                { zoom: 1.2, duration: 500 }
+              )
+            }, 100)
+          }
+        }
+      }, 50)
+    },
+    [reactFlow, setNodes, setEdges]
+  )
+
+  const fetchData = useCallback(
+    async (identifier?: string, focusId?: string) => {
       setLoading(true)
       setError(null)
       try {
-        const data = await fetchGraphNeighborhood(identifier)
-
-        // Transform API nodes -> React Flow nodes
-        const rfNodes: Node<GraphNodeData>[] = data.nodes.map((n) => ({
-          id: n.id,
-          type: 'compact' as const,
-          position: { x: 0, y: 0 },
-          data: {
-            id: n.id,
-            entityType: n.entity_type as EntityType,
-            name: n.name,
-            depth: n.depth,
-            properties: n.properties,
-            isRoot: n.depth === 0,
-            connectedCount: 0,
-          },
-        }))
-
-        // Transform API edges -> React Flow edges
-        const rfEdges: Edge<GraphEdgeData>[] = data.edges.map((e, i) => ({
-          id: `e-${e.source}-${e.target}-${i}`,
-          source: e.source,
-          target: e.target,
-          type: 'default',
-          markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-          data: {
-            relationshipType: e.relationship_type,
-            properties: e.properties,
-          },
-        }))
-
-        // Compute connected counts
-        const countMap = new Map<string, number>()
-        for (const e of rfEdges) {
-          countMap.set(e.source, (countMap.get(e.source) ?? 0) + 1)
-          countMap.set(e.target, (countMap.get(e.target) ?? 0) + 1)
+        if (identifier) {
+          const data = await fetchGraphNeighborhood(identifier)
+          await transformAndLayout(data.nodes, data.edges, focusId)
+        } else {
+          const data = await fetchWorkspaceGraph()
+          await transformAndLayout(data.nodes, data.edges, focusId)
         }
-        for (const n of rfNodes) {
-          n.data.connectedCount = countMap.get(n.id) ?? 0
-        }
-
-        // Run ELK layout
-        const positioned = await computeElkLayout(rfNodes, rfEdges, 'compact')
-        setNodes(positioned)
-        setEdges(rfEdges)
-
-        // Fit view after layout
-        setTimeout(() => reactFlow.fitView({ padding: 0.2 }), 50)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load graph')
       } finally {
         setLoading(false)
       }
     },
-    [reactFlow, setNodes, setEdges]
+    [transformAndLayout]
   )
 
   useEffect(() => {
-    if (ticketIdentifier) {
-      fetchAndLayout(ticketIdentifier)
-    }
-  }, [ticketIdentifier, fetchAndLayout])
+    fetchData(ticketIdentifier, focusNodeId)
+  }, [ticketIdentifier, focusNodeId, fetchData])
 
   // -----------------------------------------------------------------------
   // Zoom tier tracking
@@ -506,7 +535,7 @@ function GraphExplorerInner({
       {error && (
         <GraphError
           message={error}
-          onRetry={() => fetchAndLayout(ticketIdentifier)}
+          onRetry={() => fetchData(ticketIdentifier, focusNodeId)}
         />
       )}
 
@@ -571,10 +600,10 @@ function GraphEmpty() {
   return (
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-[var(--bg)]/80 backdrop-blur-sm">
       <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>
-        This ticket hasn&apos;t been processed yet.
+        No graph data yet.
       </p>
       <p className="text-xs" style={{ color: 'var(--muted-foreground)', opacity: 0.6 }}>
-        Generate context to see the knowledge graph.
+        Generate context pages to build the knowledge graph.
       </p>
     </div>
   )
@@ -586,15 +615,18 @@ function GraphEmpty() {
 
 export function GraphExplorer({
   ticketIdentifier,
+  focusNodeId,
   className,
 }: {
-  ticketIdentifier: string
+  ticketIdentifier?: string
+  focusNodeId?: string
   className?: string
 }) {
   return (
     <ReactFlowProvider>
       <GraphExplorerInner
         ticketIdentifier={ticketIdentifier}
+        focusNodeId={focusNodeId}
         className={className}
       />
     </ReactFlowProvider>

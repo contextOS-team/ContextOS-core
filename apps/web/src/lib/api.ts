@@ -693,7 +693,15 @@ export function getDashboardResurfaced() {
 // Graph Neighborhood
 // ---------------------------------------------------------------------------
 
-import type { GraphNeighborhoodResponse } from '@/components/graph/types'
+import type { GraphNeighborhoodResponse, WorkspaceGraphResponse } from '@/components/graph/types'
+
+export function fetchWorkspaceGraph(
+  limit: number = 200
+): Promise<WorkspaceGraphResponse> {
+  return apiFetch<WorkspaceGraphResponse>(
+    `/api/graph?limit=${limit}`
+  )
+}
 
 export function fetchGraphNeighborhood(
   ticketIdentifier: string,

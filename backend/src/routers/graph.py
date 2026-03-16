@@ -1,7 +1,7 @@
-"""Graph explorer API endpoint.
+"""Graph explorer API endpoints.
 
-Exposes a ticket's graph neighborhood as structured JSON (nodes + edges),
-enabling frontend visualization and external tool consumption.
+Exposes workspace-wide and per-ticket graph data as structured JSON
+(nodes + edges), enabling frontend visualization and external tool consumption.
 """
 
 import logging
@@ -55,7 +55,118 @@ class GraphNeighborhoodResponse(PydanticBaseModel):
     edges: list[GraphEdgeResponse]
 
 
+class WorkspaceGraphResponse(PydanticBaseModel):
+    """Workspace-wide graph response."""
+
+    node_count: int
+    edge_count: int
+    truncated: bool
+    total_available: int
+    nodes: list[GraphNodeResponse]
+    edges: list[GraphEdgeResponse]
+
+
 router = APIRouter(prefix="/api/graph", tags=["graph"])
+
+
+@router.get("")
+async def get_workspace_graph(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    limit: int = Query(default=200, ge=1, le=500),
+) -> WorkspaceGraphResponse:
+    """Get the workspace-wide knowledge graph.
+
+    Returns the most-connected nodes across the entire workspace,
+    sorted by edge count descending. Designed for the full-graph
+    explorer view where users discover connections visually.
+    """
+    # Step 1: Get all nodes for this workspace
+    node_stmt = (
+        select(GraphNode)
+        .where(
+            GraphNode.workspace_id == user.workspace_id,
+            GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+    )
+    node_result = await session.execute(node_stmt)
+    all_nodes = node_result.scalars().all()
+
+    if not all_nodes:
+        return WorkspaceGraphResponse(
+            node_count=0,
+            edge_count=0,
+            truncated=False,
+            total_available=0,
+            nodes=[],
+            edges=[],
+        )
+
+    all_node_ids = [str(n.id) for n in all_nodes]
+    node_lookup = {str(n.id): n for n in all_nodes}
+
+    # Step 2: Get all edges between workspace nodes
+    edge_stmt = select(GraphEdge).where(
+        GraphEdge.workspace_id == user.workspace_id,
+        GraphEdge.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    edge_result = await session.execute(edge_stmt)
+    all_edges = edge_result.scalars().all()
+
+    # Step 3: Count edges per node for ranking
+    edge_counter: Counter[str] = Counter()
+    for edge in all_edges:
+        edge_counter[str(edge.source_node_id)] += 1
+        edge_counter[str(edge.target_node_id)] += 1
+
+    # Step 4: Sort by connectivity (most-connected first), apply limit
+    sorted_node_ids = sorted(
+        all_node_ids,
+        key=lambda nid: -edge_counter.get(nid, 0),
+    )
+
+    total_available = len(sorted_node_ids)
+    truncated = total_available > limit
+    capped_ids = set(sorted_node_ids[:limit])
+
+    # Step 5: Filter edges to only those between capped nodes
+    filtered_edges = [
+        e for e in all_edges
+        if str(e.source_node_id) in capped_ids
+        and str(e.target_node_id) in capped_ids
+    ]
+
+    # Step 6: Build response
+    response_nodes = [
+        GraphNodeResponse(
+            id=str(n.id),
+            entity_type=n.entity_type,
+            name=n.name,
+            depth=0,  # No depth concept for workspace-wide view
+            properties=n.properties if n.properties else {},
+        )
+        for nid in sorted_node_ids[:limit]
+        if (n := node_lookup.get(nid))
+    ]
+
+    response_edges = [
+        GraphEdgeResponse(
+            source=str(e.source_node_id),
+            target=str(e.target_node_id),
+            relationship_type=e.relationship_type,
+            properties=e.properties if e.properties else {},
+        )
+        for e in filtered_edges
+    ]
+
+    return WorkspaceGraphResponse(
+        node_count=len(response_nodes),
+        edge_count=len(response_edges),
+        truncated=truncated,
+        total_available=total_available,
+        nodes=response_nodes,
+        edges=response_edges,
+    )
 
 
 @router.get("/{ticket_identifier}")

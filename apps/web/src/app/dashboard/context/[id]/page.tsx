@@ -17,9 +17,9 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Network,
   Sparkles,
 } from 'lucide-react'
-import dynamic from 'next/dynamic'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
@@ -38,34 +38,6 @@ import { GenerationProgress } from '@/components/generation-progress'
 import type { GenerationState } from '@/lib/context-feed'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
-// ---------------------------------------------------------------------------
-// Lazy-load GraphExplorer (React Flow needs browser APIs)
-// ---------------------------------------------------------------------------
-
-const GraphExplorer = dynamic(
-  () =>
-    import('@/components/graph/graph-explorer').then((m) => ({
-      default: m.GraphExplorer,
-    })),
-  {
-    ssr: false,
-    loading: () => <GraphTabSkeleton />,
-  }
-)
-
-function GraphTabSkeleton() {
-  return (
-    <div className="flex items-center justify-center h-[600px] rounded-xl border border-border mt-4">
-      <div className="relative h-48 w-64">
-        <Skeleton className="absolute left-1/2 top-8 h-6 w-6 -translate-x-1/2 rounded-full" />
-        <Skeleton className="absolute left-8 top-24 h-4 w-4 rounded-full" />
-        <Skeleton className="absolute right-8 top-20 h-4 w-4 rounded-full" />
-        <Skeleton className="absolute left-16 bottom-4 h-3 w-3 rounded-full" />
-        <Skeleton className="absolute right-16 bottom-8 h-3 w-3 rounded-full" />
-      </div>
-    </div>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // Source type config
@@ -339,8 +311,6 @@ export default function ContextDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [generation, setGeneration] = useState<GenerationState | null>(null)
   const [jiraSiteUrl, setJiraSiteUrl] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'content' | 'graph'>('content')
-  const scrollYRef = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
 
   // Detect provider from sources (works for all pages, even those without jira_issue_id FK)
@@ -701,131 +671,85 @@ export default function ContextDetailPage() {
         </div>
       )}
 
-      {/* Tab bar */}
-      <div className="flex items-center gap-1 mt-6 border-b border-border">
-        <button
-          onClick={() => {
-            if (activeTab !== 'content') {
-              setActiveTab('content')
-              // Restore scroll position
-              setTimeout(() => window.scrollTo(0, scrollYRef.current), 0)
-            }
-          }}
-          className={cn(
-            'px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
-            activeTab === 'content'
-              ? 'text-foreground border-primary'
-              : 'text-muted-foreground border-transparent hover:text-foreground'
-          )}
-        >
-          Content
-        </button>
-        <button
-          onClick={() => {
-            if (activeTab !== 'graph') {
-              // Save scroll position before switching to graph
-              scrollYRef.current = window.scrollY
-              setActiveTab('graph')
-            }
-          }}
-          className={cn(
-            'px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
-            activeTab === 'graph'
-              ? 'text-foreground border-primary'
-              : 'text-muted-foreground border-transparent hover:text-foreground'
-          )}
-        >
-          Graph
-        </button>
-      </div>
-
-      {/* Tab content */}
-      {activeTab === 'content' ? (
-        <>
-          {/* Two-column layout */}
-          <div className="flex gap-6 mt-6">
-            {/* Left sidebar -- sources */}
-            <aside className="w-56 shrink-0 hidden lg:block">
-              <div className="sticky top-6 space-y-5">
-                {/* Source summary */}
-                <div>
-                  <p className="section-label mb-2">
-                    Sources ({page.sources?.length ?? 0})
-                  </p>
-                  {sourceBreakdown && (
-                    <p className="text-xs text-muted-foreground mb-3">{sourceBreakdown}</p>
-                  )}
-                  <SourceSidebar sources={page.sources ?? []} />
-                </div>
-              </div>
-            </aside>
-
-            {/* Main content */}
-            <main className="flex-1 min-w-0 space-y-3">
-              {/* Parsed sections with distinct visual treatment */}
-              {sections.length > 0 ? (
-                <div className="space-y-3 stagger-children">
-                  {sections.map((section, i) => (
-                    <ContentSection
-                      key={section.heading || i}
-                      heading={section.heading || 'Overview'}
-                      content={section.content}
-                      defaultOpen={i < 4}
-                    />
-                  ))}
-                </div>
-              ) : (
-                /* Fallback: render raw markdown */
-                <div className="rounded-lg border bg-card p-5">
-                  <div className="prose prose-sm prose-invert max-w-none">
-                    <Markdown remarkPlugins={[remarkGfm]}>{page.content}</Markdown>
-                  </div>
-                </div>
+      {/* Two-column layout */}
+      <div className="flex gap-6 mt-6">
+        {/* Left sidebar -- sources */}
+        <aside className="w-56 shrink-0 hidden lg:block">
+          <div className="sticky top-6 space-y-5">
+            {/* Source summary */}
+            <div>
+              <p className="section-label mb-2">
+                Sources ({page.sources?.length ?? 0})
+              </p>
+              {sourceBreakdown && (
+                <p className="text-xs text-muted-foreground mb-3">{sourceBreakdown}</p>
               )}
-
-              {/* AI Prompt section */}
-              {hasPromptSection && (
-                <div className="relative">
-                  <ContentSection
-                    heading="AI Implementation Prompt"
-                    content={promptText}
-                    defaultOpen={false}
-                  />
-                  <button
-                    onClick={handleCopyPrompt}
-                    className="absolute top-3 right-3 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 z-10"
-                  >
-                    <Copy className="h-3 w-3" />
-                    Copy
-                  </button>
-                </div>
-              )}
-            </main>
-          </div>
-
-          {/* Mobile sources -- shown below content on small screens */}
-          <div className="lg:hidden mt-8">
-            <p className="section-label mb-3">Sources ({page.sources?.length ?? 0})</p>
-            <div className="rounded-lg border bg-card p-4">
               <SourceSidebar sources={page.sources ?? []} />
             </div>
+
+            {/* View in Graph link */}
+            {page.ticket_identifier && (
+              <Link
+                href={`/dashboard/graph?focus=${encodeURIComponent(page.ticket_identifier)}`}
+                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Network className="h-3.5 w-3.5" />
+                View in Graph
+              </Link>
+            )}
           </div>
-        </>
-      ) : (
-        /* Graph tab */
-        page.ticket_identifier ? (
-          <GraphExplorer
-            ticketIdentifier={page.ticket_identifier}
-            className="h-[600px] mt-4 rounded-xl border border-border overflow-hidden"
-          />
-        ) : (
-          <div className="flex items-center justify-center h-[600px] mt-4 rounded-xl border border-dashed border-border">
-            <p className="text-sm text-muted-foreground">
-              No ticket identifier available for graph visualization
-            </p>
-          </div>
-        )
-      )}
+        </aside>
+
+        {/* Main content */}
+        <main className="flex-1 min-w-0 space-y-3">
+          {/* Parsed sections with distinct visual treatment */}
+          {sections.length > 0 ? (
+            <div className="space-y-3 stagger-children">
+              {sections.map((section, i) => (
+                <ContentSection
+                  key={section.heading || i}
+                  heading={section.heading || 'Overview'}
+                  content={section.content}
+                  defaultOpen={i < 4}
+                />
+              ))}
+            </div>
+          ) : (
+            /* Fallback: render raw markdown */
+            <div className="rounded-lg border bg-card p-5">
+              <div className="prose prose-sm prose-invert max-w-none">
+                <Markdown remarkPlugins={[remarkGfm]}>{page.content}</Markdown>
+              </div>
+            </div>
+          )}
+
+          {/* AI Prompt section */}
+          {hasPromptSection && (
+            <div className="relative">
+              <ContentSection
+                heading="AI Implementation Prompt"
+                content={promptText}
+                defaultOpen={false}
+              />
+              <button
+                onClick={handleCopyPrompt}
+                className="absolute top-3 right-3 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 z-10"
+              >
+                <Copy className="h-3 w-3" />
+                Copy
+              </button>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Mobile sources -- shown below content on small screens */}
+      <div className="lg:hidden mt-8">
+        <p className="section-label mb-3">Sources ({page.sources?.length ?? 0})</p>
+        <div className="rounded-lg border bg-card p-4">
+          <SourceSidebar sources={page.sources ?? []} />
+        </div>
+      </div>
     </div>
   )
 }
