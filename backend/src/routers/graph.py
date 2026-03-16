@@ -69,8 +69,10 @@ class WorkspaceGraphResponse(PydanticBaseModel):
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 
 
-# Default entity types: high-signal entities plus NotionPage (major connection hub)
-DEFAULT_ENTITY_TYPES = ["Ticket", "Person", "Decision", "Meeting", "PR", "Message", "SlackThread", "NotionPage"]
+# Core entity types shown by default — the units of work people care about.
+# PRs, NotionPages, CodeChunks are supporting context and only shown when
+# the user explicitly enables them via filter chips or passes entity_types=all.
+DEFAULT_ENTITY_TYPES = ["Ticket", "Person", "Decision", "Meeting", "Message", "SlackThread"]
 
 
 @router.get("/")
@@ -100,19 +102,15 @@ async def get_workspace_graph(
     else:
         type_filter = DEFAULT_ENTITY_TYPES
 
-    # Step 1: Get nodes for this workspace (filtered by type)
-    node_stmt = select(GraphNode).where(
+    # Step 1: Get ALL workspace nodes (unfiltered) for connectivity analysis
+    all_node_stmt = select(GraphNode).where(
         GraphNode.workspace_id == user.workspace_id,
         GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
     )
-    if type_filter:
-        node_stmt = node_stmt.where(
-            GraphNode.entity_type.in_(type_filter),  # type: ignore[union-attr]
-        )
-    node_result = await session.execute(node_stmt)
-    all_nodes = node_result.scalars().all()
+    all_node_result = await session.execute(all_node_stmt)
+    every_node = all_node_result.scalars().all()
 
-    if not all_nodes:
+    if not every_node:
         return WorkspaceGraphResponse(
             node_count=0,
             edge_count=0,
@@ -122,69 +120,90 @@ async def get_workspace_graph(
             edges=[],
         )
 
-    all_node_ids = [str(n.id) for n in all_nodes]
-    node_lookup = {str(n.id): n for n in all_nodes}
+    every_node_lookup = {str(n.id): n for n in every_node}
+    every_node_ids = set(every_node_lookup.keys())
 
-    # Step 2: Get all edges where at least one endpoint is in our node set
-    node_id_set = set(all_node_ids)
+    # Step 2: Get ALL workspace edges for connectivity analysis
     edge_stmt = select(GraphEdge).where(
         GraphEdge.workspace_id == user.workspace_id,
         GraphEdge.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     edge_result = await session.execute(edge_stmt)
-    # Only keep edges where BOTH endpoints are in our filtered set
-    all_edges = [
-        e for e in edge_result.scalars().all()
-        if str(e.source_node_id) in node_id_set
-        and str(e.target_node_id) in node_id_set
+    every_edge = edge_result.scalars().all()
+
+    # Step 3: Count TOTAL edges per node (across all types)
+    total_edge_counter: Counter[str] = Counter()
+    for edge in every_edge:
+        src, tgt = str(edge.source_node_id), str(edge.target_node_id)
+        if src in every_node_ids and tgt in every_node_ids:
+            total_edge_counter[src] += 1
+            total_edge_counter[tgt] += 1
+
+    # Step 4: Filter to requested entity types, keeping only connected nodes
+    if type_filter:
+        display_nodes = {
+            str(n.id): n for n in every_node
+            if n.entity_type in type_filter and total_edge_counter.get(str(n.id), 0) > 0
+        }
+    else:
+        display_nodes = {
+            str(n.id): n for n in every_node
+            if total_edge_counter.get(str(n.id), 0) > 0
+        }
+
+    if not display_nodes:
+        return WorkspaceGraphResponse(
+            node_count=0,
+            edge_count=0,
+            truncated=False,
+            total_available=0,
+            nodes=[],
+            edges=[],
+        )
+
+    display_ids = set(display_nodes.keys())
+
+    # Step 5: Get edges between display nodes only
+    display_edges = [
+        e for e in every_edge
+        if str(e.source_node_id) in display_ids
+        and str(e.target_node_id) in display_ids
     ]
 
-    # Step 3: Count edges per node for ranking
-    edge_counter: Counter[str] = Counter()
-    for edge in all_edges:
-        edge_counter[str(edge.source_node_id)] += 1
-        edge_counter[str(edge.target_node_id)] += 1
+    # Step 6: Re-count edges within display set for ranking
+    display_edge_counter: Counter[str] = Counter()
+    for edge in display_edges:
+        display_edge_counter[str(edge.source_node_id)] += 1
+        display_edge_counter[str(edge.target_node_id)] += 1
 
-    # Step 4: Remove ALL disconnected nodes (0 edges)
-    connected_ids = {nid for nid in all_node_ids if edge_counter.get(nid, 0) > 0}
-    all_node_ids = [nid for nid in all_node_ids if nid in connected_ids]
-    node_id_set = connected_ids
-
-    # Re-filter edges to connected set
-    all_edges = [
-        e for e in all_edges
-        if str(e.source_node_id) in node_id_set
-        and str(e.target_node_id) in node_id_set
-    ]
-
-    # Step 5: Sort by connectivity (most-connected first), apply limit
-    sorted_node_ids = sorted(
-        all_node_ids,
-        key=lambda nid: -edge_counter.get(nid, 0),
+    # Step 7: Sort by display connectivity, apply limit
+    sorted_ids = sorted(
+        display_ids,
+        key=lambda nid: -display_edge_counter.get(nid, 0),
     )
 
-    total_available = len(sorted_node_ids)
+    total_available = len(sorted_ids)
     truncated = total_available > limit
-    capped_ids = set(sorted_node_ids[:limit])
+    capped_ids = set(sorted_ids[:limit])
 
-    # Step 6: Filter edges to only those between capped nodes
+    # Step 8: Filter edges to capped set
     filtered_edges = [
-        e for e in all_edges
+        e for e in display_edges
         if str(e.source_node_id) in capped_ids
         and str(e.target_node_id) in capped_ids
     ]
 
-    # Step 7: Build response
+    # Step 9: Build response
     response_nodes = [
         GraphNodeResponse(
-            id=str(n.id),
+            id=nid,
             entity_type=n.entity_type,
             name=n.name,
             depth=0,
             properties=n.properties if n.properties else {},
         )
-        for nid in sorted_node_ids[:limit]
-        if (n := node_lookup.get(nid))
+        for nid in sorted_ids[:limit]
+        if (n := display_nodes.get(nid))
     ]
 
     response_edges = [
