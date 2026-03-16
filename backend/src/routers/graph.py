@@ -69,8 +69,8 @@ class WorkspaceGraphResponse(PydanticBaseModel):
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 
 
-# Default entity types: high-signal entities only
-DEFAULT_ENTITY_TYPES = ["Ticket", "Person", "Decision", "Meeting", "PR", "Message", "SlackThread"]
+# Default entity types: high-signal entities plus NotionPage (major connection hub)
+DEFAULT_ENTITY_TYPES = ["Ticket", "Person", "Decision", "Meeting", "PR", "Message", "SlackThread", "NotionPage"]
 
 
 @router.get("/")
