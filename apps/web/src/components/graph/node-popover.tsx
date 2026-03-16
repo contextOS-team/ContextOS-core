@@ -67,8 +67,14 @@ export function NodePopover({
   const Icon = ENTITY_ICONS[node.entityType]
   const color = ENTITY_COLORS[node.entityType]
 
-  // Key properties (first 3)
-  const propEntries = Object.entries(node.properties).slice(0, 3)
+  // Key properties (first 3), excluding internal metadata
+  const HIDDEN_PROPERTIES = new Set([
+    'status', 'platform', 'username', 'team_prefix', 'identifier',
+    'source_type', 'source_id', 'fingerprint', 'workspace_id',
+  ])
+  const propEntries = Object.entries(node.properties)
+    .filter(([key]) => !HIDDEN_PROPERTIES.has(key))
+    .slice(0, 3)
 
   const handleExpand = useCallback(
     (e: React.MouseEvent) => {

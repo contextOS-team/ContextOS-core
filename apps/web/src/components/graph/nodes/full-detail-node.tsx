@@ -7,10 +7,18 @@ import { ENTITY_COLORS, ENTITY_ICONS } from '../constants'
 
 type FullDetailNodeType = Node<GraphNodeData, 'full'>
 
+/** Derive node dimensions from connection count. */
+function getFullSizeFromConnections(count: number) {
+  if (count >= 5) return { width: 280, height: 95, borderWidth: 5 }
+  if (count >= 2) return { width: 240, height: 85, borderWidth: 4 }
+  return { width: 200, height: 70, borderWidth: 4 }
+}
+
 function FullDetailNodeInner({ data }: NodeProps<FullDetailNodeType>) {
   const color = ENTITY_COLORS[data.entityType] ?? 'var(--muted-foreground)'
   const Icon = ENTITY_ICONS[data.entityType]
   const property = data.properties?.identifier ?? data.properties?.number ?? ''
+  const { width, height, borderWidth } = getFullSizeFromConnections(data.connectedCount ?? 0)
 
   const glowStyle = data.isRoot
     ? { boxShadow: `0 0 20px 6px color-mix(in oklch, ${color} 40%, transparent)` }
@@ -20,16 +28,16 @@ function FullDetailNodeInner({ data }: NodeProps<FullDetailNodeType>) {
 
   return (
     <div
-      className="relative transition-opacity duration-300"
+      className="relative transition-all duration-200"
       style={{ opacity: data.isDimmed ? 0.3 : 1 }}
     >
       <div
         className="rounded-xl border border-[var(--border)] overflow-hidden"
         style={{
-          width: 220,
-          height: 80,
+          width,
+          height,
           background: 'var(--elevated)',
-          borderLeft: `4px solid ${color}`,
+          borderLeft: `${borderWidth}px solid ${color}`,
           ...glowStyle,
         }}
       >

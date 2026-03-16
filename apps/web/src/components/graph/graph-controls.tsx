@@ -28,6 +28,8 @@ const ALL_ENTITY_TYPES: EntityType[] = [
   'PR',
   'Message',
   'Code',
+  'CodeChunk',
+  'SlackThread',
   'NotionPage',
   'Meeting',
 ]

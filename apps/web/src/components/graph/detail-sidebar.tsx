@@ -43,7 +43,12 @@ export function DetailSidebar({
 
   const Icon = ENTITY_ICONS[node.entityType]
   const color = ENTITY_COLORS[node.entityType]
+  const HIDDEN_PROPERTIES = new Set([
+    'status', 'platform', 'username', 'team_prefix', 'identifier',
+    'source_type', 'source_id', 'fingerprint', 'workspace_id',
+  ])
   const propEntries = Object.entries(node.properties)
+    .filter(([key]) => !HIDDEN_PROPERTIES.has(key))
 
   const handleConnectionClick = useCallback(
     (nodeId: string) => {
@@ -74,7 +79,7 @@ export function DetailSidebar({
         </button>
       </div>
 
-      {/* Entity type + depth */}
+      {/* Entity type */}
       <div className="px-4 pt-3 pb-2 flex items-center gap-2">
         <span
           className="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium"
@@ -84,9 +89,6 @@ export function DetailSidebar({
           }}
         >
           {node.entityType}
-        </span>
-        <span className="text-[10px] text-muted-foreground">
-          Depth {node.depth}
         </span>
       </div>
 

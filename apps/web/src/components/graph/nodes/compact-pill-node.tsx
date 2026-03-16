@@ -7,29 +7,39 @@ import { ENTITY_COLORS } from '../constants'
 
 type CompactPillNodeType = Node<GraphNodeData, 'compact'>
 
+/** Derive node width and dot size from connection count. */
+function getSizeFromConnections(count: number) {
+  if (count >= 5) return { width: 170, dotSize: 10 }
+  if (count >= 2) return { width: 140, dotSize: 8 }
+  return { width: 110, dotSize: 8 }
+}
+
 function CompactPillNodeInner({ data }: NodeProps<CompactPillNodeType>) {
   const color = ENTITY_COLORS[data.entityType] ?? 'var(--muted-foreground)'
-  const label = data.name.length > 15 ? data.name.slice(0, 14) + '\u2026' : data.name
+  const { width, dotSize } = getSizeFromConnections(data.connectedCount ?? 0)
+  const maxChars = width >= 170 ? 20 : width >= 140 ? 17 : 13
+  const label = data.name.length > maxChars ? data.name.slice(0, maxChars - 1) + '\u2026' : data.name
 
   return (
     <div
-      className="relative transition-opacity duration-300"
+      className="relative transition-all duration-200"
       style={{ opacity: data.isDimmed ? 0.3 : 1 }}
     >
       <div
         className="flex items-center gap-1.5 rounded-full border border-[var(--border)] px-2.5 py-1"
         style={{
-          width: 120,
+          width,
           height: 32,
-          background: 'var(--elevated)',
+          background: `color-mix(in oklch, ${color} 3%, var(--elevated))`,
+          borderLeft: `2px solid color-mix(in oklch, ${color} 60%, transparent)`,
         }}
       >
         {/* Colored dot */}
         <span
           className="shrink-0 rounded-full"
           style={{
-            width: 8,
-            height: 8,
+            width: dotSize,
+            height: dotSize,
             background: color,
           }}
         />
