@@ -16,7 +16,7 @@ Requirements for the live intelligence milestone. Each maps to roadmap phases.
 
 ### Graph Visualization
 
-- [ ] **GRAPH-01**: Interactive node/edge graph visualization for a ticket showing people, decisions, PRs, messages, code
+- [x] **GRAPH-01**: Interactive node/edge graph visualization for a ticket showing people, decisions, PRs, messages, code
 - [ ] **GRAPH-02**: Graph visualization embedded in context page detail view (/dashboard/context/[id])
 - [ ] **GRAPH-03**: Standalone /dashboard/graph route for exploring the knowledge graph
 - [ ] **GRAPH-04**: Click-to-expand node detail panel showing full content (message text, PR summary, decision rationale)
@@ -81,7 +81,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ACT-06 | Phase 32 | Complete |
 | ACT-07 | Phase 32 | Complete |
 | ACT-08 | Phase 32 | Complete |
-| GRAPH-01 | Phase 33 | Pending |
+| GRAPH-01 | Phase 33 | Complete |
 | GRAPH-02 | Phase 33 | Pending |
 | GRAPH-03 | Phase 33 | Pending |
 | GRAPH-04 | Phase 33 | Pending |

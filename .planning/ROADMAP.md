@@ -99,7 +99,7 @@ Plans:
   2. User can navigate to /dashboard/graph and explore the full knowledge graph for their workspace
   3. Clicking a node opens a detail panel showing the full content (message text, PR summary, decision rationale, person details)
   4. Graph renders smoothly with drag, zoom, and pan interactions
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 33-01-PLAN.md -- React Flow + ELK setup, graph types, custom nodes (3 zoom tiers), edges, GraphExplorer component
 - [ ] 33-02-PLAN.md -- Context page graph tab, standalone /dashboard/graph page, node detail popover + sidebar
@@ -161,7 +161,7 @@ Note: Phases 35, 36, 37, 38 are independent and can execute in parallel after Ph
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 32. Activity Events Emission | 3/3 | Complete   | 2026-03-15 |
-| 33. Graph Visualization | 0/2 | Planning complete | - |
+| 33. Graph Visualization | 1/2 | In Progress|  |
 | 34. Onboarding Graph Preview | 0/TBD | Not started | - |
 | 35. Chrome Extension Publishing | 0/TBD | Not started | - |
 | 36. Landing Page Polish | 0/TBD | Not started | - |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Live Intelligence
 status: completed
-stopped_at: Phase 33 context gathered
-last_updated: "2026-03-16T16:15:59.421Z"
-last_activity: 2026-03-15 -- Completed 32-02 webhook and connect/disconnect events
+stopped_at: Completed 33-01 core graph visualization
+last_updated: "2026-03-16T16:38:09.242Z"
+last_activity: 2026-03-16 -- Completed 33-01 core graph visualization component
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_plans: 5
+  completed_plans: 4
+  percent: 97
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 32 - Activity Events Emission (all 3 plans complete)
+**Current focus:** Phase 33 - Graph Visualization (Plan 01 complete, Plan 02 remaining)
 
 ## Current Position
 
 Milestone: v1.3 Live Intelligence
-Phase: 32 of 38 (Activity Events Emission) -- COMPLETE
-Plan: 3 of 3 in current phase (all complete)
-Status: Phase 32 complete
-Last activity: 2026-03-15 -- Completed 32-02 webhook and connect/disconnect events
+Phase: 33 of 38 (Graph Visualization)
+Plan: 1 of 2 in current phase
+Status: Plan 33-01 complete, 33-02 remaining
+Last activity: 2026-03-16 -- Completed 33-01 core graph visualization component
 
-Progress: [██████████] 100%
+Progress: [██████████] 97%
 
 ## Accumulated Context
 
@@ -46,6 +46,10 @@ Progress: [██████████] 100%
 - [32-02] GitHub/GitLab pr_merged guarded by state == merged to avoid emitting for closed-but-not-merged PRs
 - [32-02] Notion page_created limited to 5 events per full sync to avoid activity tab flooding
 - [32-02] GitHub/GitLab callback routers extract workspace_id from state for emit_activity
+- [33-01] ReactFlow v12 uses named exports; import as `{ ReactFlow }` not default
+- [33-01] ELK layout via dynamic import for tree-shaking (~200KB)
+- [33-01] Generic computeElkLayout<N> preserves typed node data through layout pipeline
+- [33-01] Node type switching via type field on nodes (not swapping nodeTypes registry)
 
 ### Roadmap Evolution
 
@@ -62,6 +66,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-16T16:15:59.413Z
-Stopped at: Phase 33 context gathered
-Resume file: .planning/phases/33-graph-visualization/33-CONTEXT.md
+Last session: 2026-03-16T16:38:09.240Z
+Stopped at: Completed 33-01 core graph visualization
+Resume file: None
