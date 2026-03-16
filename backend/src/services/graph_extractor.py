@@ -159,6 +159,67 @@ _SLACK_MENTION_PATTERN = re.compile(r"<@(U[A-Z0-9]{6,12})>")
 # Platform @usernames: @alice, @bob-smith (not preceded by non-whitespace)
 _AT_MENTION_PATTERN = re.compile(r"(?<!\S)@([a-zA-Z][a-zA-Z0-9._-]{1,38})\b")
 
+# Blocklist of @-mention patterns that are NOT real people.
+# JSDoc / annotation tags (lowercase single words):
+_JSDOC_TAGS = frozenset({
+    "abstract", "access", "alias", "async", "augments", "author", "borrows",
+    "callback", "class", "classdesc", "constant", "constructs", "copyright",
+    "default", "deprecated", "description", "enum", "event", "example",
+    "exports", "external", "file", "fires", "function", "global", "grant",
+    "icon", "ignore", "implements", "import", "inheritdoc", "inner",
+    "instance", "interface", "kind", "lends", "license", "link", "match",
+    "member", "memberof", "method", "mixes", "mixin", "module", "name",
+    "namespace", "override", "package", "param", "private", "property",
+    "protected", "public", "readonly", "requires", "return", "returns",
+    "run-at", "see", "since", "static", "summary", "suppress", "template",
+    "this", "throws", "todo", "tutorial", "type", "typedef", "variation",
+    "version", "virtual", "yields",
+})
+
+# npm scoped package prefixes and well-known non-person @-names
+_NPM_PACKAGE_PREFIXES = (
+    "typescript-eslint", "angular-eslint", "angular", "babel", "types",
+    "eslint", "jest", "testing-library", "storybook", "vue", "nuxt",
+    "nestjs", "ngrx", "react-native", "sentry", "emotion", "mui",
+    "fortawesome", "fontsource", "rollup", "vitejs", "sveltejs",
+    "tailwindcss", "prisma", "trpc",
+)
+
+# Config / decorator keywords (PascalCase or known patterns)
+_CONFIG_KEYWORDS = frozenset({
+    "Config", "Component", "Module", "Injectable", "Controller", "Service",
+    "Entity", "Column", "Table", "Index", "Inject", "Optional", "Input",
+    "Output", "Directive", "Pipe", "Guard", "Middleware", "Body", "Query",
+    "Param", "Header", "Headers", "Get", "Post", "Put", "Delete", "Patch",
+    "Override", "Deprecated", "SuppressWarnings", "FunctionalInterface",
+    "Repository", "Transactional", "Autowired", "Bean", "Value",
+    "RequestMapping", "PathVariable", "RequestBody", "ResponseBody",
+})
+
+
+def _is_false_positive_mention(username: str) -> bool:
+    """Return True if the @-mention username is a known false positive."""
+    lower = username.lower()
+
+    # JSDoc / annotation tags
+    if lower in _JSDOC_TAGS:
+        return True
+
+    # npm scoped packages: e.g. typescript-eslint/parser -> "typescript-eslint"
+    for prefix in _NPM_PACKAGE_PREFIXES:
+        if lower == prefix or lower.startswith(prefix + "/"):
+            return True
+
+    # Config / decorator keywords (case-sensitive check)
+    if username in _CONFIG_KEYWORDS:
+        return True
+
+    # Heuristic: skip if it contains a slash (scoped package path)
+    if "/" in username:
+        return True
+
+    return False
+
 
 class MentionExtractor:
     """Extracts @mentions (Slack UIDs and platform usernames) as Person entities."""
@@ -189,6 +250,8 @@ class MentionExtractor:
         # @username mentions (Linear, GitHub)
         for match in _AT_MENTION_PATTERN.finditer(content):
             username = match.group(1)
+            if _is_false_positive_mention(username):
+                continue
             key = f"username:{username}"
             if key not in seen:
                 seen.add(key)
