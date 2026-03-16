@@ -690,6 +690,22 @@ export function getDashboardResurfaced() {
 }
 
 // ---------------------------------------------------------------------------
+// Graph Neighborhood
+// ---------------------------------------------------------------------------
+
+import type { GraphNeighborhoodResponse } from '@/components/graph/types'
+
+export function fetchGraphNeighborhood(
+  ticketIdentifier: string,
+  depth: number = 2,
+  limit: number = 50
+): Promise<GraphNeighborhoodResponse> {
+  return apiFetch<GraphNeighborhoodResponse>(
+    `/api/graph/${encodeURIComponent(ticketIdentifier)}?depth=${depth}&limit=${limit}`
+  )
+}
+
+// ---------------------------------------------------------------------------
 // SSE Generation Progress
 // ---------------------------------------------------------------------------
 
