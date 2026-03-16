@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useCallback } from 'react'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, ExternalLink } from 'lucide-react'
 import type { GraphNodeData, GraphEdgeData } from './types'
+import { getEntityExternalUrl } from './utils'
 import { ENTITY_COLORS, ENTITY_ICONS } from './constants'
 import type { Edge } from '@xyflow/react'
 
@@ -139,15 +140,32 @@ export function NodePopover({
           {connectedCount} connection{connectedCount !== 1 ? 's' : ''}
         </p>
 
-        {/* Expand button */}
-        <button
-          onClick={handleExpand}
-          className="flex items-center gap-1 text-xs font-medium transition-colors hover:opacity-80"
-          style={{ color: 'var(--primary)' }}
-        >
-          Expand
-          <ArrowRight className="h-3 w-3" />
-        </button>
+        {/* Actions */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleExpand}
+            className="flex items-center gap-1 text-xs font-medium transition-colors hover:opacity-80"
+            style={{ color: 'var(--primary)' }}
+          >
+            Expand
+            <ArrowRight className="h-3 w-3" />
+          </button>
+          {(() => {
+            const url = getEntityExternalUrl(node)
+            return url ? (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Open
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : null
+          })()}
+        </div>
       </div>
     </div>
   )

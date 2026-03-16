@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useCallback } from 'react'
-import { X, ArrowRight, ArrowLeft } from 'lucide-react'
+import { X, ArrowRight, ArrowLeft, ExternalLink } from 'lucide-react'
 import type { GraphNodeData } from './types'
 import { ENTITY_COLORS, ENTITY_ICONS } from './constants'
+import { getEntityExternalUrl } from './utils'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -71,6 +72,20 @@ export function DetailSidebar({
         <h3 className="text-sm font-semibold text-foreground truncate flex-1">
           {node.name}
         </h3>
+        {(() => {
+          const url = getEntityExternalUrl(node)
+          return url ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              title="Open in app"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          ) : null
+        })()}
         <button
           onClick={onClose}
           className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
