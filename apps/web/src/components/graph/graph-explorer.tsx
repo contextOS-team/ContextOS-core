@@ -38,6 +38,8 @@ import { CompactPillNode } from './nodes/compact-pill-node'
 import { GlowDotNode } from './nodes/glow-dot-node'
 import { StyledEdge } from './edges/styled-edge'
 import { GraphControls } from './graph-controls'
+import { NodePopover } from './node-popover'
+import { DetailSidebar, type ConnectionInfo } from './detail-sidebar'
 
 // ---------------------------------------------------------------------------
 // Node / edge type registries (stable references)
@@ -73,6 +75,9 @@ function GraphExplorerInner({
   const [error, setError] = useState<string | null>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [popoverNodeId, setPopoverNodeId] = useState<string | null>(null)
+  const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null)
+  const [popoverPosition, setPopoverPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const [zoomTier, setZoomTier] = useState<ZoomTier>('compact')
   const [hiddenEntityTypes, setHiddenEntityTypes] = useState<Set<EntityType>>(new Set())
   const [showMiniMap, setShowMiniMap] = useState(false)
@@ -244,12 +249,32 @@ function GraphExplorerInner({
   }, [setNodes, setEdges])
 
   // -----------------------------------------------------------------------
-  // Click interaction
+  // Click interaction — popover + sidebar
   // -----------------------------------------------------------------------
 
   const handleNodeClick: NodeMouseHandler<Node<GraphNodeData>> = useCallback(
     (_event, node) => {
-      setSelectedNodeId((prev) => (prev === node.id ? null : node.id))
+      setSelectedNodeId(node.id)
+      setPopoverNodeId(node.id)
+
+      // Compute screen position for popover
+      const screenPos = reactFlow.flowToScreenPosition({
+        x: node.position.x + (node.measured?.width ?? 60) / 2,
+        y: node.position.y + (node.measured?.height ?? 30),
+      })
+
+      // Get the ReactFlow wrapper's bounding rect to make position relative
+      const wrapper = document.querySelector('.react-flow')
+      const rect = wrapper?.getBoundingClientRect()
+      if (rect) {
+        setPopoverPosition({
+          x: screenPos.x - rect.left,
+          y: screenPos.y - rect.top,
+        })
+      } else {
+        setPopoverPosition(screenPos)
+      }
+
       setNodes((nds) =>
         nds.map((n) => ({
           ...n,
@@ -260,7 +285,103 @@ function GraphExplorerInner({
         }))
       )
     },
-    [setNodes]
+    [setNodes, reactFlow]
+  )
+
+  const handleClosePopover = useCallback(() => {
+    setPopoverNodeId(null)
+  }, [])
+
+  const handleCloseSidebar = useCallback(() => {
+    setExpandedNodeId(null)
+  }, [])
+
+  const handleExpand = useCallback(() => {
+    setExpandedNodeId(selectedNodeId)
+    setPopoverNodeId(null)
+  }, [selectedNodeId])
+
+  const handleNavigateToNode = useCallback(
+    (nodeId: string) => {
+      setSelectedNodeId(nodeId)
+      setExpandedNodeId(nodeId)
+      setPopoverNodeId(null)
+
+      // Find the target node and pan to it
+      const targetNode = nodesRef.current.find((n) => n.id === nodeId)
+      if (targetNode) {
+        reactFlow.setCenter(
+          targetNode.position.x + (targetNode.measured?.width ?? 60) / 2,
+          targetNode.position.y + (targetNode.measured?.height ?? 30) / 2,
+          { zoom: 1.2, duration: 500 }
+        )
+      }
+
+      // Update selection highlighting
+      setNodes((nds) =>
+        nds.map((n) => ({
+          ...n,
+          data: {
+            ...n.data,
+            isSelected: n.id === nodeId,
+          },
+        }))
+      )
+    },
+    [reactFlow, setNodes]
+  )
+
+  const handlePaneClick = useCallback(() => {
+    setPopoverNodeId(null)
+    setExpandedNodeId(null)
+    setSelectedNodeId(null)
+    setNodes((nds) =>
+      nds.map((n) => ({
+        ...n,
+        data: { ...n.data, isSelected: false },
+      }))
+    )
+  }, [setNodes])
+
+  // -----------------------------------------------------------------------
+  // Compute connections for detail sidebar
+  // -----------------------------------------------------------------------
+
+  const getNodeData = useCallback(
+    (nodeId: string): GraphNodeData | null => {
+      const node = nodesRef.current.find((n) => n.id === nodeId)
+      return node?.data ?? null
+    },
+    []
+  )
+
+  const getConnections = useCallback(
+    (nodeId: string): ConnectionInfo[] => {
+      const conns: ConnectionInfo[] = []
+      for (const edge of edgesRef.current) {
+        if (edge.source === nodeId) {
+          const targetNode = nodesRef.current.find((n) => n.id === edge.target)
+          if (targetNode) {
+            conns.push({
+              node: targetNode.data,
+              edgeType: edge.data?.relationshipType ?? 'related',
+              direction: 'outgoing',
+            })
+          }
+        } else if (edge.target === nodeId) {
+          const sourceNode = nodesRef.current.find((n) => n.id === edge.source)
+          if (sourceNode) {
+            conns.push({
+              node: sourceNode.data,
+              edgeType: edge.data?.relationshipType ?? 'related',
+              direction: 'incoming',
+            })
+          }
+        }
+      }
+      return conns
+    },
+    []
   )
 
   // -----------------------------------------------------------------------
@@ -301,6 +422,14 @@ function GraphExplorerInner({
   }, [nodes])
 
   // -----------------------------------------------------------------------
+  // Current popover/sidebar node data
+  // -----------------------------------------------------------------------
+
+  const popoverNode = popoverNodeId ? getNodeData(popoverNodeId) : null
+  const expandedNode = expandedNodeId ? getNodeData(expandedNodeId) : null
+  const expandedConnections = expandedNodeId ? getConnections(expandedNodeId) : []
+
+  // -----------------------------------------------------------------------
   // Render
   // -----------------------------------------------------------------------
 
@@ -317,6 +446,7 @@ function GraphExplorerInner({
         onNodeMouseEnter={handleNodeMouseEnter}
         onNodeMouseLeave={handleNodeMouseLeave}
         onNodeClick={handleNodeClick}
+        onPaneClick={handlePaneClick}
         fitView
         colorMode="dark"
         minZoom={0.1}
@@ -346,6 +476,28 @@ function GraphExplorerInner({
         hiddenEntityTypes={hiddenEntityTypes}
         onFilterChange={setHiddenEntityTypes}
       />
+
+      {/* Node popover */}
+      {popoverNode && (
+        <NodePopover
+          node={popoverNode}
+          position={popoverPosition}
+          edges={edges}
+          onClose={handleClosePopover}
+          onExpand={handleExpand}
+          onNavigateToNode={handleNavigateToNode}
+        />
+      )}
+
+      {/* Detail sidebar */}
+      {expandedNode && (
+        <DetailSidebar
+          node={expandedNode}
+          connections={expandedConnections}
+          onClose={handleCloseSidebar}
+          onNavigateToNode={handleNavigateToNode}
+        />
+      )}
 
       {/* Loading skeleton */}
       {loading && <GraphSkeleton />}
