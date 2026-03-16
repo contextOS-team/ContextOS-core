@@ -277,8 +277,6 @@ class MentionExtractor:
 
 # PR references: #123 (preceded by non-word char)
 _PR_REF_PATTERN = re.compile(r"(?<!\w)#(\d{1,6})\b")
-# Git SHA references: 7+ hex chars (short SHA), isolated word
-_SHA_PATTERN = re.compile(r"\b([0-9a-f]{7,40})\b")
 
 # Source types considered GitHub-related (PR refs are unambiguous)
 _GITHUB_SOURCE_TYPES = frozenset(
@@ -319,22 +317,8 @@ class PRRefExtractor:
                     )
                 )
 
-        # Commit SHA references: 7+ hex chars, not all digits
-        for match in _SHA_PATTERN.finditer(content):
-            sha = match.group(1)
-            if len(sha) >= 7 and not sha.isdigit():
-                key = f"commit:{sha[:7]}"
-                if key not in seen:
-                    seen.add(key)
-                    entities.append(
-                        ExtractedEntity(
-                            entity_type="PR",
-                            external_id=key,
-                            name=f"Commit {sha[:7]}",
-                            properties={"sha": sha, "short_sha": sha[:7]},
-                            relationship_type="references",
-                        )
-                    )
+        # Commit SHA references removed -- they create low-signal noise nodes.
+        # Commits are not actionable graph entities; PRs are the meaningful unit.
 
         return entities
 
@@ -794,6 +778,11 @@ async def extract_and_populate_graph(
         entities = run_extractors(content, source_type)
 
         # 3-4. For each entity, create node and edge
+        # Skip Person entities from regex extraction -- Person nodes should
+        # only come from roster-based identity resolution (Linear/Slack/GitHub).
+        # MentionExtractor creates garbage like @typescript-eslint, @Config etc.
+        entities = [e for e in entities if e.entity_type != "Person"]
+
         for entity in entities:
             props = dict(entity.properties)
             # Mark dangling references with status=unresolved
@@ -816,17 +805,6 @@ async def extract_and_populate_graph(
                 target_node_id=entity_node_id,
                 relationship_type=entity.relationship_type,
             )
-
-            # Identity resolution for Person entities: link to canonical node
-            if entity.entity_type == "Person":
-                from src.services.identity_resolution import resolve_identity_inline
-
-                await resolve_identity_inline(
-                    session=session,
-                    workspace_id=workspace_id,
-                    entity=entity,
-                    entity_node_id=entity_node_id,
-                )
 
         # 5. Link code mentions to actual code_chunks records (CODE-01)
         if source_type in _CODE_MENTION_SOURCE_TYPES:
