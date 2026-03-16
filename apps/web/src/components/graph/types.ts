@@ -16,7 +16,9 @@ export type EntityType =
   | 'PR'
   | 'Message'
   | 'Code'
+  | 'CodeChunk'
   | 'NotionPage'
+  | 'SlackThread'
   | 'Meeting'
 
 // ---------------------------------------------------------------------------

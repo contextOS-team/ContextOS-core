@@ -15,6 +15,8 @@ import {
   Code2,
   FileText,
   Video,
+  Hash,
+  Puzzle,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -30,7 +32,9 @@ export const ENTITY_COLORS: Record<EntityType, string> = {
   PR: 'oklch(0.72 0.18 145)',          // green
   Message: 'oklch(0.72 0.18 240)',     // blue
   Code: 'oklch(0.72 0.18 185)',        // teal
+  CodeChunk: 'oklch(0.72 0.14 185)',   // teal (slightly muted)
   NotionPage: 'oklch(0.72 0.10 240)',  // cool gray-blue (lower chroma)
+  SlackThread: 'oklch(0.72 0.16 320)', // magenta
   Meeting: 'oklch(0.72 0.18 55)',      // orange
 }
 
@@ -45,7 +49,9 @@ export const ENTITY_ICONS: Record<EntityType, LucideIcon> = {
   PR: GitPullRequest,
   Message: MessageSquare,
   Code: Code2,
+  CodeChunk: Puzzle,
   NotionPage: FileText,
+  SlackThread: Hash,
   Meeting: Video,
 }
 

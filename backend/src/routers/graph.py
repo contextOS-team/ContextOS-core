@@ -69,26 +69,46 @@ class WorkspaceGraphResponse(PydanticBaseModel):
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 
 
+# Default entity types: high-signal entities only
+DEFAULT_ENTITY_TYPES = ["Ticket", "Person", "Decision", "Meeting", "PR", "Message", "SlackThread"]
+
+
 @router.get("/")
 async def get_workspace_graph(
     user: UserContext = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-    limit: int = Query(default=200, ge=1, le=500),
+    limit: int = Query(default=150, ge=1, le=500),
+    entity_types: str | None = Query(
+        default=None,
+        description="Comma-separated entity types to include. "
+        "Defaults to high-signal types (Ticket, Person, Decision, Meeting, PR, Message, SlackThread). "
+        "Pass 'all' for everything.",
+    ),
 ) -> WorkspaceGraphResponse:
     """Get the workspace-wide knowledge graph.
 
     Returns the most-connected nodes across the entire workspace,
-    sorted by edge count descending. Designed for the full-graph
-    explorer view where users discover connections visually.
+    filtered to high-signal entity types by default and sorted by
+    edge count descending. PRs are only included when they connect
+    to at least one non-PR node in the result set.
     """
-    # Step 1: Get all nodes for this workspace
-    node_stmt = (
-        select(GraphNode)
-        .where(
-            GraphNode.workspace_id == user.workspace_id,
-            GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
-        )
+    # Parse entity type filter
+    if entity_types == "all":
+        type_filter = None
+    elif entity_types:
+        type_filter = [t.strip() for t in entity_types.split(",") if t.strip()]
+    else:
+        type_filter = DEFAULT_ENTITY_TYPES
+
+    # Step 1: Get nodes for this workspace (filtered by type)
+    node_stmt = select(GraphNode).where(
+        GraphNode.workspace_id == user.workspace_id,
+        GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
     )
+    if type_filter:
+        node_stmt = node_stmt.where(
+            GraphNode.entity_type.in_(type_filter),  # type: ignore[union-attr]
+        )
     node_result = await session.execute(node_stmt)
     all_nodes = node_result.scalars().all()
 
@@ -105,13 +125,19 @@ async def get_workspace_graph(
     all_node_ids = [str(n.id) for n in all_nodes]
     node_lookup = {str(n.id): n for n in all_nodes}
 
-    # Step 2: Get all edges between workspace nodes
+    # Step 2: Get all edges where at least one endpoint is in our node set
+    node_id_set = set(all_node_ids)
     edge_stmt = select(GraphEdge).where(
         GraphEdge.workspace_id == user.workspace_id,
         GraphEdge.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     edge_result = await session.execute(edge_stmt)
-    all_edges = edge_result.scalars().all()
+    # Only keep edges where BOTH endpoints are in our filtered set
+    all_edges = [
+        e for e in edge_result.scalars().all()
+        if str(e.source_node_id) in node_id_set
+        and str(e.target_node_id) in node_id_set
+    ]
 
     # Step 3: Count edges per node for ranking
     edge_counter: Counter[str] = Counter()
@@ -119,7 +145,23 @@ async def get_workspace_graph(
         edge_counter[str(edge.source_node_id)] += 1
         edge_counter[str(edge.target_node_id)] += 1
 
-    # Step 4: Sort by connectivity (most-connected first), apply limit
+    # Step 4: Prune orphan PRs — only keep PRs that connect to a non-PR node
+    pr_ids = {str(n.id) for n in all_nodes if n.entity_type == "PR"}
+    non_pr_ids = node_id_set - pr_ids
+    connected_pr_ids: set[str] = set()
+    for edge in all_edges:
+        src, tgt = str(edge.source_node_id), str(edge.target_node_id)
+        if src in pr_ids and tgt in non_pr_ids:
+            connected_pr_ids.add(src)
+        if tgt in pr_ids and src in non_pr_ids:
+            connected_pr_ids.add(tgt)
+    # Remove orphan PRs
+    orphan_prs = pr_ids - connected_pr_ids
+    if orphan_prs:
+        all_node_ids = [nid for nid in all_node_ids if nid not in orphan_prs]
+        node_id_set -= orphan_prs
+
+    # Step 5: Sort by connectivity (most-connected first), apply limit
     sorted_node_ids = sorted(
         all_node_ids,
         key=lambda nid: -edge_counter.get(nid, 0),
@@ -129,20 +171,20 @@ async def get_workspace_graph(
     truncated = total_available > limit
     capped_ids = set(sorted_node_ids[:limit])
 
-    # Step 5: Filter edges to only those between capped nodes
+    # Step 6: Filter edges to only those between capped nodes
     filtered_edges = [
         e for e in all_edges
         if str(e.source_node_id) in capped_ids
         and str(e.target_node_id) in capped_ids
     ]
 
-    # Step 6: Build response
+    # Step 7: Build response
     response_nodes = [
         GraphNodeResponse(
             id=str(n.id),
             entity_type=n.entity_type,
             name=n.name,
-            depth=0,  # No depth concept for workspace-wide view
+            depth=0,
             properties=n.properties if n.properties else {},
         )
         for nid in sorted_node_ids[:limit]
