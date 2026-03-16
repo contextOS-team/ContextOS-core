@@ -69,7 +69,7 @@ class WorkspaceGraphResponse(PydanticBaseModel):
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 
 
-@router.get("")
+@router.get("/")
 async def get_workspace_graph(
     user: UserContext = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),

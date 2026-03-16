@@ -699,7 +699,7 @@ export function fetchWorkspaceGraph(
   limit: number = 200
 ): Promise<WorkspaceGraphResponse> {
   return apiFetch<WorkspaceGraphResponse>(
-    `/api/graph?limit=${limit}`
+    `/api/graph/?limit=${limit}`
   )
 }
 
