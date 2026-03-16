@@ -2,44 +2,11 @@
 
 import { memo } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
-import type { EntityType, GraphNodeData } from '../types'
+import type { GraphNodeData } from '../types'
 import { ENTITY_COLORS, ENTITY_ICONS } from '../constants'
+import { ENTITY_SHAPE, getShapeStyle } from '../utils'
 
 type FullDetailNodeType = Node<GraphNodeData, 'full'>
-
-// ---------------------------------------------------------------------------
-// Shape-icon header — mini version of compact node shapes
-// ---------------------------------------------------------------------------
-
-type ShapeKind = 'diamond' | 'circle' | 'rounded-rect' | 'hexagon'
-
-const HEADER_SHAPE: Record<EntityType, ShapeKind> = {
-  Ticket: 'diamond',
-  Person: 'circle',
-  Decision: 'hexagon',
-  PR: 'rounded-rect',
-  Message: 'rounded-rect',
-  SlackThread: 'rounded-rect',
-  Code: 'rounded-rect',
-  CodeChunk: 'rounded-rect',
-  NotionPage: 'rounded-rect',
-  Meeting: 'circle',
-}
-
-function getHeaderShapeStyle(shape: ShapeKind): React.CSSProperties {
-  const size = 28
-  const base: React.CSSProperties = { width: size, height: size, flexShrink: 0 }
-  switch (shape) {
-    case 'circle':
-      return { ...base, borderRadius: '50%' }
-    case 'diamond':
-      return { ...base, clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' }
-    case 'hexagon':
-      return { ...base, clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)' }
-    case 'rounded-rect':
-      return { ...base, borderRadius: 6 }
-  }
-}
 
 /** Derive node dimensions from connection count. */
 function getFullSizeFromConnections(count: number) {
@@ -53,7 +20,7 @@ function FullDetailNodeInner({ data }: NodeProps<FullDetailNodeType>) {
   const Icon = ENTITY_ICONS[data.entityType]
   const property = data.properties?.identifier ?? data.properties?.number ?? ''
   const { width, height } = getFullSizeFromConnections(data.connectedCount ?? 0)
-  const shape = HEADER_SHAPE[data.entityType] ?? 'circle'
+  const shape = ENTITY_SHAPE[data.entityType] ?? 'circle'
 
   const isSelected = data.isSelected ?? false
   const isHovered = data.isHovered ?? false
@@ -88,7 +55,8 @@ function FullDetailNodeInner({ data }: NodeProps<FullDetailNodeType>) {
           <div
             className="flex items-center justify-center"
             style={{
-              ...getHeaderShapeStyle(shape),
+              ...getShapeStyle(shape, 28),
+              flexShrink: 0,
               background: `color-mix(in oklch, ${color} 15%, transparent)`,
             }}
           >

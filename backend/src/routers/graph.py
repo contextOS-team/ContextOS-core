@@ -75,6 +75,18 @@ router = APIRouter(prefix="/api/graph", tags=["graph"])
 # the user explicitly enables them via filter chips or passes entity_types=all.
 DEFAULT_ENTITY_TYPES = ["Ticket", "Person", "Decision", "Meeting", "Message", "SlackThread"]
 
+# Maps integration provider names to graph node source_type values
+PROVIDER_TO_SOURCE_TYPES: dict[str, list[str]] = {
+    "linear": ["linear_ticket", "linear_comment"],
+    "jira": ["jira_issue", "jira_comment"],
+    "slack": ["slack_message"],
+    "github": ["github_pr", "github_review", "github_commit"],
+    "gitlab": ["gitlab_mr", "gitlab_note"],
+    "notion": ["notion_page"],
+    "fathom": ["meeting_transcript"],
+    "telegram": ["telegram_message"],
+}
+
 
 @router.get("/")
 async def get_workspace_graph(
@@ -102,18 +114,6 @@ async def get_workspace_graph(
         type_filter = [t.strip() for t in entity_types.split(",") if t.strip()]
     else:
         type_filter = DEFAULT_ENTITY_TYPES
-
-    # Map provider names to graph source_type values
-    PROVIDER_TO_SOURCE_TYPES: dict[str, list[str]] = {
-        "linear": ["linear_ticket", "linear_comment"],
-        "jira": ["jira_issue", "jira_comment"],
-        "slack": ["slack_message"],
-        "github": ["github_pr", "github_review", "github_commit"],
-        "gitlab": ["gitlab_mr", "gitlab_note"],
-        "notion": ["notion_page"],
-        "fathom": ["meeting_transcript"],
-        "telegram": ["telegram_message"],
-    }
 
     # Look up connected integrations for this workspace
     int_stmt = select(WorkspaceIntegration).where(

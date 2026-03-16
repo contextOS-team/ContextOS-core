@@ -75,7 +75,7 @@ function StyledEdgeInner({
             style={{
               position: 'absolute',
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              background: isHighlighted ? 'var(--card)' : 'var(--card)',
+              background: 'var(--card)',
               color: isHighlighted ? 'var(--foreground)' : 'var(--muted-foreground)',
               border: '1px solid var(--border)',
               opacity: isHighlighted ? 1 : 0.85,

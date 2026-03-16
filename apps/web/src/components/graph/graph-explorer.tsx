@@ -514,7 +514,6 @@ function GraphExplorerInner({
           edges={edges}
           onClose={handleClosePopover}
           onExpand={handleExpand}
-          onNavigateToNode={handleNavigateToNode}
         />
       )}
 

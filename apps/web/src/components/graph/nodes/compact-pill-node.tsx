@@ -4,60 +4,20 @@ import { memo } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import type { EntityType, GraphNodeData } from '../types'
 import { ENTITY_COLORS, ENTITY_ICONS } from '../constants'
+import { ENTITY_SHAPE, getShapeStyle, HIDDEN_NODE_PROPERTIES } from '../utils'
 
 type CompactPillNodeType = Node<GraphNodeData, 'compact'>
 
-// ---------------------------------------------------------------------------
-// Shape configuration per entity type
-// ---------------------------------------------------------------------------
-
-type ShapeKind = 'diamond' | 'circle' | 'rounded-rect' | 'hexagon'
-
-interface ShapeConfig {
-  shape: ShapeKind
-  size: number
+const SHAPE_SIZES: Record<EntityType, number> = {
+  Ticket: 44, Person: 40, Decision: 42, PR: 40, Message: 38,
+  SlackThread: 38, Code: 36, CodeChunk: 36, NotionPage: 38, Meeting: 42,
 }
-
-const SHAPE_CONFIG: Record<EntityType, ShapeConfig> = {
-  Ticket: { shape: 'diamond', size: 44 },
-  Person: { shape: 'circle', size: 40 },
-  Decision: { shape: 'hexagon', size: 42 },
-  PR: { shape: 'rounded-rect', size: 40 },
-  Message: { shape: 'rounded-rect', size: 38 },
-  SlackThread: { shape: 'rounded-rect', size: 38 },
-  Code: { shape: 'rounded-rect', size: 36 },
-  CodeChunk: { shape: 'rounded-rect', size: 36 },
-  NotionPage: { shape: 'rounded-rect', size: 38 },
-  Meeting: { shape: 'circle', size: 42 },
-}
-
-/** CSS properties that give each shape its distinct silhouette. */
-function getShapeStyle(shape: ShapeKind, size: number): React.CSSProperties {
-  const base: React.CSSProperties = { width: size, height: size }
-  switch (shape) {
-    case 'circle':
-      return { ...base, borderRadius: '50%' }
-    case 'diamond':
-      return { ...base, clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' }
-    case 'hexagon':
-      return { ...base, clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)' }
-    case 'rounded-rect':
-      return { ...base, borderRadius: 8 }
-  }
-}
-
-/** Properties to never show as subtitle. */
-const HIDDEN_PROPS = new Set([
-  'status', 'platform', 'username', 'team_prefix', 'identifier',
-  'source_type', 'source_id', 'fingerprint', 'workspace_id',
-  'resolved_from', 'sha', 'short_sha',
-])
 
 /** Derive a subtitle from node properties — skip internal metadata. */
 function getSubtitle(data: GraphNodeData): string | null {
   const p = data.properties
   for (const [key, val] of Object.entries(p)) {
-    if (HIDDEN_PROPS.has(key)) continue
+    if (HIDDEN_NODE_PROPERTIES.has(key)) continue
     if (val != null && typeof val === 'string' && val.length > 0 && val.length < 50) {
       return val
     }
@@ -72,8 +32,9 @@ function getSubtitle(data: GraphNodeData): string | null {
 function CompactPillNodeInner({ data }: NodeProps<CompactPillNodeType>) {
   const color = ENTITY_COLORS[data.entityType] ?? 'var(--muted-foreground)'
   const Icon = ENTITY_ICONS[data.entityType]
-  const cfg = SHAPE_CONFIG[data.entityType] ?? { shape: 'circle' as const, size: 38 }
-  const shapeStyle = getShapeStyle(cfg.shape, cfg.size)
+  const shape = ENTITY_SHAPE[data.entityType] ?? 'circle'
+  const size = SHAPE_SIZES[data.entityType] ?? 38
+  const shapeStyle = getShapeStyle(shape, size)
 
   const isSelected = data.isSelected ?? false
   const isHovered = data.isHovered ?? false
@@ -108,18 +69,18 @@ function CompactPillNodeInner({ data }: NodeProps<CompactPillNodeType>) {
         style={{
           ...shapeStyle,
           background: '#14141c',
-          border: cfg.shape === 'diamond' || cfg.shape === 'hexagon'
+          border: shape === 'diamond' || shape === 'hexagon'
             ? 'none'
             : `${borderWidth}px solid ${borderColor}`,
           boxShadow: glowShadow,
         }}
       >
         {/* For clip-path shapes, render border via an outline wrapper */}
-        {(cfg.shape === 'diamond' || cfg.shape === 'hexagon') && (
+        {(shape === 'diamond' || shape === 'hexagon') && (
           <div
             className="absolute inset-0 -z-10"
             style={{
-              ...getShapeStyle(cfg.shape, cfg.size + (isSelected ? 4 : 2)),
+              ...getShapeStyle(shape, size + (isSelected ? 4 : 2)),
               background: borderColor,
               top: isSelected ? -2 : -1,
               left: isSelected ? -2 : -1,
@@ -130,7 +91,7 @@ function CompactPillNodeInner({ data }: NodeProps<CompactPillNodeType>) {
         {/* Entity icon */}
         {Icon && (
           <Icon
-            size={cfg.size * 0.42}
+            size={size * 0.42}
             style={{ color, flexShrink: 0 }}
             strokeWidth={1.8}
           />

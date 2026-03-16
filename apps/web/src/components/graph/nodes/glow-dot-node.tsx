@@ -64,14 +64,6 @@ function GlowDotNodeInner({ data }: NodeProps<GlowDotNodeType>) {
 
       <Handle type="target" position={Position.Top} className="!opacity-0 !w-0 !h-0" />
       <Handle type="source" position={Position.Bottom} className="!opacity-0 !w-0 !h-0" />
-
-      {/* Keyframes injected once via style tag — React deduplicates by content */}
-      <style>{`
-        @keyframes glow-dot-pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.7; }
-        }
-      `}</style>
     </div>
   )
 }

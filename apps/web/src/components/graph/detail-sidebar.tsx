@@ -4,7 +4,7 @@ import { useEffect, useCallback } from 'react'
 import { X, ArrowRight, ArrowLeft, ExternalLink } from 'lucide-react'
 import type { GraphNodeData } from './types'
 import { ENTITY_COLORS, ENTITY_ICONS } from './constants'
-import { getEntityExternalUrl } from './utils'
+import { getEntityExternalUrl, HIDDEN_NODE_PROPERTIES } from './utils'
 
 // ---------------------------------------------------------------------------
 // Props
@@ -44,19 +44,9 @@ export function DetailSidebar({
 
   const Icon = ENTITY_ICONS[node.entityType]
   const color = ENTITY_COLORS[node.entityType]
-  const HIDDEN_PROPERTIES = new Set([
-    'status', 'platform', 'username', 'team_prefix', 'identifier',
-    'source_type', 'source_id', 'fingerprint', 'workspace_id',
-  ])
   const propEntries = Object.entries(node.properties)
-    .filter(([key]) => !HIDDEN_PROPERTIES.has(key))
+    .filter(([key]) => !HIDDEN_NODE_PROPERTIES.has(key))
 
-  const handleConnectionClick = useCallback(
-    (nodeId: string) => {
-      onNavigateToNode(nodeId)
-    },
-    [onNavigateToNode]
-  )
 
   return (
     <div
@@ -141,7 +131,7 @@ export function DetailSidebar({
               return (
                 <button
                   key={`${conn.node.id}-${conn.edgeType}-${conn.direction}`}
-                  onClick={() => handleConnectionClick(conn.node.id)}
+                  onClick={() => onNavigateToNode(conn.node.id)}
                   className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/30 transition-colors text-left group"
                 >
                   <span

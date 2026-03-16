@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { ArrowRight, ExternalLink } from 'lucide-react'
 import type { GraphNodeData, GraphEdgeData } from './types'
-import { getEntityExternalUrl } from './utils'
+import { getEntityExternalUrl, HIDDEN_NODE_PROPERTIES } from './utils'
 import { ENTITY_COLORS, ENTITY_ICONS } from './constants'
 import type { Edge } from '@xyflow/react'
 
@@ -17,7 +17,6 @@ export interface NodePopoverProps {
   edges: Edge<GraphEdgeData>[]
   onClose: () => void
   onExpand: () => void
-  onNavigateToNode: (nodeId: string) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -69,12 +68,8 @@ export function NodePopover({
   const color = ENTITY_COLORS[node.entityType]
 
   // Key properties (first 3), excluding internal metadata
-  const HIDDEN_PROPERTIES = new Set([
-    'status', 'platform', 'username', 'team_prefix', 'identifier',
-    'source_type', 'source_id', 'fingerprint', 'workspace_id',
-  ])
   const propEntries = Object.entries(node.properties)
-    .filter(([key]) => !HIDDEN_PROPERTIES.has(key))
+    .filter(([key]) => !HIDDEN_NODE_PROPERTIES.has(key))
     .slice(0, 3)
 
   const handleExpand = useCallback(
