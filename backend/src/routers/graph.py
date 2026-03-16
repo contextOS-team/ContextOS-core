@@ -145,21 +145,17 @@ async def get_workspace_graph(
         edge_counter[str(edge.source_node_id)] += 1
         edge_counter[str(edge.target_node_id)] += 1
 
-    # Step 4: Prune orphan PRs — only keep PRs that connect to a non-PR node
-    pr_ids = {str(n.id) for n in all_nodes if n.entity_type == "PR"}
-    non_pr_ids = node_id_set - pr_ids
-    connected_pr_ids: set[str] = set()
-    for edge in all_edges:
-        src, tgt = str(edge.source_node_id), str(edge.target_node_id)
-        if src in pr_ids and tgt in non_pr_ids:
-            connected_pr_ids.add(src)
-        if tgt in pr_ids and src in non_pr_ids:
-            connected_pr_ids.add(tgt)
-    # Remove orphan PRs
-    orphan_prs = pr_ids - connected_pr_ids
-    if orphan_prs:
-        all_node_ids = [nid for nid in all_node_ids if nid not in orphan_prs]
-        node_id_set -= orphan_prs
+    # Step 4: Remove ALL disconnected nodes (0 edges)
+    connected_ids = {nid for nid in all_node_ids if edge_counter.get(nid, 0) > 0}
+    all_node_ids = [nid for nid in all_node_ids if nid in connected_ids]
+    node_id_set = connected_ids
+
+    # Re-filter edges to connected set
+    all_edges = [
+        e for e in all_edges
+        if str(e.source_node_id) in node_id_set
+        and str(e.target_node_id) in node_id_set
+    ]
 
     # Step 5: Sort by connectivity (most-connected first), apply limit
     sorted_node_ids = sorted(
