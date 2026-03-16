@@ -46,12 +46,22 @@ function getShapeStyle(shape: ShapeKind, size: number): React.CSSProperties {
   }
 }
 
-/** Derive a subtitle from node properties. */
+/** Properties to never show as subtitle. */
+const HIDDEN_PROPS = new Set([
+  'status', 'platform', 'username', 'team_prefix', 'identifier',
+  'source_type', 'source_id', 'fingerprint', 'workspace_id',
+  'resolved_from', 'sha', 'short_sha',
+])
+
+/** Derive a subtitle from node properties — skip internal metadata. */
 function getSubtitle(data: GraphNodeData): string | null {
   const p = data.properties
-  if (p.identifier && typeof p.identifier === 'string') return p.identifier
-  if (p.number != null) return `#${p.number}`
-  if (p.status && typeof p.status === 'string') return p.status
+  for (const [key, val] of Object.entries(p)) {
+    if (HIDDEN_PROPS.has(key)) continue
+    if (val != null && typeof val === 'string' && val.length > 0 && val.length < 50) {
+      return val
+    }
+  }
   return null
 }
 
