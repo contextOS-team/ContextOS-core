@@ -430,6 +430,21 @@ export function disconnectTelegram(): Promise<{ status: string }> {
   })
 }
 
+export function syncTelegramHistory(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/telegram/sync', {
+    method: 'POST',
+  })
+}
+
+export function getTelegramSyncStatus(): Promise<{
+  sync_status: string
+  records_synced: number
+  last_sync_at: string | null
+  error_message: string | null
+}> {
+  return apiFetch('/api/telegram/sync/status')
+}
+
 // ---------------------------------------------------------------------------
 // Jira
 // ---------------------------------------------------------------------------

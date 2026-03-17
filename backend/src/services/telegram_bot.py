@@ -87,6 +87,17 @@ async def connect_telegram_bot(
     vault_name = token_name(Provider.TELEGRAM.value, workspace_id, "bot_token")
     await store_token(session, vault_name, bot_token)
 
+    # Drain any pending updates BEFORE setting the webhook.
+    # getUpdates only works without an active webhook, and captures messages
+    # the bot received while no webhook was configured.
+    try:
+        from src.services.telegram_sync import drain_pending_updates
+        drained = await drain_pending_updates(bot_token, workspace_id, session)
+        if drained:
+            logger.info("Drained %d pending updates during connect for workspace %s", drained, workspace_id)
+    except Exception:
+        logger.debug("Pending update drain failed during connect", exc_info=True)
+
     # Set webhook — needs a public HTTPS URL (use TELEGRAM_WEBHOOK_BASE_URL in dev)
     base_url = settings.TELEGRAM_WEBHOOK_BASE_URL or settings.BACKEND_URL
     webhook_url = f"{base_url}/api/telegram/webhook/{workspace_id}"

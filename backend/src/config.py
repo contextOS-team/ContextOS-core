@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     TELEGRAM_WEBHOOK_SECRET: str = ""
     # Public HTTPS base URL for Telegram webhooks (e.g. ngrok URL in dev)
     TELEGRAM_WEBHOOK_BASE_URL: str = ""
+    # Telegram MTProto credentials (from https://my.telegram.org) for history sync.
+    # Required for fetching chat message history via Telethon.
+    TELEGRAM_API_ID: str = ""
+    TELEGRAM_API_HASH: str = ""
 
     # OAuth state signing (SEC-03: dedicated secret, not provider client secrets)
     OAUTH_STATE_SECRET: str = ""

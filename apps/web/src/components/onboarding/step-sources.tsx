@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -10,6 +10,7 @@ import {
   connectNotion,
   connectFathom,
   connectTelegram,
+  getTelegramSyncStatus,
   type IntegrationStatusResponse,
 } from '@/lib/api'
 import {
@@ -38,6 +39,9 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
   const [showTelegramForm, setShowTelegramForm] = useState(false)
   const [telegramToken, setTelegramToken] = useState('')
   const [telegramLoading, setTelegramLoading] = useState(false)
+  const [telegramSyncStatus, setTelegramSyncStatus] = useState<string | null>(null)
+  const [telegramSyncCount, setTelegramSyncCount] = useState(0)
+  const syncPollRef = useRef<NodeJS.Timeout | null>(null)
 
   const slackConnected = integrations?.slack.status === 'connected'
   const githubConnected = integrations?.github.status === 'connected'
@@ -45,6 +49,32 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
   const notionConnected = integrations?.notion.status === 'connected'
   const fathomConnected = integrations?.fathom.status === 'connected'
   const telegramConnected = integrations?.telegram.status === 'connected'
+
+  // Poll Telegram sync status when syncing
+  useEffect(() => {
+    if (telegramSyncStatus !== 'syncing') return
+
+    syncPollRef.current = setInterval(async () => {
+      try {
+        const status = await getTelegramSyncStatus()
+        setTelegramSyncCount(status.records_synced)
+        if (status.sync_status === 'complete') {
+          setTelegramSyncStatus('complete')
+          setTelegramSyncCount(status.records_synced)
+          toast.success(`Synced ${status.records_synced} Telegram messages`)
+        } else if (status.sync_status === 'error') {
+          setTelegramSyncStatus('error')
+        }
+      } catch {
+        // Non-blocking
+      }
+    }, 3000)
+
+    return () => {
+      if (syncPollRef.current) clearInterval(syncPollRef.current)
+    }
+  }, [telegramSyncStatus])
+
   async function handleSlack() {
     setConnecting('slack')
     try {
@@ -113,7 +143,8 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
       setShowTelegramForm(false)
       setTelegramToken('')
       onSourceConnected()
-      toast.success('Telegram connected')
+      toast.success('Telegram connected — syncing message history...')
+      setTelegramSyncStatus('syncing')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to connect Telegram')
     } finally {
@@ -283,6 +314,26 @@ export function StepSources({ onNext, onSkip, integrations, onSourceConnected }:
             </Button>
           </div>
         </form>
+      )}
+
+      {/* Telegram sync status indicator */}
+      {telegramConnected && telegramSyncStatus === 'syncing' && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />
+          <p className="text-xs text-muted-foreground">
+            Syncing Telegram history{telegramSyncCount > 0 ? ` — ${telegramSyncCount} messages` : '...'}
+          </p>
+        </div>
+      )}
+      {telegramConnected && telegramSyncStatus === 'complete' && telegramSyncCount > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <svg className="h-3.5 w-3.5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+          </svg>
+          <p className="text-xs text-muted-foreground">
+            Synced {telegramSyncCount} Telegram messages
+          </p>
+        </div>
       )}
 
       <div className="flex gap-3">

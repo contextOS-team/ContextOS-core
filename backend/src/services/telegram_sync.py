@@ -1,0 +1,484 @@
+"""Telegram message history sync service.
+
+Two-tier approach:
+1. **Bot API (getUpdates)** — Zero config, always available. Before setting the
+   webhook, drains pending updates via getUpdates. Limited to unconfirmed
+   messages only (typically up to 100 recent ones).
+2. **Telethon (MTProto)** — Full history fetch. Requires TELEGRAM_API_ID and
+   TELEGRAM_API_HASH from https://my.telegram.org. Fetches up to 30 days of
+   chat history from all groups the bot is in.
+
+The connect flow calls drain_pending_updates() automatically.
+The /sync endpoint triggers run_telegram_history_sync() which uses Telethon
+if available, otherwise falls back to getUpdates drain.
+"""
+
+import asyncio
+import logging
+import time
+from datetime import datetime, timedelta, timezone
+from uuid import UUID
+
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.config import get_settings
+from src.db import async_session
+from src.models.integration import Provider
+from src.models.telegram import TelegramMessage
+from src.services.embedding import queue_embedding_generation
+from src.services.embedding_worker import enqueue_embedding_job
+from src.services.sync_adapter import (
+    SyncRunLogger,
+    emit_activity,
+    get_or_create_cursor,
+    update_cursor_status,
+)
+from src.services.telegram_bot import telegram_api_call
+from src.services.vault import read_token, token_name
+
+logger = logging.getLogger(__name__)
+
+# Backfill window for first Telethon sync
+BACKFILL_DAYS = 30
+# Messages per flush batch
+FLUSH_BATCH_SIZE = 100
+# Max messages per chat to prevent runaway syncs
+MAX_MESSAGES_PER_CHAT = 1000
+# Delay between chat syncs to respect rate limits
+RATE_LIMIT_DELAY = 0.3
+
+
+def _is_telethon_available() -> bool:
+    """Check if Telethon and MTProto credentials are configured."""
+    settings = get_settings()
+    if not settings.TELEGRAM_API_ID or not settings.TELEGRAM_API_HASH:
+        return False
+    try:
+        import telethon  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Tier 1: Bot API getUpdates — zero config, always works
+# ---------------------------------------------------------------------------
+
+async def drain_pending_updates(
+    bot_token: str,
+    workspace_id: UUID,
+    session: AsyncSession,
+) -> int:
+    """Drain pending updates via Bot API getUpdates before webhook is set.
+
+    Calls getUpdates in a loop to retrieve all unconfirmed messages the bot
+    has received. These are messages Telegram queued but hasn't delivered
+    via webhook yet (e.g. messages received while webhook was down).
+
+    This requires NO extra credentials — just the bot token.
+
+    Args:
+        bot_token: The bot token for API calls.
+        workspace_id: Workspace to store messages in.
+        session: Async database session.
+
+    Returns:
+        Number of messages ingested.
+    """
+    total = 0
+    offset = 0
+
+    for _ in range(20):  # Safety limit: max 20 iterations (2000 updates)
+        try:
+            updates = await telegram_api_call(
+                bot_token, "getUpdates",
+                offset=offset, limit=100, timeout=1,
+            )
+        except Exception:
+            logger.debug("getUpdates call failed, stopping drain", exc_info=True)
+            break
+
+        if not updates:
+            break
+
+        msg_ids: list[UUID] = []
+        for update in updates:
+            # Advance offset to acknowledge this update
+            offset = update["update_id"] + 1
+
+            message = update.get("message") or update.get("edited_message")
+            if not message or not message.get("text"):
+                continue
+
+            from_user = message.get("from", {})
+            if from_user.get("is_bot", False):
+                continue
+
+            msg_uuid = await _upsert_telegram_message(
+                session, workspace_id, message
+            )
+            if msg_uuid:
+                msg_ids.append(msg_uuid)
+                total += 1
+
+        if msg_ids:
+            await session.flush()
+            await queue_embedding_generation(
+                session, workspace_id, "telegram_message", msg_ids,
+            )
+            await session.commit()
+
+    if total > 0:
+        logger.info(
+            "Drained %d pending Telegram updates for workspace %s",
+            total, workspace_id,
+        )
+
+    return total
+
+
+# ---------------------------------------------------------------------------
+# Tier 2: Telethon (MTProto) — full history, requires api_id/api_hash
+# ---------------------------------------------------------------------------
+
+async def run_telegram_history_sync(workspace_id: UUID) -> None:
+    """Background task: fetch Telegram message history for a workspace.
+
+    Uses Telethon (MTProto) if TELEGRAM_API_ID/TELEGRAM_API_HASH are set.
+    Otherwise falls back to a getUpdates drain (limited but zero-config).
+
+    Args:
+        workspace_id: Workspace to sync Telegram history for.
+    """
+    if _is_telethon_available():
+        await _run_telethon_sync(workspace_id)
+    else:
+        await _run_bot_api_sync(workspace_id)
+
+
+async def _run_bot_api_sync(workspace_id: UUID) -> None:
+    """Fallback sync using Bot API getUpdates (no extra credentials)."""
+    async with async_session() as session:
+        try:
+            await update_cursor_status(
+                session, workspace_id, "telegram", "default",
+                sync_status="syncing",
+            )
+            await session.commit()
+
+            vault_name = token_name(
+                Provider.TELEGRAM.value, workspace_id, "bot_token"
+            )
+            bot_token = await read_token(session, vault_name)
+            if not bot_token:
+                raise ValueError("Bot token not found in vault")
+
+            # Temporarily delete webhook so getUpdates works
+            try:
+                await telegram_api_call(bot_token, "deleteWebhook")
+            except Exception:
+                logger.debug("deleteWebhook failed before drain", exc_info=True)
+
+            total = await drain_pending_updates(bot_token, workspace_id, session)
+
+            # Re-set webhook
+            settings = get_settings()
+            base_url = settings.TELEGRAM_WEBHOOK_BASE_URL or settings.BACKEND_URL
+            webhook_url = f"{base_url}/api/telegram/webhook/{workspace_id}"
+            if webhook_url.startswith("https://"):
+                await telegram_api_call(
+                    bot_token, "setWebhook",
+                    url=webhook_url,
+                    secret_token=settings.TELEGRAM_WEBHOOK_SECRET,
+                    allowed_updates=["message", "edited_message"],
+                )
+
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            await update_cursor_status(
+                session, workspace_id, "telegram", "default",
+                sync_status="complete",
+                records_synced=total,
+                cursor_value=now.isoformat(),
+            )
+            await session.commit()
+
+            logger.info(
+                "Bot API sync complete for workspace %s: %d messages",
+                workspace_id, total,
+            )
+
+        except Exception as e:
+            logger.exception("Bot API telegram sync failed ws=%s", workspace_id)
+            try:
+                await session.rollback()
+                await update_cursor_status(
+                    session, workspace_id, "telegram", "default",
+                    sync_status="error",
+                    error_message=str(e)[:200],
+                )
+                await session.commit()
+            except Exception:
+                pass
+
+
+async def _run_telethon_sync(workspace_id: UUID) -> None:
+    """Full history sync via Telethon MTProto."""
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+
+    settings = get_settings()
+    _sync_t0 = time.monotonic()
+
+    async with SyncRunLogger("telegram", workspace_id) as srl:
+        async with async_session() as session:
+            try:
+                await update_cursor_status(
+                    session, workspace_id, "telegram", "default",
+                    sync_status="syncing",
+                )
+                await emit_activity(
+                    session, workspace_id, "sync_started",
+                    metadata={"integration": "telegram"},
+                )
+                await session.commit()
+
+                vault_name = token_name(
+                    Provider.TELEGRAM.value, workspace_id, "bot_token"
+                )
+                bot_token = await read_token(session, vault_name)
+                if not bot_token:
+                    raise ValueError("Bot token not found in vault")
+
+                client = TelegramClient(
+                    StringSession(),
+                    int(settings.TELEGRAM_API_ID),
+                    settings.TELEGRAM_API_HASH,
+                )
+                await client.start(bot_token=bot_token)
+
+                try:
+                    total_synced = await _sync_all_chats(
+                        client, session, workspace_id, srl
+                    )
+                finally:
+                    await client.disconnect()
+
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                await update_cursor_status(
+                    session, workspace_id, "telegram", "default",
+                    sync_status="complete",
+                    records_synced=total_synced,
+                    cursor_value=now.isoformat(),
+                )
+                await emit_activity(
+                    session, workspace_id, "sync_completed",
+                    metadata={
+                        "integration": "telegram",
+                        "messages_synced": total_synced,
+                    },
+                )
+                await session.commit()
+
+                elapsed = time.monotonic() - _sync_t0
+                srl.info(
+                    "Telegram history sync complete: %d messages in %.1fs",
+                    total_synced, elapsed,
+                )
+
+            except Exception as e:
+                srl.exception("Telegram history sync failed")
+                try:
+                    await session.rollback()
+                    await update_cursor_status(
+                        session, workspace_id, "telegram", "default",
+                        sync_status="error",
+                        error_message=str(e)[:200],
+                    )
+                    await session.commit()
+                except Exception:
+                    logger.warning(
+                        "Failed to persist error status for telegram sync ws=%s",
+                        workspace_id,
+                    )
+
+
+async def _sync_all_chats(
+    client,
+    session: AsyncSession,
+    workspace_id: UUID,
+    srl: SyncRunLogger,
+) -> int:
+    """Iterate all chats the bot is in and sync message history."""
+    cursor = await get_or_create_cursor(session, workspace_id, "telegram", "default")
+    if cursor.cursor_value:
+        cutoff = datetime.fromisoformat(cursor.cursor_value).replace(tzinfo=timezone.utc)
+    else:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=BACKFILL_DAYS)
+
+    dialogs = await client.get_dialogs()
+    srl.info("Found %d dialogs for bot", len(dialogs))
+
+    total_synced = 0
+    all_msg_ids: list[UUID] = []
+
+    for dialog in dialogs:
+        chat = dialog.entity
+        chat_id = dialog.id
+        chat_title = (
+            getattr(chat, "title", None)
+            or getattr(chat, "first_name", None)
+            or str(chat_id)
+        )
+
+        chat_msg_ids, chat_count = await _sync_single_chat(
+            client, session, workspace_id, chat, chat_id, chat_title, cutoff
+        )
+        all_msg_ids.extend(chat_msg_ids)
+        total_synced += chat_count
+
+        if chat_count > 0:
+            srl.info("Synced %d messages from %s", chat_count, chat_title)
+
+        await asyncio.sleep(RATE_LIMIT_DELAY)
+
+    if all_msg_ids:
+        await enqueue_embedding_job(workspace_id, "telegram_message", all_msg_ids)
+
+    return total_synced
+
+
+async def _sync_single_chat(
+    client,
+    session: AsyncSession,
+    workspace_id: UUID,
+    chat,
+    chat_id: int,
+    chat_title: str,
+    cutoff: datetime,
+) -> tuple[list[UUID], int]:
+    """Sync message history for a single chat via Telethon."""
+    from telethon.tl.types import Channel, Chat, User
+
+    if isinstance(chat, Channel):
+        chat_type = "supergroup" if chat.megagroup else "channel"
+    elif isinstance(chat, Chat):
+        chat_type = "group"
+    elif isinstance(chat, User):
+        chat_type = "private"
+    else:
+        chat_type = "unknown"
+
+    msg_ids: list[UUID] = []
+    count = 0
+
+    async for message in client.iter_messages(
+        chat, limit=MAX_MESSAGES_PER_CHAT, reverse=False,
+    ):
+        msg_date = message.date
+        if msg_date and msg_date.replace(tzinfo=timezone.utc) < cutoff:
+            break
+
+        if not message.text:
+            continue
+        sender = message.sender
+        if sender and getattr(sender, "bot", False):
+            continue
+
+        from_user_id = getattr(sender, "id", None) if sender else None
+        from_username = getattr(sender, "username", None) if sender else None
+        from_first_name = getattr(sender, "first_name", None) if sender else None
+
+        reply_to_msg_id = (
+            message.reply_to.reply_to_msg_id
+            if message.reply_to and hasattr(message.reply_to, "reply_to_msg_id")
+            else None
+        )
+
+        stmt = pg_insert(TelegramMessage).values(
+            workspace_id=workspace_id,
+            message_id=message.id,
+            chat_id=chat_id,
+            chat_title=chat_title if chat_type != "private" else None,
+            chat_type=chat_type,
+            from_user_id=from_user_id,
+            from_username=from_username,
+            from_first_name=from_first_name,
+            text=message.text,
+            reply_to_message_id=reply_to_msg_id,
+            is_reply=reply_to_msg_id is not None,
+            telegram_date=msg_date.replace(tzinfo=None) if msg_date else None,
+            raw_data={},
+        )
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_tg_msg",
+            set_={"text": stmt.excluded.text},
+        ).returning(TelegramMessage.__table__.c.id)
+
+        result = await session.execute(stmt)
+        msg_uuid = result.scalar_one()
+        msg_ids.append(msg_uuid)
+        count += 1
+
+        if count % FLUSH_BATCH_SIZE == 0:
+            await session.flush()
+
+    if count > 0:
+        await session.flush()
+
+    return msg_ids, count
+
+
+# ---------------------------------------------------------------------------
+# Shared helper
+# ---------------------------------------------------------------------------
+
+async def _upsert_telegram_message(
+    session: AsyncSession,
+    workspace_id: UUID,
+    message: dict,
+) -> UUID | None:
+    """Upsert a single Telegram message from a Bot API update payload.
+
+    Returns the message UUID, or None if the message was filtered out.
+    """
+    chat = message.get("chat", {})
+    from_user = message.get("from") or message.get("sender_chat", {})
+
+    message_id = message.get("message_id")
+    chat_id = chat.get("id")
+    if not message_id or not chat_id:
+        return None
+
+    telegram_date = None
+    if message.get("date"):
+        telegram_date = datetime.utcfromtimestamp(message["date"])
+
+    reply_to = message.get("reply_to_message")
+    reply_to_message_id = reply_to.get("message_id") if reply_to else None
+
+    stmt = pg_insert(TelegramMessage).values(
+        workspace_id=workspace_id,
+        message_id=message_id,
+        chat_id=chat_id,
+        chat_title=chat.get("title"),
+        chat_type=chat.get("type"),
+        from_user_id=from_user.get("id"),
+        from_username=from_user.get("username"),
+        from_first_name=from_user.get("first_name"),
+        text=message["text"],
+        reply_to_message_id=reply_to_message_id,
+        is_reply=reply_to_message_id is not None,
+        telegram_date=telegram_date,
+        raw_data={"update": message},
+    )
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_tg_msg",
+        set_={
+            "text": stmt.excluded.text,
+            "raw_data": stmt.excluded.raw_data,
+        },
+    ).returning(TelegramMessage.__table__.c.id)
+
+    result = await session.execute(stmt)
+    return result.scalar_one()

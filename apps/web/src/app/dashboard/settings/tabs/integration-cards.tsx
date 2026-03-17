@@ -36,6 +36,7 @@ import { FathomConnect } from '../../integrations/fathom-connect'
 import { GithubRepos } from '../../integrations/github-repos'
 import { GitlabRepos } from '../../integrations/gitlab-repos'
 import { TelegramConnect } from './telegram-connect'
+import { TelegramSyncSection } from './telegram-sync-section'
 import { NotionSyncSection } from './notion-sync-section'
 
 // ---------------------------------------------------------------------------
@@ -224,7 +225,9 @@ export function IntegrationCards({
             onConnect={() => {}}
             onDisconnect={handleDisconnectTelegram}
             connectForm={<TelegramConnect onConnected={fetchStatuses} />}
-          />
+          >
+            <TelegramSyncSection />
+          </IntegrationCard>
           <IntegrationCard
             name="GitHub"
             icon={<GitHubLogo width={20} height={20} className="text-foreground" />}

@@ -262,6 +262,25 @@ async def _find_explicit_refs(
                 url=slack_permalink,
             )
 
+    # 5. Telegram messages containing the ticket identifier
+    if connected_sources is None or "telegram" in connected_sources:
+        tg_stmt = select(TelegramMessage).where(
+            TelegramMessage.workspace_id == workspace_id,
+            TelegramMessage.text.ilike(f"%{ticket.identifier}%"),  # type: ignore[union-attr]
+            TelegramMessage.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        tg_result = await session.execute(tg_stmt)
+        for msg in tg_result.scalars().all():
+            key = ("telegram_message", msg.id)
+            items[key] = LinkedItem(
+                source_type="telegram_message",
+                source_id=msg.id,
+                title=f"Telegram by {msg.from_first_name or msg.from_username or 'Unknown'} in {msg.chat_title or 'DM'}",
+                snippet=msg.text[:200],
+                relevance_score=WEIGHT_EXPLICIT,
+                signals=["explicit_reference"],
+            )
+
     return items
 
 
