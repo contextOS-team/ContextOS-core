@@ -31,6 +31,7 @@ from src.models.jira import JiraComment, JiraIssue
 from src.models.ticket import LinearComment, LinearTicket
 from src.services.embedding import generate_embedding
 from src.services.graph_ops import compute_fingerprint
+from src.services.llm_client import get_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +40,14 @@ WEIGHT_EXPLICIT = 1.0
 WEIGHT_HYBRID = 0.8
 WEIGHT_GRAPH = 0.8
 DEPTH_DECAY = 0.6  # Exponential decay factor for graph depth scoring
+RRF_K = 60  # Reciprocal Rank Fusion constant (standard value from literature)
 
 # Top-k limit for hybrid search results. 10 balances recall vs noise —
 # all results are ranked by combined_score, with a low floor (0.15) to
 # exclude completely irrelevant items without filtering good matches.
-HYBRID_SEARCH_LIMIT = 10
-HYBRID_SEARCH_CODE_LIMIT = 5  # Dedicated budget for code_chunk results
-HYBRID_SCORE_FLOOR = 0.15
+HYBRID_SEARCH_LIMIT = 20
+HYBRID_SEARCH_CODE_LIMIT = 8  # Dedicated budget for code_chunk results
+HYBRID_SCORE_FLOOR = 0.10
 
 # Graph entity type to source type mapping for source-backed entities
 _GRAPH_ENTITY_TO_SOURCE: dict[str, str] = {
@@ -281,8 +283,24 @@ async def _find_hybrid_matches(
                 allowed_types.update(src_types)
 
     query_text = f"{ticket.title}\n\n{ticket.description or ''}"
+
+    # HyDE: Generate a hypothetical context document from the ticket, then embed
+    # that instead of the raw query. This produces embeddings closer to actual
+    # documents in the vector space, dramatically improving retrieval recall.
+    hyde_text = query_text
     try:
-        query_embedding = await generate_embedding(query_text)
+        llm = get_llm_client()
+        hyde_response = await llm.generate(
+            prompt=f"Ticket: {ticket.title}\nDescription: {ticket.description or 'No description'}\n\nWrite a short technical summary (3-4 sentences) of what this ticket is about, what code or systems it might involve, and what decisions or discussions might exist around it.",
+            system_prompt="You are a technical writer. Write a brief hypothetical context document based on the ticket. Be specific about technologies, components, and potential discussions. Do not use markdown formatting.",
+        )
+        if hyde_response.text:
+            hyde_text = f"{query_text}\n\n{hyde_response.text}"
+    except Exception:
+        logger.debug("HyDE generation failed for %s, using raw query", ticket.identifier)
+
+    try:
+        query_embedding = await generate_embedding(hyde_text)
     except Exception:
         logger.warning("Failed to generate query embedding for %s", ticket.identifier)
         return items
@@ -938,6 +956,61 @@ async def find_content_by_source(
         yield source_name, source_items, detail
 
 
+async def _llm_rerank(
+    ticket: LinearTicket,
+    items: list[LinkedItem],
+    top_n: int = 30,
+) -> list[LinkedItem]:
+    """Rerank retrieved items using LLM-based relevance scoring.
+
+    Sends the top candidates to Gemini with the ticket query and asks it to
+    score each item's relevance from 0-10. This cross-encoder-style approach
+    evaluates query-document pairs jointly, producing much better relevance
+    scores than independent retrieval-time heuristics.
+
+    Falls back to original scores if LLM reranking fails.
+    """
+    if not items or len(items) <= 3:
+        return items
+
+    # Only rerank the top candidates to limit cost/latency
+    candidates = sorted(items, key=lambda x: x.relevance_score, reverse=True)[:top_n]
+    remaining = items[top_n:] if len(items) > top_n else []
+
+    # Build item descriptions for the LLM
+    item_lines = []
+    for i, item in enumerate(candidates):
+        item_lines.append(f"[{i}] ({item.source_type}) {item.title}: {item.snippet[:150]}")
+
+    prompt = (
+        f"Ticket: {ticket.title}\n"
+        f"Description: {(ticket.description or 'No description')[:300]}\n\n"
+        f"Rate each item's relevance to this ticket from 0 (irrelevant) to 10 (directly relevant).\n"
+        f"Return ONLY a comma-separated list of scores in order, e.g.: 8,3,9,1,7\n\n"
+        + "\n".join(item_lines)
+    )
+
+    try:
+        llm = get_llm_client()
+        response = await llm.generate(
+            prompt=prompt,
+            system_prompt="You are a relevance scorer. Return ONLY comma-separated integer scores 0-10, nothing else.",
+        )
+
+        scores_text = response.text.strip()
+        scores = [int(s.strip()) for s in scores_text.split(",") if s.strip().isdigit()]
+
+        if len(scores) == len(candidates):
+            for item, score in zip(candidates, scores):
+                item.relevance_score = score / 10.0
+        else:
+            logger.debug("LLM rerank returned %d scores for %d items, skipping", len(scores), len(candidates))
+    except Exception:
+        logger.debug("LLM reranking failed, using original scores")
+
+    return candidates + remaining
+
+
 async def find_related_content(
     session: AsyncSession,
     workspace_id: UUID,
@@ -962,30 +1035,50 @@ async def find_related_content(
     hybrid = await _find_hybrid_matches(session, workspace_id, ticket)
     graph = await _find_graph_results(session, workspace_id, ticket)
 
-    # Merge results: combine scores for items found by multiple signals
+    # Merge results using Reciprocal Rank Fusion (RRF) for better ranking.
+    # RRF combines multiple ranked lists more robustly than simple score addition
+    # by using rank positions: RRF(d) = Σ 1/(k + rank_i(d)) across all signals.
+    # This prevents high-scoring items from one signal dominating.
     merged: dict[tuple[str, UUID], LinkedItem] = {}
 
-    for source, signal_items in [
-        ("explicit", explicit),
-        ("hybrid", hybrid),
-        ("graph", graph),
-    ]:
+    # Build per-signal ranked lists sorted by score descending
+    signal_ranked_lists: list[list[tuple[tuple[str, UUID], LinkedItem]]] = []
+    for signal_items in [explicit, hybrid, graph]:
+        ranked = sorted(signal_items.items(), key=lambda x: x[1].relevance_score, reverse=True)
+        if ranked:
+            signal_ranked_lists.append(ranked)
+
+    # Compute RRF score for each item across all signals
+    rrf_scores: dict[tuple[str, UUID], float] = {}
+    for ranked_list in signal_ranked_lists:
+        for rank, (key, item) in enumerate(ranked_list):
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (RRF_K + rank + 1)
+
+    # Merge items with RRF scores
+    for signal_items in [explicit, hybrid, graph]:
         for key, item in signal_items.items():
             if key in merged:
                 existing = merged[key]
-                existing.relevance_score = min(
-                    existing.relevance_score + item.relevance_score, 1.0
-                )
                 existing.signals.extend(item.signals)
-                # Preserve URL from whichever signal provides it
                 if not existing.url and item.url:
                     existing.url = item.url
             else:
                 merged[key] = item
 
-    # Apply token budget trimming with signal diversity guarantee
+    # Apply RRF scores (normalized to 0-1 range)
+    if rrf_scores:
+        max_rrf = max(rrf_scores.values())
+        for key, item in merged.items():
+            item.relevance_score = rrf_scores.get(key, 0.0) / max_rrf if max_rrf > 0 else 0.0
+
+    # Rerank merged items using LLM-based relevance scoring.
+    # The LLM evaluates each item against the ticket query to produce
+    # a more accurate relevance score than retrieval-time heuristics.
     merged_items = list(merged.values())
-    budget_trimmed = _apply_token_budget(merged_items)
+    reranked = await _llm_rerank(ticket, merged_items)
+
+    # Apply token budget trimming with signal diversity guarantee
+    budget_trimmed = _apply_token_budget(reranked)
 
     return LinkingResult(
         ticket_id=ticket.id,
