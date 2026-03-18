@@ -279,34 +279,35 @@ async def _inject_user_decisions(
     person_nodes = person_result.scalars().all()
 
     for pn in person_nodes:
-        if pn.id not in existing_ids:
+        str_id = str(pn.id)
+        if str_id not in existing_ids:
             new_nodes.append(GraphNodeResponse(
-                id=pn.id,
+                id=str_id,
                 entity_type=pn.entity_type,
                 name=pn.name,
                 depth=0,
                 properties=pn.properties or {},
             ))
-            existing_ids.add(pn.id)
+            existing_ids.add(str_id)
 
     for dn in decision_nodes:
-        if dn.id not in existing_ids:
+        str_id = str(dn.id)
+        if str_id not in existing_ids:
             new_nodes.append(GraphNodeResponse(
-                id=dn.id,
+                id=str_id,
                 entity_type=dn.entity_type,
                 name=dn.name,
                 depth=1,
                 properties=dn.properties or {},
             ))
-            existing_ids.add(dn.id)
+            existing_ids.add(str_id)
 
     person_id_strs = {str(pid) for pid in person_ids}
     for edge in decision_edges:
         if str(edge.source_node_id) in person_id_strs:
             new_edges.append(GraphEdgeResponse(
-                id=edge.id,
-                source_node_id=edge.source_node_id,
-                target_node_id=edge.target_node_id,
+                source=str(edge.source_node_id),
+                target=str(edge.target_node_id),
                 relationship_type=edge.relationship_type,
                 properties=edge.properties or {},
             ))
