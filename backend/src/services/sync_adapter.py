@@ -149,7 +149,7 @@ async def emit_activity(
             await session.execute(
                 text(
                     "INSERT INTO activity_events (workspace_id, actor_id, event_type, metadata)"
-                    " VALUES (:workspace_id, :actor_id, :event_type, :metadata::jsonb)"
+                    " VALUES (:workspace_id, :actor_id, :event_type, CAST(:metadata AS jsonb))"
                 ),
                 {
                     "workspace_id": workspace_id,
