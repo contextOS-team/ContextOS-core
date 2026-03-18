@@ -61,7 +61,7 @@ export function IntegrationDots({ statuses }: IntegrationDotsProps) {
         return (
           <div
             key={integration.key}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-default"
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-default py-1 px-1 -mx-1 rounded"
             title={tooltip}
           >
             <span

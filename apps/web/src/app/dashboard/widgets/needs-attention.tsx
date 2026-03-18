@@ -14,7 +14,7 @@ export function NeedsAttention({ items }: NeedsAttentionProps) {
       <h3 className="section-label mb-3">
         Needs Attention ({items.length})
       </h3>
-      <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border">
+      <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden divide-y divide-border/50">
         {items.map((item) => {
           const isPR = item.type === 'pr_review' || item.type === 'mr_review'
           const href =

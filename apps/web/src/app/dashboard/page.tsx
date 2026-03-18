@@ -27,6 +27,9 @@ import { ThisWeek } from './widgets/this-week'
 import { SprintBadge } from './widgets/sprint-badge'
 import { IntegrationDots } from './widgets/integration-dots'
 import { EmptyState } from './widgets/empty-state'
+import { ActivityFeedMini } from './widgets/activity-feed-mini'
+import { GraphThumbnail } from './widgets/graph-thumbnail'
+import { RecentDecisions } from './widgets/recent-decisions'
 
 function getGreeting(): string {
   const hour = new Date().getHours()
@@ -106,7 +109,7 @@ export default function DashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6 animate-fade-in-up">
+      <div className="space-y-6 stagger-children">
         <div className="flex items-center justify-between">
           <Skeleton className="h-4 w-48" />
           <Skeleton className="h-4 w-32" />
@@ -149,11 +152,11 @@ export default function DashboardPage() {
   const olderPages = recentPages.filter(p => now - new Date(p.updated_at).getTime() >= 86_400_000)
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
+    <div className="space-y-6 stagger-children">
       {/* Header: greeting with context-aware subtitle + sprint badge */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm text-foreground font-medium">
+          <p className="text-lg font-semibold text-foreground">
             {getGreeting()}{firstName ? `, ${firstName}` : ''}
           </p>
           {(() => {
@@ -162,13 +165,13 @@ export default function DashboardPage() {
             )
             const summary = getSummaryLine(attentionItems.length, activeDays.length)
             if (summary) {
-              return <p className="text-xs text-muted-foreground mt-0.5">{summary}</p>
+              return <p className="text-sm text-muted-foreground mt-0.5">{summary}</p>
             }
             // Context-aware subtitle when widgets are empty but pages exist
             if (widgetsEmpty && recentPages.length > 0) {
               if (errorPages.length > 0) {
                 return (
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p className="text-sm text-muted-foreground mt-0.5">
                     {errorPages.length === 1
                       ? `${errorPages[0].ticket_identifier ?? 'One context'} needs attention`
                       : `${errorPages.length} contexts need attention`}
@@ -177,7 +180,7 @@ export default function DashboardPage() {
                 )
               }
               return (
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="text-sm text-muted-foreground mt-0.5">
                   {recentPages.length} context{recentPages.length === 1 ? '' : 's'} healthy
                 </p>
               )
@@ -205,63 +208,74 @@ export default function DashboardPage() {
         <EmptyState statuses={statuses} />
       ) : (
         <>
-          {/* Intelligence widgets */}
-          <NeedsAttention items={attentionItems} />
-          <Resurfaced items={resurfacedItems} />
-          <ThisWeek days={weeklySummary} />
+          {/* 2-col grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left column */}
+            <div className="space-y-6">
+              <NeedsAttention items={attentionItems} />
+              <ThisWeek days={weeklySummary} />
 
-          {/* Recent Context with temporal grouping */}
-          {recentPages.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="section-label">Recent Context</h3>
-                <div className="flex items-center gap-3">
-                  <Link
-                    href="/dashboard/context/generate"
-                    className="text-xs text-primary/70 hover:text-primary transition-colors"
-                  >
-                    Generate
-                  </Link>
-                  <Link
-                    href="/dashboard/context"
-                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    View all
-                  </Link>
-                </div>
-              </div>
-
-              {/* Today group */}
-              {todayPages.length > 0 && (
-                <>
-                  {olderPages.length > 0 && (
-                    <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60 mb-1.5">Today</p>
-                  )}
-                  <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border mb-3">
-                    {todayPages.map((page) => (
-                      <ContextRow key={page.id} page={page} onClick={() => router.push(`/dashboard/context/${page.id}`)} />
-                    ))}
+              {/* Recent Context with temporal grouping */}
+              {recentPages.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="section-label">Recent Context</h3>
+                    <div className="flex items-center gap-3">
+                      <Link
+                        href="/dashboard/context/generate"
+                        className="text-xs text-primary/70 hover:text-primary transition-colors"
+                      >
+                        Generate
+                      </Link>
+                      <Link
+                        href="/dashboard/context"
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        View all
+                      </Link>
+                    </div>
                   </div>
-                </>
-              )}
 
-              {/* Earlier group */}
-              {olderPages.length > 0 && (
-                <>
+                  {/* Today group */}
                   {todayPages.length > 0 && (
-                    <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60 mb-1.5">Earlier</p>
+                    <>
+                      {olderPages.length > 0 && (
+                        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60 mb-1.5">Today</p>
+                      )}
+                      <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden divide-y divide-border mb-3">
+                        {todayPages.map((page) => (
+                          <ContextRow key={page.id} page={page} onClick={() => router.push(`/dashboard/context/${page.id}`)} />
+                        ))}
+                      </div>
+                    </>
                   )}
-                  <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border">
-                    {olderPages.map((page) => (
-                      <ContextRow key={page.id} page={page} onClick={() => router.push(`/dashboard/context/${page.id}`)} />
-                    ))}
-                  </div>
-                </>
+
+                  {/* Earlier group */}
+                  {olderPages.length > 0 && (
+                    <>
+                      {todayPages.length > 0 && (
+                        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60 mb-1.5">Earlier</p>
+                      )}
+                      <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden divide-y divide-border">
+                        {olderPages.map((page) => (
+                          <ContextRow key={page.id} page={page} onClick={() => router.push(`/dashboard/context/${page.id}`)} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
             </div>
-          )}
 
-          {/* Integration dots footer */}
+            {/* Right column */}
+            <div className="space-y-6">
+              <ActivityFeedMini />
+              <GraphThumbnail />
+              <RecentDecisions />
+            </div>
+          </div>
+
+          {/* Integration dots footer - full width */}
           {statuses && <IntegrationDots statuses={statuses} />}
           <div className="border-t border-border/30 mt-2" />
         </>
@@ -279,10 +293,10 @@ function ContextRow({ page, onClick }: { page: ContextPageRow; onClick: () => vo
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left px-4 py-3 transition-colors duration-150 hover:bg-muted/40 border-l-[3px] ${colors.border} ${isError ? 'bg-red-500/[0.03]' : ''}`}
+      className={`w-full text-left px-4 py-3 active:scale-[0.99] transition-all duration-150 hover:bg-muted/40 border-l-[3px] ${colors.border} ${isError ? 'bg-red-500/[0.03]' : ''}`}
     >
       <div className="flex items-center justify-between gap-3">
-        <span className={`text-sm truncate ${isRecent ? 'font-medium text-foreground' : 'font-normal text-foreground/70'}`}>
+        <span style={{ textWrap: 'balance' }} className={`text-sm truncate ${isRecent ? 'font-medium text-foreground' : 'font-normal text-foreground/70'}`}>
           {displayTitle}
         </span>
         <span className={`shrink-0 h-2 w-2 rounded-full ${colors.dot}`} />
