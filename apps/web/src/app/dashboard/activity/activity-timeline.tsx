@@ -1,15 +1,15 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Clock, ArrowUp } from 'lucide-react'
+import { Clock, ArrowUp, Zap, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ActivityEvent, EventType } from './types'
-import { EVENT_ICONS, INTEGRATION_COLORS } from './types'
+import { EVENT_ICONS, INTEGRATION_COLORS, getEventCategory } from './types'
 import {
   formatEventDescription,
-  getMetadataChip,
+  getEventSubtitle,
   formatTimelineTimestamp,
   formatFullTimestamp,
   groupEventsByDay,
@@ -79,7 +79,7 @@ export function ActivityTimeline({
           newEventIds.current.add(newEvent.id)
           setTimeout(() => {
             newEventIds.current.delete(newEvent.id)
-          }, 350)
+          }, 600)
 
           if (isScrolledToTopRef.current) {
             setEvents((prev) => [newEvent, ...prev])
@@ -115,9 +115,9 @@ export function ActivityTimeline({
           const header = entry.target.nextElementSibling as HTMLElement | null
           if (!header) continue
           if (!entry.isIntersecting) {
-            header.classList.add('border-b', 'border-border')
+            header.classList.add('border-b', 'border-border/50')
           } else {
-            header.classList.remove('border-b', 'border-border')
+            header.classList.remove('border-b', 'border-border/50')
           }
         }
       },
@@ -128,11 +128,14 @@ export function ActivityTimeline({
     return () => observer.disconnect()
   }, [events.length])
 
+  const eventsRef = useRef(events)
+  eventsRef.current = events
+
   const loadMore = useCallback(async () => {
     if (!hasMore || isLoadingMore) return
     setIsLoadingMore(true)
 
-    const oldest = events[events.length - 1]
+    const oldest = eventsRef.current[eventsRef.current.length - 1]
     if (!oldest) {
       setIsLoadingMore(false)
       return
@@ -153,7 +156,7 @@ export function ActivityTimeline({
     }
 
     setIsLoadingMore(false)
-  }, [hasMore, isLoadingMore, events, workspaceId])
+  }, [hasMore, isLoadingMore, workspaceId])
 
   // Cursor-based pagination via IntersectionObserver
   useEffect(() => {
@@ -171,7 +174,7 @@ export function ActivityTimeline({
 
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [hasMore, isLoadingMore, events.length, loadMore])
+  }, [hasMore, isLoadingMore, loadMore])
 
   // Flush buffered events and scroll to top
   const flushBuffer = useCallback(() => {
@@ -186,16 +189,20 @@ export function ActivityTimeline({
   // Empty state
   if (events.length === 0 && bufferedEvents.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <Clock className="h-8 w-8 text-muted-foreground mb-4" />
-        <h2 className="text-lg font-medium text-foreground">Activity</h2>
-        <p className="text-sm text-muted-foreground max-w-[320px] mx-auto mt-1">
-          Events will appear here as you connect integrations and sync your
-          data.
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <div className="relative mb-6">
+          <div className="h-12 w-12 rounded-2xl bg-muted/60 flex items-center justify-center">
+            <Clock className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-primary/20 animate-pulse" />
+        </div>
+        <h2 className="text-sm font-medium text-foreground">No activity yet</h2>
+        <p className="text-xs text-muted-foreground max-w-[280px] mx-auto mt-1.5 leading-relaxed">
+          Events will appear here as you connect integrations and sync your data.
         </p>
         <Link
           href="/dashboard/settings?tab=integrations"
-          className="text-sm text-muted-foreground underline-offset-4 hover:underline mt-3"
+          className="text-xs text-primary/70 hover:text-primary transition-colors mt-4"
         >
           Connect an integration
         </Link>
@@ -206,15 +213,15 @@ export function ActivityTimeline({
   const dayGroups = groupEventsByDay(events)
 
   return (
-    <div ref={timelineRef} className="relative">
+    <div ref={timelineRef} className="relative animate-fade-in-up">
       {/* New events banner */}
       {bufferedEvents.length > 0 && (
         <div className="sticky top-0 z-20 flex justify-center py-2">
           <button
             onClick={flushBuffer}
-            className="inline-flex items-center gap-1.5 bg-muted/80 backdrop-blur-sm text-sm text-foreground rounded-full px-3 py-1.5 animate-banner-slide-in cursor-pointer hover:bg-muted transition-colors duration-150"
+            className="inline-flex items-center gap-1.5 bg-primary/10 backdrop-blur-md text-xs font-medium text-primary rounded-full px-3.5 py-1.5 animate-banner-slide-in cursor-pointer hover:bg-primary/15 transition-colors duration-150 shadow-sm"
           >
-            <ArrowUp className="h-3.5 w-3.5" />
+            <ArrowUp className="h-3 w-3" />
             {bufferedEvents.length} new event
             {bufferedEvents.length !== 1 ? 's' : ''}
           </button>
@@ -226,10 +233,10 @@ export function ActivityTimeline({
         <div key={group.date}>
           {/* Sentinel for sticky header detection */}
           <div className="day-sentinel h-0" />
-          <div className="section-label sticky top-0 z-10 bg-background pt-6 pb-3 transition-[border] duration-150">
+          <div className="section-label sticky top-0 z-10 bg-background/95 backdrop-blur-sm pt-6 pb-3 transition-[border] duration-150">
             {group.label}
           </div>
-          <div className="space-y-2">
+          <div className="rounded-xl border border-border/70 bg-card overflow-hidden divide-y divide-border/40">
             {group.events.map((event) => (
               <EventRow
                 key={event.id}
@@ -246,27 +253,78 @@ export function ActivityTimeline({
 
       {/* Loading more indicator */}
       {isLoadingMore && (
-        <div className="space-y-2 pt-2">
-          <div className="flex items-center gap-3 h-10">
-            <Skeleton className="h-4 w-4 rounded shrink-0" />
-            <Skeleton className="h-3.5 flex-1 max-w-[260px]" />
-            <Skeleton className="h-3 w-14 ml-auto" />
-          </div>
-          <div className="flex items-center gap-3 h-10">
-            <Skeleton className="h-4 w-4 rounded shrink-0" />
-            <Skeleton className="h-3.5 flex-1 max-w-[200px]" />
-            <Skeleton className="h-3 w-14 ml-auto" />
+        <div className="mt-4">
+          <div className="rounded-xl border border-border/50 bg-card overflow-hidden divide-y divide-border/30">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={`sk-${i}`} className="flex items-center gap-3 px-4 py-3">
+                <Skeleton className="h-7 w-7 rounded-lg shrink-0" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3.5 w-48" />
+                  <Skeleton className="h-2.5 w-24" />
+                </div>
+                <Skeleton className="h-3 w-12 ml-auto" />
+              </div>
+            ))}
           </div>
         </div>
       )}
 
       {/* End of list */}
       {!hasMore && events.length > 0 && (
-        <p className="text-xs text-muted-foreground text-center py-4">
-          -- Showing last 30 days --
-        </p>
+        <div className="flex items-center gap-3 py-8 justify-center">
+          <div className="h-px flex-1 max-w-16 bg-border/40" />
+          <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/40">
+            30 day history
+          </span>
+          <div className="h-px flex-1 max-w-16 bg-border/40" />
+        </div>
       )}
     </div>
+  )
+}
+
+// --- Shared helpers ---
+
+function useEventData(event: ActivityEvent) {
+  const integration = event.metadata.integration as string | undefined
+  return {
+    Icon: EVENT_ICONS[event.event_type as EventType],
+    description: formatEventDescription(event),
+    timestamp: formatTimelineTimestamp(event.created_at),
+    fullTimestamp: formatFullTimestamp(event.created_at),
+    brandColor: integration ? INTEGRATION_COLORS[integration] : undefined,
+  }
+}
+
+function EventIcon({
+  Icon,
+  bgClass,
+  colorClass,
+  brandColor,
+}: {
+  Icon: (typeof EVENT_ICONS)[EventType]
+  bgClass: string
+  colorClass: string
+  brandColor?: string
+}) {
+  return (
+    <div className={`shrink-0 h-7 w-7 rounded-lg ${bgClass} flex items-center justify-center`}>
+      <Icon
+        className={`h-3.5 w-3.5 ${colorClass}`}
+        style={brandColor ? { color: brandColor } : undefined}
+      />
+    </div>
+  )
+}
+
+function Timestamp({ timestamp, fullTimestamp }: { timestamp: string; fullTimestamp: string }) {
+  return (
+    <span
+      className="font-mono text-[11px] text-muted-foreground/50 ml-auto whitespace-nowrap shrink-0 tabular-nums"
+      title={fullTimestamp}
+    >
+      {timestamp}
+    </span>
   )
 }
 
@@ -279,64 +337,132 @@ function EventRow({
   event: ActivityEvent
   isNew: boolean
 }) {
-  const Icon = EVENT_ICONS[event.event_type as EventType]
-  const description = formatEventDescription(event)
-  const chip = getMetadataChip(event)
-  const timestamp = formatTimelineTimestamp(event.created_at)
-  const fullTimestamp = formatFullTimestamp(event.created_at)
+  const category = getEventCategory(event.event_type as EventType)
 
-  const integration = event.metadata.integration as string | undefined
-  const brandColor = integration ? INTEGRATION_COLORS[integration] : undefined
+  if (category === 'digest') {
+    return <DigestRow event={event} isNew={isNew} />
+  }
+
+  return <StandardRow event={event} isNew={isNew} category={category} />
+}
+
+function StandardRow({
+  event,
+  isNew,
+  category,
+}: {
+  event: ActivityEvent
+  isNew: boolean
+  category: import('./types').EventCategory
+}) {
+  const { Icon, description, timestamp, fullTimestamp, brandColor } = useEventData(event)
+  const subtitle = getEventSubtitle(event)
   const isError = event.metadata.error === true
+
+  const iconBgClass = isError
+    ? 'bg-destructive/10'
+    : category === 'content'
+      ? 'bg-primary/8'
+      : 'bg-muted/60'
+
+  const iconColorClass = isError
+    ? 'text-destructive'
+    : !brandColor
+      ? category === 'content'
+        ? 'text-primary/70'
+        : 'text-muted-foreground'
+      : ''
 
   return (
     <div
-      className={`flex items-center gap-3 h-10 px-2 rounded-md transition-colors duration-150 hover:bg-muted/50 ${
+      className={`flex items-center gap-3 px-4 py-2.5 transition-colors duration-150 hover:bg-muted/30 ${
+        isNew ? 'animate-event-enter' : ''
+      } ${isError ? 'bg-destructive/[0.02]' : ''}`}
+    >
+      <EventIcon Icon={Icon} bgClass={iconBgClass} colorClass={iconColorClass} brandColor={!isError ? brandColor : undefined} />
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-foreground truncate">
+            {description}
+          </span>
+          {isError && (
+            <span className="text-[10px] font-medium bg-destructive/10 text-destructive rounded px-1.5 py-0.5 shrink-0 uppercase tracking-wider">
+              failed
+            </span>
+          )}
+        </div>
+        {subtitle && (
+          <p className="text-xs text-muted-foreground/70 truncate mt-0.5 font-mono">
+            {subtitle}
+          </p>
+        )}
+      </div>
+
+      <Timestamp timestamp={timestamp} fullTimestamp={fullTimestamp} />
+    </div>
+  )
+}
+
+function DigestRow({
+  event,
+  isNew,
+}: {
+  event: ActivityEvent
+  isNew: boolean
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const { Icon, description, timestamp, fullTimestamp, brandColor } = useEventData(event)
+  const summary = event.metadata.summary as string | undefined
+  const topChannels = event.metadata.top_channels as string[] | undefined
+
+  return (
+    <div
+      className={`px-4 py-3 transition-colors duration-150 hover:bg-muted/30 ${
         isNew ? 'animate-event-enter' : ''
       }`}
     >
-      {/* Icon */}
-      {Icon && (
-        <Icon
-          className={`h-4 w-4 shrink-0 ${isError ? 'text-destructive' : !brandColor ? 'text-muted-foreground' : ''}`}
-          style={!isError && brandColor ? { color: brandColor } : undefined}
-        />
-      )}
+      <div className="flex items-center gap-3">
+        <EventIcon Icon={Icon} bgClass="bg-primary/8" colorClass="text-primary/70" brandColor={brandColor} />
 
-      {/* Description + chip */}
-      <span className="text-sm text-foreground truncate">
-        {description}
-        {chip && (
-          <>
-            <span className="text-muted-foreground mx-1.5">&middot;</span>
-            <span className="text-xs bg-muted rounded px-1.5 py-0.5 font-mono">
-              {chip}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-foreground truncate">
+              {description}
             </span>
-          </>
-        )}
-      </span>
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-medium bg-primary/8 text-primary/70 rounded px-1.5 py-0.5 shrink-0">
+              <Zap className="h-2.5 w-2.5" />
+              digest
+            </span>
+          </div>
+          {topChannels && topChannels.length > 0 && (
+            <p className="text-xs text-muted-foreground/50 mt-0.5 font-mono truncate">
+              {topChannels.join(', ')}
+            </p>
+          )}
+        </div>
 
-      {/* Error badge */}
-      {isError && (
-        <span className="text-[10px] font-medium bg-destructive/15 text-destructive rounded px-1.5 py-0.5 shrink-0">
-          failed
-        </span>
+        <Timestamp timestamp={timestamp} fullTimestamp={fullTimestamp} />
+      </div>
+
+      {summary && (
+        <div className="mt-2.5 ml-10">
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-1 text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
+          >
+            <ChevronDown
+              className={`h-3 w-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+            />
+            {expanded ? 'Hide summary' : 'View summary'}
+          </button>
+          {expanded && (
+            <div className="mt-2 text-sm text-foreground/80 leading-relaxed whitespace-pre-line animate-fade-in-up">
+              {summary}
+            </div>
+          )}
+        </div>
       )}
-
-      {/* Error message */}
-      {isError && typeof event.metadata.error_message === 'string' && (
-        <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-          {(event.metadata.error_message as string).slice(0, 80)}
-        </span>
-      )}
-
-      {/* Timestamp */}
-      <span
-        className="font-mono text-xs text-muted-foreground ml-auto whitespace-nowrap shrink-0"
-        title={fullTimestamp}
-      >
-        {timestamp}
-      </span>
     </div>
   )
 }
