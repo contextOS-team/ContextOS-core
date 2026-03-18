@@ -25,7 +25,7 @@ const RemotionHeroPlayer = dynamic(
 );
 
 /** Scene boundaries in frames (must match remotion/constants.ts) */
-const SCENE_FRAMES = [0, 90, 195, 360]; // dashboard, sources, context, end
+const SCENE_FRAMES = [0, 90, 195, 315]; // dashboard, sources, context, end
 
 export default function Hero() {
   const posthog = usePostHog();
@@ -270,8 +270,8 @@ export default function Hero() {
             style={{ fontSize: 14, fontFamily: "system-ui, sans-serif" }}
           >
             {[
-              { num: "1", label: "Your dashboard" },
-              { num: "2", label: "Pick a ticket" },
+              { num: "1", label: "Pick a ticket" },
+              { num: "2", label: "Sources found" },
               { num: "3", label: "Context ready" },
             ].map((step, i) => {
               const isActive = activeStep === i;

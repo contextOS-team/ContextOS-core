@@ -17,38 +17,56 @@ import {
 /* ─────────────────────────────────────────────────────────
  * Scene 3: Context Page — the money shot
  *
- * Clean layout: header + sidebar sources + 3 content sections.
- * Only show what's readable at video scale.
+ *    0ms   card shell appears (header handed off from Scene 2)
+ *  ~300ms  sidebar sources stagger in
+ *  ~600ms  Summary section
+ *  ~900ms  Key Decisions section
+ * ~1000ms  "ready" badge fades in
+ * ~1200ms  Requirements section
+ * ~1700ms  "ready" badge breathes teal
+ * ~3600ms  cross-fade out
  * ───────────────────────────────────────────────────────── */
+
+/** Shared ticket header style — must be identical across all 3 scenes */
+const TICKET_HEADER = {
+  idSize: 19,
+  titleSize: 19,
+  gap: 12,
+} as const;
 
 const SECTION_STAGGER = STAGGER_FRAMES * 5;
 
 const SOURCE_GROUPS = [
-  { label: "Slack", color: COLORS.pink, count: "1" },
-  { label: "GitHub", color: COLORS.green, count: "1" },
-  { label: "Jira", color: COLORS.blue, count: "1" },
+  { label: "Slack", count: "1" },
+  { label: "GitHub", count: "1" },
+  { label: "Jira", count: "1" },
 ];
 
-// Content shown as bars (widths as %) — communicates "there's content"
-// without pretending to be readable text at video scale
 const SECTIONS = [
   {
     title: "Summary",
     borderColor: COLORS.primary,
     bgTint: "rgba(0,212,170,0.04)",
-    bars: [95, 80, 55],
+    lines: [
+      "Team decided on WebSockets over polling for real-time sync.",
+      "RFC approved with 4 reviewers.",
+    ],
   },
   {
     title: "Key Decisions",
     borderColor: COLORS.violet,
     bgTint: "transparent",
-    bars: [85, 60],
+    lines: [
+      "WebSocket protocol selected — lower latency than polling approach",
+    ],
   },
   {
     title: "Requirements",
     borderColor: COLORS.amber,
     bgTint: "transparent",
-    bars: [75, 50],
+    lines: [
+      "Must ship by Sprint 13 — mobile client dependency",
+    ],
   },
 ];
 
@@ -56,16 +74,11 @@ export const ContextScene: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  const cardProg = spring({ frame, fps, config: SPRING_ENTER });
-  const cardY = interpolate(cardProg, [0, 1], [24, 0]);
-  const cardOpacity = interpolate(cardProg, [0, 1], [0, 1]);
-  const cardScale = interpolate(cardProg, [0, 1], [0.98, 1]);
-
   const fadeOut = interpolate(
     frame,
     [SCENE_3_DURATION - CROSSFADE_FRAMES, SCENE_3_DURATION],
     [1, 0],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+    { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
   );
 
   const sp = (i: number) =>
@@ -77,14 +90,20 @@ export const ContextScene: React.FC = () => {
 
   const ss = (p: number): React.CSSProperties => ({
     opacity: p,
-    transform: `translateY(${interpolate(p, [0, 1], [10, 0])}px)`,
+    transform: `translateY(${interpolate(p, [0, 1], [14, 0])}px)`,
   });
 
-  const headerProg = sp(0);
-  const sidebarProg = sp(0.5);
+  const sidebarProg = sp(0);
 
-  // Breathing glow on "ready" badge during dwell time (frame 80+)
-  const breathCycle = Math.max(0, frame - 80);
+  // Fix 5: "ready" badge fades in separately at frame 35
+  const badgeProg = spring({
+    frame: Math.max(0, frame - 35),
+    fps,
+    config: SPRING_ENTER,
+  });
+
+  // Breathing glow starts at frame 50 (right after badge appears)
+  const breathCycle = Math.max(0, frame - 50);
   const breathGlow = breathCycle > 0
     ? 0.3 + 0.3 * Math.sin(breathCycle * 0.08)
     : 0;
@@ -99,26 +118,19 @@ export const ContextScene: React.FC = () => {
         opacity: fadeOut,
       }}
     >
-      <div
-        style={{
-          width: 860,
-          transform: `translateY(${cardY}px) scale(${cardScale})`,
-          opacity: cardOpacity,
-        }}
-      >
+      <div style={{ width: 920 }}>
         <div
           style={{
             background: COLORS.card,
             border: `1px solid ${COLORS.border}`,
-            borderRadius: 12,
-            boxShadow: `${COLORS.cardShadow}, 0 0 50px rgba(0,212,170,0.04)`,
+            borderRadius: 14,
+            boxShadow: `${COLORS.cardShadow}, 0 0 60px rgba(0,212,170,0.04)`,
             overflow: "hidden",
           }}
         >
-          {/* Header */}
+          {/* Fix 1: Header — identical ticket header styling */}
           <div
             style={{
-              ...ss(headerProg),
               padding: "20px 28px",
               borderBottom: `1px solid ${COLORS.border}`,
               background: COLORS.elevated,
@@ -127,12 +139,12 @@ export const ContextScene: React.FC = () => {
               justifyContent: "space-between",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: TICKET_HEADER.gap }}>
               <span
                 style={{
                   fontFamily: "monospace",
-                  fontSize: 16,
-                  color: COLORS.primary,
+                  fontSize: TICKET_HEADER.idSize,
+                  color: COLORS.violet,
                   fontWeight: 600,
                 }}
               >
@@ -140,7 +152,7 @@ export const ContextScene: React.FC = () => {
               </span>
               <span
                 style={{
-                  fontSize: 19,
+                  fontSize: TICKET_HEADER.titleSize,
                   fontWeight: 600,
                   color: COLORS.foreground,
                   fontFamily: "system-ui, sans-serif",
@@ -149,33 +161,35 @@ export const ContextScene: React.FC = () => {
                 Real-time sync for mobile
               </span>
             </div>
-            {/* Status badge with breathing glow */}
+            {/* Fix 5: Status badge fades in separately, then breathes */}
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 6,
-                background: "rgba(16,185,129,0.1)",
+                gap: 7,
+                background: "rgba(0,212,170,0.1)",
                 borderRadius: 20,
-                padding: "4px 12px",
+                padding: "5px 14px",
+                opacity: badgeProg,
+                transform: `scale(${interpolate(badgeProg, [0, 1], [0.9, 1])})`,
                 boxShadow: breathGlow > 0
-                  ? `0 0 ${breathGlow * 16}px rgba(16,185,129,${breathGlow * 0.4})`
+                  ? `0 0 ${breathGlow * 18}px rgba(0,212,170,${breathGlow * 0.4})`
                   : "none",
               }}
             >
               <span
                 style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: 3,
-                  background: COLORS.emerald,
+                  width: 7,
+                  height: 7,
+                  borderRadius: 4,
+                  background: COLORS.primary,
                   boxShadow: breathGlow > 0
-                    ? `0 0 ${breathGlow * 8}px ${COLORS.emerald}`
+                    ? `0 0 ${breathGlow * 10}px ${COLORS.primary}`
                     : "none",
                 }}
               />
               <span
-                style={{ fontSize: 13, color: COLORS.emerald, fontWeight: 500 }}
+                style={{ fontSize: 14, color: COLORS.primary, fontWeight: 500 }}
               >
                 ready
               </span>
@@ -183,32 +197,32 @@ export const ContextScene: React.FC = () => {
           </div>
 
           {/* Body */}
-          <div style={{ display: "flex", minHeight: 320 }}>
+          <div style={{ display: "flex", minHeight: 300 }}>
             {/* Sidebar */}
             <div
               style={{
                 ...ss(sidebarProg),
-                width: 160,
+                width: 180,
                 borderRight: `1px solid ${COLORS.border}`,
-                padding: "18px 16px",
+                padding: "20px 20px",
                 flexShrink: 0,
               }}
             >
               <div
                 style={{
                   fontFamily: "monospace",
-                  fontSize: 10,
+                  fontSize: 11,
                   textTransform: "uppercase" as const,
                   letterSpacing: "0.14em",
                   color: COLORS.muted,
-                  marginBottom: 14,
+                  marginBottom: 16,
                 }}
               >
                 Sources (3)
               </div>
               {SOURCE_GROUPS.map((src, i) => {
                 const p = spring({
-                  frame: Math.max(0, frame - 14 - i * 6),
+                  frame: Math.max(0, frame - 14 - i * 7),
                   fps,
                   config: SPRING_SUBTLE,
                 });
@@ -218,24 +232,24 @@ export const ContextScene: React.FC = () => {
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 9,
-                      marginBottom: 11,
+                      gap: 10,
+                      marginBottom: 13,
                       opacity: p,
-                      transform: `translateX(${interpolate(p, [0, 1], [-6, 0])}px)`,
+                      transform: `translateX(${interpolate(p, [0, 1], [-8, 0])}px)`,
                     }}
                   >
                     <span
                       style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: 4,
-                        background: src.color,
+                        width: 9,
+                        height: 9,
+                        borderRadius: 5,
+                        background: COLORS.amber,
                         flexShrink: 0,
                       }}
                     />
                     <span
                       style={{
-                        fontSize: 14,
+                        fontSize: 15,
                         color: COLORS.foreground,
                         fontFamily: "system-ui, sans-serif",
                       }}
@@ -244,7 +258,7 @@ export const ContextScene: React.FC = () => {
                     </span>
                     <span
                       style={{
-                        fontSize: 12,
+                        fontSize: 13,
                         color: COLORS.muted,
                         marginLeft: "auto",
                         fontFamily: "monospace",
@@ -258,50 +272,45 @@ export const ContextScene: React.FC = () => {
             </div>
 
             {/* Content */}
-            <div style={{ flex: 1, padding: "18px 24px" }}>
+            <div style={{ flex: 1, padding: "20px 28px" }}>
               {SECTIONS.map((section, i) => {
                 const p = sp(i + 1);
                 return (
-                  <div key={section.title} style={{ ...ss(p), marginBottom: 16 }}>
+                  <div key={section.title} style={{ ...ss(p), marginBottom: 18 }}>
                     <div
                       style={{
                         borderLeft: `3px solid ${section.borderColor}`,
                         background: section.bgTint,
-                        borderRadius: 6,
-                        padding: "14px 18px",
+                        borderRadius: 8,
+                        padding: "16px 20px",
                       }}
                     >
                       <div
                         style={{
-                          fontSize: 16,
+                          fontSize: 17,
                           fontWeight: 600,
                           color: COLORS.foreground,
                           fontFamily: "system-ui, sans-serif",
-                          marginBottom: 8,
+                          marginBottom: 10,
                         }}
                       >
                         {section.title}
                       </div>
-                      {/* Content bars — structural, not readable */}
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 6,
-                        }}
-                      >
-                        {section.bars.map((w, bi) => (
-                          <div
-                            key={bi}
-                            style={{
-                              height: 6,
-                              borderRadius: 3,
-                              background: `rgba(255,255,255,${bi === 0 ? 0.07 : 0.04})`,
-                              width: `${w}%`,
-                            }}
-                          />
-                        ))}
-                      </div>
+                      {section.lines.map((line, li) => (
+                        <div
+                          key={li}
+                          style={{
+                            fontSize: 14,
+                            color: COLORS.foreground,
+                            fontFamily: "system-ui, sans-serif",
+                            opacity: 0.75,
+                            lineHeight: "1.6",
+                            marginBottom: li < section.lines.length - 1 ? 5 : 0,
+                          }}
+                        >
+                          {line}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 );
