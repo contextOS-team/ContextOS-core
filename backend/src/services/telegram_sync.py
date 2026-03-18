@@ -256,7 +256,7 @@ async def _run_telethon_sync(workspace_id: UUID) -> None:
                 chats_from_updates = await _discover_chats_from_updates(bot_token)
                 chats_from_db = await _discover_chats_from_db(session, workspace_id)
                 all_chats = {**chats_from_db, **chats_from_updates}
-                srl.info("Found %d chats to sync", len(all_chats))
+                srl.info(f"Found {len(all_chats)} chats to sync")
 
                 if not all_chats:
                     await _restore_webhook(bot_token, workspace_id, settings)
@@ -430,9 +430,9 @@ async def _sync_known_chats(
 
             if chat_count > 0:
                 chat_counts[chat_title] = chat_count
-                srl.info("Synced %d messages from %s", chat_count, chat_title)
+                srl.info(f"Synced {chat_count} messages from {chat_title}")
         except Exception:
-            srl.warning("Failed to sync chat %s (%d)", chat_title, chat_id)
+            srl.warning(f"Failed to sync chat {chat_title} ({chat_id})")
 
         await asyncio.sleep(RATE_LIMIT_DELAY)
 
