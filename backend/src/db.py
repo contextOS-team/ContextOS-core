@@ -30,6 +30,15 @@ async_session = async_sessionmaker(
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """Yield an async database session."""
+    """Yield an async database session with auto-commit on success.
+
+    Commits when the request handler returns without error.
+    If an exception propagates, the session rolls back automatically.
+    """
     async with async_session() as session:
-        yield session
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
