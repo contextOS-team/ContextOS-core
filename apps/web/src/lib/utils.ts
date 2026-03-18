@@ -11,7 +11,9 @@ export function cn(...inputs: ClassValue[]) {
  * or "{n}m/h/d ago" for longer durations.
  */
 export function formatRelativeTime(isoDate: string): string {
-  const date = new Date(isoDate)
+  // "YYYY-MM-DD" without time → JS parses as UTC midnight. Append T00:00:00
+  // so it's treated as local midnight instead.
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(isoDate) ? isoDate + 'T00:00:00' : isoDate)
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   if (diffMs < 0) return 'just now'
