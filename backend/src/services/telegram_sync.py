@@ -144,18 +144,16 @@ async def drain_pending_updates(
 # ---------------------------------------------------------------------------
 
 async def run_telegram_history_sync(workspace_id: UUID) -> None:
-    """Background task: fetch Telegram message history for a workspace.
+    """Background task: drain pending Telegram messages for a workspace.
 
-    Uses Telethon (MTProto) if TELEGRAM_API_ID/TELEGRAM_API_HASH are set.
-    Otherwise falls back to a getUpdates drain (limited but zero-config).
+    Uses Bot API getUpdates to capture any pending messages. Telegram bots
+    cannot fetch message history (GetHistoryRequest is restricted), so this
+    only captures undelivered updates. Real-time messages arrive via webhook.
 
     Args:
-        workspace_id: Workspace to sync Telegram history for.
+        workspace_id: Workspace to sync Telegram messages for.
     """
-    if _is_telethon_available():
-        await _run_telethon_sync(workspace_id)
-    else:
-        await _run_bot_api_sync(workspace_id)
+    await _run_bot_api_sync(workspace_id)
 
 
 async def _run_bot_api_sync(workspace_id: UUID) -> None:
