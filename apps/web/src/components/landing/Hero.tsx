@@ -121,9 +121,9 @@ export default function Hero() {
           }`}
           style={{ transitionDelay: "200ms" }}
         >
-          Engineers waste 2-6 hours per ticket hunting through Slack, Notion, and
-          meeting notes. ContextOS auto-generates everything you need to know —
-          before you write a single line.
+          Engineers waste hours hunting through Slack, Jira, Telegram, and
+          meeting notes. ContextOS connects your tools, tracks decisions, and
+          maps how your team works — automatically.
         </p>
 
         {/* CTAs */}

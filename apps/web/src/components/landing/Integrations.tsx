@@ -7,10 +7,9 @@ import {
   GitHubLogo,
   NotionLogo,
   FathomLogo,
-  ConfluenceLogo,
-  GoogleDocsLogo,
-  FigmaLogo,
-  LoomLogo,
+  TelegramLogo,
+  JiraLogo,
+  GitLabLogo,
 } from "@/components/icons/brand-logos";
 import type { ComponentType, SVGProps } from "react";
 
@@ -27,11 +26,10 @@ const integrations: Integration[] = [
   { name: "Slack", description: "Team messaging", status: "live", color: "#4A154B", Logo: SlackLogo },
   { name: "GitHub", description: "Code & PRs", status: "live", color: "#1e1e1e", Logo: GitHubLogo },
   { name: "Notion", description: "Docs & wikis", status: "live", color: "#2a2a2a", Logo: NotionLogo },
+  { name: "Telegram", description: "Team chats", status: "live", color: "#2AABEE", Logo: TelegramLogo },
+  { name: "Jira", description: "Issue tracking", status: "live", color: "#0052CC", Logo: JiraLogo },
+  { name: "GitLab", description: "Code & merge requests", status: "live", color: "#FC6D26", Logo: GitLabLogo },
   { name: "Fathom", description: "Transcripts & clips", status: "live", color: "#1a3a4a", Logo: FathomLogo },
-  { name: "Confluence", description: "Documentation", status: "soon", color: "#1a2744", Logo: ConfluenceLogo },
-  { name: "Google Docs", description: "Documents", status: "soon", color: "#1a2a3a", Logo: GoogleDocsLogo },
-  { name: "Figma", description: "Design files", status: "soon", color: "#1C1C1E", Logo: FigmaLogo },
-  { name: "Loom", description: "Video messages", status: "soon", color: "#1e1a30", Logo: LoomLogo },
 ];
 
 export default function Integrations() {
@@ -94,19 +92,16 @@ export default function Integrations() {
               style={{
                 background: "#0F0F18",
                 border: "1px solid rgba(255,255,255,0.07)",
-                opacity: integration.status === "soon" ? 0.55 : 1,
                 transitionDelay: `${i * 50}ms`,
               }}
             >
-              {integration.status === "live" && (
-                <div
-                  className="absolute top-0 left-0 right-0 h-px"
-                  style={{
-                    background:
-                      "linear-gradient(90deg, transparent, rgba(0,212,170,0.3), transparent)",
-                  }}
-                />
-              )}
+              <div
+                className="absolute top-0 left-0 right-0 h-px"
+                style={{
+                  background:
+                    "linear-gradient(90deg, transparent, rgba(0,212,170,0.3), transparent)",
+                }}
+              />
 
               <div className="flex items-start justify-between mb-3">
                 <div
@@ -115,29 +110,16 @@ export default function Integrations() {
                 >
                   <integration.Logo width={16} height={16} fill="currentColor" />
                 </div>
-                {integration.status === "soon" ? (
-                  <span
-                    className="text-[9px] px-1.5 py-0.5 rounded font-mono uppercase tracking-wide"
-                    style={{
-                      background: "rgba(255,255,255,0.05)",
-                      color: "#4B5563",
-                      border: "1px solid rgba(255,255,255,0.06)",
-                    }}
-                  >
-                    Soon
-                  </span>
-                ) : (
+                <div
+                  className="flex items-center gap-1 text-[9px] font-mono"
+                  style={{ color: "#00D4AA" }}
+                >
                   <div
-                    className="flex items-center gap-1 text-[9px] font-mono"
-                    style={{ color: "#00D4AA" }}
-                  >
-                    <div
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ background: "#00D4AA" }}
-                    />
-                    Live
-                  </div>
-                )}
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: "#00D4AA" }}
+                  />
+                  Live
+                </div>
               </div>
 
               <div className="text-sm font-medium text-white">{integration.name}</div>

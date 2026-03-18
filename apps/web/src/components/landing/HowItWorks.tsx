@@ -7,7 +7,7 @@ const steps = [
     number: "01",
     title: "Connect your tools",
     description:
-      "Link your Linear, Slack, Notion, and meeting tools in one click. ContextOS watches for new tickets automatically.",
+      "Link your Linear, Slack, GitHub, Jira, Telegram, and Notion in one click. ContextOS starts syncing immediately.",
     icon: (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
         <path
@@ -29,8 +29,10 @@ const steps = [
         {[
           { name: "Linear", icon: "Li", color: "#5E6AD2" },
           { name: "Slack", icon: "S", color: "#4A154B" },
+          { name: "GitHub", icon: "G", color: "#1e1e1e" },
+          { name: "Jira", icon: "J", color: "#0052CC" },
+          { name: "Telegram", icon: "T", color: "#2AABEE" },
           { name: "Notion", icon: "N", color: "#2a2a2a" },
-          { name: "Meetings", icon: "M", color: "#1a3a5c" },
         ].map((tool) => (
           <div
             key={tool.name}
@@ -60,7 +62,7 @@ const steps = [
     number: "02",
     title: "Context assembles automatically",
     description:
-      "When a ticket is created or assigned, our AI engine pulls relevant conversations, docs, decisions, and meeting moments into one page.",
+      "When a ticket is created or assigned, our AI engine pulls relevant conversations, docs, decisions, action items, and meeting moments into one page.",
     icon: (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
         <path

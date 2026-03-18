@@ -3,7 +3,8 @@ import {
   SlackLogo,
   GitHubLogo,
   NotionLogo,
-  FathomLogo,
+  TelegramLogo,
+  JiraLogo,
 } from "@/components/icons/brand-logos";
 
 const logos = [
@@ -11,7 +12,8 @@ const logos = [
   { name: "Slack", Logo: SlackLogo },
   { name: "GitHub", Logo: GitHubLogo },
   { name: "Notion", Logo: NotionLogo },
-  { name: "Fathom", Logo: FathomLogo },
+  { name: "Jira", Logo: JiraLogo },
+  { name: "Telegram", Logo: TelegramLogo },
 ];
 
 export default function TrustBar() {
