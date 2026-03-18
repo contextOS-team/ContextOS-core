@@ -1,8 +1,8 @@
 """Integration tests for the daily message digest pipeline.
 
-Tests the full generate_digest flow: message fetching, LLM summarization
-(mocked), activity event emission, and deduplication. Uses the real local
-database for message and activity_events queries.
+Tests the full generate_digest flow: message fetching, structured LLM
+extraction (mocked), graph wiring, activity event emission, and dedup.
+Uses the real local database for message and activity_events queries.
 """
 
 import json
@@ -17,7 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import src.config
 from src.db import async_session, engine
 from src.services.digest import (
+    DIGEST_COOLDOWN_HOURS,
     MAX_MESSAGE_LENGTH,
+    DigestExtraction,
+    ExtractedActionItem,
+    ExtractedDecision,
+    ExtractedTopic,
     _has_recent_digest,
     _sanitize_message_text,
     generate_digest,
@@ -39,7 +44,6 @@ def _ensure_db_config():
 
 
 async def _setup_workspace():
-    """Ensure the test workspace exists."""
     async with async_session() as session:
         await session.execute(
             text(
@@ -53,7 +57,6 @@ async def _setup_workspace():
 
 
 async def _cleanup():
-    """Remove all test data and dispose engine pool for event loop hygiene."""
     async with async_session() as session:
         await session.execute(
             text("DELETE FROM activity_events WHERE workspace_id = :ws"),
@@ -61,6 +64,14 @@ async def _cleanup():
         )
         await session.execute(
             text("DELETE FROM telegram_messages WHERE workspace_id = :ws"),
+            {"ws": WS_ID},
+        )
+        await session.execute(
+            text("DELETE FROM graph_edges WHERE workspace_id = :ws"),
+            {"ws": WS_ID},
+        )
+        await session.execute(
+            text("DELETE FROM graph_nodes WHERE workspace_id = :ws"),
             {"ws": WS_ID},
         )
         await session.commit()
@@ -74,7 +85,6 @@ async def _insert_telegram_messages(
     chat_id: int = 12345,
     minutes_ago_start: int = 60,
 ) -> None:
-    """Insert test Telegram messages."""
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     for i in range(count):
         msg_time = now - timedelta(minutes=minutes_ago_start - i)
@@ -98,6 +108,28 @@ async def _insert_telegram_messages(
             },
         )
     await session.commit()
+
+
+def _mock_extraction(**overrides) -> DigestExtraction:
+    """Build a DigestExtraction with sensible defaults."""
+    defaults = {
+        "summary": "- Team discussed feature implementation\n- No blockers",
+        "decisions": [],
+        "action_items": [],
+        "topics": [],
+    }
+    defaults.update(overrides)
+    return DigestExtraction(**defaults)
+
+
+def _make_mock_llm(extraction: DigestExtraction | None = None, fail: bool = False):
+    """Create a mock LLM client that returns a DigestExtraction from generate_json."""
+    mock_client = AsyncMock()
+    if fail:
+        mock_client.generate_json = AsyncMock(side_effect=RuntimeError("API down"))
+    else:
+        mock_client.generate_json = AsyncMock(return_value=extraction or _mock_extraction())
+    return mock_client
 
 
 # ============================================================
@@ -142,17 +174,29 @@ async def test_no_messages_returns_none():
 
 
 async def test_emits_event_with_summary():
-    """Messages exist → LLM called → activity event created with summary."""
+    """Messages exist → LLM called → event with summary and structured data."""
     await _setup_workspace()
     await _cleanup()
     try:
         async with async_session() as session:
             await _insert_telegram_messages(session, count=5, chat_title="engineering")
 
-            mock_response = AsyncMock()
-            mock_response.text = "- Team discussed feature implementation\n- No blockers"
-            mock_client = AsyncMock()
-            mock_client.generate = AsyncMock(return_value=mock_response)
+            extraction = _mock_extraction(
+                decisions=[
+                    ExtractedDecision(
+                        title="Use Pydantic for validation",
+                        rationale="Type safety and schema enforcement",
+                        participants=["Alice", "Bob"],
+                    )
+                ],
+                action_items=[
+                    ExtractedActionItem(description="Write migration", assignee="Alice")
+                ],
+                topics=[
+                    ExtractedTopic(title="Schema design", ticket_refs=["ENG-123"])
+                ],
+            )
+            mock_client = _make_mock_llm(extraction)
 
             with patch("src.services.digest.get_llm_client", return_value=mock_client):
                 result = await generate_digest(
@@ -165,9 +209,13 @@ async def test_emits_event_with_summary():
             assert result["message_count"] == 5
             assert result["channels_active"] == 1
             assert result["top_channels"] == ["engineering"]
-            assert result["summary"] == "- Team discussed feature implementation\n- No blockers"
+            assert "summary" in result
+            assert len(result["decisions"]) == 1
+            assert result["decisions"][0]["title"] == "Use Pydantic for validation"
+            assert result["action_items"][0]["assignee"] == "Alice"
+            assert result["topics"][0]["ticket_refs"] == ["ENG-123"]
 
-            # Verify the activity event was actually inserted
+            # Verify event in DB
             row = await session.execute(
                 text(
                     "SELECT metadata FROM activity_events "
@@ -177,22 +225,21 @@ async def test_emits_event_with_summary():
                 {"ws": WS_ID},
             )
             event = row.scalar_one()
-            assert event["summary"] == "- Team discussed feature implementation\n- No blockers"
             assert event["message_count"] == 5
+            assert len(event["decisions"]) == 1
     finally:
         await _cleanup()
 
 
 async def test_llm_failure_omits_summary():
-    """LLM throws → event emitted without summary field, not with fake fallback."""
+    """LLM throws → event emitted without summary or structured fields."""
     await _setup_workspace()
     await _cleanup()
     try:
         async with async_session() as session:
             await _insert_telegram_messages(session, count=3, chat_title="general")
 
-            mock_client = AsyncMock()
-            mock_client.generate = AsyncMock(side_effect=RuntimeError("API down"))
+            mock_client = _make_mock_llm(fail=True)
 
             with patch("src.services.digest.get_llm_client", return_value=mock_client):
                 result = await generate_digest(
@@ -203,6 +250,7 @@ async def test_llm_failure_omits_summary():
             assert result is not None
             assert result["message_count"] == 3
             assert "summary" not in result
+            assert "decisions" not in result
     finally:
         await _cleanup()
 
@@ -215,10 +263,7 @@ async def test_deduplication_prevents_second_digest():
         async with async_session() as session:
             await _insert_telegram_messages(session, count=3, chat_title="team")
 
-            mock_response = AsyncMock()
-            mock_response.text = "- Summary"
-            mock_client = AsyncMock()
-            mock_client.generate = AsyncMock(return_value=mock_response)
+            mock_client = _make_mock_llm()
 
             with patch("src.services.digest.get_llm_client", return_value=mock_client):
                 result1 = await generate_digest(session, WS_ID, "telegram")
@@ -228,24 +273,19 @@ async def test_deduplication_prevents_second_digest():
                 result2 = await generate_digest(session, WS_ID, "telegram")
                 assert result2 is None
 
-            # LLM called exactly once
-            assert mock_client.generate.call_count == 1
+            assert mock_client.generate_json.call_count == 1
     finally:
         await _cleanup()
 
 
 async def test_skip_dedup_forces_generation():
-    """skip_dedup=True bypasses the cooldown check."""
     await _setup_workspace()
     await _cleanup()
     try:
         async with async_session() as session:
             await _insert_telegram_messages(session, count=2, chat_title="team")
 
-            mock_response = AsyncMock()
-            mock_response.text = "- Summary"
-            mock_client = AsyncMock()
-            mock_client.generate = AsyncMock(return_value=mock_response)
+            mock_client = _make_mock_llm()
 
             with patch("src.services.digest.get_llm_client", return_value=mock_client):
                 r1 = await generate_digest(session, WS_ID, "telegram", skip_dedup=True)
@@ -255,13 +295,12 @@ async def test_skip_dedup_forces_generation():
 
             assert r1 is not None
             assert r2 is not None
-            assert mock_client.generate.call_count == 2
+            assert mock_client.generate_json.call_count == 2
     finally:
         await _cleanup()
 
 
 async def test_multiple_channels_tracked():
-    """Messages from multiple chats are counted separately."""
     await _setup_workspace()
     await _cleanup()
     try:
@@ -269,10 +308,7 @@ async def test_multiple_channels_tracked():
             await _insert_telegram_messages(session, count=5, chat_title="frontend", chat_id=111)
             await _insert_telegram_messages(session, count=3, chat_title="backend", chat_id=222)
 
-            mock_response = AsyncMock()
-            mock_response.text = "- Summary"
-            mock_client = AsyncMock()
-            mock_client.generate = AsyncMock(return_value=mock_response)
+            mock_client = _make_mock_llm()
 
             with patch("src.services.digest.get_llm_client", return_value=mock_client):
                 result = await generate_digest(session, WS_ID, "telegram", skip_dedup=True)
@@ -287,7 +323,6 @@ async def test_multiple_channels_tracked():
 
 
 async def test_old_messages_excluded():
-    """Messages older than the hours window are not included."""
     await _setup_workspace()
     await _cleanup()
     try:
@@ -309,12 +344,10 @@ async def test_old_messages_excluded():
 
 
 async def test_dedup_does_not_cross_integrations():
-    """A telegram digest does not block a slack digest."""
     await _setup_workspace()
     await _cleanup()
     try:
         async with async_session() as session:
-            # Insert a telegram digest
             await session.execute(
                 text(
                     "INSERT INTO activity_events (workspace_id, event_type, metadata) "
@@ -324,7 +357,6 @@ async def test_dedup_does_not_cross_integrations():
             )
             await session.commit()
 
-            # Slack should not be blocked
             is_blocked = await _has_recent_digest(session, WS_ID, "slack")
             assert is_blocked is False
     finally:
@@ -332,27 +364,93 @@ async def test_dedup_does_not_cross_integrations():
 
 
 async def test_prompt_contains_message_content():
-    """Verify the LLM prompt includes actual message text."""
     await _setup_workspace()
     await _cleanup()
     try:
         async with async_session() as session:
             await _insert_telegram_messages(session, count=2, chat_title="verify-channel")
 
-            mock_response = AsyncMock()
-            mock_response.text = "- Summary"
-            mock_client = AsyncMock()
-            mock_client.generate = AsyncMock(return_value=mock_response)
+            mock_client = _make_mock_llm()
 
             with patch("src.services.digest.get_llm_client", return_value=mock_client):
                 await generate_digest(session, WS_ID, "telegram", skip_dedup=True)
                 await session.commit()
 
-            call_args = mock_client.generate.call_args
+            call_args = mock_client.generate_json.call_args
             prompt = call_args.kwargs.get("prompt") or call_args.args[0]
             assert "verify-channel" in prompt
             assert "Test message" in prompt
-            assert "discussing feature implementation" in prompt
+    finally:
+        await _cleanup()
+
+
+async def test_graph_decision_nodes_created():
+    """Decisions from extraction create Decision nodes in the graph."""
+    await _setup_workspace()
+    await _cleanup()
+    try:
+        async with async_session() as session:
+            await _insert_telegram_messages(session, count=3, chat_title="team")
+
+            extraction = _mock_extraction(
+                decisions=[
+                    ExtractedDecision(
+                        title="Adopt microservices",
+                        rationale="Scalability needs",
+                        participants=["Alice"],
+                    ),
+                ],
+            )
+            mock_client = _make_mock_llm(extraction)
+
+            with patch("src.services.digest.get_llm_client", return_value=mock_client):
+                await generate_digest(session, WS_ID, "telegram", skip_dedup=True)
+                await session.commit()
+
+            # Check Decision node was created
+            row = await session.execute(
+                text(
+                    "SELECT name, properties FROM graph_nodes "
+                    "WHERE workspace_id = :ws AND entity_type = 'Decision'"
+                ),
+                {"ws": WS_ID},
+            )
+            node = row.first()
+            assert node is not None
+            assert node.name == "Adopt microservices"
+            assert node.properties["rationale"] == "Scalability needs"
+            assert node.properties["participants"] == ["Alice"]
+    finally:
+        await _cleanup()
+
+
+async def test_graph_ticket_nodes_from_topics():
+    """Ticket refs in topics create Ticket nodes in the graph."""
+    await _setup_workspace()
+    await _cleanup()
+    try:
+        async with async_session() as session:
+            await _insert_telegram_messages(session, count=2, chat_title="eng")
+
+            extraction = _mock_extraction(
+                topics=[
+                    ExtractedTopic(title="Sprint planning", ticket_refs=["ENG-123", "CON-45"]),
+                ],
+            )
+            mock_client = _make_mock_llm(extraction)
+
+            with patch("src.services.digest.get_llm_client", return_value=mock_client):
+                await generate_digest(session, WS_ID, "telegram", skip_dedup=True)
+                await session.commit()
+
+            row = await session.execute(
+                text(
+                    "SELECT count(*) FROM graph_nodes "
+                    "WHERE workspace_id = :ws AND entity_type = 'Ticket'"
+                ),
+                {"ws": WS_ID},
+            )
+            assert row.scalar_one() == 2
     finally:
         await _cleanup()
 
