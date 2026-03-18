@@ -250,6 +250,29 @@ async def _run_telethon_sync(workspace_id: UUID) -> None:
                 if not bot_token:
                     raise ValueError("Bot token not found in vault")
 
+                # Step 1: Discover chats via Bot API + DB (bots can't use getDialogs)
+                srl.info("Discovering chats via Bot API and DB records")
+                chats_from_updates = await _discover_chats_from_updates(bot_token)
+                chats_from_db = await _discover_chats_from_db(session, workspace_id)
+                all_chats = {**chats_from_db, **chats_from_updates}
+                srl.info("Found %d chats to sync", len(all_chats))
+
+                if not all_chats:
+                    await _restore_webhook(bot_token, workspace_id, settings)
+                    now = datetime.now(timezone.utc).replace(tzinfo=None)
+                    await update_cursor_status(
+                        session, workspace_id, "telegram", "default",
+                        sync_status="complete", records_synced=0,
+                        cursor_value=now.isoformat(),
+                    )
+                    await session.commit()
+                    srl.info("No chats found to sync")
+                    return
+
+                # Re-set webhook (getUpdates discovery disabled it)
+                await _restore_webhook(bot_token, workspace_id, settings)
+
+                # Step 2: Fetch history per chat via Telethon
                 client = TelegramClient(
                     StringSession(),
                     int(settings.TELEGRAM_API_ID),
@@ -258,8 +281,8 @@ async def _run_telethon_sync(workspace_id: UUID) -> None:
                 await client.start(bot_token=bot_token)
 
                 try:
-                    sync_result = await _sync_all_chats(
-                        client, session, workspace_id, srl
+                    sync_result = await _sync_known_chats(
+                        client, session, workspace_id, all_chats, srl
                     )
                 finally:
                     await client.disconnect()
@@ -318,15 +341,73 @@ async def _run_telethon_sync(workspace_id: UUID) -> None:
                     )
 
 
-async def _sync_all_chats(
+async def _discover_chats_from_updates(bot_token: str) -> dict[int, str]:
+    """Discover chat IDs via Bot API getUpdates (works for bots)."""
+    chats: dict[int, str] = {}
+    try:
+        await telegram_api_call(bot_token, "deleteWebhook")
+    except Exception:
+        logger.debug("deleteWebhook failed during chat discovery", exc_info=True)
+
+    offset = 0
+    for _ in range(20):
+        try:
+            updates = await telegram_api_call(
+                bot_token, "getUpdates", offset=offset, limit=100, timeout=1,
+            )
+        except Exception:
+            break
+        if not updates:
+            break
+        for update in updates:
+            offset = update["update_id"] + 1
+            message = update.get("message") or update.get("edited_message")
+            if message and message.get("chat"):
+                chat = message["chat"]
+                chats[chat["id"]] = chat.get("title") or chat.get("first_name") or str(chat["id"])
+    return chats
+
+
+async def _discover_chats_from_db(session: AsyncSession, workspace_id: UUID) -> dict[int, str]:
+    """Discover chats from previously stored telegram messages."""
+    stmt = (
+        select(TelegramMessage.chat_id, TelegramMessage.chat_title)
+        .where(
+            TelegramMessage.workspace_id == workspace_id,
+            TelegramMessage.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        .distinct(TelegramMessage.chat_id)
+    )
+    result = await session.execute(stmt)
+    return {row[0]: row[1] or str(row[0]) for row in result.all()}
+
+
+async def _restore_webhook(bot_token: str, workspace_id: UUID, settings) -> None:
+    """Re-register the webhook after getUpdates discovery."""
+    base_url = settings.TELEGRAM_WEBHOOK_BASE_URL or settings.BACKEND_URL
+    webhook_url = f"{base_url}/api/telegram/webhook/{workspace_id}"
+    if webhook_url.startswith("https://"):
+        try:
+            await telegram_api_call(
+                bot_token, "setWebhook",
+                url=webhook_url,
+                secret_token=settings.TELEGRAM_WEBHOOK_SECRET,
+                allowed_updates=["message", "edited_message"],
+            )
+        except Exception:
+            logger.warning("Failed to restore webhook after sync", exc_info=True)
+
+
+async def _sync_known_chats(
     client,
     session: AsyncSession,
     workspace_id: UUID,
+    chats: dict[int, str],
     srl: SyncRunLogger,
 ) -> dict:
-    """Iterate all chats the bot is in and sync message history.
+    """Fetch history for known chat IDs using Telethon iter_messages.
 
-    Returns a dict with total_synced, channels_active, and top_channels.
+    Returns a dict with total_synced, channels_active, top_channels, sync_hours.
     """
     cursor = await get_or_create_cursor(session, workspace_id, "telegram", "default")
     if cursor.cursor_value:
@@ -334,41 +415,30 @@ async def _sync_all_chats(
     else:
         cutoff = datetime.now(timezone.utc) - timedelta(days=BACKFILL_DAYS)
 
-    dialogs = await client.get_dialogs()
-    srl.info("Found %d dialogs for bot", len(dialogs))
-
     total_synced = 0
     all_msg_ids: list[UUID] = []
     chat_counts: dict[str, int] = {}
 
-    for dialog in dialogs:
-        chat = dialog.entity
-        chat_id = dialog.id
-        chat_title = (
-            getattr(chat, "title", None)
-            or getattr(chat, "first_name", None)
-            or str(chat_id)
-        )
+    for chat_id, chat_title in chats.items():
+        try:
+            chat_msg_ids, chat_count = await _sync_single_chat(
+                client, session, workspace_id, chat_id, chat_title, cutoff
+            )
+            all_msg_ids.extend(chat_msg_ids)
+            total_synced += chat_count
 
-        chat_msg_ids, chat_count = await _sync_single_chat(
-            client, session, workspace_id, chat, chat_id, chat_title, cutoff
-        )
-        all_msg_ids.extend(chat_msg_ids)
-        total_synced += chat_count
-
-        if chat_count > 0:
-            chat_counts[chat_title] = chat_count
-            srl.info("Synced %d messages from %s", chat_count, chat_title)
+            if chat_count > 0:
+                chat_counts[chat_title] = chat_count
+                srl.info("Synced %d messages from %s", chat_count, chat_title)
+        except Exception:
+            srl.warning("Failed to sync chat %s (%d)", chat_title, chat_id)
 
         await asyncio.sleep(RATE_LIMIT_DELAY)
 
     if all_msg_ids:
         await enqueue_embedding_job(workspace_id, "telegram_message", all_msg_ids)
 
-    # Sort chats by message count descending for top_channels
     top_channels = sorted(chat_counts, key=chat_counts.get, reverse=True)  # type: ignore[arg-type]
-
-    # Calculate how many hours the sync window covers
     sync_hours = max(1, int((datetime.now(timezone.utc) - cutoff).total_seconds() / 3600))
 
     return {
@@ -383,28 +453,18 @@ async def _sync_single_chat(
     client,
     session: AsyncSession,
     workspace_id: UUID,
-    chat,
     chat_id: int,
     chat_title: str,
     cutoff: datetime,
 ) -> tuple[list[UUID], int]:
-    """Sync message history for a single chat via Telethon."""
-    from telethon.tl.types import Channel, Chat, User
-
-    if isinstance(chat, Channel):
-        chat_type = "supergroup" if chat.megagroup else "channel"
-    elif isinstance(chat, Chat):
-        chat_type = "group"
-    elif isinstance(chat, User):
-        chat_type = "private"
-    else:
-        chat_type = "unknown"
+    """Sync message history for a single chat via Telethon iter_messages."""
+    chat_type = "group"  # Default; refined per-message if entity available
 
     msg_ids: list[UUID] = []
     count = 0
 
     async for message in client.iter_messages(
-        chat, limit=MAX_MESSAGES_PER_CHAT, reverse=False,
+        chat_id, limit=MAX_MESSAGES_PER_CHAT, reverse=False,
     ):
         msg_date = message.date
         if msg_date and msg_date.replace(tzinfo=timezone.utc) < cutoff:
