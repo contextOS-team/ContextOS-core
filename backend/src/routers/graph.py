@@ -191,6 +191,102 @@ async def _validate_ticket_identifiers(
     return {row[0] for row in result}
 
 
+async def _inject_user_decisions(
+    session: AsyncSession,
+    user,
+    all_nodes: list[GraphNodeResponse],
+    all_edges: list[GraphEdgeResponse],
+) -> tuple[list[GraphNodeResponse], list[GraphEdgeResponse]]:
+    """Find Decision nodes connected to the user via decided_in edges.
+
+    Looks up the user's Person node(s) via identity_mappings, then finds
+    Decision nodes linked by decided_in edges, and appends them to the
+    response lists (deduplicating against already-included node IDs).
+    """
+    # Find user's person node IDs
+    id_stmt = select(IdentityMapping.canonical_person_id).where(
+        IdentityMapping.workspace_id == user.workspace_id,
+        IdentityMapping.email == user.email,
+        IdentityMapping.canonical_person_id.is_not(None),
+    )
+    id_result = await session.execute(id_stmt)
+    person_ids = [row[0] for row in id_result if row[0]]
+
+    if not person_ids:
+        return all_nodes, all_edges
+
+    # Find decided_in edges from these person nodes
+    edge_stmt = select(GraphEdge).where(
+        GraphEdge.workspace_id == user.workspace_id,
+        GraphEdge.relationship_type == "decided_in",
+        GraphEdge.source_node_id.in_(person_ids),
+        GraphEdge.deleted_at.is_(None),
+    )
+    edge_result = await session.execute(edge_stmt)
+    decision_edges = edge_result.scalars().all()
+
+    if not decision_edges:
+        return all_nodes, all_edges
+
+    # Fetch the Decision nodes
+    decision_node_ids = [e.target_node_id for e in decision_edges]
+    node_stmt = select(GraphNode).where(
+        GraphNode.id.in_(decision_node_ids),
+        GraphNode.entity_type == "Decision",
+        GraphNode.deleted_at.is_(None),
+    )
+    node_result = await session.execute(node_stmt)
+    decision_nodes = node_result.scalars().all()
+
+    # Deduplicate against existing nodes
+    existing_ids = {n.id for n in all_nodes}
+    new_nodes = list(all_nodes)
+    new_edges = list(all_edges)
+
+    # Also ensure the Person node is in the response (needed for edge rendering)
+    person_stmt = select(GraphNode).where(
+        GraphNode.id.in_(person_ids),
+        GraphNode.deleted_at.is_(None),
+    )
+    person_result = await session.execute(person_stmt)
+    person_nodes = person_result.scalars().all()
+
+    for pn in person_nodes:
+        if pn.id not in existing_ids:
+            new_nodes.append(GraphNodeResponse(
+                id=pn.id,
+                entity_type=pn.entity_type,
+                name=pn.name,
+                depth=0,
+                properties=pn.properties or {},
+            ))
+            existing_ids.add(pn.id)
+
+    for dn in decision_nodes:
+        if dn.id not in existing_ids:
+            new_nodes.append(GraphNodeResponse(
+                id=dn.id,
+                entity_type=dn.entity_type,
+                name=dn.name,
+                depth=1,
+                properties=dn.properties or {},
+            ))
+            existing_ids.add(dn.id)
+
+    person_id_strs = {str(pid) for pid in person_ids}
+    for edge in decision_edges:
+        if str(edge.source_node_id) in person_id_strs:
+            new_edges.append(GraphEdgeResponse(
+                id=edge.id,
+                source_node_id=edge.source_node_id,
+                target_node_id=edge.target_node_id,
+                relationship_type=edge.relationship_type,
+                properties=edge.properties or {},
+            ))
+
+    return new_nodes, new_edges
+
+
 async def _build_ticket_clusters(
     session: AsyncSession,
     workspace_id,
@@ -687,6 +783,11 @@ async def get_my_work_graph(
     clusters, all_nodes, all_edges = await _build_ticket_clusters(
         session, user.workspace_id, ticket_identifiers, provider,
         max_total_nodes=50, allowed_src=allowed_src,
+    )
+
+    # Inject decisions connected to this user's Person node(s)
+    all_nodes, all_edges = await _inject_user_decisions(
+        session, user, all_nodes, all_edges,
     )
 
     return LensGraphResponse(
