@@ -7,7 +7,8 @@ import type { EntityType, GraphNodeData } from './types'
 export const HIDDEN_NODE_PROPERTIES = new Set([
   'status', 'platform', 'username', 'team_prefix', 'identifier',
   'source_type', 'source_id', 'fingerprint', 'workspace_id',
-  'resolved_from', 'sha', 'short_sha',
+  'resolved_from', 'sha', 'short_sha', 'external_id',
+  'canonical', 'canonical_person_id',
 ])
 
 // ---------------------------------------------------------------------------
@@ -51,9 +52,13 @@ export function getEntityExternalUrl(node: GraphNodeData): string | null {
   const p = node.properties
 
   if (node.entityType === 'Ticket') {
-    const identifier = (p.identifier as string) || node.name
-    if (identifier && /^[A-Z]+-\d+$/.test(identifier)) {
-      return `https://linear.app/issue/${identifier}`
+    // Prefer stored URL from extraction
+    if (p.url && typeof p.url === 'string') return p.url
+    // Fallback: Linear redirect URL (works without workspace slug)
+    const raw = (p.identifier as string) || node.name
+    const match = raw.match(/^([A-Z][A-Z0-9]+-\d+)/)
+    if (match) {
+      return `https://linear.app/issue/${match[1]}`
     }
   }
 

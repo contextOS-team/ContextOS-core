@@ -67,46 +67,52 @@ export interface EdgeStyleConfig {
 }
 
 export const EDGE_STYLES: Record<string, EdgeStyleConfig> = {
+  assigned_to: {
+    strokeDasharray: 'none',
+    strokeWidth: 2,
+    color: 'oklch(0.72 0.16 350)',  // pink — matches Person color
+    hasArrow: true,
+  },
   authored: {
     strokeDasharray: 'none',
     strokeWidth: 1.5,
-    color: 'var(--muted-foreground)',
+    color: 'oklch(0.65 0.12 280)',  // muted violet
     hasArrow: true,
   },
   created: {
     strokeDasharray: 'none',
     strokeWidth: 1.5,
-    color: 'var(--muted-foreground)',
+    color: 'oklch(0.65 0.12 280)',
     hasArrow: true,
   },
   mentions: {
     strokeDasharray: '6 3',
     strokeWidth: 1.5,
-    color: 'var(--muted-foreground)',
+    color: 'oklch(0.55 0.08 240)',  // muted blue
     hasArrow: true,
   },
   references: {
-    strokeDasharray: '6 3',
+    strokeDasharray: '4 4',
     strokeWidth: 1.5,
-    color: 'var(--muted-foreground)',
-    hasArrow: true,
+    color: 'oklch(0.50 0.06 240)',  // subtle blue-grey
+    hasArrow: false,
   },
   blocks: {
     strokeDasharray: 'none',
     strokeWidth: 2.5,
-    color: 'oklch(0.65 0.18 25)',
+    color: 'oklch(0.65 0.20 25)',   // red-orange
     hasArrow: true,
   },
   depends_on: {
     strokeDasharray: 'none',
     strokeWidth: 2.5,
-    color: 'oklch(0.65 0.18 25)',
+    color: 'oklch(0.65 0.20 25)',
     hasArrow: true,
   },
   default: {
     strokeDasharray: 'none',
-    strokeWidth: 1,
-    color: 'var(--border)',
+    strokeWidth: 1.5,
+    color: 'oklch(0.45 0.04 260)',  // visible neutral
     hasArrow: false,
   },
 }
@@ -117,12 +123,13 @@ export const EDGE_STYLES: Record<string, EdgeStyleConfig> = {
  */
 export function getEdgeStyle(relationshipType: string): EdgeStyleConfig {
   const lower = relationshipType.toLowerCase()
-  if (lower.includes('authored') || lower.includes('created'))
-    return EDGE_STYLES.authored
-  if (lower.includes('mention') || lower.includes('reference'))
-    return EDGE_STYLES.mentions
-  if (lower.includes('block') || lower.includes('depends'))
-    return EDGE_STYLES.blocks
+  // Exact match first
+  if (lower in EDGE_STYLES) return EDGE_STYLES[lower]
+  // Fallback patterns (exact match only — no substring matching)
+  if (lower === 'authored' || lower === 'created') return EDGE_STYLES.authored
+  if (lower === 'mentions') return EDGE_STYLES.mentions
+  if (lower === 'references') return EDGE_STYLES.references
+  if (lower === 'blocks' || lower === 'depends_on') return EDGE_STYLES.blocks
   return EDGE_STYLES.default
 }
 

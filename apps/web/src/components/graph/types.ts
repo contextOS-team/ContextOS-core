@@ -67,7 +67,26 @@ export interface GraphEdgeData {
 }
 
 // ---------------------------------------------------------------------------
-// API response (mirrors backend GraphNeighborhoodResponse, snake_case)
+// Shared API element types (snake_case, mirrors backend response shapes)
+// ---------------------------------------------------------------------------
+
+export interface ApiNode {
+  id: string
+  entity_type: string
+  name: string
+  depth: number
+  properties: Record<string, unknown>
+}
+
+export interface ApiEdge {
+  source: string
+  target: string
+  relationship_type: string
+  properties: Record<string, unknown>
+}
+
+// ---------------------------------------------------------------------------
+// API response (mirrors backend GraphNeighborhoodResponse)
 // ---------------------------------------------------------------------------
 
 export interface GraphNeighborhoodResponse {
@@ -77,19 +96,8 @@ export interface GraphNeighborhoodResponse {
   edge_count: number
   truncated: boolean
   total_available: number | null
-  nodes: Array<{
-    id: string
-    entity_type: string
-    name: string
-    depth: number
-    properties: Record<string, unknown>
-  }>
-  edges: Array<{
-    source: string
-    target: string
-    relationship_type: string
-    properties: Record<string, unknown>
-  }>
+  nodes: ApiNode[]
+  edges: ApiEdge[]
 }
 
 export interface WorkspaceGraphResponse {
@@ -97,17 +105,34 @@ export interface WorkspaceGraphResponse {
   edge_count: number
   truncated: boolean
   total_available: number
-  nodes: Array<{
-    id: string
-    entity_type: string
-    name: string
-    depth: number
-    properties: Record<string, unknown>
-  }>
-  edges: Array<{
-    source: string
-    target: string
-    relationship_type: string
-    properties: Record<string, unknown>
-  }>
+  nodes: ApiNode[]
+  edges: ApiEdge[]
+}
+
+// ---------------------------------------------------------------------------
+// Lens types
+// ---------------------------------------------------------------------------
+
+export type GraphLens = 'my_work' | 'sprint' | 'blocked' | 'browse'
+
+export interface TicketCluster {
+  ticket_identifier: string
+  ticket_node_id: string
+  ticket_name: string
+  ticket_state: string | null
+  ticket_priority: number | null
+  nodes: ApiNode[]
+  edges: ApiEdge[]
+}
+
+export interface LensGraphResponse {
+  lens: 'my_work' | 'sprint' | 'blocked'
+  clusters: TicketCluster[]
+  all_nodes: ApiNode[]
+  all_edges: ApiEdge[]
+  node_count: number
+  edge_count: number
+  truncated: boolean
+  sprint_name?: string | null
+  sprint_progress?: number | null
 }

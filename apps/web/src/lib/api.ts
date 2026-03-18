@@ -693,7 +693,7 @@ export function getDashboardResurfaced() {
 // Graph Neighborhood
 // ---------------------------------------------------------------------------
 
-import type { GraphNeighborhoodResponse, WorkspaceGraphResponse } from '@/components/graph/types'
+import type { GraphNeighborhoodResponse, WorkspaceGraphResponse, LensGraphResponse } from '@/components/graph/types'
 
 export function fetchWorkspaceGraph(
   limit: number = 200
@@ -711,6 +711,22 @@ export function fetchGraphNeighborhood(
   return apiFetch<GraphNeighborhoodResponse>(
     `/api/graph/${encodeURIComponent(ticketIdentifier)}?depth=${depth}&limit=${limit}`
   )
+}
+
+// ---------------------------------------------------------------------------
+// Graph Lenses
+// ---------------------------------------------------------------------------
+
+export function fetchMyWorkGraph(): Promise<LensGraphResponse> {
+  return apiFetch<LensGraphResponse>('/api/graph/lens/my-work')
+}
+
+export function fetchSprintGraph(): Promise<LensGraphResponse> {
+  return apiFetch<LensGraphResponse>('/api/graph/lens/sprint')
+}
+
+export function fetchBlockedGraph(): Promise<LensGraphResponse> {
+  return apiFetch<LensGraphResponse>('/api/graph/lens/blocked')
 }
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,16 @@ import type { Node, Edge } from '@xyflow/react'
 import { NODE_DIMENSIONS } from './constants'
 import type { ZoomTier } from './types'
 
+// Cache the ELK instance at module scope — avoid re-creating per layout call
+let elkPromise: Promise<InstanceType<typeof import('elkjs/lib/elk.bundled.js').default>> | null = null
+
+async function getElk() {
+  if (!elkPromise) {
+    elkPromise = import('elkjs/lib/elk.bundled.js').then((m) => new m.default())
+  }
+  return elkPromise
+}
+
 /**
  * Compute node positions using ELK's force-directed algorithm.
  *
@@ -22,9 +32,7 @@ export async function computeElkLayout<N extends Node = Node>(
   edges: Edge[],
   tier: ZoomTier = 'compact'
 ): Promise<N[]> {
-  // Dynamic import for tree-shaking — ELK is ~200 KB
-  const ELK = (await import('elkjs/lib/elk.bundled.js')).default
-  const elk = new ELK()
+  const elk = await getElk()
 
   const dims = NODE_DIMENSIONS[tier]
 
@@ -32,8 +40,10 @@ export async function computeElkLayout<N extends Node = Node>(
     id: 'root',
     layoutOptions: {
       'elk.algorithm': 'org.eclipse.elk.force',
-      'elk.force.temperature': '0.001',
-      'elk.spacing.nodeNode': '80',
+      'elk.force.temperature': '0.002',
+      'elk.force.iterations': '300',
+      'elk.spacing.nodeNode': '50',
+      'elk.force.repulsion': '6.0',
     },
     children: nodes.map((node) => ({
       id: node.id,
