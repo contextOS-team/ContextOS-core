@@ -21,6 +21,7 @@ from uuid import UUID
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from src.config import get_settings
 from src.db import async_session
