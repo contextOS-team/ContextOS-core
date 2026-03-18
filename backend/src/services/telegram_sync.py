@@ -302,19 +302,6 @@ async def _run_telethon_sync(workspace_id: UUID) -> None:
                         "messages_synced": total_synced,
                     },
                 )
-                # Emit LLM-powered messages digest if any messages were synced
-                if total_synced > 0:
-                    try:
-                        from src.services.digest import generate_digest
-                        await generate_digest(
-                            session, workspace_id, "telegram",
-                            hours=sync_result["sync_hours"],
-                        )
-                    except Exception:
-                        logger.warning(
-                            "Digest generation failed for workspace %s",
-                            workspace_id, exc_info=True,
-                        )
                 await session.commit()
 
                 elapsed = time.monotonic() - _sync_t0

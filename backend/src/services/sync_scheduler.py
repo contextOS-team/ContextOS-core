@@ -3,7 +3,7 @@
 Runs reconciliation checks every 15 minutes for all connected providers
 to catch webhook deliveries that were lost or failed. Also runs periodic
 code re-indexing every 60 minutes as a freshness fallback. Emits daily
-message digests for Slack (which uses Events API, not batch sync).
+message digests for messaging integrations (Slack, Telegram).
 
 Per CONTEXT.md: Webhook-first with polling fallback for all providers
 that support webhooks (Notion, GitHub, Linear).
@@ -207,22 +207,22 @@ async def _expire_stale_generations() -> None:
         await session.commit()
 
 
-async def _emit_slack_daily_digest(workspace_id: UUID) -> None:
-    """Generate and emit an LLM-powered daily digest for Slack messages.
+async def _emit_daily_digest(workspace_id: UUID, integration: str) -> None:
+    """Generate and emit an LLM-powered daily digest for a messaging integration.
 
-    Slack uses the Events API (real-time per-message), so there's no batch sync
-    to attach a digest to. This runs daily and summarizes messages from the
-    last 24 hours using the LLM.
+    Deduplication is handled inside generate_digest (20h cooldown), so this
+    can safely be called every polling cycle — it will no-op if a recent
+    digest already exists.
     """
     from src.services.digest import generate_digest
 
     async with async_session() as session:
-        result = await generate_digest(session, workspace_id, "slack")
+        result = await generate_digest(session, workspace_id, integration)
         if result:
             await session.commit()
             logger.info(
-                "Slack daily digest: %d messages for workspace %s",
-                result["message_count"], workspace_id,
+                "%s daily digest: %d messages for workspace %s",
+                integration.capitalize(), result["message_count"], workspace_id,
             )
 
 
@@ -265,15 +265,20 @@ async def run_polling_fallback() -> None:
                         "Code index freshness check failed for workspace %s", ws_id
                     )
 
-            # Slack daily digest (dedup handled inside generate_digest)
-            slack_workspaces = await _get_connected_workspaces(Provider.SLACK)
-            for ws_id in slack_workspaces:
-                try:
-                    await _emit_slack_daily_digest(ws_id)
-                except Exception:
-                    logger.exception(
-                        "Slack daily digest failed for workspace %s", ws_id
-                    )
+            # Daily digests for messaging integrations (dedup handled inside generate_digest)
+            for provider, integration_name in [
+                (Provider.SLACK, "slack"),
+                (Provider.TELEGRAM, "telegram"),
+            ]:
+                workspaces = await _get_connected_workspaces(provider)
+                for ws_id in workspaces:
+                    try:
+                        await _emit_daily_digest(ws_id, integration_name)
+                    except Exception:
+                        logger.exception(
+                            "%s daily digest failed for workspace %s",
+                            integration_name.capitalize(), ws_id,
+                        )
 
             # Linear reconciliation stub
             # (can be implemented when Linear has incremental sync
