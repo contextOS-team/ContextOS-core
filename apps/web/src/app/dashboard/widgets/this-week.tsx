@@ -1,45 +1,100 @@
+'use client'
+
 import type { DaySummary } from '@/lib/api'
-import { formatDayLabel } from '../activity/formatters'
 
 interface ThisWeekProps {
   days: DaySummary[]
 }
 
-export function ThisWeek({ days }: ThisWeekProps) {
-  // Filter out days with all-zero counts
-  const activeDays = days.filter(
-    (d) => d.activity_count > 0 || d.contexts_updated > 0 || d.prs_merged > 0
-  )
+const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
-  if (activeDays.length === 0) return null
+function getDayOfWeekIndex(dateStr: string): number {
+  // dateStr is "YYYY-MM-DD"; JS Date months are 0-based
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const jsDay = new Date(y, m - 1, d).getDay() // 0=Sun
+  return jsDay === 0 ? 6 : jsDay - 1 // convert to 0=Mon
+}
+
+function isToday(dateStr: string): boolean {
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  return dateStr === today
+}
+
+export function ThisWeek({ days }: ThisWeekProps) {
+  // Build a 7-slot array (Mon-Sun) with totals
+  const slots = Array.from({ length: 7 }, () => 0)
+
+  for (const d of days) {
+    const total = d.activity_count + d.contexts_updated + d.prs_merged
+    const idx = getDayOfWeekIndex(d.date)
+    if (idx >= 0 && idx < 7) slots[idx] += total
+  }
+
+  const grandTotal = slots.reduce((a, b) => a + b, 0)
+  if (grandTotal === 0) return null
+
+  const max = Math.max(...slots)
+
+  // Build a date lookup for tooltips
+  const dateByIdx: Record<number, string> = {}
+  for (const d of days) {
+    const idx = getDayOfWeekIndex(d.date)
+    if (idx >= 0 && idx < 7) dateByIdx[idx] = d.date
+  }
 
   return (
-    <div>
-      <h3 className="section-label mb-3">This Week</h3>
-      <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border">
-        {activeDays.map((day) => {
-          const parts: string[] = []
-          if (day.contexts_updated > 0)
-            parts.push(`${day.contexts_updated} context${day.contexts_updated === 1 ? '' : 's'} updated`)
-          if (day.prs_merged > 0)
-            parts.push(`${day.prs_merged} PR${day.prs_merged === 1 ? '' : 's'} merged`)
-          if (parts.length === 0 && day.activity_count > 0)
-            parts.push(`${day.activity_count} event${day.activity_count === 1 ? '' : 's'}`)
+    <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden">
+      <div className="px-4 py-3">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <h3 className="section-label">This Week</h3>
+          <span className="text-xs text-muted-foreground font-mono tabular-nums">
+            {grandTotal} event{grandTotal === 1 ? '' : 's'}
+          </span>
+        </div>
 
-          return (
-            <div
-              key={day.date}
-              className="flex items-center gap-4 px-4 py-2.5"
+        {/* Bars */}
+        <div className="flex items-end justify-between gap-2 h-12 mt-3">
+          {slots.map((count, i) => {
+            const pct = max > 0 && count > 0 ? Math.max((count / max) * 100, 8) : 0
+            const today = dateByIdx[i] ? isToday(dateByIdx[i]) : false
+
+            let barClass: string
+            if (count === 0) {
+              barClass = 'bg-muted-foreground/10'
+            } else if (today) {
+              barClass = 'bg-emerald-500'
+            } else {
+              barClass = 'bg-emerald-500/30'
+            }
+
+            return (
+              <div
+                key={i}
+                className="flex-1 flex items-end justify-center h-full"
+              >
+                <div
+                  className={`w-full rounded-t-sm ${barClass}`}
+                  style={{ height: count === 0 ? '2px' : `${pct}%` }}
+                  title={`${DAY_LABELS[i]}: ${count} event${count === 1 ? '' : 's'}`}
+                />
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Day labels */}
+        <div className="flex justify-between mt-1.5">
+          {DAY_LABELS.map((label, i) => (
+            <span
+              key={i}
+              className="flex-1 text-center text-[10px] text-muted-foreground/60 uppercase"
             >
-              <span className="text-xs font-medium text-muted-foreground w-24 shrink-0 uppercase">
-                {formatDayLabel(day.date)}
-              </span>
-              <span className="text-sm text-foreground">
-                {parts.join(', ')}
-              </span>
-            </div>
-          )
-        })}
+              {label}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   )
