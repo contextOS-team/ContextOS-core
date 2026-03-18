@@ -35,16 +35,25 @@ export default function Hero() {
   const heroRef = useRef<HTMLDivElement>(null);
 
   const onFrameUpdate = useCallback((frame: number) => {
-    if (frame < SCENE_FRAMES[1]) setActiveStep(0);
-    else if (frame < SCENE_FRAMES[2]) setActiveStep(1);
-    else setActiveStep(2);
+    const next = frame < SCENE_FRAMES[1] ? 0 : frame < SCENE_FRAMES[2] ? 1 : 2;
+    setActiveStep((prev) => (prev === next ? prev : next));
   }, []);
 
   useEffect(() => {
     setTimeout(() => setVisible(true), 100);
-    const handleScroll = () => setScrollY(window.scrollY);
+    let rafId = 0;
+    const handleScroll = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        setScrollY(window.scrollY);
+        rafId = 0;
+      });
+    };
     window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      cancelAnimationFrame(rafId);
+    };
   }, []);
 
   const heroHeight = heroRef.current?.offsetHeight ?? 900;

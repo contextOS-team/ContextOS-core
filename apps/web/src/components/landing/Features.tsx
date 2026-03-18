@@ -36,9 +36,10 @@ function LargeCardMockup() {
       <div className="p-3 space-y-2">
         {[
           { source: "Slack", time: "Nov 12", text: "Decided on WebSockets approach", color: "#4A154B" },
+          { source: "GitHub", time: "Nov 13", text: "RFC merged, 4 approvals", color: "#1e1e1e" },
           { source: "Notion", time: "Nov 10", text: "Architecture decision recorded", color: "#2a2a2a" },
           { source: "Meet", time: "Nov 14", text: "Sprint planning clip — 14:23", color: "#1a3a5c" },
-          { source: "Linear", time: "Nov 15", text: "Ticket created, assigned to you", color: "#5E6AD2" },
+          { source: "Linear", time: "Nov 15", text: "Ticket assigned to you", color: "#5E6AD2" },
         ].map((item, i) => (
           <div key={i} className="flex items-start gap-2">
             <div className="flex flex-col items-center">
@@ -48,7 +49,7 @@ function LargeCardMockup() {
               >
                 {item.source[0]}
               </div>
-              {i < 3 && (
+              {i < 4 && (
                 <div className="w-px h-3 mt-0.5" style={{ background: "rgba(255,255,255,0.06)" }} />
               )}
             </div>
@@ -66,13 +67,95 @@ function LargeCardMockup() {
   );
 }
 
+function GraphMockup() {
+  return (
+    <div className="mt-4 relative" style={{ height: 120 }}>
+      <svg width="100%" height="100%" viewBox="0 0 240 120" fill="none" aria-hidden="true">
+        {/* Edges */}
+        <line x1="120" y1="30" x2="50" y2="80" stroke="rgba(0,212,170,0.2)" strokeWidth="1" />
+        <line x1="120" y1="30" x2="190" y2="80" stroke="rgba(0,212,170,0.2)" strokeWidth="1" />
+        <line x1="120" y1="30" x2="120" y2="100" stroke="rgba(0,212,170,0.15)" strokeWidth="1" />
+        <line x1="50" y1="80" x2="120" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+        <line x1="190" y1="80" x2="120" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+
+        {/* Decision node (diamond) */}
+        <g transform="translate(120, 30)">
+          <rect x="-10" y="-10" width="20" height="20" rx="3" transform="rotate(45)" fill="rgba(0,212,170,0.15)" stroke="#00D4AA" strokeWidth="1" />
+          <text x="18" y="4" fill="#9CA3AF" fontSize="8" fontFamily="monospace">Decision</text>
+        </g>
+
+        {/* Person node */}
+        <g transform="translate(50, 80)">
+          <circle r="10" fill="rgba(0,212,170,0.08)" stroke="rgba(0,212,170,0.3)" strokeWidth="1" />
+          <text x="0" y="3" fill="#00D4AA" fontSize="8" textAnchor="middle" fontFamily="monospace">A</text>
+          <text x="16" y="3" fill="#6B7280" fontSize="8" fontFamily="monospace">Alex</text>
+        </g>
+
+        {/* Person node */}
+        <g transform="translate(190, 80)">
+          <circle r="10" fill="rgba(0,212,170,0.08)" stroke="rgba(0,212,170,0.3)" strokeWidth="1" />
+          <text x="0" y="3" fill="#00D4AA" fontSize="8" textAnchor="middle" fontFamily="monospace">S</text>
+          <text x="-28" y="3" fill="#6B7280" fontSize="8" textAnchor="end" fontFamily="monospace">Sara</text>
+        </g>
+
+        {/* Ticket node */}
+        <g transform="translate(120, 100)">
+          <rect x="-20" y="-8" width="40" height="16" rx="3" fill="rgba(94,106,210,0.15)" stroke="#5E6AD2" strokeWidth="1" />
+          <text x="0" y="3" fill="#9CA3AF" fontSize="7" textAnchor="middle" fontFamily="monospace">ENG-421</text>
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+function DecisionMockup() {
+  return (
+    <div
+      className="mt-4 rounded-lg p-3"
+      style={{ background: "#0A0A0F", border: "1px solid rgba(255,255,255,0.05)" }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <div
+          className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
+          style={{ background: "rgba(0,212,170,0.15)", border: "1px solid rgba(0,212,170,0.3)" }}
+        >
+          <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+            <path d="M2 4l1.5 1.5L6 3" stroke="#00D4AA" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <span className="text-[10px] text-[#9CA3AF]">Use WebSockets for real-time sync</span>
+      </div>
+      <div className="flex items-center gap-3 ml-6">
+        <div className="flex -space-x-1.5">
+          {["A", "S"].map((initial) => (
+            <div
+              key={initial}
+              className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-bold"
+              style={{ background: "rgba(0,212,170,0.12)", border: "1px solid #0A0A0F", color: "#00D4AA" }}
+            >
+              {initial}
+            </div>
+          ))}
+        </div>
+        <span className="text-[9px] text-[#4B5563]">Slack &middot; 2d ago</span>
+        <span
+          className="text-[8px] px-1.5 py-0.5 rounded ml-auto"
+          style={{ background: "rgba(94,106,210,0.12)", color: "#5E6AD2" }}
+        >
+          ENG-421
+        </span>
+      </div>
+    </div>
+  );
+}
+
 const features = [
   {
     id: "cross-tool",
     size: "large",
     label: "Cross-tool synthesis",
     description:
-      "Pulls from Slack threads, Notion docs, Linear comments, and meeting transcripts into a unified timeline",
+      "Pulls from Slack, Telegram, Jira, Notion, and meeting transcripts into a unified timeline",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M2 8h12M8 2v12" stroke="#00D4AA" strokeWidth="1.5" strokeLinecap="round" />
@@ -82,99 +165,27 @@ const features = [
     visual: <LargeCardMockup />,
   },
   {
-    id: "smart-relevance",
+    id: "knowledge-graph",
     size: "medium",
-    label: "Smart relevance",
+    label: "Knowledge graph",
     description:
-      "AI filters noise and surfaces only what matters for this specific ticket",
+      "See how people, decisions, tickets, and conversations connect across your team",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path
-          d="M14 2L10 6M6 10L2 14M14 2H10M14 2V6"
-          stroke="#00D4AA"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M2 2L5 5M11 11L14 14"
-          stroke="#00D4AA"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          opacity="0.5"
-        />
+        <circle cx="4" cy="4" r="2" stroke="#00D4AA" strokeWidth="1.5" />
+        <circle cx="12" cy="4" r="2" stroke="#00D4AA" strokeWidth="1.5" />
+        <circle cx="8" cy="13" r="2" stroke="#00D4AA" strokeWidth="1.5" />
+        <path d="M6 4h4M5 5.5l2 5.5M11 5.5l-2 5.5" stroke="#00D4AA" strokeWidth="1" strokeLinecap="round" opacity="0.5" />
       </svg>
     ),
-    visual: (
-      <div className="mt-4 space-y-1.5">
-        {[
-          { label: "Highly relevant", score: 94, color: "#00D4AA" },
-          { label: "Relevant", score: 71, color: "#00A882" },
-          { label: "Filtered out", score: 12, color: "#2D2D3A" },
-        ].map((item) => (
-          <div key={item.label}>
-            <div className="flex justify-between text-[10px] mb-1">
-              <span className="text-[#6B7280]">{item.label}</span>
-              <span style={{ color: item.color }}>{item.score}%</span>
-            </div>
-            <div className="h-1 rounded-full" style={{ background: "rgba(255,255,255,0.05)" }}>
-              <div
-                className="h-full rounded-full transition-all"
-                style={{ width: `${item.score}%`, background: item.color }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    ),
-  },
-  {
-    id: "meeting-moments",
-    size: "medium",
-    label: "Meeting moments",
-    description:
-      "Automatically finds and links the exact meeting segments where this feature was discussed",
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <rect x="1" y="4" width="10" height="8" rx="1.5" stroke="#00D4AA" strokeWidth="1.5" />
-        <path d="M11 7l4-2v6l-4-2V7z" stroke="#00D4AA" strokeWidth="1.5" strokeLinejoin="round" />
-      </svg>
-    ),
-    visual: (
-      <div
-        className="mt-4 rounded-lg p-3"
-        style={{ background: "#0A0A0F", border: "1px solid rgba(255,255,255,0.05)" }}
-      >
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] text-[#6B7280]">Sprint Planning - Nov 14</span>
-          <span
-            className="text-[10px] px-1.5 py-0.5 rounded"
-            style={{ background: "rgba(0,212,170,0.1)", color: "#00D4AA" }}
-          >
-            14:23
-          </span>
-        </div>
-        <div className="h-1 rounded-full mb-2" style={{ background: "rgba(255,255,255,0.06)" }}>
-          <div
-            className="h-full rounded-full"
-            style={{
-              width: "60%",
-              background: "linear-gradient(90deg, rgba(0,212,170,0.3), #00D4AA)",
-            }}
-          />
-        </div>
-        <p className="text-[10px] text-[#6B7280] leading-relaxed">
-          &ldquo;...and for ENG-421 we decided to go with Socket.io because...&rdquo;
-        </p>
-      </div>
-    ),
+    visual: <GraphMockup />,
   },
   {
     id: "decisions",
-    size: "small",
+    size: "medium",
     label: "Decision tracking",
     description:
-      "Highlights decisions and their rationale across all sources",
+      "Surfaces decisions from Slack and Telegram, links them to the people and tickets they affect",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path
@@ -187,29 +198,37 @@ const features = [
         <path d="M12 12l.8.8L14.5 11" stroke="#00D4AA" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
-    visual: null,
+    visual: <DecisionMockup />,
   },
   {
-    id: "fresh",
+    id: "activity",
     size: "small",
-    label: "Always fresh",
+    label: "Activity feed",
     description:
-      "Context pages update in real-time as new information appears",
+      "Real-time stream of events across all your integrations",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path
-          d="M14 8A6 6 0 1 1 8 2"
-          stroke="#00D4AA"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-        <path
-          d="M8 2l2 2-2 2"
+          d="M2 8h2l2-4 4 8 2-4h2"
           stroke="#00D4AA"
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
+      </svg>
+    ),
+    visual: null,
+  },
+  {
+    id: "digests",
+    size: "small",
+    label: "Smart digests",
+    description:
+      "AI-generated daily summaries of decisions, actions, and topics from team chats",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect x="2" y="2" width="12" height="12" rx="2" stroke="#00D4AA" strokeWidth="1.5" />
+        <path d="M5 6h6M5 8.5h4M5 11h2" stroke="#00D4AA" strokeWidth="1.2" strokeLinecap="round" />
       </svg>
     ),
     visual: null,

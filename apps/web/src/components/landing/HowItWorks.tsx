@@ -1,6 +1,23 @@
 "use client";
 
 import { useInView } from "@/hooks/useInView";
+import {
+  LinearLogo,
+  SlackLogo,
+  GitHubLogo,
+  JiraLogo,
+  TelegramLogo,
+  NotionLogo,
+} from "@/components/icons/brand-logos";
+
+const tools = [
+  { name: "Linear", Logo: LinearLogo, color: "#5E6AD2" },
+  { name: "Slack", Logo: SlackLogo, color: "#4A154B" },
+  { name: "GitHub", Logo: GitHubLogo, color: "#1e1e1e" },
+  { name: "Jira", Logo: JiraLogo, color: "#0052CC" },
+  { name: "Telegram", Logo: TelegramLogo, color: "#2AABEE" },
+  { name: "Notion", Logo: NotionLogo, color: "#2a2a2a" },
+];
 
 const steps = [
   {
@@ -26,14 +43,7 @@ const steps = [
     ),
     visual: (
       <div className="grid grid-cols-2 gap-2">
-        {[
-          { name: "Linear", icon: "Li", color: "#5E6AD2" },
-          { name: "Slack", icon: "S", color: "#4A154B" },
-          { name: "GitHub", icon: "G", color: "#1e1e1e" },
-          { name: "Jira", icon: "J", color: "#0052CC" },
-          { name: "Telegram", icon: "T", color: "#2AABEE" },
-          { name: "Notion", icon: "N", color: "#2a2a2a" },
-        ].map((tool) => (
+        {tools.map((tool) => (
           <div
             key={tool.name}
             className="flex items-center gap-2 px-3 py-2 rounded-lg"
@@ -43,10 +53,14 @@ const steps = [
             }}
           >
             <div
-              className="w-5 h-5 rounded flex items-center justify-center text-white font-bold text-[9px]"
+              className="w-5 h-5 rounded flex items-center justify-center text-white"
               style={{ background: tool.color }}
             >
-              {tool.icon}
+              {tool.name === "Slack" ? (
+                <tool.Logo width={12} height={12} color="currentColor" />
+              ) : (
+                <tool.Logo width={12} height={12} fill="currentColor" />
+              )}
             </div>
             <span className="text-xs text-[#9CA3AF]">{tool.name}</span>
             <div
@@ -134,35 +148,37 @@ const steps = [
     ),
     visual: (
       <div
-        className="rounded-lg p-3 font-mono text-[11px]"
+        className="rounded-lg overflow-hidden text-[11px]"
         style={{
           background: "#0A0A0F",
           border: "1px solid rgba(255,255,255,0.06)",
         }}
       >
-          <div className="text-[#4B5563] mb-2"><span>{"// ENG-421 context ready"}</span></div>
-        <div>
-          <span style={{ color: "#00D4AA" }}>const</span>{" "}
-          <span style={{ color: "#E0E0E0" }}>context</span>{" "}
-          <span style={{ color: "#6B7280" }}>=</span>{" "}
-          <span style={{ color: "#00D4AA" }}>await</span>{" "}
-          <span style={{ color: "#9CA3AF" }}>getContext</span>
-          <span style={{ color: "#6B7280" }}>(</span>
-          <span style={{ color: "#FFA657" }}>&apos;ENG-421&apos;</span>
-          <span style={{ color: "#6B7280" }}>)</span>
+        {/* Mini context page header */}
+        <div
+          className="flex items-center gap-2 px-3 py-2"
+          style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", background: "#0F0F18" }}
+        >
+          <span className="text-[#00D4AA] font-mono">ENG-421</span>
+          <span className="text-[#4B5563]">&#183;</span>
+          <span className="text-[#6B7280]">Context Page</span>
+          <div className="ml-auto flex items-center gap-1">
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#00D4AA" }} />
+            <span className="text-[9px] text-[#00D4AA] font-mono">Ready</span>
+          </div>
         </div>
-        <div className="mt-1 text-[#4B5563]">
-          {"// "}
-          <span style={{ color: "#00D4AA" }}>
-            Background, 4 decisions, 6 sources
-          </span>
-        </div>
-        <div className="mt-2 flex items-center gap-1.5">
-          <div
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ background: "#00D4AA" }}
-          />
-          <span style={{ color: "#00D4AA" }}>Ready to code</span>
+        {/* Mini context summary */}
+        <div className="p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(0,212,170,0.1)", color: "#00D4AA" }}>4 decisions</span>
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(94,106,210,0.1)", color: "#5E6AD2" }}>6 sources</span>
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.04)", color: "#6B7280" }}>2 action items</span>
+          </div>
+          <div className="space-y-1.5">
+            <div className="h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.06)", width: "95%" }} />
+            <div className="h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.04)", width: "80%" }} />
+            <div className="h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.03)", width: "60%" }} />
+          </div>
         </div>
       </div>
     ),

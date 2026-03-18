@@ -5,7 +5,10 @@ import { PostHogProvider as PHProvider, usePostHog } from "posthog-js/react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
-if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_POSTHOG_KEY) {
+let _posthogInitialized = false;
+function ensurePostHogInit() {
+  if (_posthogInitialized || typeof window === "undefined" || !process.env.NEXT_PUBLIC_POSTHOG_KEY) return;
+  _posthogInitialized = true;
   posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
     api_host:
       process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com",
@@ -17,6 +20,9 @@ if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_POSTHOG_KEY) {
 }
 
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    ensurePostHogInit();
+  }, []);
   return <PHProvider client={posthog}>{children}</PHProvider>;
 }
 

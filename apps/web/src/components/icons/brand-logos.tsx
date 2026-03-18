@@ -322,27 +322,19 @@ export function JiraLogo({
       aria-hidden="true"
       {...props}
     >
-      <defs>
-        <linearGradient id="jira-grad-1" x1="98.031%" y1="0.161%" x2="58.888%" y2="40.766%">
-          <stop offset="18%" stopColor="#0052CC" stopOpacity="0" />
-          <stop offset="100%" stopColor="#2684FF" />
-        </linearGradient>
-        <linearGradient id="jira-grad-2" x1="100.665%" y1="0.455%" x2="55.402%" y2="44.727%">
-          <stop offset="18%" stopColor="#0052CC" stopOpacity="0" />
-          <stop offset="100%" stopColor="#2684FF" />
-        </linearGradient>
-      </defs>
       <path
         d="M244.658 0H121.707a55.502 55.502 0 0 0 55.502 55.502h22.649V77.37c.02 30.625 24.841 55.447 55.5 55.502V10.993C255.358 4.923 250.228 0 244.658 0Z"
-        fill="#2684FF"
+        fill="currentColor"
       />
       <path
         d="M183.822 61.262H60.872c.019 30.625 24.84 55.447 55.501 55.502h22.649v21.868c.02 30.597 24.798 55.408 55.396 55.501V72.255c0-6.075-5.13-10.993-10.596-10.993Z"
-        fill="url(#jira-grad-1)"
+        fill="currentColor"
+        opacity="0.8"
       />
       <path
         d="M122.943 122.524H0c0 30.653 24.86 55.502 55.502 55.502h22.72v21.868c.02 30.597 24.798 55.408 55.396 55.502V133.518c0-6.076-5.13-10.994-10.675-10.994Z"
-        fill="url(#jira-grad-2)"
+        fill="currentColor"
+        opacity="0.65"
       />
     </svg>
   )

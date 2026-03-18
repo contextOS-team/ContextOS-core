@@ -16,20 +16,19 @@ import type { ComponentType, SVGProps } from "react";
 type Integration = {
   name: string;
   description: string;
-  status: "live" | "soon";
   color: string;
   Logo: ComponentType<SVGProps<SVGSVGElement>>;
 };
 
 const integrations: Integration[] = [
-  { name: "Linear", description: "Issue tracking", status: "live", color: "#5E6AD2", Logo: LinearLogo },
-  { name: "Slack", description: "Team messaging", status: "live", color: "#4A154B", Logo: SlackLogo },
-  { name: "GitHub", description: "Code & PRs", status: "live", color: "#1e1e1e", Logo: GitHubLogo },
-  { name: "Notion", description: "Docs & wikis", status: "live", color: "#2a2a2a", Logo: NotionLogo },
-  { name: "Telegram", description: "Team chats", status: "live", color: "#2AABEE", Logo: TelegramLogo },
-  { name: "Jira", description: "Issue tracking", status: "live", color: "#0052CC", Logo: JiraLogo },
-  { name: "GitLab", description: "Code & merge requests", status: "live", color: "#FC6D26", Logo: GitLabLogo },
-  { name: "Fathom", description: "Transcripts & clips", status: "live", color: "#1a3a4a", Logo: FathomLogo },
+  { name: "Linear", description: "Tickets & projects", color: "#5E6AD2", Logo: LinearLogo },
+  { name: "Slack", description: "Threads & decisions", color: "#4A154B", Logo: SlackLogo },
+  { name: "GitHub", description: "PRs, commits & reviews", color: "#1e1e1e", Logo: GitHubLogo },
+  { name: "Notion", description: "Docs & knowledge base", color: "#2a2a2a", Logo: NotionLogo },
+  { name: "Telegram", description: "Group discussions", color: "#2AABEE", Logo: TelegramLogo },
+  { name: "Jira", description: "Epics, sprints & boards", color: "#0052CC", Logo: JiraLogo },
+  { name: "GitLab", description: "MRs & pipelines", color: "#FC6D26", Logo: GitLabLogo },
+  { name: "Fathom", description: "Meeting transcripts", color: "#1a3a4a", Logo: FathomLogo },
 ];
 
 export default function Integrations() {
@@ -108,7 +107,11 @@ export default function Integrations() {
                   className="w-9 h-9 rounded-lg flex items-center justify-center text-white"
                   style={{ background: integration.color }}
                 >
-                  <integration.Logo width={16} height={16} fill="currentColor" />
+                  {integration.name === "Slack" ? (
+                    <integration.Logo width={16} height={16} color="currentColor" />
+                  ) : (
+                    <integration.Logo width={16} height={16} fill="currentColor" />
+                  )}
                 </div>
                 <div
                   className="flex items-center gap-1 text-[9px] font-mono"
