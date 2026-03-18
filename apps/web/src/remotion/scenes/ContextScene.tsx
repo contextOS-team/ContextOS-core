@@ -29,26 +29,26 @@ const SOURCE_GROUPS = [
   { label: "Jira", color: COLORS.blue, count: "1" },
 ];
 
+// Content shown as bars (widths as %) — communicates "there's content"
+// without pretending to be readable text at video scale
 const SECTIONS = [
   {
     title: "Summary",
     borderColor: COLORS.primary,
     bgTint: "rgba(0,212,170,0.04)",
-    content:
-      "Real-time sync for mobile using WebSockets. Architecture decided with mobile team input.",
+    bars: [95, 80, 55],
   },
   {
     title: "Key Decisions",
     borderColor: COLORS.violet,
     bgTint: "transparent",
-    content: "WebSockets over polling — <200ms latency budget",
-    bullet: true,
+    bars: [85, 60],
   },
   {
     title: "Requirements",
     borderColor: COLORS.amber,
     bgTint: "transparent",
-    content: "Ship by Sprint 13 per mobile team",
+    bars: [75, 50],
   },
 ];
 
@@ -282,30 +282,25 @@ export const ContextScene: React.FC = () => {
                       >
                         {section.title}
                       </div>
+                      {/* Content bars — structural, not readable */}
                       <div
                         style={{
-                          fontSize: 14,
-                          color: COLORS.muted,
-                          lineHeight: 1.6,
-                          fontFamily: "system-ui, sans-serif",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 6,
                         }}
                       >
-                        {section.bullet ? (
-                          <span>
-                            <span
-                              style={{
-                                color: COLORS.primary,
-                                fontWeight: 600,
-                                marginRight: 8,
-                              }}
-                            >
-                              •
-                            </span>
-                            {section.content}
-                          </span>
-                        ) : (
-                          section.content
-                        )}
+                        {section.bars.map((w, bi) => (
+                          <div
+                            key={bi}
+                            style={{
+                              height: 6,
+                              borderRadius: 3,
+                              background: `rgba(255,255,255,${bi === 0 ? 0.07 : 0.04})`,
+                              width: `${w}%`,
+                            }}
+                          />
+                        ))}
                       </div>
                     </div>
                   </div>
