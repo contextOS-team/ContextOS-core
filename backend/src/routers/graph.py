@@ -6,6 +6,7 @@ Exposes workspace-wide and per-ticket graph data as structured JSON
 
 import logging
 from collections import Counter
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel as PydanticBaseModel
@@ -13,13 +14,20 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from src.config import get_settings
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
 from src.models.graph_edge import GraphEdge
 from src.models.graph_node import GraphNode
+from src.models.identity_mapping import IdentityMapping
 from src.models.integration import WorkspaceIntegration
+from src.models.jira import JiraIssue
 from src.models.ticket import LinearTicket
+from src.services.dashboard_sprint import get_active_sprint, get_sprint_ticket_identifiers
 from src.services.graph_ops import compute_fingerprint
+from src.services.jira_sync import list_my_jira_issues
+from src.services.linear_graphql import LinearGraphQLClient
+from src.services.linear_oauth import get_valid_access_token
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +75,32 @@ class WorkspaceGraphResponse(PydanticBaseModel):
     edges: list[GraphEdgeResponse]
 
 
+class TicketCluster(PydanticBaseModel):
+    """A cluster of nodes around a single ticket."""
+
+    ticket_identifier: str
+    ticket_node_id: str
+    ticket_name: str
+    ticket_state: str | None = None
+    ticket_priority: int | None = None
+    nodes: list[GraphNodeResponse]
+    edges: list[GraphEdgeResponse]
+
+
+class LensGraphResponse(PydanticBaseModel):
+    """Response for lens-based graph views."""
+
+    lens: Literal["my_work", "sprint", "blocked"]
+    clusters: list[TicketCluster]
+    all_nodes: list[GraphNodeResponse]
+    all_edges: list[GraphEdgeResponse]
+    node_count: int
+    edge_count: int
+    truncated: bool
+    sprint_name: str | None = None
+    sprint_progress: float | None = None
+
+
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 
 
@@ -86,6 +120,278 @@ PROVIDER_TO_SOURCE_TYPES: dict[str, list[str]] = {
     "fathom": ["meeting_transcript"],
     "telegram": ["telegram_message"],
 }
+
+
+def _detect_provider(connected_providers: set[str]) -> str | None:
+    """Detect primary ticket provider. Prefers Linear when both connected."""
+    if "linear" in connected_providers:
+        return "linear"
+    if "jira" in connected_providers:
+        return "jira"
+    return None
+
+
+async def _lens_context(session: AsyncSession, workspace_id) -> tuple[set[str], set[str], str | None]:
+    """Common setup for lens endpoints: connected providers, allowed source types, primary provider."""
+    connected = await _get_connected_providers(session, workspace_id)
+    allowed_src = _allowed_source_types(connected)
+    provider = _detect_provider(connected)
+    return connected, allowed_src, provider
+
+
+async def _get_connected_providers(
+    session: AsyncSession, workspace_id,
+) -> set[str]:
+    """Get set of connected integration provider names."""
+    int_stmt = select(WorkspaceIntegration).where(
+        WorkspaceIntegration.workspace_id == workspace_id,
+        WorkspaceIntegration.status == "connected",
+    )
+    int_result = await session.execute(int_stmt)
+    return {i.provider for i in int_result.scalars().all()}
+
+
+def _allowed_source_types(connected_providers: set[str]) -> set[str]:
+    """Build the set of allowed source_types from connected providers."""
+    allowed: set[str] = set()
+    for provider in connected_providers:
+        allowed.update(PROVIDER_TO_SOURCE_TYPES.get(provider, []))
+    return allowed
+
+
+def _node_passes_source_filter(n, allowed_source_types: set[str]) -> bool:
+    """Node passes if its source_type maps to a connected integration, or has no source_type."""
+    if not n.source_type:
+        return True
+    return n.source_type in allowed_source_types
+
+
+async def _validate_ticket_identifiers(
+    session: AsyncSession,
+    workspace_id,
+    identifiers: set[str],
+    provider: str | None,
+) -> set[str]:
+    """Return subset of identifiers that exist as real tickets."""
+    if not identifiers:
+        return set()
+    if provider == "jira":
+        stmt = select(JiraIssue.jira_key).where(
+            JiraIssue.workspace_id == workspace_id,
+            JiraIssue.jira_key.in_(identifiers),
+            JiraIssue.deleted_at.is_(None),
+        )
+    else:
+        stmt = select(LinearTicket.identifier).where(
+            LinearTicket.workspace_id == workspace_id,
+            LinearTicket.identifier.in_(identifiers),
+            LinearTicket.deleted_at.is_(None),
+        )
+    result = await session.execute(stmt)
+    return {row[0] for row in result}
+
+
+async def _build_ticket_clusters(
+    session: AsyncSession,
+    workspace_id,
+    ticket_identifiers: list[str],
+    provider: str | None,
+    max_total_nodes: int = 50,
+    allowed_src: set[str] | None = None,
+) -> tuple[list[TicketCluster], list[GraphNodeResponse], list[GraphEdgeResponse]]:
+    """Build ego-centric clusters around a list of ticket identifiers.
+
+    Returns (clusters, all_nodes, all_edges) where all_nodes/all_edges
+    are deduplicated across clusters.
+    """
+    if not ticket_identifiers:
+        return [], [], []
+
+    # Reuse caller's allowed source types if provided, otherwise query
+    if allowed_src is None:
+        connected_providers = await _get_connected_providers(session, workspace_id)
+        allowed_src = _allowed_source_types(connected_providers)
+
+    # Validate identifiers against real tickets
+    real_ids = await _validate_ticket_identifiers(
+        session, workspace_id, set(ticket_identifiers), provider
+    )
+    ticket_identifiers = [t for t in ticket_identifiers if t in real_ids]
+    if not ticket_identifiers:
+        return [], [], []
+
+    # Look up graph nodes for each ticket
+    fingerprints = {
+        ident: compute_fingerprint("Ticket", ident)
+        for ident in ticket_identifiers
+    }
+    fp_values = list(fingerprints.values())
+    node_stmt = select(GraphNode).where(
+        GraphNode.workspace_id == workspace_id,
+        GraphNode.fingerprint.in_(fp_values),
+        GraphNode.deleted_at.is_(None),
+    )
+    node_result = await session.execute(node_stmt)
+    fp_to_node = {n.fingerprint: n for n in node_result.scalars().all()}
+
+    # Map identifier -> graph node
+    ident_to_node: dict[str, GraphNode] = {}
+    for ident, fp in fingerprints.items():
+        if fp in fp_to_node:
+            ident_to_node[ident] = fp_to_node[fp]
+
+    if not ident_to_node:
+        return [], [], []
+
+    # Traverse 1-hop from each ticket node.
+    # Phase 1: collect raw traversal data per ticket.
+    raw_traversals: dict[str, list[tuple]] = {}  # ident -> rows
+    all_traversed_node_ids: set[str] = set()
+
+    for ident, graph_node in ident_to_node.items():
+        traverse_stmt = text("""
+            SELECT node_id, entity_type, name, properties,
+                   edge_relationship_type, depth, path
+            FROM traverse_graph(
+                CAST(:start_node_id AS uuid),
+                CAST(:workspace_id AS uuid),
+                CAST(:max_depth AS int),
+                'both'::text,
+                NULL::text[],
+                NULL::text[]
+            )
+        """)
+        traverse_result = await session.execute(
+            traverse_stmt,
+            {
+                "start_node_id": str(graph_node.id),
+                "workspace_id": str(workspace_id),
+                "max_depth": 1,
+            },
+        )
+        rows = traverse_result.fetchall()
+        raw_traversals[ident] = rows
+        for row in rows:
+            all_traversed_node_ids.add(str(row[0]))
+
+    # Phase 2: bulk-fetch GraphNode records for filtering.
+    # traverse_graph() doesn't return source_type, so we need the actual rows.
+    # Also filter out neighbor Ticket nodes that aren't real tickets (e.g. text-extracted
+    # references like "DLVR-01" that don't exist in Linear/Jira).
+    blocked_node_ids: set[str] = set()
+    root_node_ids = {str(gn.id) for gn in ident_to_node.values()}
+
+    if all_traversed_node_ids:
+        src_stmt = select(GraphNode.id, GraphNode.source_type, GraphNode.entity_type, GraphNode.name).where(
+            GraphNode.id.in_(all_traversed_node_ids),
+        )
+        src_result = await session.execute(src_stmt)
+        neighbor_ticket_names: dict[str, str] = {}  # node_id -> identifier
+        for row in src_result:
+            nid = str(row[0])
+            src_type = row[1]
+            entity_type = row[2]
+            # Block nodes from disconnected integrations
+            if src_type and src_type not in allowed_src:
+                blocked_node_ids.add(nid)
+            # Collect neighbor Ticket nodes for validation
+            if entity_type == "Ticket" and nid not in root_node_ids:
+                name = row[3] or ""
+                neighbor_ticket_names[nid] = name.split(":")[0].strip()
+
+        # Validate neighbor tickets against real ticket tables
+        if neighbor_ticket_names:
+            valid_neighbor_ids = await _validate_ticket_identifiers(
+                session, workspace_id, set(neighbor_ticket_names.values()), provider
+            )
+            for nid, ident in neighbor_ticket_names.items():
+                if ident not in valid_neighbor_ids:
+                    blocked_node_ids.add(nid)
+
+    # Phase 3: build clusters with source filtering applied.
+    all_node_map: dict[str, dict] = {}  # node_id -> node data (lowest depth wins)
+    all_edge_set: dict[str, GraphEdgeResponse] = {}  # dedup key -> edge
+    clusters: list[TicketCluster] = []
+
+    for ident, graph_node in ident_to_node.items():
+        rows = raw_traversals[ident]
+
+        cluster_node_map: dict[str, dict] = {}
+        for row in rows:
+            node_id = str(row[0])
+            node_depth = row[5]
+            # Filter: skip nodes from disconnected integrations.
+            # Depth-0 (the ticket itself) always passes.
+            if node_depth > 0 and node_id in blocked_node_ids:
+                continue
+            node_data = {
+                "id": node_id,
+                "entity_type": row[1],
+                "name": row[2],
+                "depth": node_depth,
+                "properties": row[3] if row[3] is not None else {},
+            }
+            if node_id not in cluster_node_map or node_depth < cluster_node_map[node_id]["depth"]:
+                cluster_node_map[node_id] = node_data
+            if node_id not in all_node_map or node_depth < all_node_map[node_id]["depth"]:
+                all_node_map[node_id] = node_data
+
+        # Get edges within cluster
+        cluster_node_ids = list(cluster_node_map.keys())
+        if cluster_node_ids:
+            edge_stmt = select(GraphEdge).where(
+                GraphEdge.workspace_id == workspace_id,
+                GraphEdge.source_node_id.in_(cluster_node_ids),
+                GraphEdge.target_node_id.in_(cluster_node_ids),
+                GraphEdge.deleted_at.is_(None),
+            )
+            edge_result = await session.execute(edge_stmt)
+            cluster_edges_raw = edge_result.scalars().all()
+        else:
+            cluster_edges_raw = []
+
+        cluster_nodes = [
+            GraphNodeResponse(**n) for n in cluster_node_map.values()
+        ]
+        cluster_edges = [
+            GraphEdgeResponse(
+                source=str(e.source_node_id),
+                target=str(e.target_node_id),
+                relationship_type=e.relationship_type,
+                properties=e.properties if e.properties else {},
+            )
+            for e in cluster_edges_raw
+        ]
+
+        for e in cluster_edges:
+            key = f"{e.source}-{e.target}-{e.relationship_type}"
+            all_edge_set[key] = e
+
+        ticket_props = graph_node.properties or {}
+
+        clusters.append(TicketCluster(
+            ticket_identifier=ident,
+            ticket_node_id=str(graph_node.id),
+            ticket_name=graph_node.name,
+            ticket_state=ticket_props.get("state"),
+            ticket_priority=ticket_props.get("priority"),
+            nodes=cluster_nodes,
+            edges=cluster_edges,
+        ))
+
+    # Cap total nodes
+    sorted_nodes = sorted(
+        all_node_map.values(),
+        key=lambda n: (n["depth"], n["entity_type"] != "Ticket"),
+    )
+    if len(sorted_nodes) > max_total_nodes:
+        sorted_nodes = sorted_nodes[:max_total_nodes]
+
+    capped_ids = {n["id"] for n in sorted_nodes}
+    all_nodes = [GraphNodeResponse(**n) for n in sorted_nodes]
+    all_edges = [e for e in all_edge_set.values() if e.source in capped_ids and e.target in capped_ids]
+
+    return clusters, all_nodes, all_edges
 
 
 @router.get("/")
@@ -116,17 +422,8 @@ async def get_workspace_graph(
         type_filter = DEFAULT_ENTITY_TYPES
 
     # Look up connected integrations for this workspace
-    int_stmt = select(WorkspaceIntegration).where(
-        WorkspaceIntegration.workspace_id == user.workspace_id,
-        WorkspaceIntegration.status == "connected",
-    )
-    int_result = await session.execute(int_stmt)
-    connected_providers = {i.provider for i in int_result.scalars().all()}
-
-    # Build the set of allowed source_types from connected providers
-    allowed_source_types: set[str] = set()
-    for provider in connected_providers:
-        allowed_source_types.update(PROVIDER_TO_SOURCE_TYPES.get(provider, []))
+    connected_providers = await _get_connected_providers(session, user.workspace_id)
+    allowed_source_types = _allowed_source_types(connected_providers)
 
     # Step 1: Get ALL workspace nodes (unfiltered) for connectivity analysis
     all_node_stmt = select(GraphNode).where(
@@ -151,29 +448,30 @@ async def get_workspace_graph(
     # exist as real Linear/Jira tickets get filtered out at query time.
     ticket_nodes = [n for n in every_node if n.entity_type == "Ticket"]
     if ticket_nodes:
-        ticket_identifiers = {
-            n.name.split(":")[0].strip()  # Handle "CON-50: title" format
-            for n in ticket_nodes
-            if n.name
-        }
-        # Also check properties.identifier
+        ticket_identifiers = set()
         for n in ticket_nodes:
-            ident = n.properties.get("identifier") if n.properties else None
+            if n.name:
+                ticket_identifiers.add(n.name.split(":")[0].strip())
+            ident = (n.properties or {}).get("identifier")
             if ident:
                 ticket_identifiers.add(str(ident))
 
-        real_ticket_stmt = select(LinearTicket.identifier).where(
-            LinearTicket.workspace_id == user.workspace_id,
-            LinearTicket.identifier.in_(ticket_identifiers),  # type: ignore[union-attr]
-            LinearTicket.deleted_at.is_(None),  # type: ignore[union-attr]
+        provider = _detect_provider(connected_providers)
+        real_identifiers = await _validate_ticket_identifiers(
+            session, user.workspace_id, ticket_identifiers, provider
         )
-        real_result = await session.execute(real_ticket_stmt)
-        real_identifiers = {row[0] for row in real_result}
+
+        # Also validate Jira if both are connected
+        if "jira" in connected_providers and "linear" in connected_providers:
+            jira_valid = await _validate_ticket_identifiers(
+                session, user.workspace_id, ticket_identifiers, "jira"
+            )
+            real_identifiers |= jira_valid
 
         # Filter: keep ticket nodes only if their identifier exists in real tickets
         def _is_real_ticket(n: GraphNode) -> bool:
             name_id = n.name.split(":")[0].strip()
-            prop_id = n.properties.get("identifier") if n.properties else None
+            prop_id = (n.properties or {}).get("identifier")
             return name_id in real_identifiers or (prop_id and str(prop_id) in real_identifiers)
 
         every_node = [
@@ -202,17 +500,11 @@ async def get_workspace_graph(
 
     # Step 4: Filter to requested entity types, keeping only connected nodes
     # Also scope to nodes from connected integrations only
-    def _node_passes_source_filter(n: GraphNode) -> bool:
-        """Node passes if its source_type maps to a connected integration, or has no source_type."""
-        if not n.source_type:
-            return True  # Nodes without source_type (e.g. from identity resolution) pass
-        return n.source_type in allowed_source_types
-
     # Nodes from connected integrations with a real source_type are always
     # shown (they're validated at ingestion). Text-extracted nodes (no
     # source_type) only shown if they have edges.
     def _should_include(n: GraphNode) -> bool:
-        if not _node_passes_source_filter(n):
+        if not _node_passes_source_filter(n, allowed_source_types):
             return False
         has_edges = total_edge_counter.get(str(n.id), 0) > 0
         has_real_source = n.source_type is not None and n.source_type in allowed_source_types
@@ -301,6 +593,230 @@ async def get_workspace_graph(
         total_available=total_available,
         nodes=response_nodes,
         edges=response_edges,
+    )
+
+
+@router.get("/lens/my-work")
+async def get_my_work_graph(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> LensGraphResponse:
+    """Get the knowledge graph centered on tickets assigned to the current user."""
+    connected, allowed_src, provider = await _lens_context(session, user.workspace_id)
+
+    ticket_identifiers: list[str] = []
+
+    if provider == "linear":
+        settings = get_settings()
+        try:
+            access_token = await get_valid_access_token(
+                session, user.workspace_id, user.user_id, settings
+            )
+            client = LinearGraphQLClient(access_token)
+            try:
+                data = await client.query(
+                    """query($first: Int!) {
+                        viewer {
+                            assignedIssues(
+                                first: $first,
+                                filter: { state: { type: { nin: ["canceled", "completed"] } } },
+                                orderBy: updatedAt
+                            ) {
+                                nodes { identifier }
+                            }
+                        }
+                    }""",
+                    variables={"first": 15},
+                )
+                nodes = (
+                    data.get("data", {})
+                    .get("viewer", {})
+                    .get("assignedIssues", {})
+                    .get("nodes", [])
+                )
+                ticket_identifiers = [n["identifier"] for n in nodes if n.get("identifier")]
+            finally:
+                await client.close()
+        except Exception:
+            logger.warning("Failed to fetch Linear assigned issues for user %s", user.user_id)
+
+    elif provider == "jira":
+        settings = get_settings()
+        try:
+            issues = await list_my_jira_issues(session, user.workspace_id, settings)
+            ticket_identifiers = [i["key"] for i in issues[:15] if i.get("key")]
+        except Exception:
+            logger.warning("Failed to fetch Jira assigned issues for workspace %s", user.workspace_id)
+
+    # Fallback: use graph edges if no provider or API call failed
+    if not ticket_identifiers:
+        # Try to find tickets assigned to this user via graph edges
+        # Look up user's person node via identity mappings
+        id_stmt = select(IdentityMapping.canonical_person_id).where(
+            IdentityMapping.workspace_id == user.workspace_id,
+            IdentityMapping.email == user.email,
+            IdentityMapping.canonical_person_id.is_not(None),
+        )
+        id_result = await session.execute(id_stmt)
+        person_ids = [row[0] for row in id_result if row[0]]
+
+        if person_ids:
+            # Find tickets connected to this person via assigned_to edges
+            edge_stmt = select(GraphEdge).where(
+                GraphEdge.workspace_id == user.workspace_id,
+                GraphEdge.relationship_type == "assigned_to",
+                GraphEdge.target_node_id.in_(person_ids),
+                GraphEdge.deleted_at.is_(None),
+            )
+            edge_result = await session.execute(edge_stmt)
+            assigned_edges = edge_result.scalars().all()
+
+            if assigned_edges:
+                ticket_node_ids = [str(e.source_node_id) for e in assigned_edges]
+                ticket_stmt = select(GraphNode).where(
+                    GraphNode.id.in_(ticket_node_ids),
+                    GraphNode.entity_type == "Ticket",
+                    GraphNode.deleted_at.is_(None),
+                )
+                ticket_result = await session.execute(ticket_stmt)
+                for node in ticket_result.scalars().all():
+                    ident = (node.properties or {}).get("identifier") or node.name.split(":")[0].strip()
+                    ticket_identifiers.append(ident)
+                ticket_identifiers = ticket_identifiers[:15]
+
+    clusters, all_nodes, all_edges = await _build_ticket_clusters(
+        session, user.workspace_id, ticket_identifiers, provider,
+        max_total_nodes=50, allowed_src=allowed_src,
+    )
+
+    return LensGraphResponse(
+        lens="my_work",
+        clusters=clusters,
+        all_nodes=all_nodes,
+        all_edges=all_edges,
+        node_count=len(all_nodes),
+        edge_count=len(all_edges),
+        truncated=len(all_nodes) >= 50,
+    )
+
+
+@router.get("/lens/sprint")
+async def get_sprint_graph(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> LensGraphResponse:
+    """Get the knowledge graph for the active sprint/cycle."""
+    connected, allowed_src, provider = await _lens_context(session, user.workspace_id)
+
+    sprint_name: str | None = None
+    sprint_progress: float | None = None
+    ticket_identifiers: list[str] = []
+
+    if provider == "linear":
+        sprint_data = await get_active_sprint(session, user.workspace_id, user.user_id)
+        if sprint_data:
+            cycle_label = sprint_data.get("cycle_name") or f"Cycle {sprint_data.get('cycle_number', '')}"
+            sprint_name = f"{sprint_data['team_name']} — {cycle_label}"
+            sprint_progress = sprint_data.get("progress")
+            cycle_id = sprint_data.get("cycle_id")
+            if cycle_id:
+                ticket_identifiers = await get_sprint_ticket_identifiers(
+                    session, user.workspace_id, user.user_id, cycle_id,
+                    sprint_data=sprint_data,
+                )
+
+    # Jira sprint not yet supported
+    elif provider == "jira":
+        return LensGraphResponse(
+            lens="sprint",
+            clusters=[],
+            all_nodes=[],
+            all_edges=[],
+            node_count=0,
+            edge_count=0,
+            truncated=False,
+            sprint_name=None,
+            sprint_progress=None,
+        )
+
+    clusters, all_nodes, all_edges = await _build_ticket_clusters(
+        session, user.workspace_id, ticket_identifiers, provider,
+        max_total_nodes=80, allowed_src=allowed_src,
+    )
+
+    return LensGraphResponse(
+        lens="sprint",
+        clusters=clusters,
+        all_nodes=all_nodes,
+        all_edges=all_edges,
+        node_count=len(all_nodes),
+        edge_count=len(all_edges),
+        truncated=len(all_nodes) >= 80,
+        sprint_name=sprint_name,
+        sprint_progress=sprint_progress,
+    )
+
+
+@router.get("/lens/blocked")
+async def get_blocked_graph(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> LensGraphResponse:
+    """Get the knowledge graph for blocked tickets."""
+    connected, allowed_src, provider = await _lens_context(session, user.workspace_id)
+
+    # Find all 'blocks' edges in workspace
+    blocks_stmt = select(GraphEdge).where(
+        GraphEdge.workspace_id == user.workspace_id,
+        GraphEdge.relationship_type == "blocks",
+        GraphEdge.deleted_at.is_(None),
+    )
+    blocks_result = await session.execute(blocks_stmt)
+    blocks_edges = blocks_result.scalars().all()
+
+    if not blocks_edges:
+        return LensGraphResponse(
+            lens="blocked",
+            clusters=[],
+            all_nodes=[],
+            all_edges=[],
+            node_count=0,
+            edge_count=0,
+            truncated=False,
+        )
+
+    # Collect all ticket node IDs involved in blocks
+    blocked_node_ids = set()
+    for edge in blocks_edges:
+        blocked_node_ids.add(str(edge.source_node_id))
+        blocked_node_ids.add(str(edge.target_node_id))
+
+    # Look up these nodes to get ticket identifiers
+    node_stmt = select(GraphNode).where(
+        GraphNode.id.in_(blocked_node_ids),
+        GraphNode.entity_type == "Ticket",
+        GraphNode.workspace_id == user.workspace_id,
+        GraphNode.deleted_at.is_(None),
+    )
+    node_result = await session.execute(node_stmt)
+    ticket_identifiers = []
+    for node in node_result.scalars().all():
+        ident = (node.properties or {}).get("identifier") or node.name.split(":")[0].strip()
+        ticket_identifiers.append(ident)
+
+    clusters, all_nodes, all_edges = await _build_ticket_clusters(
+        session, user.workspace_id, ticket_identifiers, provider,
+        max_total_nodes=50, allowed_src=allowed_src,
+    )
+
+    return LensGraphResponse(
+        lens="blocked",
+        clusters=clusters,
+        all_nodes=all_nodes,
+        all_edges=all_edges,
+        node_count=len(all_nodes),
+        edge_count=len(all_edges),
+        truncated=len(all_nodes) >= 50,
     )
 
 
