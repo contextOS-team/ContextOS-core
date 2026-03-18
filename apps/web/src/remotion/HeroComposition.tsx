@@ -5,16 +5,16 @@ import {
   SCENE_2_DURATION,
   SCENE_3_DURATION,
 } from "./constants";
-import { ContextScene } from "./scenes/ContextScene";
+import { DashboardScene } from "./scenes/DashboardScene";
 import { SourcesScene } from "./scenes/SourcesScene";
-import { TicketScene } from "./scenes/TicketScene";
+import { ContextScene } from "./scenes/ContextScene";
 
 export const HeroComposition: React.FC = () => {
   return (
     <AbsoluteFill style={{ backgroundColor: COLORS.background }}>
       <Series>
         <Series.Sequence durationInFrames={SCENE_1_DURATION}>
-          <TicketScene />
+          <DashboardScene />
         </Series.Sequence>
         <Series.Sequence durationInFrames={SCENE_2_DURATION}>
           <SourcesScene />

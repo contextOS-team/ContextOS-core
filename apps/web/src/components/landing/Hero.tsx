@@ -25,7 +25,7 @@ const RemotionHeroPlayer = dynamic(
 );
 
 /** Scene boundaries in frames (must match remotion/constants.ts) */
-const SCENE_FRAMES = [0, 90, 210, 330]; // scene1 start, scene2 start, scene3 start, end
+const SCENE_FRAMES = [0, 90, 195, 360]; // dashboard, sources, context, end
 
 export default function Hero() {
   const posthog = usePostHog();
@@ -35,7 +35,12 @@ export default function Hero() {
   const heroRef = useRef<HTMLDivElement>(null);
 
   const onFrameUpdate = useCallback((frame: number) => {
-    const next = frame < SCENE_FRAMES[1] ? 0 : frame < SCENE_FRAMES[2] ? 1 : 2;
+    const next =
+      frame < SCENE_FRAMES[1]
+        ? 0
+        : frame < SCENE_FRAMES[2]
+          ? 1
+          : 2;
     setActiveStep((prev) => (prev === next ? prev : next));
   }, []);
 
@@ -265,9 +270,9 @@ export default function Hero() {
             style={{ fontSize: 14, fontFamily: "system-ui, sans-serif" }}
           >
             {[
-              { num: "1", label: "Pick a ticket" },
-              { num: "2", label: "We find sources" },
-              { num: "3", label: "You get context" },
+              { num: "1", label: "Your dashboard" },
+              { num: "2", label: "Pick a ticket" },
+              { num: "3", label: "Context ready" },
             ].map((step, i) => {
               const isActive = activeStep === i;
               return (

@@ -5,50 +5,62 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import { MockCard } from "../components/MockCard";
 import {
   COLORS,
   CROSSFADE_FRAMES,
   SCENE_3_DURATION,
-  SPRING_BOUNCY,
   SPRING_ENTER,
   SPRING_SUBTLE,
   STAGGER_FRAMES,
 } from "../constants";
 
-const SECTION_STAGGER = STAGGER_FRAMES * 4; // 16 frames between sections
+/* ─────────────────────────────────────────────────────────
+ * Scene 3: Context Page — the money shot
+ *
+ * Clean layout: header + sidebar sources + 3 content sections.
+ * Only show what's readable at video scale.
+ * ───────────────────────────────────────────────────────── */
+
+const SECTION_STAGGER = STAGGER_FRAMES * 5;
+
+const SOURCE_GROUPS = [
+  { label: "Slack", color: COLORS.pink, count: "1" },
+  { label: "GitHub", color: COLORS.green, count: "1" },
+  { label: "Jira", color: COLORS.blue, count: "1" },
+];
+
+const SECTIONS = [
+  {
+    title: "Summary",
+    borderColor: COLORS.primary,
+    bgTint: "rgba(0,212,170,0.04)",
+    content:
+      "Real-time sync for mobile using WebSockets. Architecture decided with mobile team input.",
+  },
+  {
+    title: "Key Decisions",
+    borderColor: COLORS.violet,
+    bgTint: "transparent",
+    content: "WebSockets over polling — <200ms latency budget",
+    bullet: true,
+  },
+  {
+    title: "Requirements",
+    borderColor: COLORS.amber,
+    bgTint: "transparent",
+    content: "Ship by Sprint 13 per mobile team",
+  },
+];
 
 export const ContextScene: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  // Unified card entrance: translateY + opacity + scale
-  const cardProgress = spring({ frame, fps, config: SPRING_ENTER });
-  const cardTranslateY = interpolate(cardProgress, [0, 1], [30, 0]);
-  const cardOpacity = interpolate(cardProgress, [0, 1], [0, 1]);
-  const cardScale = interpolate(cardProgress, [0, 1], [0.97, 1]);
+  const cardProg = spring({ frame, fps, config: SPRING_ENTER });
+  const cardY = interpolate(cardProg, [0, 1], [24, 0]);
+  const cardOpacity = interpolate(cardProg, [0, 1], [0, 1]);
+  const cardScale = interpolate(cardProg, [0, 1], [0.98, 1]);
 
-  // Section fade-in animations
-  const sectionProgress = (index: number) =>
-    spring({
-      frame: Math.max(0, frame - 10 - index * SECTION_STAGGER),
-      fps,
-      config: SPRING_SUBTLE,
-    });
-
-  const headerProgress = sectionProgress(0);
-  const bgProgress = sectionProgress(1);
-  const decisionsProgress = sectionProgress(2);
-  const promptProgress = sectionProgress(3);
-
-  // AI Prompt glow — smooth interpolation instead of binary
-  const promptGlow = spring({
-    frame: Math.max(0, frame - 10 - 3 * SECTION_STAGGER),
-    fps,
-    config: SPRING_BOUNCY,
-  });
-
-  // End-of-scene fade out
   const fadeOut = interpolate(
     frame,
     [SCENE_3_DURATION - CROSSFADE_FRAMES, SCENE_3_DURATION],
@@ -56,10 +68,26 @@ export const ContextScene: React.FC = () => {
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
   );
 
-  const sectionStyle = (progress: number): React.CSSProperties => ({
-    opacity: progress,
-    transform: `translateY(${interpolate(progress, [0, 1], [12, 0])}px)`,
+  const sp = (i: number) =>
+    spring({
+      frame: Math.max(0, frame - 8 - i * SECTION_STAGGER),
+      fps,
+      config: SPRING_SUBTLE,
+    });
+
+  const ss = (p: number): React.CSSProperties => ({
+    opacity: p,
+    transform: `translateY(${interpolate(p, [0, 1], [10, 0])}px)`,
   });
+
+  const headerProg = sp(0);
+  const sidebarProg = sp(0.5);
+
+  // Breathing glow on "ready" badge during dwell time (frame 80+)
+  const breathCycle = Math.max(0, frame - 80);
+  const breathGlow = breathCycle > 0
+    ? 0.3 + 0.3 * Math.sin(breathCycle * 0.08)
+    : 0;
 
   return (
     <AbsoluteFill
@@ -73,122 +101,219 @@ export const ContextScene: React.FC = () => {
     >
       <div
         style={{
-          width: 820,
-          transform: `translateY(${cardTranslateY}px) scale(${cardScale})`,
+          width: 860,
+          transform: `translateY(${cardY}px) scale(${cardScale})`,
           opacity: cardOpacity,
         }}
       >
-        <MockCard
+        <div
           style={{
-            boxShadow: `0 0 60px rgba(0,212,170,0.08), 0 0 80px rgba(0,212,170,0.03)`,
+            background: COLORS.card,
+            border: `1px solid ${COLORS.border}`,
+            borderRadius: 12,
+            boxShadow: `${COLORS.cardShadow}, 0 0 50px rgba(0,212,170,0.04)`,
+            overflow: "hidden",
           }}
         >
           {/* Header */}
-          <div style={sectionStyle(headerProgress)}>
-            <div
-              style={{
-                fontSize: 30,
-                fontWeight: 700,
-                color: COLORS.text,
-                marginBottom: 28,
-              }}
-            >
-              ENG-42: Authentication Flow
-            </div>
-          </div>
-
-          {/* Background section */}
-          <div style={{ ...sectionStyle(bgProgress), marginBottom: 20 }}>
-            <div
-              style={{
-                fontSize: 20,
-                fontWeight: 600,
-                color: COLORS.text,
-                marginBottom: 10,
-              }}
-            >
-              Background
-            </div>
-            <div
-              style={{
-                fontSize: 18,
-                color: COLORS.textMuted,
-                lineHeight: 1.6,
-              }}
-            >
-              OAuth 2.0 with JWT refresh tokens discussed in Slack #engineering.
-              <br />
-              Sarah proposed PKCE flow for SPA security (see thread from Feb 14).
-            </div>
-          </div>
-
-          {/* Key Decisions section */}
-          <div style={{ ...sectionStyle(decisionsProgress), marginBottom: 20 }}>
-            <div
-              style={{
-                fontSize: 20,
-                fontWeight: 600,
-                color: COLORS.text,
-                marginBottom: 10,
-              }}
-            >
-              Key Decisions
-            </div>
-            <div
-              style={{
-                fontSize: 18,
-                color: COLORS.textMuted,
-                lineHeight: 1.8,
-              }}
-            >
-              <div style={{ display: "flex", gap: 8 }}>
-                <span style={{ color: COLORS.teal }}>*</span>
-                <span>Use jose library for JWT (no native crypto dependency)</span>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <span style={{ color: COLORS.teal }}>*</span>
-                <span>15-min access token, 7-day refresh with rotation</span>
-              </div>
-            </div>
-          </div>
-
-          {/* AI Prompt section */}
-          <div style={sectionStyle(promptProgress)}>
-            <div
-              style={{
-                borderLeft: `3px solid ${COLORS.aiAccent}`,
-                background: "rgba(139,92,246,0.06)",
-                borderRadius: 8,
-                padding: 20,
-                boxShadow: `0 0 ${interpolate(promptGlow, [0, 1], [0, 24])}px ${COLORS.aiAccentGlow}`,
-              }}
-            >
-              <div
+          <div
+            style={{
+              ...ss(headerProg),
+              padding: "20px 28px",
+              borderBottom: `1px solid ${COLORS.border}`,
+              background: COLORS.elevated,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span
                 style={{
-                  fontSize: 16,
-                  fontWeight: 600,
-                  color: COLORS.aiAccent,
-                  marginBottom: 10,
-                  textTransform: "uppercase" as const,
-                  letterSpacing: 1,
-                }}
-              >
-                AI Prompt
-              </div>
-              <div
-                style={{
-                  fontSize: 17,
-                  color: COLORS.textMuted,
-                  lineHeight: 1.6,
                   fontFamily: "monospace",
+                  fontSize: 16,
+                  color: COLORS.primary,
+                  fontWeight: 600,
                 }}
               >
-                Implement OAuth 2.0 PKCE flow with jose JWT, 15-min access tokens,
-                and 7-day rotating refresh tokens...
-              </div>
+                ENG-421
+              </span>
+              <span
+                style={{
+                  fontSize: 19,
+                  fontWeight: 600,
+                  color: COLORS.foreground,
+                  fontFamily: "system-ui, sans-serif",
+                }}
+              >
+                Real-time sync for mobile
+              </span>
+            </div>
+            {/* Status badge with breathing glow */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                background: "rgba(16,185,129,0.1)",
+                borderRadius: 20,
+                padding: "4px 12px",
+                boxShadow: breathGlow > 0
+                  ? `0 0 ${breathGlow * 16}px rgba(16,185,129,${breathGlow * 0.4})`
+                  : "none",
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 3,
+                  background: COLORS.emerald,
+                  boxShadow: breathGlow > 0
+                    ? `0 0 ${breathGlow * 8}px ${COLORS.emerald}`
+                    : "none",
+                }}
+              />
+              <span
+                style={{ fontSize: 13, color: COLORS.emerald, fontWeight: 500 }}
+              >
+                ready
+              </span>
             </div>
           </div>
-        </MockCard>
+
+          {/* Body */}
+          <div style={{ display: "flex", minHeight: 320 }}>
+            {/* Sidebar */}
+            <div
+              style={{
+                ...ss(sidebarProg),
+                width: 160,
+                borderRight: `1px solid ${COLORS.border}`,
+                padding: "18px 16px",
+                flexShrink: 0,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 10,
+                  textTransform: "uppercase" as const,
+                  letterSpacing: "0.14em",
+                  color: COLORS.muted,
+                  marginBottom: 14,
+                }}
+              >
+                Sources (3)
+              </div>
+              {SOURCE_GROUPS.map((src, i) => {
+                const p = spring({
+                  frame: Math.max(0, frame - 14 - i * 6),
+                  fps,
+                  config: SPRING_SUBTLE,
+                });
+                return (
+                  <div
+                    key={src.label}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 9,
+                      marginBottom: 11,
+                      opacity: p,
+                      transform: `translateX(${interpolate(p, [0, 1], [-6, 0])}px)`,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        background: src.color,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: 14,
+                        color: COLORS.foreground,
+                        fontFamily: "system-ui, sans-serif",
+                      }}
+                    >
+                      {src.label}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: COLORS.muted,
+                        marginLeft: "auto",
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      {src.count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Content */}
+            <div style={{ flex: 1, padding: "18px 24px" }}>
+              {SECTIONS.map((section, i) => {
+                const p = sp(i + 1);
+                return (
+                  <div key={section.title} style={{ ...ss(p), marginBottom: 16 }}>
+                    <div
+                      style={{
+                        borderLeft: `3px solid ${section.borderColor}`,
+                        background: section.bgTint,
+                        borderRadius: 6,
+                        padding: "14px 18px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 16,
+                          fontWeight: 600,
+                          color: COLORS.foreground,
+                          fontFamily: "system-ui, sans-serif",
+                          marginBottom: 8,
+                        }}
+                      >
+                        {section.title}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          color: COLORS.muted,
+                          lineHeight: 1.6,
+                          fontFamily: "system-ui, sans-serif",
+                        }}
+                      >
+                        {section.bullet ? (
+                          <span>
+                            <span
+                              style={{
+                                color: COLORS.primary,
+                                fontWeight: 600,
+                                marginRight: 8,
+                              }}
+                            >
+                              •
+                            </span>
+                            {section.content}
+                          </span>
+                        ) : (
+                          section.content
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
     </AbsoluteFill>
   );

@@ -455,4 +455,98 @@ describe('resolveVisibleLabels', () => {
     expect(visible.has('a')).toBe(true)
     expect(visible.has('b')).toBe(false)
   })
+
+  it('uses different yOffset for hub vs normal nodes', () => {
+    // Hub at y=100 with yOffset=18 → label center at y=118
+    // Normal at y=100 with yOffset=15 → label center at y=115
+    // These are close but with different offsets the rects may or may not overlap
+    // The key assertion: hub and a node at the same position should be detected as overlapping
+    const nodes = [
+      node('hub', 'Person', 'Daulet Ashikbayev'),
+      node('a', 'Ticket', 'CON-54'),
+    ]
+    const positions = new Map([
+      ['hub', { x: 200, y: 100 }],
+      ['a', { x: 200, y: 100 }],
+    ])
+    const counts = new Map([['hub', 5], ['a', 1]])
+    // With correct hub yOffset=18, hub label rect and normal label rect overlap
+    const visible = resolveVisibleLabels(nodes, positions, counts, 'hub', 9, 15, 18)
+    expect(visible.has('hub')).toBe(true)
+    expect(visible.has('a')).toBe(false) // overlaps with hub
+  })
+})
+
+// ─── Regression: name matching edge cases ────────────────────────────────────
+
+describe('filterToUserPerson name matching edge cases', () => {
+  it('does NOT false-match short Person names via substring (e.g. "Al" inside "Ashikbayev")', () => {
+    const nodes = [
+      node('p1', 'Person', 'Al'),           // short name — should NOT match
+      node('p2', 'Person', 'Daulet'),        // correct match
+      node('t1', 'Ticket'),
+    ]
+    // p1 has more connections — would win the fallback heuristic
+    const edges = [
+      edge('p1', 't1'), edge('p1', 'p2'),
+      edge('p2', 't1'),
+    ]
+    const result = filterToUserPerson(nodes, edges, 'Daulet Ashikbayev')
+    const kept = result.nodes.find((n) => n.entity_type === 'Person')
+    // "Al" is only 2 chars — should be skipped by min-length guard
+    // "Daulet" (6 chars) is inside "Daulet Ashikbayev" — correct match
+    expect(kept?.name).toBe('Daulet')
+  })
+
+  it('does NOT match with userName shorter than 3 characters', () => {
+    const nodes = [
+      node('p1', 'Person', 'Al Smith'),
+      node('p2', 'Person', 'Bob Jones'),
+      node('t1', 'Ticket'),
+    ]
+    const edges = [edge('p1', 't1'), edge('p2', 't1')]
+    // userName "Al" is too short for name matching — should fall back to heuristic
+    const result = filterToUserPerson(nodes, edges, 'Al')
+    // Both have 1 connection, reduce picks first (p1)
+    const personCount = result.nodes.filter((n) => n.entity_type === 'Person').length
+    expect(personCount).toBe(1)
+  })
+
+  it('handles userName that is an email address', () => {
+    const nodes = [
+      node('p1', 'Person', 'daulet@gmail.com'),
+      node('p2', 'Person', 'Alice Smith'),
+      node('t1', 'Ticket'),
+    ]
+    const edges = [edge('p1', 't1'), edge('p2', 't1')]
+    const result = filterToUserPerson(nodes, edges, 'daulet@gmail.com')
+    const kept = result.nodes.find((n) => n.entity_type === 'Person')
+    expect(kept?.name).toBe('daulet@gmail.com')
+  })
+})
+
+// ─── Regression: forceLayout clamping ────────────────────────────────────────
+
+describe('forceLayout clamping', () => {
+  it('returns positions for at most 80 nodes when input exceeds limit', () => {
+    const nodes = Array.from({ length: 90 }, (_, i) => node(`n${i}`, 'Ticket'))
+    const edges = nodes.slice(1, 80).map((n) => edge('n0', n.id))
+    const result = forceLayout(nodes, edges, 400, 280)
+    // Should return positions for the first 80 only
+    expect(result.size).toBe(80)
+    // Nodes 80-89 should NOT have positions
+    for (let i = 80; i < 90; i++) {
+      expect(result.has(`n${i}`)).toBe(false)
+    }
+  })
+
+  it('footer should only count visible (positioned) nodes', () => {
+    // Simulate what the component does: filter nodes by positions map
+    const allNodes = Array.from({ length: 90 }, (_, i) => node(`n${i}`, 'Ticket'))
+    const positions = forceLayout(allNodes, [], 400, 280)
+    const visibleNodes = allNodes.filter((n) => positions.has(n.id))
+    const footer = buildFooterText(visibleNodes)
+    // Should say "80 tickets" not "90 tickets"
+    expect(footer).toBe('80 tickets')
+  })
 })

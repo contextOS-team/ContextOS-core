@@ -5,46 +5,59 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import { MockCard } from "../components/MockCard";
-import { ProgressBar } from "../components/ProgressBar";
-import { SourceIcon } from "../components/SourceIcon";
 import {
   COLORS,
   CROSSFADE_FRAMES,
   SCENE_2_DURATION,
   SPRING_ENTER,
   SPRING_SUBTLE,
-  STAGGER_FRAMES,
 } from "../constants";
 
-type SourceName = "Slack" | "GitHub" | "Linear";
+/* ─────────────────────────────────────────────────────────
+ * Scene 2: Zoom into ticket → sources assemble
+ *
+ *    0ms   ticket header visible at top
+ *  ~300ms  first source slides in
+ *  ~700ms  second source
+ * ~1100ms  third source
+ * ~1800ms  "3 sources found" + teal flash
+ * ~2600ms  cross-fade out
+ * ───────────────────────────────────────────────────────── */
 
-interface SourceRow {
-  name: SourceName;
+interface Source {
   color: string;
+  initial: string;
+  label: string;
+  text: string;
 }
 
-const SOURCES: SourceRow[] = [
-  { name: "Slack", color: COLORS.teal },
-  { name: "GitHub", color: COLORS.teal },
-  { name: "Linear", color: COLORS.teal },
+const SOURCES: Source[] = [
+  {
+    color: COLORS.pink,
+    initial: "S",
+    label: "Slack",
+    text: "Decided on WebSockets over polling",
+  },
+  {
+    color: COLORS.green,
+    initial: "G",
+    label: "GitHub",
+    text: "RFC #147 merged — 4 approvals",
+  },
+  {
+    color: COLORS.blue,
+    initial: "J",
+    label: "Jira",
+    text: "Must ship by Sprint 13",
+  },
 ];
 
-const SOURCE_STAGGER = STAGGER_FRAMES * 3; // 12 frames between each source
-const PROGRESS_DELAY = 15; // frames after source appears before bar fills
-const CONTENT_START = 15; // delay for content after card entrance
+const STAGGER = 14;
 
 export const SourcesScene: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  // Card entrance animation
-  const cardProgress = spring({ frame, fps, config: SPRING_ENTER });
-  const cardTranslateY = interpolate(cardProgress, [0, 1], [30, 0]);
-  const cardOpacity = interpolate(cardProgress, [0, 1], [0, 1]);
-  const cardScale = interpolate(cardProgress, [0, 1], [0.97, 1]);
-
-  // Cross-fade out at end of scene
   const fadeOut = interpolate(
     frame,
     [SCENE_2_DURATION - CROSSFADE_FRAMES, SCENE_2_DURATION],
@@ -52,128 +65,222 @@ export const SourcesScene: React.FC = () => {
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
   );
 
-  // Animated label transition
-  const labelTransitionFrame = 90;
-  const searchingOpacity = interpolate(
+  // Ticket header entrance
+  const headerProg = spring({ frame, fps, config: SPRING_SUBTLE });
+
+  // Counter
+  const allIn = 8 + STAGGER * 2 + 18;
+  const counterProg = spring({
+    frame: Math.max(0, frame - allIn),
+    fps,
+    config: SPRING_SUBTLE,
+  });
+
+  // Flash
+  const flashFrame = allIn + 8;
+  const flash = interpolate(
     frame,
-    [labelTransitionFrame - 6, labelTransitionFrame],
-    [1, 0],
+    [flashFrame, flashFrame + 6, flashFrame + 18],
+    [0, 0.4, 0],
     { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
   );
-  const foundOpacity = interpolate(
-    frame,
-    [labelTransitionFrame, labelTransitionFrame + 6],
-    [0, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
-  );
-  const foundScale = interpolate(
-    frame,
-    [labelTransitionFrame, labelTransitionFrame + 8, labelTransitionFrame + 16],
-    [0.95, 1.05, 1],
-    { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
-  );
+
+  // Timeline spine — grows downward from ticket to sources
+  const spineProg = spring({
+    frame: Math.max(0, frame - 6),
+    fps,
+    config: SPRING_SUBTLE,
+  });
 
   return (
     <AbsoluteFill
       style={{
         display: "flex",
+        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         backgroundColor: COLORS.background,
         opacity: fadeOut,
       }}
     >
+      {/* Ticket header — wrapped in a card */}
       <div
         style={{
-          width: 820,
-          transform: `translateY(${cardTranslateY}px) scale(${cardScale})`,
-          opacity: cardOpacity,
+          opacity: headerProg,
+          transform: `translateY(${interpolate(headerProg, [0, 1], [10, 0])}px)`,
+          marginBottom: 0,
         }}
       >
-        <MockCard>
-          {/* Animated label */}
-          <div
+        <div
+          style={{
+            background: COLORS.card,
+            border: `1px solid ${COLORS.border}`,
+            borderRadius: 12,
+            padding: "14px 24px",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            boxShadow: COLORS.cardShadow,
+          }}
+        >
+          <span
             style={{
-              fontSize: 18,
-              color: COLORS.textMuted,
-              marginBottom: 28,
               fontFamily: "monospace",
-              position: "relative",
-              height: 20,
+              fontSize: 18,
+              color: COLORS.primary,
+              fontWeight: 600,
             }}
           >
-            <span style={{ position: "absolute", opacity: searchingOpacity }}>
-              Searching sources...
-            </span>
-            <span
+            ENG-421
+          </span>
+          <span style={{ color: COLORS.border, fontSize: 18 }}>·</span>
+          <span
+            style={{
+              fontSize: 18,
+              color: COLORS.foreground,
+              fontFamily: "system-ui, sans-serif",
+              fontWeight: 500,
+            }}
+          >
+            Real-time sync for mobile
+          </span>
+        </div>
+      </div>
+
+      {/* Timeline spine */}
+      <div
+        style={{
+          width: 1,
+          height: interpolate(spineProg, [0, 1], [0, 28]),
+          background: `rgba(0,212,170,${interpolate(spineProg, [0, 1], [0, 0.2])})`,
+          marginBottom: 0,
+        }}
+      />
+
+      {/* Sources */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          width: 520,
+        }}
+      >
+        {SOURCES.map((src, i) => {
+          const delay = 8 + i * STAGGER;
+          const p = spring({
+            frame: Math.max(0, frame - delay),
+            fps,
+            config: SPRING_ENTER,
+          });
+          const tx = i % 2 === 0
+            ? interpolate(p, [0, 1], [-60, 0])
+            : interpolate(p, [0, 1], [60, 0]);
+
+          return (
+            <div
+              key={src.label}
               style={{
-                position: "absolute",
-                opacity: foundOpacity,
-                transform: `scale(${foundScale})`,
-                color: COLORS.teal,
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                background: COLORS.card,
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: 12,
+                padding: "14px 20px",
+                opacity: p,
+                transform: `translateX(${tx}px)`,
+                boxShadow: COLORS.cardShadow,
               }}
             >
-              3 sources found
-            </span>
-          </div>
-
-          {/* Source rows */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-            {SOURCES.map((source, index) => {
-              const sourceDelay = CONTENT_START + index * SOURCE_STAGGER;
-              const appearProgress = spring({
-                frame: Math.max(0, frame - sourceDelay),
-                fps,
-                config: SPRING_ENTER,
-              });
-
-              const progressBarFrame = Math.max(
-                0,
-                frame - sourceDelay - PROGRESS_DELAY
-              );
-              const barProgress = spring({
-                frame: progressBarFrame,
-                fps,
-                config: SPRING_SUBTLE,
-              });
-
-              const isActive = barProgress > 0.95;
-
-              return (
-                <div
-                  key={source.name}
+              {/* Badge */}
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 17,
+                  background: `${src.color}15`,
+                  border: `1px solid ${src.color}30`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <span
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 16,
-                    opacity: appearProgress,
-                    transform: `scale(${interpolate(
-                      appearProgress,
-                      [0, 1],
-                      [0.8, 1]
-                    )})`,
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color: src.color,
+                    fontFamily: "system-ui, sans-serif",
                   }}
                 >
-                  <SourceIcon name={source.name} active={isActive} />
-                  <div style={{ flex: 1 }}>
-                    <div
-                      style={{
-                        fontSize: 20,
-                        color: COLORS.text,
-                        marginBottom: 8,
-                        fontWeight: 500,
-                      }}
-                    >
-                      {source.name}
-                    </div>
-                    <ProgressBar progress={barProgress} color={source.color} />
-                  </div>
+                  {src.initial}
+                </span>
+              </div>
+
+              {/* Text */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: src.color,
+                    fontFamily: "monospace",
+                    textTransform: "uppercase" as const,
+                    letterSpacing: "0.12em",
+                    marginBottom: 3,
+                  }}
+                >
+                  {src.label}
                 </div>
-              );
-            })}
-          </div>
-        </MockCard>
+                <div
+                  style={{
+                    fontSize: 15,
+                    color: COLORS.foreground,
+                    fontFamily: "system-ui, sans-serif",
+                    opacity: 0.85,
+                  }}
+                >
+                  {src.text}
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
+
+      {/* Counter */}
+      <div
+        style={{
+          marginTop: 28,
+          opacity: counterProg,
+          transform: `scale(${interpolate(counterProg, [0, 1], [0.95, 1])})`,
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "monospace",
+            fontSize: 14,
+            color: COLORS.primary,
+            letterSpacing: "0.08em",
+          }}
+        >
+          3 sources found
+        </span>
+      </div>
+
+      {/* Flash */}
+      {flash > 0.01 && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: `radial-gradient(ellipse at center, rgba(0,212,170,${flash * 0.2}) 0%, transparent 60%)`,
+            pointerEvents: "none" as const,
+          }}
+        />
+      )}
     </AbsoluteFill>
   );
 };
