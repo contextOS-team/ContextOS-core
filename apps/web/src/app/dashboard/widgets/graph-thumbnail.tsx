@@ -178,14 +178,14 @@ export function GraphThumbnail({ data, userName }: GraphThumbnailProps) {
           aria-hidden="true"
         >
           {/* edges — hub edges slightly brighter */}
-          {edges.map((edge) => {
+          {edges.map((edge, i) => {
             const src = positions.get(edge.source)
             const tgt = positions.get(edge.target)
             if (!src || !tgt) return null
             const touchesHub = edge.source === hubId || edge.target === hubId
             return (
               <line
-                key={`${edge.source}::${edge.target}`}
+                key={`${edge.source}::${edge.target}::${i}`}
                 x1={src.x}
                 y1={src.y}
                 x2={tgt.x}
@@ -242,7 +242,7 @@ export function GraphThumbnail({ data, userName }: GraphThumbnailProps) {
         {/* footer — human-readable entity counts */}
         <div className="px-4 py-2.5 border-t border-border/50">
           <span className="text-xs text-muted-foreground">
-            {buildFooterText(nodes)}
+            {buildFooterText(nodes.filter((n) => positions.has(n.id)))}
           </span>
         </div>
       </div>

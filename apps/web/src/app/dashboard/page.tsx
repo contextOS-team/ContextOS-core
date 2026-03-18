@@ -53,7 +53,9 @@ function getSummaryLine(
 export default function DashboardPage() {
   const router = useRouter()
   const [userFullName, setUserFullName] = useState('')
-  const firstName = userFullName ? userFullName.split(' ')[0] : ''
+  const firstName = userFullName
+    ? (userFullName.includes('@') ? userFullName.split('@')[0] : userFullName.split(' ')[0])
+    : ''
   const [statuses, setStatuses] = useState<IntegrationStatusResponse | null>(null)
   const [attentionItems, setAttentionItems] = useState<AttentionItem[]>([])
   const [weeklySummary, setWeeklySummary] = useState<DaySummary[]>([])

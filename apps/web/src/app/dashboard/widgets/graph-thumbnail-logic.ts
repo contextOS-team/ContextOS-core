@@ -177,11 +177,13 @@ export function filterToUserPerson(
 
   let userPerson: ApiNode | undefined
 
-  // Strategy 1: match by name
-  if (userName) {
+  // Strategy 1: match by name (require 3+ chars to avoid false substring hits)
+  if (userName && userName.length >= 3) {
     const lower = userName.toLowerCase()
-    userPerson = personNodes.find((n) => n.name.toLowerCase().includes(lower))
-      ?? personNodes.find((n) => lower.includes(n.name.toLowerCase()))
+    userPerson = personNodes.find((n) => {
+      const nodeLower = n.name.toLowerCase()
+      return nodeLower.includes(lower) || (nodeLower.length >= 3 && lower.includes(nodeLower))
+    })
   }
 
   // Strategy 2: fall back to most-connected
@@ -212,11 +214,12 @@ export function resolveVisibleLabels(
   connectionCounts: Map<string, number>,
   hubId: string | null,
   fontSize: number = 9,
+  yOffsetNormal: number = 15,
+  yOffsetHub: number = 18,
 ): Set<string> {
   // Approximate label bounding box: width ≈ charCount * fontSize * 0.55, height ≈ fontSize * 1.4
   const charWidth = fontSize * 0.55
   const labelHeight = fontSize * 1.4
-  const yOffset = 15 // labels are rendered below nodes
 
   interface Rect { x1: number; y1: number; x2: number; y2: number }
 
@@ -224,7 +227,8 @@ export function resolveVisibleLabels(
     const pos = positions.get(nodeId)
     if (!pos) return null
     const w = label.length * charWidth
-    const cy = pos.y + yOffset
+    const yOff = nodeId === hubId ? yOffsetHub : yOffsetNormal
+    const cy = pos.y + yOff
     return { x1: pos.x - w / 2, y1: cy - labelHeight / 2, x2: pos.x + w / 2, y2: cy + labelHeight / 2 }
   }
 
