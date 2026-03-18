@@ -7,13 +7,18 @@ The client uses the Google Gemini SDK.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass
+from typing import TypeVar
 from uuid import UUID
 
 from google import genai
 from google.genai import types
+from pydantic import BaseModel
+
+T = TypeVar("T", bound=BaseModel)
 
 from src.observability.laminar import observe, set_laminar_metadata
 from src.observability.langfuse_client import langfuse_observe, update_generation
@@ -101,6 +106,63 @@ class LLMClient:
             latency_ms=round(elapsed_ms, 2),
             model=self.model_name,
         )
+
+    @langfuse_observe(name="llm_generate_json", as_type="generation")
+    @observe(name="llm_generate_json")
+    async def generate_json(
+        self,
+        prompt: str,
+        schema: type[T],
+        system_prompt: str | None = None,
+        workspace_id: UUID | None = None,
+    ) -> T:
+        """Generate a structured JSON response conforming to a Pydantic schema.
+
+        Uses Gemini's response_mime_type + response_schema for guaranteed
+        JSON conformance. Raises on failure — callers handle fallback.
+        """
+        if workspace_id is not None:
+            set_laminar_metadata(workspace_id=str(workspace_id))
+
+        config = types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            response_mime_type="application/json",
+            response_schema=schema,
+        )
+
+        start = time.monotonic()
+
+        response = await self._client.aio.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=config,
+        )
+
+        elapsed_ms = (time.monotonic() - start) * 1000
+
+        usage = response.usage_metadata
+        prompt_tokens = usage.prompt_token_count if usage else 0
+        completion_tokens = usage.candidates_token_count if usage else 0
+        total_tokens = usage.total_token_count if usage else 0
+
+        raw_text = response.text or ""
+
+        update_generation(
+            model=self.model_name,
+            usage={
+                "input": prompt_tokens,
+                "output": completion_tokens,
+                "total": total_tokens,
+            },
+            output=raw_text[:1000],
+        )
+
+        logger.debug(
+            "generate_json: %d tokens in %.0fms",
+            total_tokens, elapsed_ms,
+        )
+
+        return schema.model_validate_json(raw_text)
 
 
 # ---------------------------------------------------------------------------
