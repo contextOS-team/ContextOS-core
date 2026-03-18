@@ -193,7 +193,7 @@ async def _validate_ticket_identifiers(
 
 async def _inject_user_decisions(
     session: AsyncSession,
-    user,
+    user: UserContext,
     all_nodes: list[GraphNodeResponse],
     all_edges: list[GraphEdgeResponse],
 ) -> tuple[list[GraphNodeResponse], list[GraphEdgeResponse]]:
@@ -203,28 +203,24 @@ async def _inject_user_decisions(
     Decision nodes linked by decided_in edges, and appends them to the
     response lists (deduplicating against already-included node IDs).
     """
-    # Find user's person node IDs via identity mappings.
-    # Check ALL emails for this user (they may be registered under a different email
-    # than the one they log in with).
-    id_stmt = select(IdentityMapping.canonical_person_id).where(
+    # Single query: fetch all identity mappings for this workspace,
+    # then filter by email in Python to avoid two round-trips
+    id_stmt = select(
+        IdentityMapping.canonical_person_id,
+        IdentityMapping.email,
+    ).where(
         IdentityMapping.workspace_id == user.workspace_id,
         IdentityMapping.canonical_person_id.is_not(None),
     )
     id_result = await session.execute(id_stmt)
-    all_person_ids = list({row[0] for row in id_result if row[0]})
+    all_mappings = [(row[0], row[1]) for row in id_result if row[0]]
 
-    # Try exact email match first
-    email_stmt = select(IdentityMapping.canonical_person_id).where(
-        IdentityMapping.workspace_id == user.workspace_id,
-        IdentityMapping.email == user.email,
-        IdentityMapping.canonical_person_id.is_not(None),
-    )
-    email_result = await session.execute(email_stmt)
-    person_ids = [row[0] for row in email_result if row[0]]
+    # Try exact email match
+    person_ids = list({pid for pid, email in all_mappings if email == user.email})
 
     # Fallback: if single-member workspace, use all person IDs
     # (safe because there's only one user, so all identities belong to them)
-    if not person_ids and all_person_ids:
+    if not person_ids and all_mappings:
         from src.models.user import WorkspaceMember
         member_stmt = select(func.count()).select_from(WorkspaceMember).where(
             WorkspaceMember.workspace_id == user.workspace_id,
@@ -232,7 +228,7 @@ async def _inject_user_decisions(
         )
         member_count = (await session.execute(member_stmt)).scalar_one()
         if member_count == 1:
-            person_ids = all_person_ids
+            person_ids = list({pid for pid, _ in all_mappings})
 
     if not person_ids:
         return all_nodes, all_edges

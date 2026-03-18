@@ -226,13 +226,15 @@ async def generate_digest(
         if extraction.topics:
             metadata["topics"] = [t.model_dump() for t in extraction.topics]
 
-        # Wire extracted entities into the knowledge graph
-        await _wire_graph(session, workspace_id, extraction, integration, top_channels)
-
     await emit_activity(
         session, workspace_id, "messages_digest",
         metadata=metadata,
     )
+
+    # Wire graph after emitting the event so the activity event is visible
+    # immediately even if graph wiring is slow or fails
+    if extraction is not None:
+        await _wire_graph(session, workspace_id, extraction, integration, top_channels)
 
     n_decisions = len(extraction.decisions) if extraction else 0
     n_actions = len(extraction.action_items) if extraction else 0

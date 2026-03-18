@@ -5,7 +5,7 @@ import { Clock, ArrowUp, Zap, ChevronDown, Lightbulb, CircleCheck, Tag } from 'l
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { ActivityEvent, EventType } from './types'
+import type { ActivityEvent, EventType, DigestDecision, DigestActionItem, DigestTopic } from './types'
 import { EVENT_ICONS, INTEGRATION_COLORS, getEventCategory } from './types'
 import {
   formatEventDescription,
@@ -402,22 +402,6 @@ function StandardRow({
       <Timestamp timestamp={timestamp} fullTimestamp={fullTimestamp} />
     </div>
   )
-}
-
-interface DigestDecision {
-  title: string
-  rationale: string
-  participants: string[]
-}
-
-interface DigestActionItem {
-  description: string
-  assignee: string | null
-}
-
-interface DigestTopic {
-  title: string
-  ticket_refs: string[]
 }
 
 function DigestRow({

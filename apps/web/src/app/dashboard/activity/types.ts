@@ -58,6 +58,24 @@ export const INTEGRATION_COLORS: Record<string, string> = {
   telegram: '#0088CC',
 }
 
+/** Structured digest extraction types (mirrors backend Pydantic models) */
+
+export interface DigestDecision {
+  title: string
+  rationale: string
+  participants: string[]
+}
+
+export interface DigestActionItem {
+  description: string
+  assignee: string | null
+}
+
+export interface DigestTopic {
+  title: string
+  ticket_refs: string[]
+}
+
 /** Semantic category for visual grouping */
 export type EventCategory = 'sync' | 'integration' | 'content' | 'digest'
 

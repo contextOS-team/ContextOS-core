@@ -7,7 +7,6 @@ The client uses the Google Gemini SDK.
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from dataclasses import dataclass
@@ -50,6 +49,44 @@ class LLMClient:
         settings = get_settings()
         self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
+    async def _call_gemini(
+        self,
+        prompt: str,
+        config: types.GenerateContentConfig,
+    ) -> tuple[str, int, int, int, float]:
+        """Shared Gemini call with timing and observability.
+
+        Returns (text, prompt_tokens, completion_tokens, total_tokens, elapsed_ms).
+        """
+        start = time.monotonic()
+
+        response = await self._client.aio.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=config,
+        )
+
+        elapsed_ms = (time.monotonic() - start) * 1000
+
+        usage = response.usage_metadata
+        prompt_tokens = usage.prompt_token_count if usage else 0
+        completion_tokens = usage.candidates_token_count if usage else 0
+        total_tokens = usage.total_token_count if usage else 0
+
+        text = response.text or ""
+
+        update_generation(
+            model=self.model_name,
+            usage={
+                "input": prompt_tokens,
+                "output": completion_tokens,
+                "total": total_tokens,
+            },
+            output=text[:1000],
+        )
+
+        return text, prompt_tokens, completion_tokens, total_tokens, elapsed_ms
+
     @langfuse_observe(name="llm_generate", as_type="generation")
     @observe(name="llm_generate")
     async def generate(
@@ -70,32 +107,8 @@ class LLMClient:
             system_instruction=system_prompt,
         )
 
-        start = time.monotonic()
-
-        response = await self._client.aio.models.generate_content(
-            model=self.model_name,
-            contents=prompt,
-            config=config,
-        )
-
-        elapsed_ms = (time.monotonic() - start) * 1000
-
-        usage = response.usage_metadata
-        prompt_tokens = usage.prompt_token_count if usage else 0
-        completion_tokens = usage.candidates_token_count if usage else 0
-        total_tokens = usage.total_token_count if usage else 0
-
-        text = response.text or ""
-
-        # Update Langfuse generation with model, usage, and output
-        update_generation(
-            model=self.model_name,
-            usage={
-                "input": prompt_tokens,
-                "output": completion_tokens,
-                "total": total_tokens,
-            },
-            output=text[:1000],
+        text, prompt_tokens, completion_tokens, total_tokens, elapsed_ms = (
+            await self._call_gemini(prompt, config)
         )
 
         return LLMResponse(
@@ -130,31 +143,8 @@ class LLMClient:
             response_schema=schema,
         )
 
-        start = time.monotonic()
-
-        response = await self._client.aio.models.generate_content(
-            model=self.model_name,
-            contents=prompt,
-            config=config,
-        )
-
-        elapsed_ms = (time.monotonic() - start) * 1000
-
-        usage = response.usage_metadata
-        prompt_tokens = usage.prompt_token_count if usage else 0
-        completion_tokens = usage.candidates_token_count if usage else 0
-        total_tokens = usage.total_token_count if usage else 0
-
-        raw_text = response.text or ""
-
-        update_generation(
-            model=self.model_name,
-            usage={
-                "input": prompt_tokens,
-                "output": completion_tokens,
-                "total": total_tokens,
-            },
-            output=raw_text[:1000],
+        raw_text, _, _, total_tokens, elapsed_ms = (
+            await self._call_gemini(prompt, config)
         )
 
         logger.debug(
