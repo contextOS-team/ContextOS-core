@@ -9,15 +9,15 @@ import { formatRelativeTime } from '@/lib/utils'
 import {
   getIntegrationStatus,
   getDashboardAttention,
-  getDashboardResurfaced,
   getDashboardWeeklySummary,
   getDashboardSprint,
+  fetchMyWorkGraph,
   type IntegrationStatusResponse,
   type AttentionItem,
-  type ResurfacedItem,
   type DaySummary,
   type SprintData,
 } from '@/lib/api'
+import type { LensGraphResponse } from '@/components/graph/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import Link from 'next/link'
 import { fetchContextPages, type ContextPageRow, STATUS_COLORS } from '@/lib/context-feed'
@@ -52,46 +52,61 @@ function getSummaryLine(
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [firstName, setFirstName] = useState('')
+  const [userFullName, setUserFullName] = useState('')
+  const firstName = userFullName ? userFullName.split(' ')[0] : ''
   const [statuses, setStatuses] = useState<IntegrationStatusResponse | null>(null)
   const [attentionItems, setAttentionItems] = useState<AttentionItem[]>([])
-  const [resurfacedItems, setResurfacedItems] = useState<ResurfacedItem[]>([])
   const [weeklySummary, setWeeklySummary] = useState<DaySummary[]>([])
+  const [graphData, setGraphData] = useState<LensGraphResponse | null>(null)
   const [sprintData, setSprintData] = useState<SprintData | null>(null)
   const [recentPages, setRecentPages] = useState<ContextPageRow[]>([])
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     setError(null)
     try {
+      // Chain user → workspace as one promise so it runs parallel with the rest
+      const supabase = createClient()
+      const userAndWorkspace = supabase.auth.getUser().then(async (res) => {
+        const u = res.data?.user
+        if (!u) return { user: null, wsId: null }
+        const { data: m } = await supabase
+          .from('workspace_members')
+          .select('workspace_id')
+          .eq('user_id', u.id)
+          .single()
+        return { user: u, wsId: m?.workspace_id ?? null }
+      })
+
       const results = await Promise.allSettled([
         getDashboardAttention(),
-        getDashboardResurfaced(),
         getDashboardWeeklySummary(),
         getDashboardSprint(),
         getIntegrationStatus(),
         fetchContextPages(),
-        createClient().auth.getUser(),
+        userAndWorkspace,
+        fetchMyWorkGraph(),
       ])
 
       const attention = results[0].status === 'fulfilled' ? results[0].value : []
-      const resurfaced = results[1].status === 'fulfilled' ? results[1].value : []
-      const weekly = results[2].status === 'fulfilled' ? results[2].value : []
-      const sprint = results[3].status === 'fulfilled' ? results[3].value : null
-      const integrations = results[4].status === 'fulfilled' ? results[4].value : null
-      const pages = results[5].status === 'fulfilled' ? results[5].value : []
-      const userRes = results[6].status === 'fulfilled' ? results[6].value : null
+      const weekly = results[1].status === 'fulfilled' ? results[1].value : []
+      const sprint = results[2].status === 'fulfilled' ? results[2].value : null
+      const integrations = results[3].status === 'fulfilled' ? results[3].value : null
+      const pages = results[4].status === 'fulfilled' ? results[4].value : []
+      const uw = results[5].status === 'fulfilled' ? results[5].value : null
+      const graph = results[6].status === 'fulfilled' ? results[6].value : null
 
-      const u = userRes?.data?.user
-      if (u) {
-        const fullName = u.user_metadata?.full_name as string | undefined
-        setFirstName(fullName ? fullName.split(' ')[0] : (u.email?.split('@')[0] ?? ''))
+      if (uw?.user) {
+        const fullName = uw.user.user_metadata?.full_name as string | undefined
+        setUserFullName(fullName ?? uw.user.email ?? '')
+        if (uw.wsId) setWorkspaceId(uw.wsId)
       }
 
       setAttentionItems(attention)
-      setResurfacedItems(resurfaced)
       setWeeklySummary(weekly)
+      setGraphData(graph)
       setSprintData(sprint)
       setStatuses(integrations)
       setRecentPages((pages as ContextPageRow[]).slice(0, 5))
@@ -137,9 +152,9 @@ export default function DashboardPage() {
 
   const widgetsEmpty =
     attentionItems.length === 0 &&
-    resurfacedItems.length === 0 &&
     weeklySummary.filter(d => d.activity_count > 0 || d.contexts_updated > 0 || d.prs_merged > 0).length === 0
-  const isTrulyEmpty = widgetsEmpty && recentPages.length === 0
+  const hasGraphData = (graphData?.all_nodes?.length ?? 0) > 0
+  const isTrulyEmpty = widgetsEmpty && recentPages.length === 0 && !hasGraphData && !workspaceId
 
   // Derive context page stats for the smart banner
   const errorPages = recentPages.filter(p => p.status === 'error' || p.status === 'stale')
@@ -155,7 +170,7 @@ export default function DashboardPage() {
       {/* Header: greeting with context-aware subtitle + sprint badge */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-lg font-semibold text-foreground">
+          <p className="text-lg font-semibold text-foreground" style={{ textWrap: 'balance' }}>
             {getGreeting()}{firstName ? `, ${firstName}` : ''}
           </p>
           {(() => {
@@ -164,7 +179,7 @@ export default function DashboardPage() {
             )
             const summary = getSummaryLine(attentionItems.length, activeDays.length)
             if (summary) {
-              return <p className="text-sm text-muted-foreground mt-0.5">{summary}</p>
+              return <p className="text-sm text-muted-foreground mt-0.5 tabular-nums">{summary}</p>
             }
             // Context-aware subtitle when widgets are empty but pages exist
             if (widgetsEmpty && recentPages.length > 0) {
@@ -241,7 +256,7 @@ export default function DashboardPage() {
                       {olderPages.length > 0 && (
                         <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60 mb-1.5">Today</p>
                       )}
-                      <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden divide-y divide-border mb-3">
+                      <div className="widget-card rounded-xl divide-y divide-border mb-3">
                         {todayPages.map((page) => (
                           <ContextRow key={page.id} page={page} onClick={() => router.push(`/dashboard/context/${page.id}`)} />
                         ))}
@@ -255,7 +270,7 @@ export default function DashboardPage() {
                       {todayPages.length > 0 && (
                         <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60 mb-1.5">Earlier</p>
                       )}
-                      <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden divide-y divide-border">
+                      <div className="widget-card rounded-xl divide-y divide-border">
                         {olderPages.map((page) => (
                           <ContextRow key={page.id} page={page} onClick={() => router.push(`/dashboard/context/${page.id}`)} />
                         ))}
@@ -268,9 +283,9 @@ export default function DashboardPage() {
 
             {/* Right column */}
             <div className="space-y-6">
-              <ActivityFeedMini />
-              <GraphThumbnail />
-              <RecentDecisions />
+              <ActivityFeedMini workspaceId={workspaceId} />
+              <GraphThumbnail data={graphData} userName={userFullName} />
+              <RecentDecisions data={graphData} />
             </div>
           </div>
 
@@ -292,10 +307,10 @@ function ContextRow({ page, onClick }: { page: ContextPageRow; onClick: () => vo
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left px-4 py-3 active:scale-[0.99] transition-all duration-150 hover:bg-muted/40 border-l-[3px] ${colors.border} ${isError ? 'bg-red-500/[0.03]' : ''}`}
+      className={`w-full text-left px-4 py-3 active:scale-[0.96] transition-[transform,background-color] duration-150 hover:bg-muted/40 border-l-[3px] ${colors.border} ${isError ? 'bg-red-500/[0.03]' : ''}`}
     >
       <div className="flex items-center justify-between gap-3">
-        <span style={{ textWrap: 'balance' }} className={`text-sm truncate ${isRecent ? 'font-medium text-foreground' : 'font-normal text-foreground/70'}`}>
+        <span className={`text-sm truncate ${isRecent ? 'font-medium text-foreground' : 'font-normal text-foreground/70'}`}>
           {displayTitle}
         </span>
         <span className={`shrink-0 h-2 w-2 rounded-full ${colors.dot}`} />
