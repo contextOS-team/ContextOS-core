@@ -20,7 +20,7 @@ export function SprintBadge({ sprint }: SprintBadgeProps) {
       <span className="font-mono tabular-nums text-teal-500">
         {sprint.completed}/{sprint.total}
       </span>
-      <span className="text-muted-foreground/60">
+      <span className="text-muted-foreground/60 tabular-nums">
         {daysRemaining === 0
           ? 'ends today'
           : daysRemaining === 1

@@ -14,7 +14,7 @@ export function NeedsAttention({ items }: NeedsAttentionProps) {
       <h3 className="section-label mb-3">
         Needs Attention ({items.length})
       </h3>
-      <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden divide-y divide-border/50">
+      <div className="widget-card rounded-xl divide-y divide-border/50">
         {items.map((item) => {
           const isPR = item.type === 'pr_review' || item.type === 'mr_review'
           const href =
@@ -23,7 +23,7 @@ export function NeedsAttention({ items }: NeedsAttentionProps) {
               : undefined
 
           const content = (
-            <div className="flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-muted/40">
+            <div className="flex items-center gap-3 px-4 py-3 transition-[background-color] duration-150 hover:bg-muted/40">
               <div className="shrink-0 text-muted-foreground">
                 {isPR ? (
                   <GitPullRequest className="h-4 w-4" />

@@ -11,7 +11,7 @@ export function Resurfaced({ items }: ResurfacedProps) {
   return (
     <div>
       <h3 className="section-label mb-3">Resurfaced</h3>
-      <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden divide-y divide-border/50">
+      <div className="widget-card rounded-xl divide-y divide-border/50">
         {items.map((item) => (
           <div
             key={item.id}

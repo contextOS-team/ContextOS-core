@@ -44,7 +44,7 @@ export function ThisWeek({ days }: ThisWeekProps) {
   }
 
   return (
-    <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden">
+    <div className="widget-card rounded-xl">
       <div className="px-4 py-3">
         {/* Header */}
         <div className="flex items-center justify-between">

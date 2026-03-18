@@ -1,11 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import { Lightbulb } from 'lucide-react'
 import Link from 'next/link'
-import { fetchMyWorkGraph } from '@/lib/api'
-import { Skeleton } from '@/components/ui/skeleton'
-import type { ApiNode } from '@/components/graph/types'
+import type { ApiNode, LensGraphResponse } from '@/components/graph/types'
 import { formatRelativeTime } from '@/lib/utils'
 
 interface DecisionDisplay {
@@ -13,7 +11,6 @@ interface DecisionDisplay {
   text: string
   participants: string[]
   sourceChannel: string | null
-  source: string | null
   date: string | null
 }
 
@@ -26,68 +23,29 @@ function parseDecisionNode(node: ApiNode): DecisionDisplay {
       ? (props.participants as string[])
       : [],
     sourceChannel: (props.source_channel as string) ?? null,
-    source: (props.source as string) ?? null,
     date: (props.date as string) ?? null,
   }
 }
 
-export function RecentDecisions() {
-  const [decisions, setDecisions] = useState<DecisionDisplay[] | null>(null)
-  const [loading, setLoading] = useState(true)
+interface RecentDecisionsProps {
+  data: LensGraphResponse | null
+}
 
-  useEffect(() => {
-    let cancelled = false
+export function RecentDecisions({ data }: RecentDecisionsProps) {
+  const decisions = useMemo(() => {
+    if (!data) return null
+    return data.all_nodes
+      .filter((n) => n.entity_type === 'Decision')
+      .sort((a, b) => {
+        const dateA = (a.properties?.date as string) ?? ''
+        const dateB = (b.properties?.date as string) ?? ''
+        return dateB.localeCompare(dateA)
+      })
+      .slice(0, 3)
+      .map(parseDecisionNode)
+  }, [data])
 
-    async function load() {
-      try {
-        const data = await fetchMyWorkGraph()
-        if (cancelled) return
-
-        const decisionNodes = data.all_nodes
-          .filter((n) => n.entity_type === 'Decision')
-          .sort((a, b) => {
-            const dateA = (a.properties?.date as string) ?? ''
-            const dateB = (b.properties?.date as string) ?? ''
-            return dateB.localeCompare(dateA)
-          })
-          .slice(0, 3)
-
-        setDecisions(decisionNodes.map(parseDecisionNode))
-      } catch {
-        setDecisions([])
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  // Loading skeleton
-  if (loading) {
-    return (
-      <div>
-        <h3 className="section-label mb-3">Recent Decisions</h3>
-        <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden divide-y divide-border/40">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="px-4 py-3 flex items-start gap-3">
-              <Skeleton className="h-5 w-5 rounded shrink-0 mt-0.5" />
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-3.5 w-full" />
-                <Skeleton className="h-3.5 w-3/4" />
-                <Skeleton className="h-2.5 w-24" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  // No decisions — render nothing
+  // data is null only on API error — parent handles loading state
   if (!decisions || decisions.length === 0) return null
 
   return (
@@ -102,7 +60,7 @@ export function RecentDecisions() {
         </Link>
       </div>
 
-      <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden">
+      <div className="widget-card rounded-xl">
         {decisions.map((decision, idx) => (
           <div
             key={decision.id}
