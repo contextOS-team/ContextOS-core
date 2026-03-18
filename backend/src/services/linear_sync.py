@@ -70,7 +70,7 @@ query($teamId: String!, $after: String) {
                 id identifier title description
                 state { name type }
                 priority
-                assignee { name }
+                assignee { id name }
                 team { name }
                 project { name }
                 labels { nodes { name } }
@@ -89,7 +89,7 @@ query($issueId: String!) {
         id identifier title description
         state { name type }
         priority
-        assignee { name }
+        assignee { id name }
         team { name }
         project { name }
         labels { nodes { name } }
@@ -160,6 +160,7 @@ async def sync_tickets_for_teams(
     synced_team_names: list[str] = []
 
     _sync_t0 = time.monotonic()
+    all_issues: list[dict] = []
 
     async with SyncRunLogger("linear", workspace_id) as srl:
         await emit_activity(session, workspace_id, "sync_started", metadata={"integration": "linear"})
@@ -179,6 +180,12 @@ async def sync_tickets_for_teams(
                 # Upsert tickets and comments
                 ticket_ids = await _upsert_tickets(session, workspace_id, issues)
                 comment_count = await _upsert_comments(session, workspace_id, issues, ticket_ids)
+
+                # Create graph nodes for synced tickets
+                graph_count = await _extract_graph_for_tickets(session, workspace_id, issues, ticket_ids)
+                logger.info("Created graph nodes for %d tickets in team %s", graph_count, team_id)
+
+                all_issues.extend(issues)
 
                 total_tickets += len(ticket_ids)
                 total_comments += comment_count
@@ -214,11 +221,13 @@ async def sync_tickets_for_teams(
             )
 
             # Seed Linear roster for identity resolution (fail-silent)
+            roster_seeded = False
             try:
                 from src.services.identity_resolution import fetch_linear_roster, seed_roster
 
                 members = await fetch_linear_roster(session, workspace_id, user_id, settings)
                 seeded = await seed_roster(session, workspace_id, "linear", members)
+                roster_seeded = True
                 logger.info(
                     "Linear roster seeding: %d members for workspace %s",
                     seeded,
@@ -226,9 +235,29 @@ async def sync_tickets_for_teams(
                 )
             except Exception:
                 logger.warning(
-                    "Linear roster seeding failed for workspace %s (non-blocking)",
+                    "Linear roster seeding failed for workspace %s — "
+                    "assignee linking will be skipped (identity mappings may not exist)",
                     workspace_id,
                     exc_info=True,
+                )
+
+            # Link ticket assignees to Person graph nodes (fail-silent)
+            # Only attempt if roster was seeded, since this depends on
+            # identity_mappings being populated with canonical_person_ids.
+            if roster_seeded:
+                try:
+                    await _link_ticket_assignees(session, workspace_id, all_issues)
+                except Exception:
+                    logger.warning(
+                        "Ticket assignee linking failed for workspace %s (non-blocking)",
+                        workspace_id,
+                        exc_info=True,
+                    )
+            else:
+                logger.info(
+                    "Skipping ticket assignee linking for workspace %s — "
+                    "roster seeding did not complete",
+                    workspace_id,
                 )
 
         except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError) as e:
@@ -283,6 +312,9 @@ async def sync_single_ticket(
 
         ticket_ids = await _upsert_tickets(session, workspace_id, [issue])
         await _upsert_comments(session, workspace_id, [issue], ticket_ids)
+
+        # Create graph nodes for the synced ticket
+        await _extract_graph_for_tickets(session, workspace_id, [issue], ticket_ids)
 
         # Return the upserted ticket
         linear_id = issue["id"]
@@ -361,6 +393,115 @@ async def _upsert_tickets(
 
     await session.flush()
     return ticket_id_map
+
+
+async def _link_ticket_assignees(
+    session: AsyncSession,
+    workspace_id: UUID,
+    issues: list[dict],
+) -> int:
+    """Create assigned_to graph edges from ticket nodes to person nodes.
+
+    For each issue with an assignee, looks up the identity mapping by
+    Linear user ID and creates an assigned_to edge from the ticket's
+    graph node to the canonical Person node.
+
+    Fail-silent: logs errors but never raises.
+    """
+    from src.models.identity_mapping import IdentityMapping
+    from src.services.graph_ops import compute_fingerprint, upsert_edge
+
+    linked = 0
+    for issue in issues:
+        assignee = issue.get("assignee")
+        if not assignee or not assignee.get("id"):
+            continue
+
+        identifier = issue.get("identifier")
+        if not identifier:
+            continue
+
+        try:
+            # Look up identity mapping for this Linear user
+            im_stmt = select(IdentityMapping).where(
+                IdentityMapping.workspace_id == workspace_id,
+                IdentityMapping.platform == "linear",
+                IdentityMapping.platform_user_id == assignee["id"],
+                IdentityMapping.canonical_person_id.is_not(None),
+            )
+            im_result = await session.execute(im_stmt)
+            mapping = im_result.scalar_one_or_none()
+            if not mapping:
+                continue
+
+            # Look up ticket graph node
+            fp = compute_fingerprint("Ticket", identifier)
+            from src.models.graph_node import GraphNode
+
+            node_stmt = select(GraphNode.id).where(
+                GraphNode.workspace_id == workspace_id,
+                GraphNode.fingerprint == fp,
+                GraphNode.deleted_at.is_(None),
+            )
+            node_result = await session.execute(node_stmt)
+            ticket_node_id = node_result.scalar_one_or_none()
+            if not ticket_node_id:
+                continue
+
+            await upsert_edge(
+                session, workspace_id,
+                ticket_node_id, mapping.canonical_person_id,
+                "assigned_to",
+            )
+            linked += 1
+        except Exception:
+            logger.debug(
+                "Failed to link assignee for %s (non-blocking)",
+                identifier,
+                exc_info=True,
+            )
+
+    if linked:
+        logger.info(
+            "Linked %d ticket assignees to Person nodes for workspace %s",
+            linked, workspace_id,
+        )
+    return linked
+
+
+async def _extract_graph_for_tickets(
+    session: AsyncSession,
+    workspace_id: UUID,
+    issues: list[dict],
+    ticket_id_map: dict[str, UUID],
+) -> int:
+    """Create graph nodes and extract entities for synced tickets."""
+    from src.services.graph_extractor import extract_and_populate_graph
+
+    count = 0
+    for issue in issues:
+        linear_id = issue["id"]
+        ticket_uuid = ticket_id_map.get(linear_id)
+        if not ticket_uuid:
+            continue
+
+        identifier = issue.get("identifier", "")
+        title = issue.get("title", "")
+        description = issue.get("description") or ""
+        content = f"{identifier}: {title}\n\n{description}"
+
+        await extract_and_populate_graph(
+            session=session,
+            workspace_id=workspace_id,
+            content=content,
+            source_type="linear_ticket",
+            source_id=ticket_uuid,
+            source_name=f"{identifier}: {title}",
+            source_external_id=identifier,
+        )
+        count += 1
+
+    return count
 
 
 async def _upsert_comments(

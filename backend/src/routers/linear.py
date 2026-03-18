@@ -4,6 +4,7 @@ Provides connect, callback, disconnect, status, team selection, and
 sync endpoints for managing the Linear workspace integration.
 """
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
@@ -120,6 +121,45 @@ async def callback(
             metadata={"integration": "linear"},
             actor_id=user_id,
         )
+
+        # Auto-sync: fetch all teams and trigger sync in background
+        try:
+            fresh_token = await get_valid_access_token(session, workspace_id, user_id, settings)
+            teams = await fetch_teams(fresh_token)
+            team_ids = [t["id"] for t in teams]
+            if team_ids:
+                async def _run_auto_sync():
+                    from src.db import async_session
+                    async with async_session() as bg_session:
+                        try:
+                            await sync_tickets_for_teams(
+                                bg_session,
+                                workspace_id,
+                                user_id,
+                                team_ids,
+                                settings,
+                            )
+                            await bg_session.commit()
+                        except Exception:
+                            await bg_session.rollback()
+                            logger.error(
+                                "Auto-sync after connect failed for workspace %s",
+                                workspace_id,
+                                exc_info=True,
+                            )
+
+                asyncio.create_task(_run_auto_sync())
+                logger.info(
+                    "Queued auto-sync for workspace %s with %d teams",
+                    workspace_id,
+                    len(team_ids),
+                )
+        except Exception:
+            logger.warning(
+                "Failed to auto-sync after connect (workspace %s)",
+                workspace_id,
+                exc_info=True,
+            )
 
         if await is_user_onboarding(session, user_id):
             return RedirectResponse(

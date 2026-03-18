@@ -140,20 +140,24 @@ async def emit_activity(
     metadata: dict | None = None,
     actor_id: uuid.UUID | None = None,
 ) -> None:
-    """Insert an activity event row. Fail-silent -- never breaks callers."""
+    """Insert an activity event row. Fail-silent -- never breaks callers.
+
+    Uses a savepoint so a failed INSERT does not poison the outer transaction.
+    """
     try:
-        await session.execute(
-            text(
-                "INSERT INTO activity_events (workspace_id, actor_id, event_type, metadata)"
-                " VALUES (:workspace_id, :actor_id, :event_type, :metadata::jsonb)"
-            ),
-            {
-                "workspace_id": workspace_id,
-                "actor_id": actor_id,
-                "event_type": event_type,
-                "metadata": json.dumps(metadata or {}),
-            },
-        )
+        async with session.begin_nested():
+            await session.execute(
+                text(
+                    "INSERT INTO activity_events (workspace_id, actor_id, event_type, metadata)"
+                    " VALUES (:workspace_id, :actor_id, :event_type, :metadata::jsonb)"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "actor_id": actor_id,
+                    "event_type": event_type,
+                    "metadata": json.dumps(metadata or {}),
+                },
+            )
     except Exception:
         logger.warning(
             "emit_activity failed: type=%s workspace=%s",

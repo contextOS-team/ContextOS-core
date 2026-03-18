@@ -689,6 +689,27 @@ async def generate_context_page(
         await session.flush()
         await session.commit()
 
+        # Feed generated context page into the knowledge graph
+        try:
+            from src.services.graph_extractor import extract_and_populate_graph
+
+            await extract_and_populate_graph(
+                session=session,
+                workspace_id=workspace_id,
+                content=llm_response.text,
+                source_type="context_page",
+                source_id=context_page.id,
+                source_name=f"{ticket.identifier}: {ticket.title}",
+                source_external_id=ticket.identifier,
+            )
+            await session.commit()
+        except Exception:
+            logger.warning(
+                "Graph extraction from context page failed for %s (non-blocking)",
+                ticket_identifier,
+                exc_info=True,
+            )
+
         logger.info(
             "Generated context page for %s (tokens=%d, sources=%d)",
             ticket_identifier,
@@ -913,6 +934,27 @@ async def generate_context_page_stream(
 
         await session.flush()
         await session.commit()
+
+        # Feed generated context page into the knowledge graph
+        try:
+            from src.services.graph_extractor import extract_and_populate_graph
+
+            await extract_and_populate_graph(
+                session=session,
+                workspace_id=workspace_id,
+                content=llm_response.text,
+                source_type="context_page",
+                source_id=context_page.id,
+                source_name=f"{ticket.identifier}: {ticket.title}",
+                source_external_id=ticket.identifier,
+            )
+            await session.commit()
+        except Exception:
+            logger.warning(
+                "Graph extraction from context page failed for %s (non-blocking)",
+                ticket_identifier,
+                exc_info=True,
+            )
 
         yield {"event": "step_complete", "source": "synthesize", "detail": "Context generated"}
         yield {"event": "complete", "context_page_id": str(context_page.id)}
