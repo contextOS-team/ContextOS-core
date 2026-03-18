@@ -431,9 +431,15 @@ function DigestRow({
   const { Icon, description, timestamp, fullTimestamp, brandColor } = useEventData(event)
   const summary = event.metadata.summary as string | undefined
   const topChannels = event.metadata.top_channels as string[] | undefined
-  const decisions = event.metadata.decisions as DigestDecision[] | undefined
-  const actionItems = event.metadata.action_items as DigestActionItem[] | undefined
-  const topics = event.metadata.topics as DigestTopic[] | undefined
+  const decisions = Array.isArray(event.metadata.decisions)
+    ? (event.metadata.decisions as DigestDecision[])
+    : undefined
+  const actionItems = Array.isArray(event.metadata.action_items)
+    ? (event.metadata.action_items as DigestActionItem[])
+    : undefined
+  const topics = Array.isArray(event.metadata.topics)
+    ? (event.metadata.topics as DigestTopic[])
+    : undefined
 
   const hasStructuredData = (decisions && decisions.length > 0)
     || (actionItems && actionItems.length > 0)
@@ -516,7 +522,7 @@ function DigestRow({
                       <div key={i} className="rounded-lg bg-amber-500/[0.04] border border-amber-500/10 px-3 py-2">
                         <p className="text-sm text-foreground">{d.title}</p>
                         <p className="text-xs text-muted-foreground/60 mt-0.5">{d.rationale}</p>
-                        {d.participants.length > 0 && (
+                        {Array.isArray(d.participants) && d.participants.length > 0 && (
                           <div className="flex items-center gap-1 mt-1">
                             {d.participants.map((p) => (
                               <span key={p} className="text-[10px] bg-muted/60 rounded px-1.5 py-0.5 text-muted-foreground">
@@ -569,7 +575,7 @@ function DigestRow({
                     {topics.map((t, i) => (
                       <span key={i} className="text-xs bg-muted/50 rounded-md px-2 py-0.5 text-foreground/70">
                         {t.title}
-                        {t.ticket_refs.length > 0 && (
+                        {Array.isArray(t.ticket_refs) && t.ticket_refs.length > 0 && (
                           <span className="ml-1 text-muted-foreground/50 font-mono text-[10px]">
                             {t.ticket_refs.join(', ')}
                           </span>

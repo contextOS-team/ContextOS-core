@@ -10,7 +10,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel as PydanticBaseModel
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -203,41 +203,36 @@ async def _inject_user_decisions(
     Decision nodes linked by decided_in edges, and appends them to the
     response lists (deduplicating against already-included node IDs).
     """
-    # Find user's person node IDs via identity mappings
+    # Find user's person node IDs via identity mappings.
+    # Check ALL emails for this user (they may be registered under a different email
+    # than the one they log in with).
     id_stmt = select(IdentityMapping.canonical_person_id).where(
+        IdentityMapping.workspace_id == user.workspace_id,
+        IdentityMapping.canonical_person_id.is_not(None),
+    )
+    id_result = await session.execute(id_stmt)
+    all_person_ids = list({row[0] for row in id_result if row[0]})
+
+    # Try exact email match first
+    email_stmt = select(IdentityMapping.canonical_person_id).where(
         IdentityMapping.workspace_id == user.workspace_id,
         IdentityMapping.email == user.email,
         IdentityMapping.canonical_person_id.is_not(None),
     )
-    id_result = await session.execute(id_stmt)
-    person_ids = [row[0] for row in id_result if row[0]]
+    email_result = await session.execute(email_stmt)
+    person_ids = [row[0] for row in email_result if row[0]]
 
-    # Fallback: if no identity mapping for this email, find Person nodes
-    # that are already in the response (from ticket cluster traversal)
-    # or try matching by user's display name from auth metadata
-    if not person_ids:
-        # Check if any Person nodes are already in the response
-        existing_person_ids = [
-            n.id for n in all_nodes if n.entity_type == "Person"
-        ]
-        if existing_person_ids:
-            person_ids = existing_person_ids
-        else:
-            # Last resort: find all Person nodes in workspace that have decided_in edges
-            fallback_stmt = (
-                select(GraphEdge.source_node_id)
-                .distinct()
-                .join(GraphNode, GraphNode.id == GraphEdge.source_node_id)
-                .where(
-                    GraphEdge.workspace_id == user.workspace_id,
-                    GraphEdge.relationship_type == "decided_in",
-                    GraphEdge.deleted_at.is_(None),
-                    GraphNode.entity_type == "Person",
-                    GraphNode.deleted_at.is_(None),
-                )
-            )
-            fb_result = await session.execute(fallback_stmt)
-            person_ids = [row[0] for row in fb_result]
+    # Fallback: if single-member workspace, use all person IDs
+    # (safe because there's only one user, so all identities belong to them)
+    if not person_ids and all_person_ids:
+        from src.models.user import WorkspaceMember
+        member_stmt = select(func.count()).select_from(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == user.workspace_id,
+            WorkspaceMember.deleted_at.is_(None),
+        )
+        member_count = (await session.execute(member_stmt)).scalar_one()
+        if member_count == 1:
+            person_ids = all_person_ids
 
     if not person_ids:
         return all_nodes, all_edges
@@ -302,15 +297,23 @@ async def _inject_user_decisions(
             ))
             existing_ids.add(str_id)
 
+    existing_edge_keys = {
+        (e.source, e.target, e.relationship_type) for e in all_edges
+    }
     person_id_strs = {str(pid) for pid in person_ids}
     for edge in decision_edges:
-        if str(edge.source_node_id) in person_id_strs:
-            new_edges.append(GraphEdgeResponse(
-                source=str(edge.source_node_id),
-                target=str(edge.target_node_id),
-                relationship_type=edge.relationship_type,
-                properties=edge.properties or {},
-            ))
+        if str(edge.source_node_id) not in person_id_strs:
+            continue
+        key = (str(edge.source_node_id), str(edge.target_node_id), edge.relationship_type)
+        if key in existing_edge_keys:
+            continue
+        new_edges.append(GraphEdgeResponse(
+            source=key[0],
+            target=key[1],
+            relationship_type=edge.relationship_type,
+            properties=edge.properties or {},
+        ))
+        existing_edge_keys.add(key)
 
     return new_nodes, new_edges
 

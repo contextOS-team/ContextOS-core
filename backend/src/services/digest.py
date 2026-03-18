@@ -301,8 +301,9 @@ async def _find_person_nodes_by_name(
 ) -> dict[str, UUID]:
     """Find existing Person nodes whose name matches any of the given first names.
 
-    Returns a dict of lowercase_name → node_id for matches found.
-    Only matches against existing roster-based Person nodes (not LLM-extracted).
+    Returns a dict of lowercase_name → node_id for unambiguous matches.
+    Skips ambiguous first-name matches (e.g. "Alice" when both "Alice Smith"
+    and "Alice Chen" exist).
     """
     if not names:
         return {}
@@ -316,20 +317,31 @@ async def _find_person_nodes_by_name(
     )
     person_nodes = result.fetchall()
 
-    # Build lookup: lowercase first-name or full-name → node_id
-    name_to_id: dict[str, UUID] = {}
+    # Build lookup: full name → node_id (always safe)
+    full_name_to_id: dict[str, UUID] = {}
+    # Track first-name → list of node_ids to detect ambiguity
+    first_name_to_ids: dict[str, list[UUID]] = {}
     for row in person_nodes:
         full = row.name.lower().strip()
+        full_name_to_id[full] = row.id
         first = full.split()[0] if full else ""
-        name_to_id[full] = row.id
         if first:
-            name_to_id[first] = row.id
+            first_name_to_ids.setdefault(first, []).append(row.id)
 
     matched: dict[str, UUID] = {}
     for name in names:
         key = name.lower().strip()
-        if key in name_to_id:
-            matched[name] = name_to_id[key]
+        # Try exact full-name match first
+        if key in full_name_to_id:
+            matched[name] = full_name_to_id[key]
+        # Try first-name match only if unambiguous (exactly one person with that first name)
+        elif key in first_name_to_ids and len(first_name_to_ids[key]) == 1:
+            matched[name] = first_name_to_ids[key][0]
+        elif key in first_name_to_ids:
+            logger.debug(
+                "Skipping ambiguous name match '%s' — %d Person nodes match",
+                name, len(first_name_to_ids[key]),
+            )
     return matched
 
 
@@ -340,30 +352,28 @@ async def _wire_graph(
 ) -> None:
     """Create graph nodes and edges from structured extraction.
 
-    - Decision → Decision node with `decided_in` edges to existing Person nodes
-    - Topics with ticket_refs → Ticket nodes with `discussed_in` edges to Decision nodes
+    - Decision → Decision node with decided_in edges to existing Person nodes
+    - Topics with ticket_refs → standalone Ticket nodes (no cross-linking to
+      decisions — ticket refs belong to their topics, not to unrelated decisions)
     """
     from src.services.graph_ops import upsert_node, upsert_edge
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # Collect all participant names to resolve against existing Person nodes
+    # Resolve participant names against existing Person nodes
     all_participants: list[str] = []
     for d in extraction.decisions:
         all_participants.extend(d.participants)
     person_map = await _find_person_nodes_by_name(session, workspace_id, all_participants)
 
-    # Collect all ticket refs to link to decisions
-    all_ticket_node_ids: list[UUID] = []
-
-    # Create Ticket nodes from topics first (so we can link them to decisions)
+    # Create Ticket nodes from topic refs (standalone, not linked to decisions)
     for topic in extraction.topics:
         for ref in topic.ticket_refs:
             ref = ref.strip().upper()
             if not re.match(r"^[A-Z]{2,10}-\d{1,6}$", ref):
                 continue
             try:
-                ticket_node_id = await upsert_node(
+                await upsert_node(
                     session,
                     workspace_id=workspace_id,
                     entity_type="Ticket",
@@ -372,13 +382,13 @@ async def _wire_graph(
                     source_type="messages_digest",
                     properties={"identifier": ref},
                 )
-                all_ticket_node_ids.append(ticket_node_id)
             except Exception:
                 logger.warning("Failed to upsert Ticket node %s", ref, exc_info=True)
 
-    # Create Decision nodes and wire edges
+    # Create Decision nodes and wire person edges
     for decision in extraction.decisions:
         ext_id = _decision_external_id(decision.title, today)
+        # Step 1: Create the Decision node
         try:
             decision_node_id = await upsert_node(
                 session,
@@ -393,32 +403,29 @@ async def _wire_graph(
                     "date": today,
                 },
             )
-
-            # Edge: Person --decided_in--> Decision (for resolved participants)
-            for name in decision.participants:
-                person_id = person_map.get(name)
-                if person_id:
-                    await upsert_edge(
-                        session, workspace_id,
-                        source_node_id=person_id,
-                        target_node_id=decision_node_id,
-                        relationship_type="decided_in",
-                    )
-                    logger.debug("Linked %s to Decision '%s'", name, decision.title)
-
-            # Edge: Decision --discussed_in--> Ticket (for ticket refs in topics)
-            for ticket_id in all_ticket_node_ids:
-                await upsert_edge(
-                    session, workspace_id,
-                    source_node_id=decision_node_id,
-                    target_node_id=ticket_id,
-                    relationship_type="references",
-                )
-
         except Exception:
             logger.warning(
                 "Failed to create Decision node: %s", decision.title, exc_info=True,
             )
+            continue  # Skip edge creation if node failed
+
+        # Step 2: Wire Person → Decision edges (separate try so node isn't lost)
+        for name in decision.participants:
+            person_id = person_map.get(name)
+            if not person_id:
+                continue
+            try:
+                await upsert_edge(
+                    session, workspace_id,
+                    source_node_id=person_id,
+                    target_node_id=decision_node_id,
+                    relationship_type="decided_in",
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to link %s to Decision '%s'",
+                    name, decision.title, exc_info=True,
+                )
 
 
 # ============================================================

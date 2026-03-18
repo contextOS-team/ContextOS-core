@@ -384,12 +384,33 @@ async def test_prompt_contains_message_content():
         await _cleanup()
 
 
-async def test_graph_decision_nodes_created():
-    """Decisions from extraction create Decision nodes in the graph."""
+async def _insert_person_node(session, name: str) -> str:
+    """Insert a Person graph node and return its ID as string."""
+    import hashlib
+    fp = hashlib.sha256(f"Person:{name}".encode()).hexdigest()
+    r = await session.execute(
+        text(
+            "INSERT INTO graph_nodes (id, workspace_id, entity_type, name, fingerprint, properties) "
+            "VALUES (gen_random_uuid(), :ws, 'Person', :name, :fp, '{}') "
+            "ON CONFLICT (workspace_id, fingerprint) WHERE deleted_at IS NULL "
+            "DO UPDATE SET name = :name "
+            "RETURNING id"
+        ),
+        {"ws": WS_ID, "name": name, "fp": fp},
+    )
+    node_id = r.scalar_one()
+    await session.commit()
+    return str(node_id)
+
+
+async def test_graph_decision_node_with_person_edge():
+    """Decision with a matching participant creates a decided_in edge."""
     await _setup_workspace()
     await _cleanup()
     try:
         async with async_session() as session:
+            # Create a Person node that the LLM participant name will match
+            person_id = await _insert_person_node(session, "Alice Smith")
             await _insert_telegram_messages(session, count=3, chat_title="team")
 
             extraction = _mock_extraction(
@@ -397,7 +418,7 @@ async def test_graph_decision_nodes_created():
                     ExtractedDecision(
                         title="Adopt microservices",
                         rationale="Scalability needs",
-                        participants=["Alice"],
+                        participants=["Alice"],  # Should match "Alice Smith" by first name
                     ),
                 ],
             )
@@ -407,25 +428,86 @@ async def test_graph_decision_nodes_created():
                 await generate_digest(session, WS_ID, "telegram", skip_dedup=True)
                 await session.commit()
 
-            # Check Decision node was created
-            row = await session.execute(
+            # Verify Decision node
+            node_row = await session.execute(
                 text(
-                    "SELECT name, properties FROM graph_nodes "
+                    "SELECT id, name, properties FROM graph_nodes "
                     "WHERE workspace_id = :ws AND entity_type = 'Decision'"
                 ),
                 {"ws": WS_ID},
             )
-            node = row.first()
-            assert node is not None
-            assert node.name == "Adopt microservices"
-            assert node.properties["rationale"] == "Scalability needs"
-            assert node.properties["participants"] == ["Alice"]
+            decision = node_row.first()
+            assert decision is not None
+            assert decision.name == "Adopt microservices"
+            assert decision.properties["rationale"] == "Scalability needs"
+
+            # Verify decided_in edge exists
+            edge_row = await session.execute(
+                text(
+                    "SELECT source_node_id, target_node_id, relationship_type "
+                    "FROM graph_edges "
+                    "WHERE workspace_id = :ws AND relationship_type = 'decided_in'"
+                ),
+                {"ws": WS_ID},
+            )
+            edge = edge_row.first()
+            assert edge is not None
+            assert str(edge.source_node_id) == person_id
+            assert str(edge.target_node_id) == str(decision.id)
     finally:
         await _cleanup()
 
 
-async def test_graph_ticket_nodes_from_topics():
-    """Ticket refs in topics create Ticket nodes in the graph."""
+async def test_graph_ambiguous_name_skips_edge():
+    """When two Person nodes share a first name, no decided_in edge is created."""
+    await _setup_workspace()
+    await _cleanup()
+    try:
+        async with async_session() as session:
+            await _insert_person_node(session, "Alice Smith")
+            await _insert_person_node(session, "Alice Chen")
+            await _insert_telegram_messages(session, count=2, chat_title="team")
+
+            extraction = _mock_extraction(
+                decisions=[
+                    ExtractedDecision(
+                        title="Use Redis",
+                        rationale="Speed",
+                        participants=["Alice"],  # Ambiguous — two Alices
+                    ),
+                ],
+            )
+            mock_client = _make_mock_llm(extraction)
+
+            with patch("src.services.digest.get_llm_client", return_value=mock_client):
+                await generate_digest(session, WS_ID, "telegram", skip_dedup=True)
+                await session.commit()
+
+            # Decision node should exist
+            node_row = await session.execute(
+                text(
+                    "SELECT count(*) FROM graph_nodes "
+                    "WHERE workspace_id = :ws AND entity_type = 'Decision'"
+                ),
+                {"ws": WS_ID},
+            )
+            assert node_row.scalar_one() == 1
+
+            # But NO decided_in edge (ambiguous match skipped)
+            edge_row = await session.execute(
+                text(
+                    "SELECT count(*) FROM graph_edges "
+                    "WHERE workspace_id = :ws AND relationship_type = 'decided_in'"
+                ),
+                {"ws": WS_ID},
+            )
+            assert edge_row.scalar_one() == 0
+    finally:
+        await _cleanup()
+
+
+async def test_graph_ticket_nodes_from_topics_no_decision_edges():
+    """Ticket refs create nodes but do NOT get cross-linked to decisions."""
     await _setup_workspace()
     await _cleanup()
     try:
@@ -433,6 +515,9 @@ async def test_graph_ticket_nodes_from_topics():
             await _insert_telegram_messages(session, count=2, chat_title="eng")
 
             extraction = _mock_extraction(
+                decisions=[
+                    ExtractedDecision(title="Use Postgres", rationale="Reliability", participants=[]),
+                ],
                 topics=[
                     ExtractedTopic(title="Sprint planning", ticket_refs=["ENG-123", "CON-45"]),
                 ],
@@ -443,14 +528,25 @@ async def test_graph_ticket_nodes_from_topics():
                 await generate_digest(session, WS_ID, "telegram", skip_dedup=True)
                 await session.commit()
 
-            row = await session.execute(
+            # 2 Ticket nodes created
+            ticket_count = await session.execute(
                 text(
                     "SELECT count(*) FROM graph_nodes "
                     "WHERE workspace_id = :ws AND entity_type = 'Ticket'"
                 ),
                 {"ws": WS_ID},
             )
-            assert row.scalar_one() == 2
+            assert ticket_count.scalar_one() == 2
+
+            # Zero references edges (no cartesian product)
+            edge_count = await session.execute(
+                text(
+                    "SELECT count(*) FROM graph_edges "
+                    "WHERE workspace_id = :ws AND relationship_type = 'references'"
+                ),
+                {"ws": WS_ID},
+            )
+            assert edge_count.scalar_one() == 0
     finally:
         await _cleanup()
 
