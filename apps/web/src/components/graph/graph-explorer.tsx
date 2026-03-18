@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import {
   ReactFlow,
   Background,
@@ -23,11 +23,14 @@ import '@xyflow/react/dist/style.css'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { fetchGraphNeighborhood, fetchWorkspaceGraph } from '@/lib/api'
+import { fetchGraphNeighborhood, fetchWorkspaceGraph, fetchMyWorkGraph, fetchSprintGraph, fetchBlockedGraph } from '@/lib/api'
 import type {
+  ApiNode,
+  ApiEdge,
   EntityType,
   GraphNodeData,
   GraphEdgeData,
+  GraphLens,
   ZoomTier,
 } from './types'
 import { getZoomTier } from './types'
@@ -62,10 +65,12 @@ const EDGE_TYPES: EdgeTypes = {
 function GraphExplorerInner({
   ticketIdentifier,
   focusNodeId,
+  lens = 'browse',
   className,
 }: {
   ticketIdentifier?: string
   focusNodeId?: string
+  lens?: GraphLens
   className?: string
 }) {
   const reactFlow = useReactFlow()
@@ -84,6 +89,9 @@ function GraphExplorerInner({
   const [hiddenEntityTypes, setHiddenEntityTypes] = useState<Set<EntityType>>(new Set())
   const [showMiniMap, setShowMiniMap] = useState(false)
 
+  // Request ID ref to prevent stale fetch responses from overwriting fresh data
+  const requestIdRef = useRef(0) as MutableRefObject<number>
+
   // Keep a mutable ref for edges so hover callbacks always have the latest
   const edgesRef = useRef(edges)
   edgesRef.current = edges
@@ -96,8 +104,8 @@ function GraphExplorerInner({
 
   const transformAndLayout = useCallback(
     async (
-      apiNodes: Array<{ id: string; entity_type: string; name: string; depth: number; properties: Record<string, unknown> }>,
-      apiEdges: Array<{ source: string; target: string; relationship_type: string; properties: Record<string, unknown> }>,
+      apiNodes: ApiNode[],
+      apiEdges: ApiEdge[],
       focusId?: string,
     ) => {
       // Transform API nodes -> React Flow nodes
@@ -139,8 +147,16 @@ function GraphExplorerInner({
         n.data.connectedCount = countMap.get(n.id) ?? 0
       }
 
+      // Filter out disconnected nodes (0 edges) — they add no value to a graph
+      const connectedNodeIds = new Set<string>()
+      for (const e of rfEdges) {
+        connectedNodeIds.add(e.source)
+        connectedNodeIds.add(e.target)
+      }
+      const connectedNodes = rfNodes.filter((n) => connectedNodeIds.has(n.id))
+
       // Run ELK layout
-      const positioned = await computeElkLayout(rfNodes, rfEdges, 'compact')
+      const positioned = await computeElkLayout(connectedNodes, rfEdges, 'compact')
       setNodes(positioned)
       setEdges(rfEdges)
 
@@ -166,10 +182,31 @@ function GraphExplorerInner({
 
   const fetchData = useCallback(
     async (identifier?: string, focusId?: string) => {
+      const thisRequestId = ++requestIdRef.current
       setLoading(true)
       setError(null)
       try {
-        if (identifier) {
+        if (lens === 'my_work') {
+          const data = await fetchMyWorkGraph()
+          await transformAndLayout(data.all_nodes, data.all_edges, focusId)
+        } else if (lens === 'sprint') {
+          const data = await fetchSprintGraph()
+          await transformAndLayout(data.all_nodes, data.all_edges, focusId)
+        } else if (lens === 'blocked') {
+          const data = await fetchBlockedGraph()
+          // Auto-highlight blocks edges
+          await transformAndLayout(data.all_nodes, data.all_edges, focusId)
+          // After layout, highlight blocks edges
+          setEdges((eds) =>
+            eds.map((e) => ({
+              ...e,
+              data: {
+                ...e.data!,
+                isHighlighted: e.data?.relationshipType === 'blocks',
+              },
+            }))
+          )
+        } else if (identifier) {
           const data = await fetchGraphNeighborhood(identifier)
           await transformAndLayout(data.nodes, data.edges, focusId)
         } else {
@@ -177,12 +214,16 @@ function GraphExplorerInner({
           await transformAndLayout(data.nodes, data.edges, focusId)
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load graph')
+        if (thisRequestId === requestIdRef.current) {
+          setError(err instanceof Error ? err.message : 'Failed to load graph')
+        }
       } finally {
-        setLoading(false)
+        if (thisRequestId === requestIdRef.current) {
+          setLoading(false)
+        }
       }
     },
-    [transformAndLayout]
+    [lens, transformAndLayout, setEdges]
   )
 
   useEffect(() => {
@@ -463,7 +504,12 @@ function GraphExplorerInner({
   // -----------------------------------------------------------------------
 
   return (
-    <div className={cn('relative h-full w-full', className)}>
+    <div
+      className={cn('relative h-full w-full', className)}
+      style={{
+        background: 'radial-gradient(ellipse at 50% 40%, oklch(0.18 0.02 280) 0%, oklch(0.10 0.01 260) 60%, oklch(0.07 0.005 240) 100%)',
+      }}
+    >
       <ReactFlow
         nodes={visibleNodes}
         edges={visibleEdges}
@@ -492,7 +538,7 @@ function GraphExplorerInner({
             style={{ background: 'var(--card)' }}
           />
         )}
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
+        <Background variant={BackgroundVariant.Dots} gap={24} size={0.6} color="oklch(0.30 0.01 260)" />
       </ReactFlow>
 
       <GraphControls
@@ -539,7 +585,7 @@ function GraphExplorerInner({
       )}
 
       {/* Empty state */}
-      {!loading && !error && nodes.length === 0 && <GraphEmpty />}
+      {!loading && !error && nodes.length === 0 && <GraphEmpty lens={lens} />}
     </div>
   )
 }
@@ -595,14 +641,35 @@ function GraphError({
   )
 }
 
-function GraphEmpty() {
+const GRAPH_EMPTY_MESSAGES: Record<string, { title: string; subtitle: string }> = {
+  my_work: {
+    title: 'No assigned tickets found.',
+    subtitle: 'Assign tickets in your project tracker to see your work graph.',
+  },
+  sprint: {
+    title: 'No active sprint.',
+    subtitle: 'Start a cycle in Linear to see sprint connections.',
+  },
+  blocked: {
+    title: 'Nothing blocked.',
+    subtitle: 'All clear — no blocking dependencies found.',
+  },
+  browse: {
+    title: 'No graph data yet.',
+    subtitle: 'Generate context pages to build the knowledge graph.',
+  },
+}
+
+function GraphEmpty({ lens }: { lens?: GraphLens }) {
+  const msg = GRAPH_EMPTY_MESSAGES[lens ?? 'browse'] ?? GRAPH_EMPTY_MESSAGES.browse
+
   return (
     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-[var(--bg)]/80 backdrop-blur-sm">
       <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>
-        No graph data yet.
+        {msg.title}
       </p>
       <p className="text-xs" style={{ color: 'var(--muted-foreground)', opacity: 0.6 }}>
-        Generate context pages to build the knowledge graph.
+        {msg.subtitle}
       </p>
     </div>
   )
@@ -615,10 +682,12 @@ function GraphEmpty() {
 export function GraphExplorer({
   ticketIdentifier,
   focusNodeId,
+  lens,
   className,
 }: {
   ticketIdentifier?: string
   focusNodeId?: string
+  lens?: GraphLens
   className?: string
 }) {
   return (
@@ -626,6 +695,7 @@ export function GraphExplorer({
       <GraphExplorerInner
         ticketIdentifier={ticketIdentifier}
         focusNodeId={focusNodeId}
+        lens={lens}
         className={className}
       />
     </ReactFlowProvider>

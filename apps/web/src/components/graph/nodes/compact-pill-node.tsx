@@ -13,11 +13,22 @@ const SHAPE_SIZES: Record<EntityType, number> = {
   SlackThread: 38, Code: 36, CodeChunk: 36, NotionPage: 38, Meeting: 42,
 }
 
-/** Derive a subtitle from node properties — skip internal metadata. */
+const SUBTITLE_KEYS = ['state', 'title', 'description', 'label', 'summary']
+
+/** Derive a subtitle from node properties — prefer known keys, skip internal metadata. */
 function getSubtitle(data: GraphNodeData): string | null {
   const p = data.properties
+  // Try preferred keys first
+  for (const key of SUBTITLE_KEYS) {
+    const val = p[key]
+    if (val != null && typeof val === 'string' && val.length > 0 && val.length < 50) {
+      return val
+    }
+  }
+  // Fallback: first non-hidden string property
   for (const [key, val] of Object.entries(p)) {
     if (HIDDEN_NODE_PROPERTIES.has(key)) continue
+    if (SUBTITLE_KEYS.includes(key)) continue  // already checked
     if (val != null && typeof val === 'string' && val.length > 0 && val.length < 50) {
       return val
     }
@@ -40,9 +51,12 @@ function CompactPillNodeInner({ data }: NodeProps<CompactPillNodeType>) {
   const isHovered = data.isHovered ?? false
   const connectedCount = data.connectedCount ?? 0
 
-  const maxChars = 14
-  const label =
-    data.name.length > maxChars ? data.name.slice(0, maxChars - 1) + '\u2026' : data.name
+  // Show identifier prefix (e.g. "CON-50") or truncated name
+  const identifierMatch = data.name.match(/^([A-Z][A-Z0-9]+-\d+)/)
+  const maxChars = 16
+  const label = identifierMatch
+    ? identifierMatch[1]
+    : data.name.length > maxChars ? data.name.slice(0, maxChars - 1) + '\u2026' : data.name
   const subtitle = getSubtitle(data)
 
   // Glow ring via box-shadow

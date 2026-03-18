@@ -38,8 +38,8 @@ function StyledEdgeInner({
     targetPosition,
   })
 
-  const effectiveOpacity = isHighlighted || hovered ? 1 : 0.3
-  const effectiveWidth = isHighlighted || hovered ? style.strokeWidth + 0.5 : style.strokeWidth
+  const effectiveOpacity = isHighlighted || hovered ? 1 : 0.6
+  const effectiveWidth = isHighlighted || hovered ? style.strokeWidth + 1 : style.strokeWidth
 
   // Build marker end — use provided one if hasArrow, otherwise none
   const effectiveMarkerEnd = style.hasArrow ? markerEnd : undefined
@@ -64,6 +64,7 @@ function StyledEdgeInner({
           strokeDasharray: style.strokeDasharray === 'none' ? undefined : style.strokeDasharray,
           opacity: effectiveOpacity,
           transition: 'opacity 0.2s, stroke-width 0.2s',
+          filter: isHighlighted || hovered ? `drop-shadow(0 0 3px ${style.color})` : undefined,
         }}
         markerEnd={effectiveMarkerEnd}
       />

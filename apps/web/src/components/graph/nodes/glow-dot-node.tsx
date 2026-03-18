@@ -2,32 +2,29 @@
 
 import { memo } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
-import type { EntityType, GraphNodeData } from '../types'
+import type { GraphNodeData } from '../types'
 import { ENTITY_COLORS } from '../constants'
+import { ENTITY_SHAPE } from '../utils'
 
 type GlowDotNodeType = Node<GraphNodeData, 'dot'>
 
-// ---------------------------------------------------------------------------
-// Shape-aware dot styles — diamonds get a rotated square, circles stay round
-// ---------------------------------------------------------------------------
-
-type DotShape = 'circle' | 'diamond'
-
-const DOT_SHAPE: Partial<Record<EntityType, DotShape>> = {
-  Ticket: 'diamond',
-}
-
 /** Derive dot size and glow intensity from connection count. */
-function getDotSizeFromConnections(count: number) {
-  if (count >= 5) return { size: 32, glowSpread: '0 0 20px 6px', glowOpacity: 60 }
-  if (count >= 2) return { size: 24, glowSpread: '0 0 12px 3px', glowOpacity: 50 }
+function getDotSizeFromConnections(count: number, entityType?: string) {
+  // Person nodes are hubs — render them significantly larger
+  if (entityType === 'Person') {
+    if (count >= 10) return { size: 48, glowSpread: '0 0 32px 10px', glowOpacity: 65 }
+    if (count >= 3) return { size: 40, glowSpread: '0 0 24px 8px', glowOpacity: 60 }
+    return { size: 32, glowSpread: '0 0 16px 5px', glowOpacity: 55 }
+  }
+  if (count >= 8) return { size: 28, glowSpread: '0 0 18px 5px', glowOpacity: 55 }
+  if (count >= 3) return { size: 22, glowSpread: '0 0 12px 3px', glowOpacity: 48 }
   return { size: 16, glowSpread: '0 0 8px 2px', glowOpacity: 40 }
 }
 
 function GlowDotNodeInner({ data }: NodeProps<GlowDotNodeType>) {
   const color = ENTITY_COLORS[data.entityType] ?? 'var(--muted-foreground)'
   const connCount = data.connectedCount ?? 0
-  const { size, glowSpread, glowOpacity } = getDotSizeFromConnections(connCount)
+  const { size, glowSpread, glowOpacity } = getDotSizeFromConnections(connCount, data.entityType)
   const isHovered = data.isHovered ?? false
 
   const rootGlow = data.isRoot ? '0 0 24px 8px' : glowSpread
@@ -39,7 +36,7 @@ function GlowDotNodeInner({ data }: NodeProps<GlowDotNodeType>) {
     ? `${rootGlow} ${glowColor}, 0 0 28px 10px ${hoverGlowColor}`
     : `${rootGlow} ${glowColor}`
 
-  const dotShape = DOT_SHAPE[data.entityType] ?? 'circle'
+  const dotShape = ENTITY_SHAPE[data.entityType] === 'diamond' ? 'diamond' : 'circle'
   const isDiamond = dotShape === 'diamond'
 
   return (
