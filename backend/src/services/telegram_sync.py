@@ -320,10 +320,7 @@ async def _run_telethon_sync(workspace_id: UUID) -> None:
                 await session.commit()
 
                 elapsed = time.monotonic() - _sync_t0
-                srl.info(
-                    "Telegram history sync complete: %d messages in %.1fs",
-                    total_synced, elapsed,
-                )
+                srl.info(f"Telegram history sync complete: {total_synced} messages in {elapsed:.1f}s")
 
             except Exception as e:
                 srl.exception("Telegram history sync failed")
