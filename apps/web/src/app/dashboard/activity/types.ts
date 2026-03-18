@@ -4,11 +4,11 @@ import {
   Sparkles,
   Plug,
   Unplug,
-  UserPlus,
   TicketPlus,
   GitMerge,
   Mic,
   FilePlus,
+  MessageSquare,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -18,11 +18,11 @@ export type EventType =
   | 'context_generated'
   | 'integration_connected'
   | 'integration_disconnected'
-  | 'user_signed_up'
   | 'ticket_created'
   | 'pr_merged'
   | 'meeting_recorded'
   | 'page_created'
+  | 'messages_digest'
 
 export interface ActivityEvent {
   id: string
@@ -39,11 +39,11 @@ export const EVENT_ICONS: Record<EventType, LucideIcon> = {
   context_generated: Sparkles,
   integration_connected: Plug,
   integration_disconnected: Unplug,
-  user_signed_up: UserPlus,
   ticket_created: TicketPlus,
   pr_merged: GitMerge,
   meeting_recorded: Mic,
   page_created: FilePlus,
+  messages_digest: MessageSquare,
 }
 
 /** Official brand colors per integration, keyed by metadata.integration value */
@@ -56,4 +56,22 @@ export const INTEGRATION_COLORS: Record<string, string> = {
   slack: '#4A154B',
   fathom: '#7C3AED',
   telegram: '#0088CC',
+}
+
+/** Semantic category for visual grouping */
+export type EventCategory = 'sync' | 'integration' | 'content' | 'digest'
+
+export function getEventCategory(type: EventType): EventCategory {
+  switch (type) {
+    case 'sync_started':
+    case 'sync_completed':
+      return 'sync'
+    case 'integration_connected':
+    case 'integration_disconnected':
+      return 'integration'
+    case 'messages_digest':
+      return 'digest'
+    default:
+      return 'content'
+  }
 }

@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ActivityEvent } from '../types'
 import {
   formatEventDescription,
+  getEventSubtitle,
   formatTimelineTimestamp,
   formatFullTimestamp,
   formatDayLabel,
-  getMetadataChip,
   groupEventsByDay,
 } from '../formatters'
 
@@ -67,11 +67,6 @@ describe('formatEventDescription', () => {
     expect(formatEventDescription(event)).toBe('Notion disconnected')
   })
 
-  it('user_signed_up returns "Workspace created"', () => {
-    const event = mockEvent({ event_type: 'user_signed_up' })
-    expect(formatEventDescription(event)).toBe('Workspace created')
-  })
-
   it('unknown metadata falls back to "Unknown" for integration name', () => {
     const event = mockEvent({
       event_type: 'sync_started',
@@ -81,55 +76,44 @@ describe('formatEventDescription', () => {
   })
 })
 
-describe('getMetadataChip', () => {
-  it('sync_completed with items_count returns "{n} items"', () => {
+describe('formatEventDescription - messages_digest', () => {
+  it('returns integration name with message and channel count', () => {
     const event = mockEvent({
-      event_type: 'sync_completed',
-      metadata: { items_count: 42 },
+      event_type: 'messages_digest',
+      metadata: { integration: 'telegram', message_count: 127, channels_active: 5 },
     })
-    expect(getMetadataChip(event)).toBe('42 items')
+    expect(formatEventDescription(event)).toBe('telegram digest — 127 messages, 5 channels')
   })
 
-  it('sync_completed with duration_ms returns formatted seconds', () => {
+  it('handles singular channel', () => {
     const event = mockEvent({
-      event_type: 'sync_completed',
-      metadata: { duration_ms: 1200 },
+      event_type: 'messages_digest',
+      metadata: { integration: 'slack', message_count: 12, channels_active: 1 },
     })
-    expect(getMetadataChip(event)).toBe('1.2s')
+    expect(formatEventDescription(event)).toBe('slack digest — 12 messages, 1 channel')
+  })
+})
+
+describe('getEventSubtitle', () => {
+  it('ticket_created with ticket_id shows integration and id', () => {
+    const event = mockEvent({
+      event_type: 'ticket_created',
+      metadata: { integration: 'linear', ticket_id: 'LIN-123', title: 'Bug' },
+    })
+    expect(getEventSubtitle(event)).toBe('linear LIN-123')
   })
 
-  it('sync_completed with both items_count and duration_ms prioritizes items_count', () => {
+  it('pr_merged with repo shows repo#number', () => {
     const event = mockEvent({
-      event_type: 'sync_completed',
-      metadata: { items_count: 42, duration_ms: 1200 },
+      event_type: 'pr_merged',
+      metadata: { repo: 'org/repo', pr_number: 42, title: 'Fix' },
     })
-    expect(getMetadataChip(event)).toBe('42 items')
+    expect(getEventSubtitle(event)).toBe('org/repo#42')
   })
 
-  it('context_generated with token_count >= 1000 returns "k tokens" format', () => {
-    const event = mockEvent({
-      event_type: 'context_generated',
-      metadata: { token_count: 3200 },
-    })
-    expect(getMetadataChip(event)).toBe('3.2k tokens')
-  })
-
-  it('context_generated with token_count < 1000 returns "{n} tokens"', () => {
-    const event = mockEvent({
-      event_type: 'context_generated',
-      metadata: { token_count: 500 },
-    })
-    expect(getMetadataChip(event)).toBe('500 tokens')
-  })
-
-  it('sync_started returns null (no chip)', () => {
+  it('sync_started returns null', () => {
     const event = mockEvent({ event_type: 'sync_started' })
-    expect(getMetadataChip(event)).toBeNull()
-  })
-
-  it('user_signed_up returns null (no chip)', () => {
-    const event = mockEvent({ event_type: 'user_signed_up' })
-    expect(getMetadataChip(event)).toBeNull()
+    expect(getEventSubtitle(event)).toBeNull()
   })
 })
 

@@ -23,8 +23,6 @@ export function formatEventDescription(event: ActivityEvent): string {
       return `${meta.integration ?? 'Unknown'} connected`
     case 'integration_disconnected':
       return `${meta.integration ?? 'Unknown'} disconnected`
-    case 'user_signed_up':
-      return 'Workspace created'
     case 'ticket_created':
       return `New ticket: ${meta.ticket_id ?? ''} ${meta.title ?? ''}`.trim()
     case 'pr_merged':
@@ -33,48 +31,49 @@ export function formatEventDescription(event: ActivityEvent): string {
       return `Meeting recorded: ${meta.title ?? 'Untitled'}`
     case 'page_created':
       return `New page: ${meta.page_title ?? 'Untitled'}`
+    case 'messages_digest': {
+      const integration = meta.integration ?? 'Messages'
+      const count = typeof meta.message_count === 'number' ? meta.message_count : 0
+      const channels = typeof meta.channels_active === 'number' ? meta.channels_active : 0
+      return `${integration} digest — ${count} messages, ${channels} channel${channels === 1 ? '' : 's'}`
+    }
     default:
       return 'Unknown event'
   }
 }
 
 /**
- * Extract a single metadata chip string for display, or null if none applies.
- * sync_completed prioritizes items_count over duration_ms.
- * context_generated shows token count (k format for 1000+).
+ * Extract a subtitle line for richer event rows, or null if none applies.
  */
-export function getMetadataChip(event: ActivityEvent): string | null {
+export function getEventSubtitle(event: ActivityEvent): string | null {
   const meta = event.metadata
 
   switch (event.event_type) {
     case 'sync_completed':
       if (meta.error && typeof meta.error_message === 'string')
-        return meta.error_message.slice(0, 60)
-      if (typeof meta.items_count === 'number')
-        return `${meta.items_count} items`
-      if (typeof meta.duration_ms === 'number')
-        return `${(meta.duration_ms / 1000).toFixed(1)}s`
+        return meta.error_message.slice(0, 80)
       return null
     case 'context_generated':
-      if (typeof meta.token_count === 'number') {
-        return meta.token_count >= 1000
-          ? `${(meta.token_count / 1000).toFixed(1)}k tokens`
-          : `${meta.token_count} tokens`
-      }
+      if (meta.source_count)
+        return `${meta.source_count} sources · ${formatTokenCount(meta.token_count)}`
       return null
     case 'ticket_created':
-      return null
+      return meta.ticket_id ? `${meta.integration ?? ''} ${meta.ticket_id}`.trim() : null
     case 'pr_merged':
-      return null
+      return meta.repo ? `${meta.repo}#${meta.pr_number ?? ''}` : null
     case 'meeting_recorded':
       if (typeof meta.duration_minutes === 'number')
-        return `${meta.duration_minutes}min`
+        return `${meta.duration_minutes} min`
       return null
-    case 'page_created':
-      return null
+    // messages_digest: DigestRow reads metadata directly, not via getEventSubtitle
     default:
       return null
   }
+}
+
+function formatTokenCount(count: unknown): string {
+  if (typeof count !== 'number') return ''
+  return count >= 1000 ? `${(count / 1000).toFixed(1)}k tokens` : `${count} tokens`
 }
 
 /**
