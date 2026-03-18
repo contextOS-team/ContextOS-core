@@ -62,6 +62,11 @@ async def upsert_node(
     """
     fingerprint = compute_fingerprint(entity_type, external_id)
 
+    # Ensure external_id is preserved in properties for backfill
+    props = dict(properties) if properties else {}
+    if "external_id" not in props:
+        props["external_id"] = external_id
+
     values = {
         "workspace_id": workspace_id,
         "entity_type": entity_type,
@@ -69,7 +74,7 @@ async def upsert_node(
         "fingerprint": fingerprint,
         "source_type": source_type,
         "source_id": source_id,
-        "properties": properties or {},
+        "properties": props,
     }
 
     stmt = pg_insert(GraphNode).values(**values)
@@ -88,7 +93,7 @@ async def upsert_node(
 
     result = await session.execute(stmt)
     node_id = result.scalar_one()
-    logger.info(
+    logger.debug(
         "Upserted graph node %s (%s: %s, fingerprint=%s...)",
         node_id, entity_type, name, fingerprint[:12],
     )
@@ -140,7 +145,7 @@ async def upsert_edge(
 
     result = await session.execute(stmt)
     edge_id = result.scalar_one()
-    logger.info(
+    logger.debug(
         "Upserted graph edge %s (%s: %s -> %s)",
         edge_id, relationship_type, source_node_id, target_node_id,
     )

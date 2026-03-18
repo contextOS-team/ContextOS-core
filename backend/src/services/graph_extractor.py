@@ -764,6 +764,11 @@ async def extract_and_populate_graph(
         ext_id = source_external_id or str(source_id)
 
         # 1. Create source node
+        # Build properties for the source node
+        source_props: dict = {}
+        if source_type == "linear_ticket" and source_external_id:
+            source_props["identifier"] = source_external_id
+
         source_node_id = await upsert_node(
             session=session,
             workspace_id=workspace_id,
@@ -772,17 +777,13 @@ async def extract_and_populate_graph(
             name=source_name,
             source_type=source_type,
             source_id=source_id,
+            properties=source_props,
         )
 
         # 2. Run extractors to get entities
         entities = run_extractors(content, source_type)
 
         # 3-4. For each entity, create node and edge
-        # Skip Person entities from regex extraction -- Person nodes should
-        # only come from roster-based identity resolution (Linear/Slack/GitHub).
-        # MentionExtractor creates garbage like @typescript-eslint, @Config etc.
-        entities = [e for e in entities if e.entity_type != "Person"]
-
         for entity in entities:
             props = dict(entity.properties)
             # Mark dangling references with status=unresolved
@@ -840,7 +841,9 @@ async def extract_and_populate_graph(
 # ============================================================
 
 register_extractor(TicketRefExtractor())
-register_extractor(MentionExtractor())
+# MentionExtractor intentionally not registered: its Person entities are low-signal
+# (e.g. @typescript-eslint, @Config). Person nodes should only come from
+# roster-based identity resolution (Linear/Slack/GitHub).
 register_extractor(PRRefExtractor())
 register_extractor(FilePathExtractor())
 register_extractor(URLExtractor())
