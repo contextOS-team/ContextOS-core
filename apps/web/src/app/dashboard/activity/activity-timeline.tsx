@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Clock, ArrowUp, Zap, ChevronDown } from 'lucide-react'
+import { Clock, ArrowUp, Zap, ChevronDown, Lightbulb, CircleCheck, Tag } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -404,6 +404,22 @@ function StandardRow({
   )
 }
 
+interface DigestDecision {
+  title: string
+  rationale: string
+  participants: string[]
+}
+
+interface DigestActionItem {
+  description: string
+  assignee: string | null
+}
+
+interface DigestTopic {
+  title: string
+  ticket_refs: string[]
+}
+
 function DigestRow({
   event,
   isNew,
@@ -415,6 +431,19 @@ function DigestRow({
   const { Icon, description, timestamp, fullTimestamp, brandColor } = useEventData(event)
   const summary = event.metadata.summary as string | undefined
   const topChannels = event.metadata.top_channels as string[] | undefined
+  const decisions = event.metadata.decisions as DigestDecision[] | undefined
+  const actionItems = event.metadata.action_items as DigestActionItem[] | undefined
+  const topics = event.metadata.topics as DigestTopic[] | undefined
+
+  const hasStructuredData = (decisions && decisions.length > 0)
+    || (actionItems && actionItems.length > 0)
+    || (topics && topics.length > 0)
+
+  // Quick stats for the collapsed view
+  const stats: string[] = []
+  if (decisions?.length) stats.push(`${decisions.length} decision${decisions.length > 1 ? 's' : ''}`)
+  if (actionItems?.length) stats.push(`${actionItems.length} action${actionItems.length > 1 ? 's' : ''}`)
+  if (topics?.length) stats.push(`${topics.length} topic${topics.length > 1 ? 's' : ''}`)
 
   return (
     <div
@@ -422,6 +451,7 @@ function DigestRow({
         isNew ? 'animate-event-enter' : ''
       }`}
     >
+      {/* Header */}
       <div className="flex items-center gap-3">
         <EventIcon Icon={Icon} bgClass="bg-primary/8" colorClass="text-primary/70" brandColor={brandColor} />
 
@@ -435,17 +465,30 @@ function DigestRow({
               digest
             </span>
           </div>
-          {topChannels && topChannels.length > 0 && (
-            <p className="text-xs text-muted-foreground/50 mt-0.5 font-mono truncate">
-              {topChannels.join(', ')}
-            </p>
-          )}
+          <div className="flex items-center gap-2 mt-0.5">
+            {topChannels && topChannels.length > 0 && (
+              <span className="text-xs text-muted-foreground/50 font-mono truncate">
+                {topChannels.join(', ')}
+              </span>
+            )}
+            {stats.length > 0 && (
+              <>
+                {topChannels && topChannels.length > 0 && (
+                  <span className="text-muted-foreground/30">·</span>
+                )}
+                <span className="text-xs text-muted-foreground/50">
+                  {stats.join(' · ')}
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
         <Timestamp timestamp={timestamp} fullTimestamp={fullTimestamp} />
       </div>
 
-      {summary && (
+      {/* Expandable content */}
+      {(summary || hasStructuredData) && (
         <div className="mt-2.5 ml-10">
           <button
             onClick={() => setExpanded(!expanded)}
@@ -454,11 +497,95 @@ function DigestRow({
             <ChevronDown
               className={`h-3 w-3 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
             />
-            {expanded ? 'Hide summary' : 'View summary'}
+            {expanded ? 'Collapse' : 'View details'}
           </button>
+
           {expanded && (
-            <div className="mt-2 text-sm text-foreground/80 leading-relaxed whitespace-pre-line animate-fade-in-up">
-              {summary}
+            <div className="mt-3 space-y-3 animate-fade-in-up">
+              {/* Decisions */}
+              {decisions && decisions.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Lightbulb className="h-3 w-3 text-amber-500/70" />
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/60">
+                      Decisions
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {decisions.map((d, i) => (
+                      <div key={i} className="rounded-lg bg-amber-500/[0.04] border border-amber-500/10 px-3 py-2">
+                        <p className="text-sm text-foreground">{d.title}</p>
+                        <p className="text-xs text-muted-foreground/60 mt-0.5">{d.rationale}</p>
+                        {d.participants.length > 0 && (
+                          <div className="flex items-center gap-1 mt-1">
+                            {d.participants.map((p) => (
+                              <span key={p} className="text-[10px] bg-muted/60 rounded px-1.5 py-0.5 text-muted-foreground">
+                                {p}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Action items */}
+              {actionItems && actionItems.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <CircleCheck className="h-3 w-3 text-primary/60" />
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/60">
+                      Action Items
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {actionItems.map((a, i) => (
+                      <div key={i} className="flex items-start gap-2 text-sm">
+                        <span className="text-muted-foreground/40 shrink-0">—</span>
+                        <span className="text-foreground/80">{a.description}</span>
+                        {a.assignee && (
+                          <span className="text-[10px] bg-primary/8 text-primary/70 rounded px-1.5 py-0.5 shrink-0 ml-auto">
+                            {a.assignee}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Topics */}
+              {topics && topics.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Tag className="h-3 w-3 text-muted-foreground/50" />
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/60">
+                      Topics
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {topics.map((t, i) => (
+                      <span key={i} className="text-xs bg-muted/50 rounded-md px-2 py-0.5 text-foreground/70">
+                        {t.title}
+                        {t.ticket_refs.length > 0 && (
+                          <span className="ml-1 text-muted-foreground/50 font-mono text-[10px]">
+                            {t.ticket_refs.join(', ')}
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Prose summary */}
+              {summary && (
+                <div className="text-sm text-foreground/70 leading-relaxed whitespace-pre-line border-t border-border/30 pt-2.5">
+                  {summary}
+                </div>
+              )}
             </div>
           )}
         </div>
