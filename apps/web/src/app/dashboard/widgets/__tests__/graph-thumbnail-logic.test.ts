@@ -456,6 +456,32 @@ describe('resolveVisibleLabels', () => {
     expect(visible.has('b')).toBe(false)
   })
 
+  it('uses larger fontSize for hub label collision rect than normal labels', () => {
+    // Hub renders at fontSize=10, normal at fontSize=9.
+    // A label just outside the fontSize=9 rect but inside the fontSize=10 rect
+    // should be hidden. This catches the bug where collision detection used
+    // fontSize=9 for all labels including hub.
+    const hubLabel = 'Daulet Ashikbayev' // 18 chars
+    // fontSize=9: width = 18 * 9 * 0.55 = 89.1 → half = 44.55 → right edge at 244.55
+    // fontSize=10: width = 18 * 10 * 0.55 = 99 → half = 49.5 → right edge at 249.5
+    // Place normal node so its label left edge is at ~245 — overlaps with fs=10 but not fs=9
+    const nodes = [
+      node('hub', 'Person', hubLabel),
+      node('a', 'Ticket', 'CON-54'),  // 6 chars, width at fs=9 = 6*9*0.55 = 29.7, half = 14.85
+    ]
+    // hub at x=200, 'a' at x=261 → a's label left edge at 261-14.85 = 246.15
+    // With hub fs=9 (old bug): hub right = 244.55, no overlap → both visible (wrong!)
+    // With hub fs=10 (fixed): hub right = 249.5, overlaps 246.15 → a hidden (correct!)
+    const positions = new Map([
+      ['hub', { x: 200, y: 100 }],
+      ['a', { x: 261, y: 100 }],
+    ])
+    const counts = new Map([['hub', 5], ['a', 1]])
+    const visible = resolveVisibleLabels(nodes, positions, counts, 'hub', 9, 10, 15, 18)
+    expect(visible.has('hub')).toBe(true)
+    expect(visible.has('a')).toBe(false) // would be true with old fontSize=9 for hub
+  })
+
   it('uses different yOffset for hub vs normal nodes', () => {
     // Hub at y=100 with yOffset=18 → label center at y=118
     // Normal at y=100 with yOffset=15 → label center at y=115
@@ -471,7 +497,7 @@ describe('resolveVisibleLabels', () => {
     ])
     const counts = new Map([['hub', 5], ['a', 1]])
     // With correct hub yOffset=18, hub label rect and normal label rect overlap
-    const visible = resolveVisibleLabels(nodes, positions, counts, 'hub', 9, 15, 18)
+    const visible = resolveVisibleLabels(nodes, positions, counts, 'hub', 9, 10, 15, 18)
     expect(visible.has('hub')).toBe(true)
     expect(visible.has('a')).toBe(false) // overlaps with hub
   })

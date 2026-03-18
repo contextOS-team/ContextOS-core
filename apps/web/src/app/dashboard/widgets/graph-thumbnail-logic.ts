@@ -177,7 +177,10 @@ export function filterToUserPerson(
 
   let userPerson: ApiNode | undefined
 
-  // Strategy 1: match by name (require 3+ chars to avoid false substring hits)
+  // Strategy 1: match by name (require 3+ chars to avoid false substring hits).
+  // Known limitation: this is plain substring matching — if an integration normalizes
+  // names differently (e.g. "DauletAshikbayev" vs "Daulet Ashikbayev"), the match
+  // fails and we fall through to the most-connected heuristic.
   if (userName && userName.length >= 3) {
     const lower = userName.toLowerCase()
     userPerson = personNodes.find((n) => {
@@ -213,23 +216,27 @@ export function resolveVisibleLabels(
   positions: Map<string, Pos>,
   connectionCounts: Map<string, number>,
   hubId: string | null,
-  fontSize: number = 9,
+  fontSizeNormal: number = 9,
+  fontSizeHub: number = 10,
   yOffsetNormal: number = 15,
   yOffsetHub: number = 18,
 ): Set<string> {
   // Approximate label bounding box: width ≈ charCount * fontSize * 0.55, height ≈ fontSize * 1.4
-  const charWidth = fontSize * 0.55
-  const labelHeight = fontSize * 1.4
+  const CHAR_WIDTH_RATIO = 0.55
+  const LINE_HEIGHT_RATIO = 1.4
 
   interface Rect { x1: number; y1: number; x2: number; y2: number }
 
   function getLabelRect(nodeId: string, label: string): Rect | null {
     const pos = positions.get(nodeId)
     if (!pos) return null
-    const w = label.length * charWidth
-    const yOff = nodeId === hubId ? yOffsetHub : yOffsetNormal
+    const isHub = nodeId === hubId
+    const fs = isHub ? fontSizeHub : fontSizeNormal
+    const w = label.length * fs * CHAR_WIDTH_RATIO
+    const h = fs * LINE_HEIGHT_RATIO
+    const yOff = isHub ? yOffsetHub : yOffsetNormal
     const cy = pos.y + yOff
-    return { x1: pos.x - w / 2, y1: cy - labelHeight / 2, x2: pos.x + w / 2, y2: cy + labelHeight / 2 }
+    return { x1: pos.x - w / 2, y1: cy - h / 2, x2: pos.x + w / 2, y2: cy + h / 2 }
   }
 
   function overlaps(a: Rect, b: Rect): boolean {
