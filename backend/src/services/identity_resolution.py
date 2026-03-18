@@ -124,38 +124,34 @@ async def resolve_by_email(
     Returns:
         Number of new canonical persons created.
     """
-    # Step 1: Get distinct emails with non-deleted mappings
-    email_stmt = (
-        select(IdentityMapping.email)
+    from collections import defaultdict
+
+    # Bulk fetch ALL mappings with email in one query
+    all_stmt = (
+        select(IdentityMapping)
         .where(
             IdentityMapping.workspace_id == workspace_id,
             IdentityMapping.email.isnot(None),
             IdentityMapping.deleted_at.is_(None),
         )
-        .group_by(IdentityMapping.email)
+        .order_by(IdentityMapping.email)
     )
-    email_result = await session.execute(email_stmt)
-    email_rows = email_result.all()
+    all_result = await session.execute(all_stmt)
+    all_mappings = all_result.scalars().all()
+
+    if not all_mappings:
+        return 0
+
+    # Group by email in Python
+    email_groups: dict[str, list[IdentityMapping]] = defaultdict(list)
+    for m in all_mappings:
+        if m.email:
+            email_groups[m.email].append(m)
 
     created_count = 0
 
-    for (email,) in email_rows:
-        # Step 2: Fetch all mappings for this email
-        mappings_stmt = (
-            select(IdentityMapping)
-            .where(
-                IdentityMapping.workspace_id == workspace_id,
-                IdentityMapping.email == email,
-                IdentityMapping.deleted_at.is_(None),
-            )
-        )
-        mappings_result = await session.execute(mappings_stmt)
-        mappings = mappings_result.scalars().all()
-
-        if not mappings:
-            continue
-
-        # Step 3: Check if any mapping already has a canonical_person_id
+    for email, mappings in email_groups.items():
+        # Check if any mapping already has a canonical_person_id
         existing_canonical = None
         for m in mappings:
             if m.canonical_person_id is not None:
@@ -163,27 +159,19 @@ async def resolve_by_email(
                 break
 
         if existing_canonical is None:
-            # No canonical yet -- create one
             canonical_id = uuid.uuid4()
-            # Use first mapping's display_name as the canonical name
             display_name = mappings[0].display_name or email
             canonical_node_id = await create_canonical_person(
                 session, workspace_id, canonical_id, display_name
             )
-
-            # Assign canonical_person_id to all mappings in the group
             for m in mappings:
                 m.canonical_person_id = canonical_node_id
-
             created_count += 1
-
-            # Create same_as edges from platform Person nodes to canonical
             for m in mappings:
                 await _create_same_as_edge(
                     session, workspace_id, m, canonical_node_id
                 )
         else:
-            # Already resolved -- ensure same_as edges exist for any new mappings
             for m in mappings:
                 if m.canonical_person_id is None:
                     m.canonical_person_id = existing_canonical
@@ -384,7 +372,7 @@ async def fetch_linear_roster(
             continue
         members.append({
             "platform_user_id": user["id"],
-            "display_name": user.get("displayName") or user.get("name", ""),
+            "display_name": user.get("name") or user.get("displayName") or user.get("email", ""),
             "email": user.get("email"),
         })
 
@@ -612,10 +600,11 @@ async def upsert_identity_mapping(
     mapping_id = result.scalar_one()
     await session.flush()
 
-    # Fetch the full record
-    fetch_stmt = select(IdentityMapping).where(IdentityMapping.id == mapping_id)
-    fetch_result = await session.execute(fetch_stmt)
-    return fetch_result.scalar_one()
+    # Use session.get() which checks identity map first (no extra query if cached)
+    mapping = await session.get(IdentityMapping, mapping_id)
+    if mapping is None:
+        raise RuntimeError(f"Failed to fetch upserted mapping {mapping_id}")
+    return mapping
 
 
 # ============================================================
@@ -732,6 +721,24 @@ def build_confidence_score(name_score: float) -> float:
     return min(confidence, 0.9)
 
 
+def _fuzzy_compare_sync(canonical_nodes: list) -> list[tuple]:
+    """CPU-bound pairwise comparison -- runs in thread pool."""
+    candidates = []
+    for i in range(len(canonical_nodes)):
+        for j in range(i + 1, len(canonical_nodes)):
+            node_a = canonical_nodes[i]
+            node_b = canonical_nodes[j]
+            cpid_a = node_a["canonical_person_id"]
+            cpid_b = node_b["canonical_person_id"]
+            if cpid_a and cpid_b and cpid_a == cpid_b:
+                continue
+            score = compute_name_similarity(node_a["name"], node_b["name"])
+            if score >= 80:
+                confidence = build_confidence_score(score)
+                candidates.append((node_a["id"], node_b["id"], node_a["name"], node_b["name"], score, confidence))
+    return candidates
+
+
 async def find_fuzzy_candidates(
     session: AsyncSession,
     workspace_id: UUID,
@@ -751,6 +758,8 @@ async def find_fuzzy_candidates(
     Returns:
         Number of candidate edges created.
     """
+    import asyncio
+
     from src.models.graph_node import GraphNode
 
     # Query all canonical Person nodes
@@ -765,49 +774,42 @@ async def find_fuzzy_candidates(
     result = await session.execute(stmt)
     all_person_nodes = result.scalars().all()
 
-    # Filter to canonical nodes only
+    # Extract data for thread-safe comparison (no ORM objects cross-thread)
     canonical_nodes = [
-        n for n in all_person_nodes
+        {
+            "id": n.id,
+            "name": n.name,
+            "canonical_person_id": (n.properties or {}).get("canonical_person_id"),
+        }
+        for n in all_person_nodes
         if n.properties and n.properties.get("canonical") is True
     ]
 
+    # Run CPU-bound comparison in thread pool
+    candidates = await asyncio.to_thread(_fuzzy_compare_sync, canonical_nodes)
+
     candidate_count = 0
-
-    # Compare each pair
-    for i in range(len(canonical_nodes)):
-        for j in range(i + 1, len(canonical_nodes)):
-            node_a = canonical_nodes[i]
-            node_b = canonical_nodes[j]
-
-            # Skip if they share the same canonical_person_id
-            cpid_a = node_a.properties.get("canonical_person_id")
-            cpid_b = node_b.properties.get("canonical_person_id")
-            if cpid_a and cpid_b and cpid_a == cpid_b:
-                continue
-
-            score = compute_name_similarity(node_a.name, node_b.name)
-            if score >= 80:
-                confidence = build_confidence_score(score)
-                await upsert_edge(
-                    session=session,
-                    workspace_id=workspace_id,
-                    source_node_id=node_a.id,
-                    target_node_id=node_b.id,
-                    relationship_type="same_as",
-                    properties={
-                        "status": "candidate",
-                        "confidence": confidence,
-                        "match_type": "fuzzy_name",
-                    },
-                )
-                candidate_count += 1
-                logger.info(
-                    "Fuzzy candidate: %s <-> %s (score=%.1f, confidence=%.2f)",
-                    node_a.name,
-                    node_b.name,
-                    score,
-                    confidence,
-                )
+    for src_id, tgt_id, name_a, name_b, score, confidence in candidates:
+        await upsert_edge(
+            session=session,
+            workspace_id=workspace_id,
+            source_node_id=src_id,
+            target_node_id=tgt_id,
+            relationship_type="same_as",
+            properties={
+                "status": "candidate",
+                "confidence": confidence,
+                "match_type": "fuzzy_name",
+            },
+        )
+        candidate_count += 1
+        logger.info(
+            "Fuzzy candidate: %s <-> %s (score=%.1f, confidence=%.2f)",
+            name_a,
+            name_b,
+            score,
+            confidence,
+        )
 
     return candidate_count
 
@@ -841,7 +843,7 @@ async def backfill_identity_resolution(
     from src.models.graph_edge import GraphEdge
     from src.models.graph_node import GraphNode
 
-    # Find all Person nodes in this workspace
+    # Find all Person nodes
     person_stmt = (
         select(GraphNode)
         .where(
@@ -853,42 +855,69 @@ async def backfill_identity_resolution(
     person_result = await session.execute(person_stmt)
     person_nodes = person_result.scalars().all()
 
+    if not person_nodes:
+        return 0
+
+    # Bulk prefetch: all same_as edges from Person nodes in this workspace
+    person_node_ids = [n.id for n in person_nodes]
+    edge_stmt = (
+        select(GraphEdge.source_node_id)
+        .where(
+            GraphEdge.workspace_id == workspace_id,
+            GraphEdge.source_node_id.in_(person_node_ids),
+            GraphEdge.relationship_type == "same_as",
+            GraphEdge.deleted_at.is_(None),
+        )
+    )
+    edge_result = await session.execute(edge_stmt)
+    already_linked = {str(row[0]) for row in edge_result}
+
+    # Bulk prefetch: all identity mappings for this workspace
+    mapping_stmt = (
+        select(IdentityMapping)
+        .where(
+            IdentityMapping.workspace_id == workspace_id,
+            IdentityMapping.deleted_at.is_(None),
+        )
+    )
+    mapping_result = await session.execute(mapping_stmt)
+    all_mappings = mapping_result.scalars().all()
+
+    # Build lookup: (platform, platform_user_id) -> mapping
+    mapping_lookup: dict[tuple[str, str], IdentityMapping] = {}
+    for m in all_mappings:
+        mapping_lookup[(m.platform, m.platform_user_id)] = m
+
     linked_count = 0
 
     for node in person_nodes:
-        # Skip canonical nodes themselves
+        # Skip canonical nodes
         if node.properties and node.properties.get("canonical") is True:
             continue
 
-        # Check if this node already has a same_as edge
-        edge_stmt = (
-            select(GraphEdge.id)
-            .where(
-                GraphEdge.workspace_id == workspace_id,
-                GraphEdge.source_node_id == node.id,
-                GraphEdge.relationship_type == "same_as",
-                GraphEdge.deleted_at.is_(None),
-            )
-        )
-        edge_result = await session.execute(edge_stmt)
-        if edge_result.scalar_one_or_none() is not None:
-            continue  # Already linked
-
-        # Extract platform and platform_user_id from external_id
-        # Format: "slack:U12345" or "username:alice"
-        external_id = node.name  # fallback
-        # The GraphNode doesn't store external_id directly, but we can
-        # try to extract platform info from properties
-        platform = (node.properties or {}).get("platform")
-        platform_user_id = (node.properties or {}).get("platform_user_id")
-
-        # Fallback: parse from the node name or fingerprint pattern
-        if not platform or not platform_user_id:
-            # Try to reverse-lookup from identity_mappings by display_name
-            # This is a best-effort backfill
+        # Skip already linked
+        if str(node.id) in already_linked:
             continue
 
-        mapping = await lookup_mapping(session, workspace_id, platform, platform_user_id)
+        # Parse external_id from properties
+        props = node.properties or {}
+        external_id = props.get("external_id", "")
+        if not external_id or external_id.startswith("canonical:"):
+            continue
+        if ":" not in external_id:
+            logger.debug(
+                "Cannot parse external_id for Person node %s: %s",
+                node.id,
+                external_id,
+            )
+            continue
+
+        platform, platform_user_id = external_id.split(":", 1)
+        if not platform or not platform_user_id:
+            continue
+
+        # Lookup from prefetched mappings
+        mapping = mapping_lookup.get((platform, platform_user_id))
         if mapping and mapping.canonical_person_id:
             await upsert_edge(
                 session=session,
