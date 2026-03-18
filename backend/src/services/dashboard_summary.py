@@ -9,7 +9,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import func, text
+from sqlalchemy import Date, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -62,7 +62,7 @@ async def get_weekly_summary(
     # 2. Context pages updated by day
     ctx_stmt = (
         select(
-            func.cast(ContextPage.updated_at, text("date")).label("day"),
+            func.cast(ContextPage.updated_at, Date).label("day"),
             func.count().label("cnt"),
         )
         .where(
@@ -81,7 +81,7 @@ async def get_weekly_summary(
     # 3. GitHub PRs merged by day
     gh_stmt = (
         select(
-            func.cast(GithubPullRequest.github_merged_at, text("date")).label("day"),
+            func.cast(GithubPullRequest.github_merged_at, Date).label("day"),
             func.count().label("cnt"),
         )
         .where(
@@ -101,7 +101,7 @@ async def get_weekly_summary(
     # 4. GitLab MRs merged by day (add to prs_merged)
     gl_stmt = (
         select(
-            func.cast(GitlabMergeRequest.gitlab_merged_at, text("date")).label("day"),
+            func.cast(GitlabMergeRequest.gitlab_merged_at, Date).label("day"),
             func.count().label("cnt"),
         )
         .where(
