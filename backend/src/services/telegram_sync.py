@@ -428,8 +428,9 @@ async def _sync_known_chats(
             if chat_count > 0:
                 chat_counts[chat_title] = chat_count
                 srl.info(f"Synced {chat_count} messages from {chat_title}")
-        except Exception:
-            srl.warning(f"Failed to sync chat {chat_title} ({chat_id})")
+        except Exception as e:
+            logger.warning("Failed to sync chat %s (%d): %s", chat_title, chat_id, e, exc_info=True)
+            srl.warning(f"Failed to sync chat {chat_title} ({chat_id}): {e}")
 
         await asyncio.sleep(RATE_LIMIT_DELAY)
 
@@ -456,13 +457,20 @@ async def _sync_single_chat(
     cutoff: datetime,
 ) -> tuple[list[UUID], int]:
     """Sync message history for a single chat via Telethon iter_messages."""
-    chat_type = "group"  # Default; refined per-message if entity available
+    chat_type = "group"  # Default
 
     msg_ids: list[UUID] = []
     count = 0
 
+    # Resolve the entity first — Telethon needs this for some chat ID formats
+    try:
+        entity = await client.get_entity(chat_id)
+    except Exception:
+        logger.warning("Could not resolve entity for chat %d, trying direct", chat_id, exc_info=True)
+        entity = chat_id
+
     async for message in client.iter_messages(
-        chat_id, limit=MAX_MESSAGES_PER_CHAT, reverse=False,
+        entity, limit=MAX_MESSAGES_PER_CHAT, reverse=False,
     ):
         msg_date = message.date
         if msg_date and msg_date.replace(tzinfo=timezone.utc) < cutoff:
