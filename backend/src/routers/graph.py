@@ -113,12 +113,12 @@ DEFAULT_ENTITY_TYPES = ["Ticket", "Person", "Decision", "Meeting", "Message", "S
 PROVIDER_TO_SOURCE_TYPES: dict[str, list[str]] = {
     "linear": ["linear_ticket", "linear_comment"],
     "jira": ["jira_issue", "jira_comment"],
-    "slack": ["slack_message"],
+    "slack": ["slack_message", "messages_digest"],
     "github": ["github_pr", "github_review", "github_commit"],
     "gitlab": ["gitlab_mr", "gitlab_note"],
     "notion": ["notion_page"],
     "fathom": ["meeting_transcript"],
-    "telegram": ["telegram_message"],
+    "telegram": ["telegram_message", "messages_digest"],
 }
 
 
