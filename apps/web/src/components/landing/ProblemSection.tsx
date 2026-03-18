@@ -5,6 +5,8 @@ import {
   LinearLogo,
   SlackLogo,
   NotionLogo,
+  TelegramLogo,
+  JiraLogo,
 } from "@/components/icons/brand-logos";
 
 /* Small inline icons for tools without brand logos */
@@ -18,24 +20,7 @@ function MeetingIcon() {
   );
 }
 
-function EmailIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-      <rect x="2" y="4" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M2 6L9 11L16 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
-function GoogleDocIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-      <path d="M5 2H11L14 5V15C14 15.5523 13.5523 16 13 16H5C4.44772 16 4 15.5523 4 15V3C4 2.44772 4.44772 2 5 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M11 2V5H14" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M7 9H11M7 12H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 function Pill({ icon, label, rotate, opacity }: { icon: React.ReactNode; label: string; rotate?: number; opacity?: number }) {
   return (
@@ -59,8 +44,8 @@ const toolPills = [
   { label: "Notion", icon: <NotionLogo width={18} height={18} /> },
   { label: "Linear", icon: <LinearLogo width={18} height={18} /> },
   { label: "Meeting", icon: <MeetingIcon /> },
-  { label: "Google Doc", icon: <GoogleDocIcon /> },
-  { label: "Email", icon: <EmailIcon /> },
+  { label: "Telegram", icon: <TelegramLogo width={18} height={18} fill="currentColor" /> },
+  { label: "Jira", icon: <JiraLogo width={18} height={18} fill="currentColor" /> },
 ];
 
 export default function ProblemSection() {
