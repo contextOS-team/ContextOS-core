@@ -227,7 +227,7 @@ async def generate_digest(
             metadata["topics"] = [t.model_dump() for t in extraction.topics]
 
         # Wire extracted entities into the knowledge graph
-        await _wire_graph(session, workspace_id, extraction)
+        await _wire_graph(session, workspace_id, extraction, integration, top_channels)
 
     await emit_activity(
         session, workspace_id, "messages_digest",
@@ -349,6 +349,8 @@ async def _wire_graph(
     session: AsyncSession,
     workspace_id: UUID,
     extraction: DigestExtraction,
+    integration: str = "",
+    top_channels: list[str] | None = None,
 ) -> None:
     """Create graph nodes and edges from structured extraction.
 
@@ -359,6 +361,7 @@ async def _wire_graph(
     from src.services.graph_ops import upsert_node, upsert_edge
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    source_channel = ", ".join(top_channels) if top_channels else None
 
     # Resolve participant names against existing Person nodes
     all_participants: list[str] = []
@@ -401,6 +404,8 @@ async def _wire_graph(
                     "rationale": decision.rationale,
                     "participants": decision.participants,
                     "date": today,
+                    "source": integration,
+                    **({"source_channel": source_channel} if source_channel else {}),
                 },
             )
         except Exception:

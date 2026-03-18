@@ -76,5 +76,10 @@ export function getEntityExternalUrl(node: GraphNodeData): string | null {
     if (p.permalink && typeof p.permalink === 'string') return p.permalink
   }
 
+  if (node.entityType === 'Decision') {
+    // Link to the activity page where the digest lives
+    return '/dashboard/activity'
+  }
+
   return null
 }
