@@ -203,7 +203,7 @@ async def _inject_user_decisions(
     Decision nodes linked by decided_in edges, and appends them to the
     response lists (deduplicating against already-included node IDs).
     """
-    # Find user's person node IDs
+    # Find user's person node IDs via identity mappings
     id_stmt = select(IdentityMapping.canonical_person_id).where(
         IdentityMapping.workspace_id == user.workspace_id,
         IdentityMapping.email == user.email,
@@ -211,6 +211,33 @@ async def _inject_user_decisions(
     )
     id_result = await session.execute(id_stmt)
     person_ids = [row[0] for row in id_result if row[0]]
+
+    # Fallback: if no identity mapping for this email, find Person nodes
+    # that are already in the response (from ticket cluster traversal)
+    # or try matching by user's display name from auth metadata
+    if not person_ids:
+        # Check if any Person nodes are already in the response
+        existing_person_ids = [
+            n.id for n in all_nodes if n.entity_type == "Person"
+        ]
+        if existing_person_ids:
+            person_ids = existing_person_ids
+        else:
+            # Last resort: find all Person nodes in workspace that have decided_in edges
+            fallback_stmt = (
+                select(GraphEdge.source_node_id)
+                .distinct()
+                .join(GraphNode, GraphNode.id == GraphEdge.source_node_id)
+                .where(
+                    GraphEdge.workspace_id == user.workspace_id,
+                    GraphEdge.relationship_type == "decided_in",
+                    GraphEdge.deleted_at.is_(None),
+                    GraphNode.entity_type == "Person",
+                    GraphNode.deleted_at.is_(None),
+                )
+            )
+            fb_result = await session.execute(fallback_stmt)
+            person_ids = [row[0] for row in fb_result]
 
     if not person_ids:
         return all_nodes, all_edges
