@@ -258,11 +258,13 @@ async def _run_telethon_sync(workspace_id: UUID) -> None:
                 await client.start(bot_token=bot_token)
 
                 try:
-                    total_synced = await _sync_all_chats(
+                    sync_result = await _sync_all_chats(
                         client, session, workspace_id, srl
                     )
                 finally:
                     await client.disconnect()
+
+                total_synced = sync_result["total_synced"]
 
                 now = datetime.now(timezone.utc).replace(tzinfo=None)
                 await update_cursor_status(
@@ -278,6 +280,19 @@ async def _run_telethon_sync(workspace_id: UUID) -> None:
                         "messages_synced": total_synced,
                     },
                 )
+                # Emit LLM-powered messages digest if any messages were synced
+                if total_synced > 0:
+                    try:
+                        from src.services.digest import generate_digest
+                        await generate_digest(
+                            session, workspace_id, "telegram",
+                            hours=sync_result["sync_hours"],
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Digest generation failed for workspace %s",
+                            workspace_id, exc_info=True,
+                        )
                 await session.commit()
 
                 elapsed = time.monotonic() - _sync_t0
@@ -308,8 +323,11 @@ async def _sync_all_chats(
     session: AsyncSession,
     workspace_id: UUID,
     srl: SyncRunLogger,
-) -> int:
-    """Iterate all chats the bot is in and sync message history."""
+) -> dict:
+    """Iterate all chats the bot is in and sync message history.
+
+    Returns a dict with total_synced, channels_active, and top_channels.
+    """
     cursor = await get_or_create_cursor(session, workspace_id, "telegram", "default")
     if cursor.cursor_value:
         cutoff = datetime.fromisoformat(cursor.cursor_value).replace(tzinfo=timezone.utc)
@@ -321,6 +339,7 @@ async def _sync_all_chats(
 
     total_synced = 0
     all_msg_ids: list[UUID] = []
+    chat_counts: dict[str, int] = {}
 
     for dialog in dialogs:
         chat = dialog.entity
@@ -338,6 +357,7 @@ async def _sync_all_chats(
         total_synced += chat_count
 
         if chat_count > 0:
+            chat_counts[chat_title] = chat_count
             srl.info("Synced %d messages from %s", chat_count, chat_title)
 
         await asyncio.sleep(RATE_LIMIT_DELAY)
@@ -345,7 +365,18 @@ async def _sync_all_chats(
     if all_msg_ids:
         await enqueue_embedding_job(workspace_id, "telegram_message", all_msg_ids)
 
-    return total_synced
+    # Sort chats by message count descending for top_channels
+    top_channels = sorted(chat_counts, key=chat_counts.get, reverse=True)  # type: ignore[arg-type]
+
+    # Calculate how many hours the sync window covers
+    sync_hours = max(1, int((datetime.now(timezone.utc) - cutoff).total_seconds() / 3600))
+
+    return {
+        "total_synced": total_synced,
+        "channels_active": len(chat_counts),
+        "top_channels": top_channels[:5],
+        "sync_hours": sync_hours,
+    }
 
 
 async def _sync_single_chat(
