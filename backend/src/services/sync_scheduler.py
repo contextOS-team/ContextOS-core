@@ -2,7 +2,8 @@
 
 Runs reconciliation checks every 15 minutes for all connected providers
 to catch webhook deliveries that were lost or failed. Also runs periodic
-code re-indexing every 60 minutes as a freshness fallback.
+code re-indexing every 60 minutes as a freshness fallback. Emits daily
+message digests for Slack (which uses Events API, not batch sync).
 
 Per CONTEXT.md: Webhook-first with polling fallback for all providers
 that support webhooks (Notion, GitHub, Linear).
@@ -206,6 +207,25 @@ async def _expire_stale_generations() -> None:
         await session.commit()
 
 
+async def _emit_slack_daily_digest(workspace_id: UUID) -> None:
+    """Generate and emit an LLM-powered daily digest for Slack messages.
+
+    Slack uses the Events API (real-time per-message), so there's no batch sync
+    to attach a digest to. This runs daily and summarizes messages from the
+    last 24 hours using the LLM.
+    """
+    from src.services.digest import generate_digest
+
+    async with async_session() as session:
+        result = await generate_digest(session, workspace_id, "slack")
+        if result:
+            await session.commit()
+            logger.info(
+                "Slack daily digest: %d messages for workspace %s",
+                result["message_count"], workspace_id,
+            )
+
+
 async def run_polling_fallback() -> None:
     """Run the polling fallback loop indefinitely.
 
@@ -243,6 +263,16 @@ async def run_polling_fallback() -> None:
                 except Exception:
                     logger.exception(
                         "Code index freshness check failed for workspace %s", ws_id
+                    )
+
+            # Slack daily digest (dedup handled inside generate_digest)
+            slack_workspaces = await _get_connected_workspaces(Provider.SLACK)
+            for ws_id in slack_workspaces:
+                try:
+                    await _emit_slack_daily_digest(ws_id)
+                except Exception:
+                    logger.exception(
+                        "Slack daily digest failed for workspace %s", ws_id
                     )
 
             # Linear reconciliation stub
