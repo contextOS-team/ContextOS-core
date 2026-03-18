@@ -294,6 +294,45 @@ def _decision_external_id(title: str, date: str) -> str:
     return f"decision:{date}:{title_hash}"
 
 
+async def _find_person_nodes_by_name(
+    session: AsyncSession,
+    workspace_id: UUID,
+    names: list[str],
+) -> dict[str, UUID]:
+    """Find existing Person nodes whose name matches any of the given first names.
+
+    Returns a dict of lowercase_name → node_id for matches found.
+    Only matches against existing roster-based Person nodes (not LLM-extracted).
+    """
+    if not names:
+        return {}
+    result = await session.execute(
+        text(
+            "SELECT id, name FROM graph_nodes "
+            "WHERE workspace_id = :ws AND entity_type = 'Person' "
+            "AND deleted_at IS NULL"
+        ),
+        {"ws": workspace_id},
+    )
+    person_nodes = result.fetchall()
+
+    # Build lookup: lowercase first-name or full-name → node_id
+    name_to_id: dict[str, UUID] = {}
+    for row in person_nodes:
+        full = row.name.lower().strip()
+        first = full.split()[0] if full else ""
+        name_to_id[full] = row.id
+        if first:
+            name_to_id[first] = row.id
+
+    matched: dict[str, UUID] = {}
+    for name in names:
+        key = name.lower().strip()
+        if key in name_to_id:
+            matched[name] = name_to_id[key]
+    return matched
+
+
 async def _wire_graph(
     session: AsyncSession,
     workspace_id: UUID,
@@ -301,36 +340,23 @@ async def _wire_graph(
 ) -> None:
     """Create graph nodes and edges from structured extraction.
 
-    - Decision → Decision node (participants stored as properties, not Person nodes)
-    - Topics with ticket_refs → Ticket node references via existing extractors
+    - Decision → Decision node with `decided_in` edges to existing Person nodes
+    - Topics with ticket_refs → Ticket nodes with `discussed_in` edges to Decision nodes
     """
     from src.services.graph_ops import upsert_node, upsert_edge
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    for decision in extraction.decisions:
-        ext_id = _decision_external_id(decision.title, today)
-        try:
-            node_id = await upsert_node(
-                session,
-                workspace_id=workspace_id,
-                entity_type="Decision",
-                external_id=ext_id,
-                name=decision.title,
-                source_type="messages_digest",
-                properties={
-                    "rationale": decision.rationale,
-                    "participants": decision.participants,
-                    "date": today,
-                },
-            )
-            logger.debug("Created Decision node %s: %s", node_id, decision.title)
-        except Exception:
-            logger.warning(
-                "Failed to create Decision node: %s", decision.title, exc_info=True,
-            )
+    # Collect all participant names to resolve against existing Person nodes
+    all_participants: list[str] = []
+    for d in extraction.decisions:
+        all_participants.extend(d.participants)
+    person_map = await _find_person_nodes_by_name(session, workspace_id, all_participants)
 
-    # Wire ticket references from topics
+    # Collect all ticket refs to link to decisions
+    all_ticket_node_ids: list[UUID] = []
+
+    # Create Ticket nodes from topics first (so we can link them to decisions)
     for topic in extraction.topics:
         for ref in topic.ticket_refs:
             ref = ref.strip().upper()
@@ -346,11 +372,53 @@ async def _wire_graph(
                     source_type="messages_digest",
                     properties={"identifier": ref},
                 )
-                logger.debug("Upserted Ticket node %s from topic '%s'", ref, topic.title)
+                all_ticket_node_ids.append(ticket_node_id)
             except Exception:
-                logger.warning(
-                    "Failed to upsert Ticket node %s", ref, exc_info=True,
+                logger.warning("Failed to upsert Ticket node %s", ref, exc_info=True)
+
+    # Create Decision nodes and wire edges
+    for decision in extraction.decisions:
+        ext_id = _decision_external_id(decision.title, today)
+        try:
+            decision_node_id = await upsert_node(
+                session,
+                workspace_id=workspace_id,
+                entity_type="Decision",
+                external_id=ext_id,
+                name=decision.title,
+                source_type="messages_digest",
+                properties={
+                    "rationale": decision.rationale,
+                    "participants": decision.participants,
+                    "date": today,
+                },
+            )
+
+            # Edge: Person --decided_in--> Decision (for resolved participants)
+            for name in decision.participants:
+                person_id = person_map.get(name)
+                if person_id:
+                    await upsert_edge(
+                        session, workspace_id,
+                        source_node_id=person_id,
+                        target_node_id=decision_node_id,
+                        relationship_type="decided_in",
+                    )
+                    logger.debug("Linked %s to Decision '%s'", name, decision.title)
+
+            # Edge: Decision --discussed_in--> Ticket (for ticket refs in topics)
+            for ticket_id in all_ticket_node_ids:
+                await upsert_edge(
+                    session, workspace_id,
+                    source_node_id=decision_node_id,
+                    target_node_id=ticket_id,
+                    relationship_type="references",
                 )
+
+        except Exception:
+            logger.warning(
+                "Failed to create Decision node: %s", decision.title, exc_info=True,
+            )
 
 
 # ============================================================
