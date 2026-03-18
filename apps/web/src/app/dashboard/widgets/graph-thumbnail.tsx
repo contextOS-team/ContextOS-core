@@ -1,124 +1,167 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import Link from 'next/link'
-import { fetchMyWorkGraph } from '@/lib/api'
-import { Skeleton } from '@/components/ui/skeleton'
-import type { ApiNode, ApiEdge } from '@/components/graph/types'
+import type { EntityType, LensGraphResponse } from '@/components/graph/types'
+import {
+  forceLayout,
+  getSvgHeight,
+  filterToUserPerson,
+  buildFooterText,
+  getNodeLabel,
+  analyzeConnections,
+  resolveVisibleLabels,
+} from './graph-thumbnail-logic'
 
-/* ── colour map by entity type ─────────────────────────────── */
-
-const NODE_COLORS: Record<string, string> = {
-  Ticket: '#10b981',
-  Person: '#6366f1',
-  Decision: '#f59e0b',
+/**
+ * SVG fill colors as hex — ENTITY_COLORS from constants uses OKLCH which older
+ * browsers don't support in SVG fill attributes. These are hex approximations.
+ */
+const SVG_NODE_COLORS: Record<EntityType, string> = {
+  Ticket: '#8b5cf6',     // violet
+  Person: '#ec4899',     // pink/rose
+  Decision: '#eab308',   // amber
+  PR: '#22c55e',         // green
+  Message: '#3b82f6',    // blue
+  Code: '#14b8a6',       // teal
+  CodeChunk: '#0d9488',  // teal muted
+  NotionPage: '#6b7280', // cool gray
+  SlackThread: '#d946ef',// magenta
+  Meeting: '#f97316',    // orange
 }
-const DEFAULT_NODE_COLOR = '#64748b'
+const DEFAULT_SVG_COLOR = '#64748b'
 
-function nodeColor(entityType: string): string {
-  return NODE_COLORS[entityType] ?? DEFAULT_NODE_COLOR
-}
+/* ── node shapes by entity type ───────────────────────────── */
 
-/* ── deterministic hash for seeded positioning ─────────────── */
-
-function hashCode(s: string): number {
-  let h = 0
-  for (let i = 0; i < s.length; i++) {
-    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0
-  }
-  return h
-}
-
-/* ── simple circular layout with per-node jitter ───────────── */
-
-interface Pos {
+function NodeShape({
+  entityType,
+  x,
+  y,
+  r,
+  fill,
+  opacity,
+  isHub,
+}: {
+  entityType: EntityType
   x: number
   y: number
+  r: number
+  fill: string
+  opacity: number
+  isHub: boolean
+}) {
+  const glow = isHub ? (
+    <circle cx={x} cy={y} r={r * 2.5} fill={fill} opacity={0.12} />
+  ) : null
+
+  switch (entityType) {
+    // Tickets → rounded square
+    case 'Ticket': {
+      const s = r * 1.6
+      return (
+        <>
+          {glow}
+          <rect
+            x={x - s / 2}
+            y={y - s / 2}
+            width={s}
+            height={s}
+            rx={s * 0.2}
+            fill={fill}
+            opacity={opacity}
+          />
+        </>
+      )
+    }
+    // Decisions → diamond
+    case 'Decision': {
+      const d = r * 1.4
+      return (
+        <>
+          {glow}
+          <polygon
+            points={`${x},${y - d} ${x + d},${y} ${x},${y + d} ${x - d},${y}`}
+            fill={fill}
+            opacity={opacity}
+          />
+        </>
+      )
+    }
+    // PRs → triangle
+    case 'PR': {
+      const d = r * 1.5
+      return (
+        <>
+          {glow}
+          <polygon
+            points={`${x},${y - d} ${x + d * 0.87},${y + d * 0.5} ${x - d * 0.87},${y + d * 0.5}`}
+            fill={fill}
+            opacity={opacity}
+          />
+        </>
+      )
+    }
+    // People, messages, code, etc → circle
+    default:
+      return (
+        <>
+          {glow}
+          <circle cx={x} cy={y} r={r} fill={fill} opacity={opacity} />
+        </>
+      )
+  }
 }
 
-function layoutNodes(nodes: ApiNode[], width: number, height: number): Map<string, Pos> {
-  const positions = new Map<string, Pos>()
-  const cx = width / 2
-  const cy = height / 2
-  const rx = width * 0.38
-  const ry = height * 0.36
-  const count = nodes.length
-
-  nodes.forEach((node, i) => {
-    const angle = (2 * Math.PI * i) / count
-    const h = hashCode(node.id)
-    // jitter ±12 % of radius
-    const jx = ((h & 0xff) / 255 - 0.5) * rx * 0.24
-    const jy = (((h >> 8) & 0xff) / 255 - 0.5) * ry * 0.24
-    positions.set(node.id, {
-      x: cx + Math.cos(angle) * rx + jx,
-      y: cy + Math.sin(angle) * ry + jy,
-    })
-  })
-
-  return positions
-}
-
-/* ── loading skeleton ──────────────────────────────────────── */
-
-function ThumbnailSkeleton() {
-  return (
-    <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden">
-      <div className="px-4 pt-3 pb-2 flex items-center justify-between">
-        <Skeleton className="h-3 w-16" />
-        <Skeleton className="h-3 w-20" />
-      </div>
-      <div className="relative w-full" style={{ height: 180 }}>
-        <Skeleton className="absolute left-1/2 top-6 h-3 w-3 -translate-x-1/2 rounded-full" />
-        <Skeleton className="absolute left-6 top-16 h-2.5 w-2.5 rounded-full" />
-        <Skeleton className="absolute right-8 top-12 h-2.5 w-2.5 rounded-full" />
-        <Skeleton className="absolute left-12 bottom-6 h-2 w-2 rounded-full" />
-        <Skeleton className="absolute right-12 bottom-10 h-2 w-2 rounded-full" />
-      </div>
-      <div className="px-4 py-2.5 border-t border-border/50">
-        <Skeleton className="h-3 w-24" />
-      </div>
-    </div>
-  )
-}
-
-/* ── main widget ───────────────────────────────────────────── */
+/* ── main widget ──────────────────────────────────────────── */
 
 const SVG_WIDTH = 400
-const SVG_HEIGHT = 180
 
-export function GraphThumbnail() {
-  const [nodes, setNodes] = useState<ApiNode[] | null>(null)
-  const [edges, setEdges] = useState<ApiEdge[]>([])
-  const [loading, setLoading] = useState(true)
+// Stable empty array to avoid re-creating on every render when data is null
+const EMPTY_EDGES: never[] = []
 
-  useEffect(() => {
-    let cancelled = false
-    fetchMyWorkGraph()
-      .then((res) => {
-        if (cancelled) return
-        setNodes(res.all_nodes)
-        setEdges(res.all_edges)
-      })
-      .catch(() => {
-        if (!cancelled) setNodes([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
+interface GraphThumbnailProps {
+  data: LensGraphResponse | null
+  userName?: string
+}
+
+export function GraphThumbnail({ data, userName }: GraphThumbnailProps) {
+  const allNodes = data?.all_nodes ?? null
+  // FIX: stable reference for empty edges — avoids memo invalidation every render
+  const allEdges = data?.all_edges ?? EMPTY_EDGES
+
+  // Keep only the current user's Person node — match by name, fall back to most-connected
+  const { nodes, edges } = useMemo(() => {
+    if (!allNodes || allNodes.length === 0) return { nodes: null, edges: allEdges }
+    return filterToUserPerson(allNodes, allEdges, userName)
+  }, [allNodes, allEdges, userName])
+
+  const { positions, hubId, connectionCounts, svgHeight } = useMemo(() => {
+    if (!nodes || nodes.length === 0) {
+      return { positions: null, hubId: null, connectionCounts: new Map<string, number>(), svgHeight: 160 }
     }
-  }, [])
 
-  if (loading) return <ThumbnailSkeleton />
-  if (!nodes || nodes.length === 0) return null
+    const { counts, hubId } = analyzeConnections(edges)
+    const svgH = getSvgHeight(nodes.length)
 
-  const positions = layoutNodes(nodes, SVG_WIDTH, SVG_HEIGHT)
+    return {
+      positions: forceLayout(nodes, edges, SVG_WIDTH, svgH),
+      hubId,
+      connectionCounts: counts,
+      svgHeight: svgH,
+    }
+  }, [nodes, edges])
+
+  // Determine which labels are visible (no overlap)
+  const visibleLabels = useMemo(() => {
+    if (!nodes || !positions) return new Set<string>()
+    return resolveVisibleLabels(nodes, positions, connectionCounts, hubId)
+  }, [nodes, positions, connectionCounts, hubId])
+
+  if (!data || !nodes || nodes.length === 0 || !positions) return null
 
   return (
     <Link href="/dashboard/graph" className="block group">
-      <div className="rounded-xl bg-card shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.2),0_2px_8px_rgba(0,0,0,0.12)] overflow-hidden transition-shadow duration-150 group-hover:shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_2px_4px_rgba(0,0,0,0.3),0_4px_12px_rgba(0,0,0,0.18)]">
+      <div className="widget-card rounded-xl transition-[box-shadow] duration-200 group-hover:shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_2px_4px_rgba(0,0,0,0.3),0_4px_12px_rgba(0,0,0,0.18)]">
         {/* header */}
         <div className="px-4 pt-3 pb-2 flex items-center justify-between">
           <span className="section-label">My Work</span>
@@ -129,51 +172,77 @@ export function GraphThumbnail() {
 
         {/* mini graph */}
         <svg
-          viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+          viewBox={`0 0 ${SVG_WIDTH} ${svgHeight}`}
           className="w-full"
-          style={{ height: 180 }}
+          style={{ height: svgHeight }}
           aria-hidden="true"
         >
-          {/* edges */}
-          {edges.map((edge, i) => {
+          {/* edges — hub edges slightly brighter */}
+          {edges.map((edge) => {
             const src = positions.get(edge.source)
             const tgt = positions.get(edge.target)
             if (!src || !tgt) return null
+            const touchesHub = edge.source === hubId || edge.target === hubId
             return (
               <line
-                key={i}
+                key={`${edge.source}::${edge.target}`}
                 x1={src.x}
                 y1={src.y}
                 x2={tgt.x}
                 y2={tgt.y}
-                stroke="rgba(255,255,255,0.06)"
+                stroke={touchesHub ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.10)'}
                 strokeWidth={1}
               />
             )
           })}
-          {/* nodes */}
+
+          {/* nodes — shape varies by entity type */}
           {nodes.map((node) => {
             const pos = positions.get(node.id)
             if (!pos) return null
-            const r = node.entity_type === 'Ticket' ? 4.5 : node.entity_type === 'Person' ? 4 : 3
+            const isHub = node.id === hubId
+            const count = connectionCounts.get(node.id) ?? 0
+            const r = isHub ? 9 : count >= 2 ? 6.5 : 5
             return (
-              <circle
+              <NodeShape
                 key={node.id}
-                cx={pos.x}
-                cy={pos.y}
+                entityType={(node.entity_type as EntityType)}
+                x={pos.x}
+                y={pos.y}
                 r={r}
-                fill={nodeColor(node.entity_type)}
-                opacity={0.85}
+                fill={SVG_NODE_COLORS[node.entity_type as EntityType] ?? DEFAULT_SVG_COLOR}
+                opacity={isHub ? 1 : 0.85}
+                isHub={isHub}
               />
+            )
+          })}
+
+          {/* node labels — only rendered where they don't overlap */}
+          {nodes.map((node) => {
+            if (!visibleLabels.has(node.id)) return null
+            const pos = positions.get(node.id)
+            if (!pos) return null
+            const isHub = node.id === hubId
+            return (
+              <text
+                key={`lbl-${node.id}`}
+                x={pos.x}
+                y={pos.y + (isHub ? 18 : 15)}
+                textAnchor="middle"
+                fill={isHub ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.28)'}
+                fontSize={isHub ? 10 : 9}
+                fontFamily="system-ui, sans-serif"
+              >
+                {getNodeLabel(node)}
+              </text>
             )
           })}
         </svg>
 
-        {/* footer */}
+        {/* footer — human-readable entity counts */}
         <div className="px-4 py-2.5 border-t border-border/50">
           <span className="text-xs text-muted-foreground">
-            {nodes.length} node{nodes.length !== 1 ? 's' : ''} &middot;{' '}
-            {edges.length} edge{edges.length !== 1 ? 's' : ''}
+            {buildFooterText(nodes)}
           </span>
         </div>
       </div>
