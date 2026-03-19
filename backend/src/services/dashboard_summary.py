@@ -28,7 +28,7 @@ async def get_weekly_summary(
     Returns a list of dicts sorted by date DESC:
     [{date, activity_count, contexts_updated, prs_merged}]
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     seven_days_ago = now - timedelta(days=7)
 
     # Initialize all 7 days with zero counts
