@@ -311,6 +311,7 @@ describe('buildFooterText', () => {
   })
 
   it('handles unknown entity type gracefully', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const nodes = [node('x1', 'SomeFutureType' as any)]
     expect(buildFooterText(nodes)).toBe('1 somefuturetype')
   })
