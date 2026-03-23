@@ -19,6 +19,7 @@ from src.models.jira import JiraIssue
 from src.models.sync import SyncCursor
 from src.models.ticket import LinearTicket
 from src.services.graph_ops import compute_fingerprint
+from src.services.audit import log_audit_event
 from src.services.linking import LinkedItem, find_content_by_source, find_related_content
 from src.services.llm_client import get_llm_client
 from src.services.sync_adapter import emit_activity
@@ -684,6 +685,21 @@ async def generate_context_page(
             "source_count": len(sources_list),
             "token_count": llm_response.total_tokens,
         })
+
+        # Audit log: record context generation event
+        await log_audit_event(
+            session,
+            workspace_id=workspace_id,
+            action="context_generated",
+            resource_type="context_page",
+            resource_id=context_page.id,
+            details={
+                "ticket_identifier": ticket_identifier,
+                "source_count": len(sources_list),
+                "tokens_used": llm_response.total_tokens,
+                "model": llm_response.model,
+            },
+        )
 
         # BUG-03 fix: flush AND commit so the caller doesn't need to commit
         await session.flush()

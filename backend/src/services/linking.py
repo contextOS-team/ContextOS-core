@@ -536,9 +536,11 @@ async def _bulk_lookup_source_summaries(
 ) -> dict[tuple[str, UUID], tuple[str, str, str | None]]:
     """Bulk-fetch title/snippet/url for multiple source records.
 
-    Groups IDs by source_type, performs one query per type, then
-    maps results in-memory. Eliminates the N+1 from per-result lookups.
+    Privacy-aware: first tries to read from embedding metadata (which
+    persists after raw content deletion), then falls back to source tables.
     """
+    from src.models.embedding import Embedding
+
     result_map: dict[tuple[str, UUID], tuple[str, str, str | None]] = {}
     if not keys:
         return result_map
@@ -548,13 +550,29 @@ async def _bulk_lookup_source_summaries(
     for source_type, source_id in keys:
         grouped.setdefault(source_type, []).append(source_id)
 
+    # Phase 1: Try embedding metadata first (works even after raw content deletion)
+    missing_keys: list[tuple[str, UUID]] = []
+    all_ids = [sid for _, sid in keys]
+    if all_ids:
+        emb_stmt = select(Embedding).where(
+            Embedding.source_id.in_(all_ids),
+            Embedding.deleted_at.is_(None),
+        )
+        emb_result = await session.execute(emb_stmt)
+        for emb in emb_result.scalars().all():
+            meta = emb.metadata_ or {}
+            if meta.get("title") and meta.get("snippet"):
+                key = (emb.source_type, emb.source_id)
+                result_map[key] = (meta["title"], meta["snippet"], meta.get("url"))
+
+    # Phase 2: Fall back to source tables for any records not found in metadata
     for source_type, ids in grouped.items():
-        if source_type not in _SOURCE_SUMMARY_MAP:
-            # Unknown source type — caller should skip these
+        fallback_ids = [sid for sid in ids if (source_type, sid) not in result_map]
+        if not fallback_ids or source_type not in _SOURCE_SUMMARY_MAP:
             continue
 
         model_cls, extract, url_fn = _SOURCE_SUMMARY_MAP[source_type]
-        stmt = select(model_cls).where(model_cls.id.in_(ids))  # type: ignore[union-attr]
+        stmt = select(model_cls).where(model_cls.id.in_(fallback_ids))  # type: ignore[union-attr]
         db_result = await session.execute(stmt)
         records = db_result.scalars().all()
 
@@ -562,9 +580,6 @@ async def _bulk_lookup_source_summaries(
             title, snippet = extract(record)
             url = url_fn(record) if url_fn else None
             result_map[(source_type, record.id)] = (title, snippet, url)
-
-        # Missing IDs are intentionally NOT added to result_map.
-        # Callers check membership to skip orphaned embedding hits.
 
     return result_map
 

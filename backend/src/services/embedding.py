@@ -116,6 +116,102 @@ SOURCE_TYPE_MAP: dict[str, tuple[type, callable]] = {
     ),
 }
 
+# Map source_type to (title_extractor, snippet_extractor, url_extractor) for privacy-safe
+# metadata storage. Stored in embedding metadata so raw source content can be deleted.
+_SUMMARY_EXTRACT_MAP: dict[str, tuple] = {
+    "linear_ticket": (
+        lambda r: r.title,
+        lambda r: (r.description or "")[:300],
+        lambda r: f"https://linear.app/issue/{r.identifier}",
+    ),
+    "linear_comment": (
+        lambda r: f"Comment by {r.author_name or 'Unknown'}",
+        lambda r: (r.body or "")[:300],
+        lambda r: None,
+    ),
+    "slack_message": (
+        lambda r: f"Slack by {r.user_name or 'Unknown'} in #{r.channel_name or 'unknown'}",
+        lambda r: r.text[:300],
+        lambda r: f"https://slack.com/archives/{r.channel_id}/p{r.slack_ts.replace('.', '')}" if r.channel_id and r.slack_ts else None,
+    ),
+    "meeting_transcript": (
+        lambda r: f"Meeting: {r.title or 'Untitled'}",
+        lambda r: (r.transcript or "")[:300],
+        lambda r: None,
+    ),
+    "meeting_segment": (
+        lambda r: f"Segment by {r.speaker_name or 'Unknown'}",
+        lambda r: r.text[:300],
+        lambda r: None,
+    ),
+    "github_pull_request": (
+        lambda r: f"PR #{r.number}: {r.title}",
+        lambda r: f"State: {'merged' if r.github_merged_at else r.state} | Author: {r.author}\n{(r.description or '')[:200]}",
+        lambda r: f"https://github.com/{r.repo_full_name}/pull/{r.number}",
+    ),
+    "github_review": (
+        lambda r: f"Review by {r.author} ({r.state})",
+        lambda r: (r.body or "")[:300],
+        lambda r: None,
+    ),
+    "gitlab_merge_request": (
+        lambda r: f"MR !{r.iid}: {r.title}",
+        lambda r: f"State: {'merged' if r.gitlab_merged_at else r.state} | Author: {r.author}\n{(r.description or '')[:200]}",
+        lambda r: f"https://gitlab.com/{r.project_path}/-/merge_requests/{r.iid}",
+    ),
+    "gitlab_review": (
+        lambda r: f"Review by {r.author} ({r.state})",
+        lambda r: (r.body or "")[:300],
+        lambda r: None,
+    ),
+    "notion_page": (
+        lambda r: r.title,
+        lambda r: (r.content or "")[:300],
+        lambda r: r.url if hasattr(r, "url") else None,
+    ),
+    "code_chunk": (
+        lambda r: f"{r.symbol_type}: {r.symbol_name} ({r.repo_full_name}:{r.file_path})",
+        lambda r: r.content[:300],
+        lambda r: None,
+    ),
+    "telegram_message": (
+        lambda r: f"Telegram by {r.from_first_name or r.from_username or 'Unknown'} in {r.chat_title or 'DM'}",
+        lambda r: r.text[:300],
+        lambda r: None,
+    ),
+    "jira_issue": (
+        lambda r: f"{r.jira_key}: {r.summary}",
+        lambda r: (r.description or "")[:300],
+        lambda r: None,
+    ),
+    "jira_comment": (
+        lambda r: f"Jira comment by {r.author_name or 'Unknown'}",
+        lambda r: (r.body or "")[:300],
+        lambda r: None,
+    ),
+    "context_page": (
+        lambda r: r.title,
+        lambda r: (r.content or "")[:300],
+        lambda r: None,
+    ),
+}
+
+
+def _extract_summary_metadata(source_type: str, record: object) -> dict:
+    """Extract title/snippet/url from a source record for embedding metadata."""
+    if source_type not in _SUMMARY_EXTRACT_MAP:
+        return {}
+    title_fn, snippet_fn, url_fn = _SUMMARY_EXTRACT_MAP[source_type]
+    try:
+        return {
+            "title": title_fn(record),
+            "snippet": snippet_fn(record),
+            "url": url_fn(record),
+        }
+    except Exception:
+        return {}
+
+
 # Lazy singleton for the Gemini client
 _gemini_client: genai.Client | None = None
 
@@ -285,6 +381,13 @@ async def queue_embedding_generation(
         for (source_id, text_content, content_hash), embedding_vector in zip(batch, embeddings):
             try:
                 search_content = text_content[:MAX_INPUT_CHARS]
+
+                # Extract title/snippet/url for privacy-safe metadata.
+                # This allows raw source content to be deleted later
+                # while preserving display-ready summaries.
+                record = records_by_id.get(source_id)
+                summary_meta = _extract_summary_metadata(source_type, record) if record else {}
+
                 upsert_stmt = (
                     insert(Embedding)
                     .values(
@@ -294,6 +397,7 @@ async def queue_embedding_generation(
                         content_hash=content_hash,
                         embedding=embedding_vector,
                         search_content=search_content,
+                        metadata_=summary_meta,
                         model_name=EMBEDDING_MODEL_NAME,
                         model_version=EMBEDDING_MODEL_VERSION,
                     )
@@ -303,6 +407,7 @@ async def queue_embedding_generation(
                             "content_hash": content_hash,
                             "embedding": embedding_vector,
                             "search_content": search_content,
+                            "metadata": summary_meta,
                             "model_name": EMBEDDING_MODEL_NAME,
                             "model_version": EMBEDDING_MODEL_VERSION,
                             "deleted_at": None,
