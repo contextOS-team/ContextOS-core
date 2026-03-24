@@ -137,7 +137,7 @@ async def sync_jira_issues(
     async with SyncRunLogger("jira", workspace_id) as srl:
         await emit_activity(session, workspace_id, "sync_started", metadata={"integration": "jira"})
         try:
-            jql_query = jql or "ORDER BY updated DESC"
+            jql_query = jql or "assignee = currentUser() ORDER BY updated DESC"
             next_page_token: str | None = None
 
             async with httpx.AsyncClient() as client:
