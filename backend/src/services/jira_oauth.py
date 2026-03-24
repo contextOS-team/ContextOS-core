@@ -240,7 +240,15 @@ async def refresh_access_token(
         raise JiraOAuthError("No OAuth token found for this workspace")
 
     # If token is still valid, return current access token
-    if oauth_token.token_expires_at and oauth_token.token_expires_at > datetime.now(timezone.utc).replace(tzinfo=None):
+    if oauth_token.token_expires_at:
+        expires_at = (
+            oauth_token.token_expires_at.replace(tzinfo=None)
+            if oauth_token.token_expires_at.tzinfo
+            else oauth_token.token_expires_at
+        )
+    else:
+        expires_at = None
+    if expires_at and expires_at > datetime.now(timezone.utc).replace(tzinfo=None):
         access_name = token_name(Provider.JIRA, workspace_id, "access")
         current_token = await read_token(session, access_name)
         if current_token:
