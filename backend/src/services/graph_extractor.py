@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 SOURCE_TYPE_TO_ENTITY: dict[str, str] = {
     "linear_ticket": "Ticket",
     "linear_comment": "Ticket",
+    "jira_issue": "Ticket",
+    "jira_comment": "Ticket",
     "slack_message": "SlackThread",
     "github_pull_request": "PR",
     "github_review": "PR",

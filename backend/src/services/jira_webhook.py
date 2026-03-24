@@ -127,6 +127,9 @@ async def _handle_issue_created(
             session, workspace_id, "jira_issue", [issue.id]
         )
 
+        # Extract graph nodes
+        await _extract_graph_for_issue(session, workspace_id, issue)
+
         # Emit ticket_created activity event
         await emit_activity(session, workspace_id, "ticket_created", metadata={
             "integration": "jira",
@@ -175,6 +178,9 @@ async def _handle_issue_updated(
     await embedding.queue_embedding_generation(
         session, workspace_id, "jira_issue", [issue.id]
     )
+
+    # Re-extract graph nodes on content change
+    await _extract_graph_for_issue(session, workspace_id, issue)
 
 
 async def _handle_issue_deleted(
@@ -509,3 +515,26 @@ async def refresh_webhooks(
         return {"error": response.text}
 
     return response.json()
+
+
+async def _extract_graph_for_issue(
+    session: AsyncSession,
+    workspace_id: UUID,
+    issue: JiraIssue,
+) -> None:
+    """Extract graph nodes for a single Jira issue."""
+    from src.services.graph_extractor import extract_and_populate_graph
+
+    content = f"{issue.jira_key}: {issue.summary}\n\n{issue.description or ''}"
+    try:
+        await extract_and_populate_graph(
+            session=session,
+            workspace_id=workspace_id,
+            content=content,
+            source_type="jira_issue",
+            source_id=issue.id,
+            source_name=f"{issue.jira_key}: {issue.summary}",
+            source_external_id=issue.jira_key,
+        )
+    except Exception:
+        logger.warning("Graph extraction failed for Jira issue %s", issue.jira_key, exc_info=True)

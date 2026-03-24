@@ -178,6 +178,11 @@ async def sync_jira_issues(
                         session, workspace_id, issues, issue_ids
                     )
 
+                    # Extract graph nodes for synced issues
+                    await _extract_graph_for_issues(
+                        session, workspace_id, issues, issue_ids
+                    )
+
                     total_issues += len(issue_ids)
                     total_comments += comment_count
 
@@ -319,6 +324,45 @@ async def search_jira_issues(
         f'text ~ "{safe_query}" ORDER BY updated DESC',
         max_results=20,
     )
+
+
+async def _extract_graph_for_issues(
+    session: AsyncSession,
+    workspace_id: UUID,
+    issues: list[dict],
+    issue_id_map: dict[str, UUID],
+) -> int:
+    """Create graph nodes and extract entities for synced Jira issues."""
+    from src.services.graph_extractor import extract_and_populate_graph
+
+    count = 0
+    for issue in issues:
+        jira_id = issue["id"]
+        issue_uuid = issue_id_map.get(jira_id)
+        if not issue_uuid:
+            continue
+
+        key = issue.get("key", "")
+        fields = issue.get("fields", {})
+        summary = fields.get("summary", "")
+        description = _extract_text_from_adf(fields.get("description"))
+        content = f"{key}: {summary}\n\n{description or ''}"
+
+        try:
+            await extract_and_populate_graph(
+                session=session,
+                workspace_id=workspace_id,
+                content=content,
+                source_type="jira_issue",
+                source_id=issue_uuid,
+                source_name=f"{key}: {summary}",
+                source_external_id=key,
+            )
+            count += 1
+        except Exception:
+            logger.warning("Graph extraction failed for Jira issue %s", key, exc_info=True)
+
+    return count
 
 
 async def _upsert_issues(

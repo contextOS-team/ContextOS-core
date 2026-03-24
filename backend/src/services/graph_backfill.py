@@ -22,6 +22,7 @@ from src.models.github import GithubPullRequest, GithubReview
 from src.models.meeting import MeetingTranscript
 from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
+from src.models.jira import JiraComment, JiraIssue
 from src.models.ticket import LinearComment, LinearTicket
 from src.services.graph_extractor import extract_and_populate_graph
 
@@ -105,6 +106,91 @@ async def _process_linear_comments(batch_size: int) -> int:
             await session.commit()
             logger.info(
                 "Backfill linear_comment: batch %d/%d, %d records processed",
+                batch_num, total_batches, len(batch),
+            )
+
+    return count
+
+
+async def _process_jira_issues(batch_size: int) -> int:
+    """Process all Jira issues for graph extraction."""
+    count = 0
+    async with async_session() as session:
+        stmt = select(JiraIssue).where(
+            JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        result = await session.execute(stmt)
+        issues = result.scalars().all()
+
+        total = len(issues)
+        total_batches = max(1, math.ceil(total / batch_size))
+
+        for i in range(0, total, batch_size):
+            batch = issues[i : i + batch_size]
+            batch_num = (i // batch_size) + 1
+            for issue in batch:
+                content = f"{issue.jira_key}: {issue.summary}\n\n{issue.description or ''}"
+                try:
+                    await extract_and_populate_graph(
+                        session=session,
+                        workspace_id=issue.workspace_id,
+                        content=content,
+                        source_type="jira_issue",
+                        source_id=issue.id,
+                        source_name=f"{issue.jira_key}: {issue.summary}",
+                        source_external_id=issue.jira_key,
+                    )
+                    count += 1
+                except Exception:
+                    logger.warning(
+                        "Backfill failed for Jira issue %s", issue.jira_key, exc_info=True
+                    )
+            await session.commit()
+            logger.info(
+                "Backfill jira_issue: batch %d/%d, %d records processed",
+                batch_num, total_batches, len(batch),
+            )
+
+    return count
+
+
+async def _process_jira_comments(batch_size: int) -> int:
+    """Process all Jira comments for graph extraction."""
+    count = 0
+    async with async_session() as session:
+        stmt = select(JiraComment).where(
+            JiraComment.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        result = await session.execute(stmt)
+        comments = result.scalars().all()
+
+        total = len(comments)
+        total_batches = max(1, math.ceil(total / batch_size))
+
+        for i in range(0, total, batch_size):
+            batch = comments[i : i + batch_size]
+            batch_num = (i // batch_size) + 1
+            for comment in batch:
+                if not comment.body:
+                    continue
+                try:
+                    await extract_and_populate_graph(
+                        session=session,
+                        workspace_id=comment.workspace_id,
+                        content=comment.body,
+                        source_type="jira_comment",
+                        source_id=comment.id,
+                        source_name=f"Jira comment {comment.jira_id}",
+                        source_external_id=comment.jira_id,
+                    )
+                    count += 1
+                except Exception:
+                    logger.warning(
+                        "Backfill failed for Jira comment %s", comment.jira_id, exc_info=True
+                    )
+            await session.commit()
+            logger.info(
+                "Backfill jira_comment: batch %d/%d, %d records processed",
                 batch_num, total_batches, len(batch),
             )
 
@@ -342,6 +428,8 @@ async def backfill_graph(batch_size: int = 100, llm_extract: bool = False) -> di
     counts = {
         "tickets": await _process_linear_tickets(batch_size),
         "comments": await _process_linear_comments(batch_size),
+        "jira_issues": await _process_jira_issues(batch_size),
+        "jira_comments": await _process_jira_comments(batch_size),
         "messages": await _process_slack_messages(batch_size),
         "pull_requests": await _process_github_pull_requests(batch_size),
         "reviews": await _process_github_reviews(batch_size),
