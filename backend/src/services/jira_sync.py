@@ -320,11 +320,11 @@ async def list_my_jira_issues(
     workspace_id: UUID,
     settings: Settings,
 ) -> list[dict]:
-    """Return issues assigned to the current user, most recently updated first."""
+    """Return open issues assigned to the current user, most recently updated first."""
     access_token, cloud_id = await get_valid_token(session, workspace_id, settings)
     return await _jql_search(
         access_token, cloud_id,
-        "assignee = currentUser() ORDER BY updated DESC",
+        "assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC",
         max_results=50,
     )
 
