@@ -768,7 +768,7 @@ async def extract_and_populate_graph(
         # 1. Create source node
         # Build properties for the source node
         source_props: dict = {}
-        if source_type == "linear_ticket" and source_external_id:
+        if source_type in ("linear_ticket", "jira_issue") and source_external_id:
             source_props["identifier"] = source_external_id
 
         source_node_id = await upsert_node(
