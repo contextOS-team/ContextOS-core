@@ -182,6 +182,43 @@ async def resolve_by_email(
     return created_count
 
 
+async def resolve_unlinked_mappings(
+    session: AsyncSession,
+    workspace_id: UUID,
+) -> int:
+    """Create canonical Person nodes for identity mappings without email.
+
+    Some platforms (Jira) don't expose user emails. After resolve_by_email
+    runs, these mappings still have no canonical_person_id. This function
+    creates a standalone canonical Person node for each such mapping so
+    that assigned_to edges can be created.
+    """
+    stmt = select(IdentityMapping).where(
+        IdentityMapping.workspace_id == workspace_id,
+        IdentityMapping.canonical_person_id.is_(None),
+        IdentityMapping.deleted_at.is_(None),
+    )
+    result = await session.execute(stmt)
+    unlinked = result.scalars().all()
+
+    created = 0
+    for m in unlinked:
+        canonical_id = uuid.uuid4()
+        display_name = m.display_name or m.platform_user_id
+        canonical_node_id = await create_canonical_person(
+            session, workspace_id, canonical_id, display_name
+        )
+        m.canonical_person_id = canonical_node_id
+        created += 1
+
+    if created:
+        logger.info(
+            "Created %d Person nodes for email-less identity mappings in workspace %s",
+            created, workspace_id,
+        )
+    return created
+
+
 async def _create_same_as_edge(
     session: AsyncSession,
     workspace_id: UUID,
@@ -702,6 +739,14 @@ async def seed_roster(
     logger.info(
         "Email resolution created %d canonical persons for workspace %s",
         resolved,
+        workspace_id,
+    )
+
+    # Create Person nodes for mappings without email (e.g. Jira users)
+    unlinked = await resolve_unlinked_mappings(session, workspace_id)
+    logger.info(
+        "Unlinked resolution created %d canonical persons for workspace %s",
+        unlinked,
         workspace_id,
     )
 
