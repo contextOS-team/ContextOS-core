@@ -453,6 +453,56 @@ async def fetch_slack_roster(
     return members
 
 
+async def fetch_jira_roster(
+    session: AsyncSession,
+    workspace_id: UUID,
+) -> list[dict]:
+    """Extract unique people (assignees + reporters) from synced Jira issues.
+
+    Unlike Linear/Slack/GitHub which have dedicated user-list APIs, Jira Cloud
+    restricts user enumeration. Instead we extract unique users from the
+    raw_data JSONB of already-synced issues — no extra API calls needed.
+
+    Returns:
+        List of dicts with platform_user_id, display_name, email.
+    """
+    from src.models.jira import JiraIssue
+
+    stmt = select(JiraIssue).where(
+        JiraIssue.workspace_id == workspace_id,
+        JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    result = await session.execute(stmt)
+    issues = result.scalars().all()
+
+    seen: set[str] = set()
+    members: list[dict] = []
+
+    for issue in issues:
+        raw = issue.raw_data or {}
+        fields = raw.get("fields", {})
+
+        for role in ("assignee", "reporter"):
+            person = fields.get(role)
+            if not person or not isinstance(person, dict):
+                continue
+            account_id = person.get("accountId")
+            if not account_id or account_id in seen:
+                continue
+            seen.add(account_id)
+            members.append({
+                "platform_user_id": account_id,
+                "display_name": person.get("displayName") or "",
+                "email": person.get("emailAddress"),
+            })
+
+    logger.info(
+        "Extracted %d unique Jira users from %d issues for workspace %s",
+        len(members), len(issues), workspace_id,
+    )
+    return members
+
+
 async def fetch_github_roster(
     session: AsyncSession,
     workspace_id: UUID,

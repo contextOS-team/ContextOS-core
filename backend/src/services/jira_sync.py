@@ -220,6 +220,25 @@ async def sync_jira_issues(
                 records_synced=total_issues,
             )
 
+            # Seed Jira roster for identity resolution (fail-silent)
+            roster_seeded = False
+            try:
+                from src.services.identity_resolution import fetch_jira_roster, seed_roster
+
+                members = await fetch_jira_roster(session, workspace_id)
+                await seed_roster(session, workspace_id, "jira", members)
+                roster_seeded = True
+                logger.info("Jira roster seeding: %d members for workspace %s", len(members), workspace_id)
+            except Exception:
+                logger.warning("Jira roster seeding failed for workspace %s", workspace_id, exc_info=True)
+
+            # Link ticket assignees to Person graph nodes (fail-silent)
+            if roster_seeded:
+                try:
+                    await _link_jira_assignees(session, workspace_id)
+                except Exception:
+                    logger.warning("Jira assignee linking failed for workspace %s", workspace_id, exc_info=True)
+
             _sync_duration_ms = int((time.monotonic() - _sync_t0) * 1000)
             await emit_activity(session, workspace_id, "sync_completed", metadata={
                 "integration": "jira",
@@ -363,6 +382,73 @@ async def _extract_graph_for_issues(
             logger.warning("Graph extraction failed for Jira issue %s", key, exc_info=True)
 
     return count
+
+
+async def _link_jira_assignees(
+    session: AsyncSession,
+    workspace_id: UUID,
+) -> int:
+    """Create assigned_to graph edges from Jira ticket nodes to Person nodes.
+
+    Reads assignee accountId from raw_data, looks up identity mapping,
+    and creates assigned_to edge from the ticket graph node to the
+    canonical Person node.
+    """
+    from src.models.identity_mapping import IdentityMapping
+    from src.models.jira import JiraIssue
+    from src.services.graph_ops import compute_fingerprint, upsert_edge
+
+    stmt = select(JiraIssue).where(
+        JiraIssue.workspace_id == workspace_id,
+        JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    result = await session.execute(stmt)
+    issues = result.scalars().all()
+
+    linked = 0
+    for issue in issues:
+        raw = issue.raw_data or {}
+        assignee = raw.get("fields", {}).get("assignee")
+        if not assignee or not assignee.get("accountId"):
+            continue
+
+        try:
+            im_stmt = select(IdentityMapping).where(
+                IdentityMapping.workspace_id == workspace_id,
+                IdentityMapping.platform == "jira",
+                IdentityMapping.platform_user_id == assignee["accountId"],
+                IdentityMapping.canonical_person_id.is_not(None),
+            )
+            im_result = await session.execute(im_stmt)
+            mapping = im_result.scalar_one_or_none()
+            if not mapping:
+                continue
+
+            fp = compute_fingerprint("Ticket", issue.jira_key)
+            from src.models.graph_node import GraphNode
+
+            node_stmt = select(GraphNode.id).where(
+                GraphNode.workspace_id == workspace_id,
+                GraphNode.fingerprint == fp,
+                GraphNode.deleted_at.is_(None),
+            )
+            node_result = await session.execute(node_stmt)
+            ticket_node_id = node_result.scalar_one_or_none()
+            if not ticket_node_id:
+                continue
+
+            await upsert_edge(
+                session, workspace_id,
+                ticket_node_id, mapping.canonical_person_id,
+                "assigned_to",
+            )
+            linked += 1
+        except Exception:
+            logger.debug("Failed to link Jira assignee for %s", issue.jira_key, exc_info=True)
+
+    if linked:
+        logger.info("Linked %d Jira ticket assignees to Person nodes for workspace %s", linked, workspace_id)
+    return linked
 
 
 async def _upsert_issues(
