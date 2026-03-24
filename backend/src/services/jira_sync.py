@@ -388,16 +388,17 @@ async def _link_jira_assignees(
     session: AsyncSession,
     workspace_id: UUID,
 ) -> int:
-    """Create assigned_to graph edges from Jira ticket nodes to Person nodes.
+    """Create assigned_to and reported_by edges from Jira tickets to Person nodes.
 
-    Reads assignee accountId from raw_data, looks up identity mapping,
-    and creates assigned_to edge from the ticket graph node to the
-    canonical Person node.
+    Batch-fetches identity mappings and graph nodes to avoid N+1 queries,
+    then links both assignees and reporters.
     """
     from src.models.identity_mapping import IdentityMapping
     from src.models.jira import JiraIssue
+    from src.models.graph_node import GraphNode
     from src.services.graph_ops import compute_fingerprint, upsert_edge
 
+    # 1. Fetch all issues
     stmt = select(JiraIssue).where(
         JiraIssue.workspace_id == workspace_id,
         JiraIssue.deleted_at.is_(None),  # type: ignore[union-attr]
@@ -405,49 +406,68 @@ async def _link_jira_assignees(
     result = await session.execute(stmt)
     issues = result.scalars().all()
 
+    # 2. Batch-fetch all Jira identity mappings with canonical Person
+    im_stmt = select(IdentityMapping).where(
+        IdentityMapping.workspace_id == workspace_id,
+        IdentityMapping.platform == "jira",
+        IdentityMapping.canonical_person_id.is_not(None),
+        IdentityMapping.deleted_at.is_(None),
+    )
+    im_result = await session.execute(im_stmt)
+    account_to_person: dict[str, UUID] = {
+        m.platform_user_id: m.canonical_person_id
+        for m in im_result.scalars().all()
+        if m.canonical_person_id
+    }
+
+    # 3. Batch-fetch all ticket graph nodes by fingerprint
+    fps = {issue.jira_key: compute_fingerprint("Ticket", issue.jira_key) for issue in issues}
+    fp_values = list(fps.values())
+    if fp_values:
+        node_stmt = select(GraphNode.id, GraphNode.fingerprint).where(
+            GraphNode.workspace_id == workspace_id,
+            GraphNode.fingerprint.in_(fp_values),
+            GraphNode.deleted_at.is_(None),
+        )
+        node_result = await session.execute(node_stmt)
+        fp_to_node_id = {row.fingerprint: row.id for row in node_result}
+    else:
+        fp_to_node_id = {}
+
+    # 4. Link assignees and reporters
     linked = 0
     for issue in issues:
-        raw = issue.raw_data or {}
-        assignee = raw.get("fields", {}).get("assignee")
-        if not assignee or not assignee.get("accountId"):
+        ticket_fp = fps.get(issue.jira_key)
+        ticket_node_id = fp_to_node_id.get(ticket_fp) if ticket_fp else None
+        if not ticket_node_id:
             continue
 
-        try:
-            im_stmt = select(IdentityMapping).where(
-                IdentityMapping.workspace_id == workspace_id,
-                IdentityMapping.platform == "jira",
-                IdentityMapping.platform_user_id == assignee["accountId"],
-                IdentityMapping.canonical_person_id.is_not(None),
-            )
-            im_result = await session.execute(im_stmt)
-            mapping = im_result.scalar_one_or_none()
-            if not mapping:
+        raw = issue.raw_data or {}
+        fields = raw.get("fields", {})
+
+        for role, edge_type in (("assignee", "assigned_to"), ("reporter", "authored_by")):
+            person = fields.get(role)
+            if not person or not isinstance(person, dict):
+                continue
+            account_id = person.get("accountId")
+            if not account_id:
+                continue
+            person_node_id = account_to_person.get(account_id)
+            if not person_node_id:
                 continue
 
-            fp = compute_fingerprint("Ticket", issue.jira_key)
-            from src.models.graph_node import GraphNode
-
-            node_stmt = select(GraphNode.id).where(
-                GraphNode.workspace_id == workspace_id,
-                GraphNode.fingerprint == fp,
-                GraphNode.deleted_at.is_(None),
-            )
-            node_result = await session.execute(node_stmt)
-            ticket_node_id = node_result.scalar_one_or_none()
-            if not ticket_node_id:
-                continue
-
-            await upsert_edge(
-                session, workspace_id,
-                ticket_node_id, mapping.canonical_person_id,
-                "assigned_to",
-            )
-            linked += 1
-        except Exception:
-            logger.debug("Failed to link Jira assignee for %s", issue.jira_key, exc_info=True)
+            try:
+                await upsert_edge(
+                    session, workspace_id,
+                    ticket_node_id, person_node_id,
+                    edge_type,
+                )
+                linked += 1
+            except Exception:
+                logger.debug("Failed to link %s for %s", role, issue.jira_key, exc_info=True)
 
     if linked:
-        logger.info("Linked %d Jira ticket assignees to Person nodes for workspace %s", linked, workspace_id)
+        logger.info("Linked %d Jira ticket→Person edges for workspace %s", linked, workspace_id)
     return linked
 
 
