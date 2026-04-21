@@ -1,49 +1,41 @@
-name: Deploy to Production
+name: Deploy to production
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
-          password: ${{ secrets.SERVER_PASSWORD }}
-          command_timeout: 10m
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 12m
           script: |
-            set -e  # fail fast on any error
-
+            set -euo pipefail
             cd /opt/contextos
-            git checkout -- .
-            git pull origin main
-
-            # Run database migrations before deploying new code
-            bash scripts/run-migrations.sh
-
-            # Install uv if not present (single binary, no deps)
-            command -v uv &>/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
-            export PATH="$HOME/.local/bin:$PATH"
-
-            # Install backend dependencies
-            cd backend
-            uv sync --frozen 2>/dev/null || uv sync
-            cd ..
-
-            # Build frontend (must succeed before restarting services)
-            cd apps/web
-            npm run build
-            cd ../..
-
-            # Only restart after successful build
-            systemctl restart contextos-app
-            systemctl restart contextos-api
-
-            # Verify services are running
-            sleep 5
-            systemctl is-active contextos-app
-            systemctl is-active contextos-api
+            echo "--- fetching origin/main ---"
+            git fetch --prune origin
+            git reset --hard origin/main
+            echo "--- building images ---"
+            docker compose -f docker-compose.prod.yml build
+            echo "--- restarting stack ---"
+            docker compose -f docker-compose.prod.yml up -d
+            echo "--- waiting for health ---"
+            sleep 15
+            docker compose -f docker-compose.prod.yml ps
+            echo "--- pruning old images ---"
+            docker image prune -f
+            echo "--- smoke test ---"
+            curl -sf -o /dev/null -w "app: %{http_code}\n" -k -H "Host: contextos.pro" https://localhost/
+            curl -sf -o /dev/null -w "api: %{http_code}\n" -k -H "Host: api.contextos.pro" https://localhost/api/health

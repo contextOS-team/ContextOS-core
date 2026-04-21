@@ -54,7 +54,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} dark`}>
       <head />
-      <body className="font-sans antialiased">
+      <body className="font-sans antialiased" suppressHydrationWarning>
         <SentryInit />
         <DarkModeApplier />
         <Toaster />
