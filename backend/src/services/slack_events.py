@@ -246,7 +246,7 @@ async def _handle_message(
 
     stmt = pg_insert(SlackMessage).values(**values)
     stmt = stmt.on_conflict_do_update(
-        constraint="uq_slack_msg",
+        index_elements=["workspace_id", "channel_id", "slack_ts"],
         set_={
             "text": stmt.excluded.text,
             "user_id": stmt.excluded.user_id,
