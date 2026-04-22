@@ -76,12 +76,9 @@ create table public.jira_comments (
 -- INDEXES
 -- ============================================================
 
--- jira_issues indexes
 create index on public.jira_issues (workspace_id);
 create index on public.jira_issues using gin (summary extensions.gin_trgm_ops);
 create index on public.jira_issues (workspace_id, jira_key);
-
--- jira_comments indexes
 create index on public.jira_comments (workspace_id, issue_id);
 
 -- ============================================================
