@@ -9,10 +9,8 @@ import { StepIndicator } from './step-indicator'
 import { StepWorkspace } from './step-workspace'
 import { StepTicketProvider } from './step-ticket-provider'
 import { StepSources } from './step-sources'
-import { StepContext } from './step-context'
-import { detectTicketProvider } from '@/lib/ticket-provider'
 
-type WizardStep = 1 | 2 | 3 | 4
+type WizardStep = 1 | 2 | 3
 type WizardState = 'loading' | 'active' | 'completing'
 
 export function OnboardingWizard() {
@@ -47,7 +45,9 @@ export function OnboardingWizard() {
       ])
 
       if (onboardingResult.status === 'fulfilled' && onboardingResult.value.data) {
-        setStep(onboardingResult.value.data.current_step as WizardStep)
+        // Clamp persisted step to max 3 (in case DB has old step 4)
+        const persisted = onboardingResult.value.data.current_step as number
+        setStep(Math.min(persisted, 3) as WizardStep)
       }
 
       if (integrationsResult.status === 'fulfilled') {
@@ -158,7 +158,6 @@ export function OnboardingWizard() {
               <Skeleton className="h-2 w-2 rounded-full" />
               <Skeleton className="h-2 w-2 rounded-full" />
               <Skeleton className="h-2 w-2 rounded-full" />
-              <Skeleton className="h-2 w-2 rounded-full" />
             </div>
             <Skeleton className="mb-2 h-7 w-48" />
             <Skeleton className="mb-6 h-4 w-64" />
@@ -210,23 +209,14 @@ export function OnboardingWizard() {
 
             {step === 3 && (
               <StepSources
-                onNext={() => advanceStep(4)}
-                onSkip={() => advanceStep(4)}
+                onComplete={handleComplete}
                 integrations={integrations}
                 onSourceConnected={refreshIntegrations}
               />
             )}
-
-            {step === 4 && (
-              <StepContext
-                onComplete={handleComplete}
-                onMarkComplete={markOnboardingComplete}
-                ticketProvider={integrations ? detectTicketProvider(integrations) : null}
-              />
-            )}
           </div>
 
-          {/* Back button for steps 2-4 */}
+          {/* Back button for steps 2-3 */}
           {step > 1 && !showSuccess && (
             <button
               onClick={goBack}

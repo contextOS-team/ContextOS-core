@@ -16,7 +16,7 @@ export function SourceCard({ name, logo, connected, onClick, disabled, disabledH
   return (
     <button
       onClick={onClick}
-      disabled={disabled || connected}
+      disabled={disabled}
       className={`
         relative flex flex-col items-center justify-center gap-1.5 rounded-lg border p-4
         transition-colors duration-150
