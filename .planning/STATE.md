@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Live Intelligence
 status: in_progress
-stopped_at: Completed 39-02-PLAN.md
-last_updated: "2026-04-22T15:43:00.000Z"
-last_activity: 2026-04-22 -- Completed 39-02 Slack DM polling service
+stopped_at: Phase 39.1 gap closure complete; Plan 39-04 still awaiting human verify
+last_updated: "2026-04-22T16:47:09.783Z"
+last_activity: 2026-04-22 -- Phase 39.1 gap closure (user-token channel polling)
 progress:
   total_phases: 8
   completed_phases: 1
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 39 - Slack User Token Migration & DM Support (Plans 01, 02, 03 complete; 04 remaining)
+**Current focus:** Phase 39 - Slack User Token Migration & DM Support (Plans 01-04 complete; Phase 39.1 gap closure complete; Plan 39-04 still awaiting human verify)
 
 ## Current Position
 
 Milestone: v1.3 Live Intelligence
 Phase: 39 of 39 (Slack User Token Migration & DM Support)
-Plan: 4 of 4 in current phase
-Status: Plans 39-01, 39-02, 39-03 complete; 39-04 remaining
-Last activity: 2026-04-22 -- Completed 39-02 Slack DM polling service
+Plan: 4 of 4 in current phase (+ Phase 39.1 inline gap closure)
+Status: Plans 39-01 through 39-04 complete; Phase 39.1 gap closure shipped; Plan 39-04 still at human-verify checkpoint
+Last activity: 2026-04-22 -- Phase 39.1 gap closure (user-token channel polling)
 
 Progress: [██████████] 97%
 
@@ -65,6 +65,8 @@ Progress: [██████████] 97%
 - [39-02] SET-clause parity with slack_events verified via inspect.getsource() assertion in TestUpsert.test_F (runtime drift guard, SLACK-USR-04)
 - [39-02] Sequential DM iteration (no asyncio.gather) + single-retry 429 Retry-After via shared _slack_get helper
 - [39-02] DM-only lock: users.conversations called with types=im,mpim exclusively; channels stay on webhook path per CONTEXT.md
+- [39.1] Pivoted to user-token channel polling (CTO invite permissions blocked); accepts idempotent duplicate ingestion path vs. bot webhook
+- [39.1] USER_CONVERSATION_TYPES includes im,mpim,public_channel,private_channel; include_dms gate controls all user-token polling
 
 ### Roadmap Evolution
 
@@ -82,6 +84,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-22T15:41:23Z
-Stopped at: Completed 39-02-PLAN.md
+Last session: 2026-04-22T16:47:09Z
+Stopped at: Phase 39.1 gap closure complete; Plan 39-04 still awaiting human verify
 Resume file: .planning/phases/39-slack-user-token-migration-dm-support/39-04-PLAN.md

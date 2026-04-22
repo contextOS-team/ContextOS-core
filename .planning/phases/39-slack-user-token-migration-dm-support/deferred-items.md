@@ -48,3 +48,51 @@ Items discovered during execution that are out of scope for the current plan.
 ### Pre-existing ESLint warning in `step-sources.tsx`
 - Line 501 (was 490 before 39-04): `next.has(key) ? next.delete(key) : next.add(key)` expression-form ternary in `toggle()`. Pre-existing in `OnboardingRepoPicker`. Verified via `git stash`.
 
+## Phase 39.1 Gap Closure (inline)
+
+**Date:** 2026-04-22
+**Shipped during:** Plan 39-04 human-verify checkpoint (E2E verification surfaced missing channel events)
+
+### What shipped
+
+Inline gap-closure (no formal PLAN.md) to extend the user-token poller to
+cover channels, not just DMs. Four atomic commits:
+
+1. `test(39.1)` + `feat(39.1)`: expand `SLACK_USER_SCOPES` to include
+   `channels:read`, `channels:history`, `groups:read`, `groups:history`.
+2. `test(39.1)` + `feat(39.1)`: rename `DM_CONVERSATION_TYPES` ->
+   `USER_CONVERSATION_TYPES = "im,mpim,public_channel,private_channel"`.
+   Added Test K guarding that `_upsert_messages` is channel-agnostic.
+3. `feat(39.1)`: re-auth banner copy now mentions "channel + DM ingestion".
+4. `docs(39.1)`: this entry + `39.1-GAP-SUMMARY.md`.
+
+### Why (scope rationale)
+
+The Phase 39-04 human-verify checkpoint surfaced that the Slack bot
+doesn't receive channel events because the `conversations.join`
+auto-join code (commit d96b944 on branch `fix/slack-channel-selection`)
+was never merged to main. Getting bot-invite permissions from the CTO
+is blocked, so we pivoted to using the existing user-token poller
+(Plan 39-02) to cover channels too -- the user token doesn't need
+channel invitations.
+
+### Trade-offs accepted
+
+- **Duplicate ingestion path** (bot webhook + user poll): safe because
+  `SlackMessage` upsert is idempotent on `(workspace_id, channel_id, ts)`
+  via `uq_slack_msg`, and Plan 39-02 already enforces SET-clause parity
+  at runtime via the `inspect.getsource()` assertion in Test F.
+- **Rate limits**: `conversations.history` caps at 1 rpm for
+  non-Marketplace apps on the user token. Acceptable for small
+  workspaces; RESEARCH.md's concerns about scale still apply. 429
+  handling already in place via `_slack_get` retry-once-with-Retry-After.
+- **Coverage scope**: user token only sees channels the installer is
+  already a member of. If the installer is not in a channel, neither
+  path ingests it. The deferred auto-join fix on
+  `fix/slack-channel-selection` should still eventually land once CTO
+  permissions clear, for full channel coverage via the bot path.
+- **Config key name retained**: `include_dms` now semantically controls
+  all user-token polling (DMs + channels). A rename would require a
+  data migration and breaks roundtrip with Plan 39-01's existing
+  integration.config shape. Documented in module docstring and STATE.
+
