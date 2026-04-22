@@ -809,3 +809,258 @@ class TestSlackOAuthService:
                 session=mock_session,
                 workspace_id=UUID(TEST_WORKSPACE_ID),
             )
+
+
+# ===========================================================================
+# Phase 39: User token OAuth (dual-token exchange + Vault storage)
+# ===========================================================================
+
+
+class TestUserTokenOAuth:
+    """Tests for dual-token (bot + user) OAuth exchange and user token helpers.
+
+    Covers Phase 39 Plan 01 requirements:
+    - SLACK_USER_SCOPES is DM-only (im/mpim/users); no channels/groups scopes
+    - build_auth_url wires user_scope to SLACK_USER_SCOPES
+    - exchange_code stores both bot and user tokens when authed_user present
+    - exchange_code tolerates missing authed_user (bot-only, warns)
+    - integration.config.slack_user_id is populated from authed_user.id
+    - get_user_token reads user_access token from Vault; raises when missing
+    """
+
+    def test_build_auth_url_includes_dm_only_user_scopes(
+        self, slack_settings: Settings
+    ) -> None:
+        """build_auth_url wires SLACK_USER_SCOPES into user_scope param."""
+        from urllib.parse import parse_qs, urlparse
+
+        from src.services.slack_oauth import SLACK_USER_SCOPES, build_auth_url
+
+        # SLACK_USER_SCOPES is DM-only per CONTEXT.md lock
+        expected = "im:read,im:history,mpim:read,mpim:history,users:read,users:read.email"
+        assert SLACK_USER_SCOPES == expected
+
+        url = build_auth_url("test-state", slack_settings)
+
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        assert "user_scope" in query
+        user_scope_value = query["user_scope"][0]
+        assert user_scope_value == SLACK_USER_SCOPES
+
+        # Channels/groups scopes must NOT appear in user_scope
+        assert "channels:read" not in user_scope_value
+        assert "channels:history" not in user_scope_value
+        assert "groups:read" not in user_scope_value
+        assert "groups:history" not in user_scope_value
+
+    @pytest.mark.asyncio
+    async def test_exchange_code_stores_both_tokens_and_slack_user_id(
+        self, slack_settings: Settings
+    ) -> None:
+        """exchange_code stores bot + user tokens and writes slack_user_id into config."""
+        from src.services.slack_oauth import exchange_code
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+
+        # Mock httpx response with authed_user present
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "ok": True,
+            "access_token": "xoxb-bot",
+            "team": {"id": "T12345", "name": "Test Team"},
+            "authed_user": {
+                "id": "U123",
+                "access_token": "xoxp-user",
+                "scope": "im:read,im:history",
+            },
+        }
+
+        vault_calls: list[tuple[str, str, str]] = []
+
+        async def mock_store(session, name, value):
+            vault_calls.append(("store", name, value))
+            return "secret-uuid"
+
+        # Mock integration returned after upsert so we can patch slack_user_id.
+        # Use a simple namespace instead of MagicMock so integration.config
+        # mutations behave like dict updates.
+        class _Integration:
+            def __init__(self) -> None:
+                self.config: dict = {"external_name": "Test Team"}
+
+        integration_row = _Integration()
+
+        mock_int_result = MagicMock()
+        mock_int_result.scalar_one_or_none.return_value = integration_row
+
+        mock_null_result = MagicMock()
+        mock_null_result.scalar_one_or_none.return_value = None
+
+        # First execute: upsert_oauth_token lookup (None -> insert)
+        # Second execute: upsert_workspace_integration lookup (None -> insert)
+        # Third execute: re-query integration to patch slack_user_id
+        execute_results = [mock_null_result, mock_null_result, mock_int_result]
+        call_index = 0
+
+        async def mock_execute(*args, **kwargs):
+            nonlocal call_index
+            result = execute_results[min(call_index, len(execute_results) - 1)]
+            call_index += 1
+            return result
+
+        mock_session.execute = mock_execute
+        mock_session.commit = AsyncMock()
+
+        # Skip roster seeding (fail-silent import in exchange_code)
+        with (
+            patch("src.services.slack_oauth.store_token", side_effect=mock_store),
+            patch(
+                "httpx.AsyncClient.__aenter__",
+                return_value=MagicMock(
+                    post=AsyncMock(return_value=mock_response)
+                ),
+            ),
+            patch(
+                "src.services.identity_resolution.fetch_slack_roster",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "src.services.identity_resolution.seed_roster",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+        ):
+            team_info = await exchange_code(
+                code="test-auth-code",
+                session=mock_session,
+                workspace_id=UUID(TEST_WORKSPACE_ID),
+                user_id=UUID(TEST_USER_ID),
+                settings=slack_settings,
+            )
+
+        assert team_info["id"] == "T12345"
+
+        # Both tokens stored under the correct Vault names
+        stored_by_name = {call[1]: call[2] for call in vault_calls}
+        from src.models.integration import Provider
+        from src.services.vault import token_name
+
+        bot_key = token_name(Provider.SLACK, UUID(TEST_WORKSPACE_ID), "bot_access")
+        user_key = token_name(Provider.SLACK, UUID(TEST_WORKSPACE_ID), "user_access")
+
+        assert stored_by_name[bot_key] == "xoxb-bot"
+        assert stored_by_name[user_key] == "xoxp-user"
+
+        # slack_user_id merged into integration.config without clobbering existing keys
+        assert integration_row.config["slack_user_id"] == "U123"
+        assert integration_row.config["external_name"] == "Test Team"
+
+    @pytest.mark.asyncio
+    async def test_exchange_code_tolerates_missing_authed_user(
+        self, slack_settings: Settings
+    ) -> None:
+        """exchange_code still succeeds when authed_user is absent; only bot token stored."""
+        from src.services.slack_oauth import exchange_code
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "ok": True,
+            "access_token": "xoxb-bot-only",
+            "team": {"id": "T99999", "name": "Legacy Team"},
+            # authed_user intentionally omitted
+        }
+
+        vault_calls: list[tuple[str, str, str]] = []
+
+        async def mock_store(session, name, value):
+            vault_calls.append(("store", name, value))
+            return "secret-uuid"
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None
+        mock_session.execute.return_value = mock_result
+        mock_session.commit = AsyncMock()
+
+        with (
+            patch("src.services.slack_oauth.store_token", side_effect=mock_store),
+            patch(
+                "httpx.AsyncClient.__aenter__",
+                return_value=MagicMock(
+                    post=AsyncMock(return_value=mock_response)
+                ),
+            ),
+            patch(
+                "src.services.identity_resolution.fetch_slack_roster",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "src.services.identity_resolution.seed_roster",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+        ):
+            team_info = await exchange_code(
+                code="legacy-code",
+                session=mock_session,
+                workspace_id=UUID(TEST_WORKSPACE_ID),
+                user_id=UUID(TEST_USER_ID),
+                settings=slack_settings,
+            )
+
+        assert team_info["id"] == "T99999"
+
+        # Only one vault store call -- for bot token
+        assert len(vault_calls) == 1
+        assert "bot_access" in vault_calls[0][1]
+        assert vault_calls[0][2] == "xoxb-bot-only"
+
+        # No user_access key stored
+        user_keys = [c[1] for c in vault_calls if "user_access" in c[1]]
+        assert user_keys == []
+
+    @pytest.mark.asyncio
+    async def test_get_user_token_returns_stored_token(
+        self, slack_settings: Settings
+    ) -> None:
+        """get_user_token returns the user token when present in Vault."""
+        from src.services.slack_oauth import get_user_token
+
+        mock_session = AsyncMock()
+
+        with patch(
+            "src.services.slack_oauth.read_token",
+            return_value="xoxp-stored-user",
+        ):
+            token = await get_user_token(
+                session=mock_session,
+                workspace_id=UUID(TEST_WORKSPACE_ID),
+            )
+
+        assert token == "xoxp-stored-user"
+
+    @pytest.mark.asyncio
+    async def test_get_user_token_raises_when_missing(
+        self, slack_settings: Settings
+    ) -> None:
+        """get_user_token raises SlackOAuthError when no user token found (no legacy fallback)."""
+        from src.services.slack_oauth import SlackOAuthError, get_user_token
+
+        mock_session = AsyncMock()
+
+        with (
+            patch("src.services.slack_oauth.read_token", return_value=None),
+            pytest.raises(SlackOAuthError, match="No Slack user token found"),
+        ):
+            await get_user_token(
+                session=mock_session,
+                workspace_id=UUID(TEST_WORKSPACE_ID),
+            )
