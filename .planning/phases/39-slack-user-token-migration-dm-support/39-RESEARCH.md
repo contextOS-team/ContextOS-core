@@ -4,6 +4,43 @@
 **Domain:** Slack OAuth v2 user-token migration, polling-based message ingestion (channels/DMs/group-DMs), dual bot+user token storage
 **Confidence:** HIGH
 
+> ## ⚠ SUPERSEDED NOTICE — 2026-04-22 CONTEXT.md revision
+>
+> Parts of this research document were written against an earlier CONTEXT.md that
+> planned to remove the channel picker UI and migrate all conversation types to
+> user-token polling. CONTEXT.md was revised later on 2026-04-22 after the
+> May-2025 Slack rate-limit policy (1 rpm + limit=15 for non-Marketplace apps)
+> surfaced: channels now stay on the bot Events API webhook path indefinitely,
+> and the channel picker UI is RETAINED. Only DMs and group DMs are moved to
+> user-token polling.
+>
+> **Concrete supersessions (authoritative source: 39-CONTEXT.md revised 2026-04-22):**
+>
+> 1. **Conversation Type Handling** block in "Locked Decisions" below is OBSOLETE.
+>    The bullet `NO channel picker — remove the existing channel selection UI entirely`
+>    is WRONG. Correct decision: the channel picker UI is KEPT. Bot still monitors
+>    selected channels via Events API. Only DMs are opt-in.
+>
+> 2. **SLACK-USR-06** ("Remove channel picker UI") in the Phase Requirements table
+>    is DROPPED. The channel picker is no longer removed, so that requirement does
+>    not exist for Phase 39. Plans 39-01 through 39-04 correctly omit it.
+>
+> 3. **User scopes** described anywhere below as including `channels:read, channels:history,
+>    groups:read, groups:history` are WRONG for this phase. CONTEXT.md locks
+>    user scopes to DM-only: `im:read, im:history, mpim:read, mpim:history, users:read,
+>    users:read.email`. Plan 39-01 implements this DM-only scope set. Do NOT
+>    include channels/groups user scopes even for "future-proofing".
+>
+> 4. **"Primary recommendation"** in the Summary (option (b) hybrid: bot for
+>    channels, user-token poll for DMs) remains the chosen direction — that part
+>    is NOT superseded. The dual-mode architecture is correct.
+>
+> The Locked Decisions / Architecture / Pitfall sections that describe channel
+> enumeration, `conversations.list` with `public_channel,private_channel` types,
+> and the `is_member` filter are RESEARCH REFERENCE ONLY — the production code
+> path for Phase 39 enumerates ONLY `im,mpim` via `users.conversations`. See
+> Plans 39-01 / 39-02 for the authoritative polling behavior.
+
 ## Summary
 
 Phase 39 replaces the bot-only Slack integration with a user-token-based polling pipeline that reads every conversation the authenticated user can see — public channels, private channels, DMs, and group DMs — in a single sweep every 15 minutes. The user token is captured from the existing OAuth v2 flow by adding `user_scope` parameters; Slack returns the user token inside `authed_user.access_token` on the same `oauth.v2.access` response that already returns the bot token. Both tokens are stored in Supabase Vault under distinct names; the bot token stays live for existing channel Events API ingestion during the dual-mode transition.
@@ -37,15 +74,21 @@ The single biggest external risk is a Slack policy change effective **May 29, 20
 - Bot deprecation is a separate future phase — not in scope here
 - Store user token alongside bot token in Vault (different key names)
 - Force re-auth for existing users: if no user token exists, show integration as "needs update" and require re-authorization
-- Slack app OAuth scopes already configured: user scopes for `channels:read, channels:history, groups:read, groups:history, im:read, im:history, mpim:read, mpim:history, users:read, users:read.email`
+- ~~Slack app OAuth scopes already configured: user scopes for `channels:read, channels:history, groups:read, groups:history, im:read, im:history, mpim:read, mpim:history, users:read, users:read.email`~~
+  - **SUPERSEDED 2026-04-22:** Per revised CONTEXT.md, user scopes are DM-only:
+    `im:read, im:history, mpim:read, mpim:history, users:read, users:read.email`.
+    Channels/groups user scopes are NOT requested. Bot still handles channels via Events API.
 
-**Conversation Type Handling**
-- NO channel picker — remove the existing channel selection UI entirely
-- With user tokens, all channels the user is in are monitored by default
-- DMs are the only thing that requires explicit opt-in (toggle)
-- Remove the <10 character message filter — short messages like "no", "done", "approved" are meaningful signal
-- Keep other filters: no bot messages, no system messages (join/leave/topic)
-- Same filtering rules apply across all conversation types (channels, DMs, group DMs)
+**Conversation Type Handling** ⚠ ENTIRE BLOCK SUPERSEDED 2026-04-22 — see notice at top of file.
+
+The bullets below were the ORIGINAL research interpretation. They have been OVERRIDDEN by the revised CONTEXT.md:
+
+- ~~NO channel picker — remove the existing channel selection UI entirely~~ → **SUPERSEDED.** Channel picker UI stays.
+- ~~With user tokens, all channels the user is in are monitored by default~~ → **SUPERSEDED.** Bot continues to monitor bot-invited channels via Events API; channel picker is NOT removed.
+- DMs are the only thing that requires explicit opt-in (toggle) → **Still correct** (only bullet in this block that survives).
+- Remove the <10 character message filter — short messages like "no", "done", "approved" are meaningful signal → **Still correct.**
+- Keep other filters: no bot messages, no system messages (join/leave/topic) → **Still correct.**
+- ~~Same filtering rules apply across all conversation types (channels, DMs, group DMs)~~ → **Partially correct.** Filtering rules are identical in the two paths, but the paths themselves are distinct: channels = Events API webhook (slack_events.py), DMs = user-token poll (slack_messages.py, new).
 
 ### Claude's Discretion
 
@@ -69,11 +112,12 @@ Phase 39 has no explicit REQ IDs in REQUIREMENTS.md (roadmap marks "Requirements
 | ID | Description | Research Support |
 |----|-------------|------------------|
 | SLACK-USR-01 | OAuth flow captures and stores the user token alongside the bot token | `oauth.v2.access` returns both on one response (section: OAuth Flow Changes); Vault multi-key pattern already used for `bot_access` — mirror as `user_access` |
-| SLACK-USR-02 | Polling service fetches new messages from channels, private channels, DMs, and group DMs using the user token | `conversations.history` with user token reads any conversation the user is in (section: Rate Limit Strategy); reuse `poll_huddle_transcripts()` pattern verbatim |
-| SLACK-USR-03 | Users can select DM/group-DM opt-in (DMs off by default) | Integration config JSONB `include_dms: bool` flag; `conversations.list` filter `types=im,mpim` when enabled |
-| SLACK-USR-04 | Existing channel message ingestion continues working during migration | Dual-mode: bot Events API webhook stays live; user-token polling is additive; dedup by `uq_slack_msg` constraint handles any overlap |
+| SLACK-USR-02 | Polling service fetches new messages from DMs and group DMs using the user token (channels stay on Events API bot webhook) | `conversations.history` with user token reads any conversation the user is in (section: Rate Limit Strategy); reuse `poll_huddle_transcripts()` pattern verbatim |
+| SLACK-USR-03 | Users can select DM/group-DM opt-in (DMs off by default) | Integration config JSONB `include_dms: bool` flag; `users.conversations` filter `types=im,mpim` when enabled |
+| SLACK-USR-04 | Existing channel message ingestion continues working during migration; SET-clause parity between bot webhook upsert and user-token poll upsert prevents dual-path data corruption | Dual-mode: bot Events API webhook stays live; user-token polling is additive; dedup by `uq_slack_msg` constraint handles any overlap |
 | SLACK-USR-05 | Force re-auth for users without user token | Status endpoint returns `needs_reauth=true` when OAuthToken row has no `user_access_token` ref; frontend shows amber "Update required" state |
-| SLACK-USR-06 | Remove channel picker UI | Delete `SlackChannels` component usage from settings and onboarding; keep endpoints for now (dead code cleanup is Phase TBD) |
+| ~~SLACK-USR-06~~ | ~~Remove channel picker UI~~ | **DROPPED 2026-04-22 per revised CONTEXT.md.** Channel picker UI stays. Plans 39-01 through 39-04 correctly omit this requirement. |
+| SLACK-USR-07 | Remove the <10 character message filter across ALL ingestion paths (channel webhook + DM poll) | `slack_events._should_filter` drops the length check; `slack_messages` reuses `_should_filter` so the change applies uniformly |
 
 ## Standard Stack
 
@@ -107,18 +151,19 @@ Phase 39 has no explicit REQ IDs in REQUIREMENTS.md (roadmap marks "Requirements
 
 ```
 backend/src/services/
-├── slack_oauth.py        # [MODIFY] build_auth_url: add user_scope; exchange_code: capture authed_user.access_token; new get_user_token() helper
+├── slack_oauth.py        # [MODIFY] build_auth_url: add user_scope (DM-only); exchange_code: capture authed_user.access_token; new get_user_token() helper
 ├── slack_messages.py     # [NEW] poll_user_messages() — mirrors slack_huddles.poll_huddle_transcripts()
-├── slack_channels.py     # [KEEP] — conversations.list helper, extended to support types=im,mpim
+├── slack_channels.py     # [KEEP] — conversations.list helper (unchanged — channel picker stays per CONTEXT.md revision)
 ├── slack_events.py       # [MINOR] remove <10-char filter from _should_filter()
-└── sync_scheduler.py     # [MODIFY] add Slack message polling call inside run_polling_fallback
+└── sync_scheduler.py     # [MODIFY] add Slack DM polling call inside run_polling_fallback (module-level import of poll_user_messages)
 
 backend/src/routers/
-└── slack.py              # [MODIFY] add GET /status → include needs_reauth, include_dms; POST /dms/toggle; callback → store user token
+└── slack.py              # [MODIFY] add GET /status → include needs_reauth, include_dms; POST /dms/toggle; callback → store user token; /channels endpoints UNTOUCHED
 
 apps/web/src/
-├── app/dashboard/settings/tabs/integration-cards.tsx  # [MODIFY] replace <SlackChannels/> with <SlackDMToggle/>
+├── app/dashboard/settings/tabs/integration-cards.tsx  # [MODIFY] KEEP <SlackChannels/>, ADD <SlackDmToggle/> + <SlackReauthBanner/>
 ├── app/dashboard/integrations/slack-dm-toggle.tsx     # [NEW] small toggle component
+├── app/dashboard/integrations/slack-reauth-banner.tsx # [NEW] amber reconnect banner
 ├── components/onboarding/step-sources.tsx             # [MODIFY] post-connect Slack panel shows DM consent
 └── lib/api.ts                                          # [MODIFY] add toggleSlackDms(enabled) client
 ```
@@ -161,17 +206,20 @@ response = await client.get(f"{SLACK_API_BASE}/conversations.history",
 
 Caveat: the Slack `oldest` parameter is an open boundary by default (messages strictly after the ts). Combined with upsert-on-conflict (`uq_slack_msg`), an inclusive check is safe either way — dedup is handled at the DB layer.
 
-### Pattern 3: Conversation Enumeration Per Poll
-**What:** Call `conversations.list` with `types=public_channel,private_channel` (always) and append `,im,mpim` IFF `include_dms=true`. Then iterate the returned IDs.
-**When to use:** Beginning of each poll cycle. Cache the list in `integration.config.user_conversations` to avoid re-fetching every cycle — refresh every N cycles (e.g., every 4th cycle = hourly).
-**Example:**
+### Pattern 3: Conversation Enumeration Per Poll ⚠ SUPERSEDED 2026-04-22
+**What (ORIGINAL RESEARCH):** Call `conversations.list` with `types=public_channel,private_channel` (always) and append `,im,mpim` IFF `include_dms=true`. Then iterate the returned IDs.
+**Current (Phase 39 implementation):** Call `users.conversations` with `types=im,mpim` ONLY when `include_dms=true`. Public and private channels are NOT enumerated from the poll path — they are handled by the bot Events API webhook. Do NOT follow the original pattern below; Plan 39-02 is authoritative.
 ```python
-# Source: docs.slack.dev/reference/methods/conversations.list
-types = ["public_channel", "private_channel"]
-if config.get("include_dms"):
-    types += ["im", "mpim"]
-params = {"types": ",".join(types), "exclude_archived": "true", "limit": 200}
-# Paginate via cursor; filter is_member=true if you only want joined channels (user token already scopes this naturally)
+# ⚠ Historical reference only — Phase 39 does NOT enumerate channels in the poll path.
+# types = ["public_channel", "private_channel"]
+# if config.get("include_dms"):
+#     types += ["im", "mpim"]
+# params = {"types": ",".join(types), ...}
+```
+**Correct Phase 39 code (see 39-02 interfaces block):**
+```python
+params = {"types": "im,mpim", "exclude_archived": "true", "limit": 200}
+# GET https://slack.com/api/users.conversations (user token) — DMs + group DMs only.
 ```
 
 ### Pattern 4: Supervised Background Worker
@@ -180,6 +228,9 @@ params = {"types": ",".join(types), "exclude_archived": "true", "limit": 200}
 **Example:**
 ```python
 # Source: existing backend/src/services/sync_scheduler.py pattern
+# IMPORTANT (Phase 39): import poll_user_messages at MODULE TOP, not inside the loop.
+from src.services.slack_messages import poll_user_messages
+
 async def run_polling_fallback() -> None:
     while True:
         try:
@@ -187,7 +238,8 @@ async def run_polling_fallback() -> None:
             slack_workspaces = await _get_connected_workspaces(Provider.SLACK)
             for ws_id in slack_workspaces:
                 try:
-                    await poll_user_messages(ws_id)
+                    async with async_session() as session:
+                        await poll_user_messages(session, ws_id)
                 except Exception:
                     logger.exception("Slack user-message poll failed for %s", ws_id)
         except Exception:
@@ -218,6 +270,9 @@ return {
 - **Storing the user token in `OAuthToken.access_token` and the bot token in... where?** The `OAuthToken` table has one `access_token` column (Vault name). Follow the pattern: the `OAuthToken.access_token` column stores the *bot* Vault name (existing behavior); store the user Vault name in a second `OAuthToken.metadata_['user_token_name']` JSONB field, OR simply look up `token_name(..., "user_access")` by convention without a DB pointer. CONTEXT.md picks Vault-key-by-convention; do that.
 - **Re-resolving every user ID on every poll cycle:** `_resolve_user_names()` in `slack_huddles.py` caches within one run. For multi-run caching, rely on the already-seeded `identity_resolution` roster table. Don't re-call `users.info` in the poll hot path.
 - **Polling DMs when the user hasn't opted in:** Check `config.get("include_dms", False)` before adding `im,mpim` to the `conversations.list` `types` filter. Default is False per CONTEXT.md.
+- **Enumerating channels from the user-token path (NEW 2026-04-22):** Per revised CONTEXT.md, channels stay on the bot Events API webhook. The user-token poll enumerates ONLY `im,mpim`. Do not extend to public/private channels without a new phase.
+- **Deferred import of `poll_user_messages` inside the scheduler try-block (NEW 2026-04-22):** Makes monkeypatching fragile. Import at module top; tests patch `src.services.sync_scheduler.poll_user_messages`.
+- **Divergent SET clauses between webhook and poll upserts (NEW 2026-04-22):** `slack_events._handle_message` and `slack_messages._upsert_messages` MUST use identical `on_conflict_do_update` SET clauses (fields: `text, user_id, thread_ts, parent_ts, is_thread_reply, raw_data`). Mismatch causes silent data corruption when both paths see the same message.
 
 ## Don't Hand-Roll
 
@@ -276,7 +331,7 @@ if response.status_code == 429:
 ### Pitfall 1: Empty `authed_user` in OAuth response when user_scope was not sent
 **What goes wrong:** `data["authed_user"]["access_token"]` raises `KeyError` because OAuth was initiated with `user_scope=""` (current `build_auth_url` literally hardcodes this).
 **Why it happens:** Slack only returns `authed_user.access_token` when the initial authorize URL included at least one `user_scope` value.
-**How to avoid:** Update `build_auth_url` FIRST to send `user_scope=channels:read,channels:history,groups:read,groups:history,im:read,im:history,mpim:read,mpim:history,users:read,users:read.email`. Then update `exchange_code` to read `authed_user.access_token` via `.get()` with None fallback.
+**How to avoid:** Update `build_auth_url` FIRST to send `user_scope=im:read,im:history,mpim:read,mpim:history,users:read,users:read.email` (DM-only per revised CONTEXT.md). Then update `exchange_code` to read `authed_user.access_token` via `.get()` with None fallback.
 **Warning signs:** `needs_reauth=true` for every workspace after deploy, or `KeyError: 'authed_user'` in logs.
 
 ### Pitfall 2: Existing workspaces have OAuth sessions tied to old scopes
@@ -306,14 +361,14 @@ if response.status_code == 429:
 ### Pitfall 6: `conversations.list` pagination with mixed types returns huge pages
 **What goes wrong:** Passing all four types `public_channel,private_channel,im,mpim` with `limit=200` in a large Slack org returns thousands of channels that the user is NOT a member of (for public_channel). Polling iterates them all and hits 404/`not_in_channel` errors.
 **Why it happens:** `conversations.list` with a user token returns all conversations the user *can see*, which for public channels means all non-archived public channels in the workspace.
-**How to avoid:** Filter client-side to `is_member=true` for public/private channels (a field in the response). For `im`/`mpim`, all returned are by definition accessible. Alternatively, use `users.conversations` (different endpoint, same scopes) which ONLY returns conversations the user is a member of — recommended for this phase.
+**How to avoid:** For Phase 39, this pitfall is avoided by design: the poll path uses `users.conversations` with `types=im,mpim` (DM-only). No public channels are enumerated. If a future phase extends to channels, prefer `users.conversations` (is_member implicit) over `conversations.list` + client-side filter.
 **Warning signs:** `conversations.history` calls returning `not_in_channel` errors en masse; polling time grows linearly with workspace size.
 
 ### Pitfall 7: Overlap between bot-delivered and user-polled messages
 **What goes wrong:** During dual-mode, a new channel message arrives via the bot webhook AND via the user-token poll. Two insert attempts race.
 **Why it happens:** That's exactly what dual-mode looks like.
-**How to avoid:** The existing `uq_slack_msg = (workspace_id, channel_id, slack_ts)` unique constraint + `on_conflict_do_update` handles this atomically. No extra logic needed — it's already correct. BUT: double-check that the `on_conflict_do_update` SET list in the poll path overwrites the same fields as the events path, so the "last write wins" doesn't corrupt anything. If they set different fields, merge the SET clauses.
-**Warning signs:** Sporadic IntegrityError from uq_slack_msg violations during deploy window.
+**How to avoid:** The existing `uq_slack_msg = (workspace_id, channel_id, slack_ts)` unique constraint + `on_conflict_do_update` handles this atomically. No extra logic needed — it's already correct. BUT: double-check that the `on_conflict_do_update` SET list in the poll path overwrites the same fields as the events path, so the "last write wins" doesn't corrupt anything. If they set different fields, merge the SET clauses. **Phase 39 enforces SET-clause parity explicitly** — see Plan 39-02's `_upsert_messages` must exactly match `slack_events._handle_message` fields: `text, user_id, thread_ts, parent_ts, is_thread_reply, raw_data`.
+**Warning signs:** Sporadic IntegrityError from uq_slack_msg violations during deploy window; silent data drift between webhook- and poll-inserted rows on re-upsert.
 
 ### Pitfall 8: 7-day backfill on first connect blows the rate-limit budget
 **What goes wrong:** For a capped workspace, fetching 7 days of history across 20 DMs at limit=15 per call could mean 20 DMs × (100 msgs/7d / 15 per call) ≈ 135 requests → 135 minutes just for backfill.
@@ -328,15 +383,17 @@ Verified patterns from official sources and existing code:
 ### Building the OAuth URL with user scopes
 ```python
 # Source: docs.slack.dev/reference/methods/oauth.v2.access, existing slack_oauth.py
+# NOTE (SUPERSEDED 2026-04-22): the ORIGINAL research snippet included channels/groups
+# user scopes. Per revised CONTEXT.md, Phase 39 uses DM-ONLY user scopes:
 SLACK_BOT_SCOPES = "channels:read,channels:history,groups:read,groups:history,users:read,users:read.email,canvases:read,files:read"
-SLACK_USER_SCOPES = "channels:read,channels:history,groups:read,groups:history,im:read,im:history,mpim:read,mpim:history,users:read,users:read.email"
+SLACK_USER_SCOPES = "im:read,im:history,mpim:read,mpim:history,users:read,users:read.email"
 
 def build_auth_url(state: str, settings: Settings) -> str:
     params = {
         "client_id": settings.SLACK_CLIENT_ID,
         "redirect_uri": settings.slack_redirect_uri,
         "scope": SLACK_BOT_SCOPES,
-        "user_scope": SLACK_USER_SCOPES,  # <-- ADD THIS
+        "user_scope": SLACK_USER_SCOPES,  # <-- DM-only; no channels:* or groups:* user scopes
         "state": state,
     }
     return f"{SLACK_AUTHORIZE_URL}?{urlencode(params)}"
@@ -366,18 +423,16 @@ slack_user_id = authed_user.get("id")
 
 ### Fetching conversations for the authorized user
 ```python
-# Source: docs.slack.dev/reference/methods/users.conversations (preferred over conversations.list for this use case)
-# Scopes: channels:read, groups:read, im:read, mpim:read (user token)
-types = ["public_channel", "private_channel"]
-if include_dms:
-    types += ["im", "mpim"]
-
+# Source: docs.slack.dev/reference/methods/users.conversations
+# Scopes: im:read, mpim:read (user token) — DM-only per Phase 39.
+# NOTE (SUPERSEDED 2026-04-22): original snippet optionally included public_channel,
+# private_channel. Phase 39 hard-codes types=im,mpim because channels stay on the
+# bot Events API webhook.
 params = {
-    "types": ",".join(types),
+    "types": "im,mpim",
     "exclude_archived": "true",
     "limit": 200,
 }
-# Use /api/users.conversations — returns only conversations the user is in
 response = await client.get(
     f"{SLACK_API_BASE}/users.conversations",
     params=params,
@@ -440,6 +495,8 @@ async def _poll_conversation(
 ### Upsert polled messages (parity with webhook path)
 ```python
 # Source: existing slack_events._handle_message
+# ⚠ SET-clause parity is mandatory (SLACK-USR-04). Fields MUST match webhook path:
+#   text, user_id, thread_ts, parent_ts, is_thread_reply, raw_data
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 for msg in polled_messages:
@@ -475,12 +532,12 @@ for msg in polled_messages:
 | Bot token + Events API covers all channel messages | Bot for channels (via Events API) + user-token polling for DMs/mpim | Phase 39 (this phase) | Eliminates the need to invite the bot to every channel; enables DM ingestion |
 | `conversations.history` Tier 3 (50+ rpm) for all apps | Tier 3 for Marketplace/internal; **1 rpm + limit=15 for non-Marketplace distributed** | May 29, 2025 (Slack policy change) | Design must account for tight caps on new commercial installs |
 | Long-lived bot tokens (no expiry, no refresh) | Same by default; optional opt-in token rotation (12h expiry, refresh_token) | Feature existed for a while; relevant now that user tokens are also in scope | If rotation is enabled, need refresh pipeline. Default = off. |
-| Channel picker UI | No channel picker — user-token polling discovers automatically | Phase 39 | Simpler UX, no onboarding friction about "which channels?" |
+| ~~Channel picker UI~~ → ~~No channel picker — user-token polling discovers automatically~~ | **Channel picker KEPT per revised CONTEXT.md (2026-04-22)** — bot still monitors selected channels via Events API; only DM opt-in is new | Phase 39 CONTEXT.md revision | Simpler migration (no existing config churn); rate-limit safe |
 | <10 character message filter | No length filter — short replies carry signal | Phase 39 | More messages ingested; embedding/graph pipeline must handle them gracefully (existing code does) |
 
 **Deprecated/outdated:**
 - **The current `slack_manifest`'s `user_scope=""`** in `build_auth_url` — this emits an OAuth URL that cannot return a user token, so the CONTEXT.md claim "OAuth scopes already configured" may refer to the Slack app dashboard config, but the code-side URL builder still sends empty `user_scope`. Verify both sides during implementation.
-- **`slack_channels.py:list_channels`** hardcoded `types=public_channel,private_channel` — extend to accept a `types` argument OR replace usage with a fresh `users.conversations` helper that takes the `include_dms` flag.
+- **`slack_channels.py:list_channels`** hardcoded `types=public_channel,private_channel` — KEEP AS-IS. Phase 39's DM poll uses a separate `users.conversations` call; the existing channel list helper is still used by the channel picker UI (which stays per CONTEXT.md revision).
 
 ## Open Questions
 
@@ -492,17 +549,15 @@ for msg in polled_messages:
 2. **Should we use `users.conversations` (user-only) or `conversations.list` (everything visible)?**
    - What we know: `users.conversations` returns only conversations the user is a member of. `conversations.list` returns all visible — which for public channels means every non-archived public channel in a potentially huge org.
    - What's unclear: Does `users.conversations` have the same 4-type support (`public_channel,private_channel,im,mpim`)? Slack docs suggest yes.
-   - Recommendation: Use `users.conversations` to avoid the "user-token returns 5000 public channels" surprise. If blocked, fall back to `conversations.list` + `is_member=true` client filter.
+   - Recommendation (2026-04-22 update): **Use `users.conversations` with types=im,mpim ONLY.** Channel enumeration is not part of the Phase 39 poll path per revised CONTEXT.md.
 
 3. **What happens to existing `selected_channels` config and the `SlackChannels` UI?**
-   - What we know: CONTEXT.md says remove the channel picker UI entirely. Existing integration configs have `selected_channels: [...]` and `available_channels: [...]` arrays.
-   - What's unclear: Does the bot Events API still need `selected_channels` for filtering incoming webhook events? Looking at `slack_events._is_channel_monitored`, YES — if `selected_channels` is set, webhooks filter to that list; if NULL, all channels pass.
-   - Recommendation: Stop writing to `selected_channels` from Phase 39 UI. Leave the filter logic intact (backward compat). Over time, on re-auth set `selected_channels=null` in config so the webhook becomes "monitor all channels the bot is invited to" — matching user-token coverage.
+   - What we know: CONTEXT.md was revised 2026-04-22 — the channel picker UI STAYS. Existing integration configs keep `selected_channels: [...]` and `available_channels: [...]` arrays.
+   - What's unclear: N/A — channel picker remains the source of truth for the Events API webhook filter.
+   - Recommendation: No change to `selected_channels` handling. Continue writing to it from the channel picker UI. Keep `slack_events._is_channel_monitored` unchanged.
 
 4. **Do we backfill channels that the user-token newly reveals but the bot isn't in?**
-   - What we know: After Phase 39, user-token polling can see channels the bot was never invited to. These channels have zero history in `SlackMessage`.
-   - What's unclear: Does the 7-day backfill from CONTEXT.md apply to ALL user-visible conversations (channels + DMs), or only DMs/mpim?
-   - Recommendation: Apply 7-day backfill to DMs/mpim only (the new data type). For channels, accept that the bot's existing data is the baseline and start polling forward from `last_user_poll_at = now`. Rationale: channels have bot coverage already; backfilling everything blows the rate budget unnecessarily.
+   - Not applicable for Phase 39 as revised — channels are not enumerated from the user-token path. Backfill applies to DMs/mpim only (7-day window, 100-message-per-conversation cap).
 
 5. **How to surface the DM toggle in onboarding without adding a whole new step?**
    - What we know: Onboarding wizard is 4 steps (per STATE.md). Adding a 5th step to "ask about DMs" fights the existing flow.
@@ -546,4 +601,5 @@ for msg in polled_messages:
 - Pitfalls: HIGH — derived from existing bot-token code paths + the May 2025 policy change; token rotation / DM metadata gaps are corroborated by Slack docs
 
 **Research date:** 2026-04-22
+**Superseded sections noted:** 2026-04-22 (CONTEXT.md revision — channels stay on bot webhook, user scopes DM-only, SLACK-USR-06 dropped)
 **Valid until:** 2026-07-22 (90 days — Slack API is stable; the May 2025 rate-limit change is the only recent shift and it's documented. Re-check Slack changelog before launch.)

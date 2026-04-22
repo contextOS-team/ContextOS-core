@@ -155,8 +155,8 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 32 -> 33 -> 34 -> 35 -> 36 -> 37 -> 38
-Note: Phases 35, 36, 37, 38 are independent and can execute in parallel after Phase 34.
+Phases execute in numeric order: 32 -> 33 -> 34 -> 35 -> 36 -> 37 -> 38 -> 39
+Note: Phases 35, 36, 37, 38, 39 are independent and can execute in parallel after Phase 34.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -167,8 +167,28 @@ Note: Phases 35, 36, 37, 38 are independent and can execute in parallel after Ph
 | 36. Landing Page Polish | 0/TBD | Not started | - |
 | 37. Privacy Architecture Research | 0/TBD | Not started | - |
 | 38. RAG Quality Improvements | 0/TBD | Not started | - |
+| 39. Slack User Token Migration & DM Support | 0/4 | Not started | - |
+
+### Phase 39: Slack User Token Migration & DM Support
+**Goal**: Add DM and group-DM ingestion to the Slack integration via user-token polling, while keeping the existing bot Events API webhook path for channel messages (Slack's May 2025 rate-limit cap makes user-token polling unviable for channels at scale)
+**Depends on**: Nothing (independent)
+**Requirements**: SLACK-USR-01, SLACK-USR-02, SLACK-USR-03, SLACK-USR-04, SLACK-USR-05, SLACK-USR-07
+**Success Criteria** (what must be TRUE):
+  1. Slack OAuth now captures and stores a user token alongside the existing bot token (under Vault key `oauth_slack_{ws}_user_access`)
+  2. A new 15-minute polling service fetches new messages from DMs and group DMs using the user token; channels continue to ingest via the bot Events API webhook path (unchanged)
+  3. Users can opt in to DM ingestion via a toggle in Settings (and during onboarding); default is OFF, with an inline privacy note
+  4. Existing-install users without a user token see a re-auth banner prompting them to reconnect Slack
+  5. Channel picker UI remains functional (channels still require bot invites)
+  6. Short messages (<10 chars) such as "ok" or "done" are no longer filtered on either path, so they appear in the feed
+**Plans:** 4 plans
+Plans:
+- [ ] 39-01-PLAN.md -- OAuth dual-token capture + /status needs_reauth flag + /dms/toggle endpoint + remove <10 char filter
+- [ ] 39-02-PLAN.md -- slack_messages.poll_user_messages service (DMs + group DMs, 7d backfill, embedding/graph parity)
+- [ ] 39-03-PLAN.md -- Settings UI: re-auth banner + DM toggle + typed api.ts clients (channel picker preserved)
+- [ ] 39-04-PLAN.md -- Wire poll_user_messages into run_polling_fallback + onboarding DM consent panel + human-verify checkpoint
 
 ---
 *Roadmap created: 2026-02-24*
 *v1.1 shipped: 2026-03-15*
 *v1.3 roadmap added: 2026-03-15*
+*Phase 39 planned: 2026-04-22*
