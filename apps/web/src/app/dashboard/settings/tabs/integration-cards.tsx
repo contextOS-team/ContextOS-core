@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -18,6 +19,7 @@ import {
   disconnectNotion,
   connectJira,
   disconnectJira,
+  getSlackStatus,
   type IntegrationStatusResponse,
 } from '@/lib/api'
 import {
@@ -32,6 +34,8 @@ import {
 import { IntegrationCard } from '../../integrations/integration-card'
 import { ticketProviderDisabledReason } from '@/lib/ticket-provider'
 import { SlackChannels } from '../../integrations/slack-channels'
+import { SlackDmToggle } from '../../integrations/slack-dm-toggle'
+import { SlackReauthBanner } from '../../integrations/slack-reauth-banner'
 import { FathomConnect } from '../../integrations/fathom-connect'
 import { GithubRepos } from '../../integrations/github-repos'
 import { GitlabRepos } from '../../integrations/gitlab-repos'
@@ -116,6 +120,43 @@ export function IntegrationCards({
   const linear = statuses?.linear ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const slack = statuses?.slack ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const fathom = statuses?.fathom ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
+
+  // Plan 39-03: fetch DM-toggle and needs_reauth flags from /api/slack/status.
+  // The aggregator /api/integrations/status does not populate these fields.
+  const [slackExtra, setSlackExtra] = useState<{
+    needs_reauth: boolean
+    include_dms: boolean
+  } | null>(null)
+
+  useEffect(() => {
+    if (slack.status !== 'connected') {
+      setSlackExtra(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const s = await getSlackStatus()
+        if (!cancelled) {
+          setSlackExtra({
+            needs_reauth: s.needs_reauth,
+            include_dms: s.include_dms,
+          })
+        }
+      } catch {
+        // Non-blocking: fall back to channel-picker-only UI on failure.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // fetchStatuses is a prop from the parent and is NOT wrapped in
+    // useCallback there. Including it in deps would cause an infinite
+    // render loop (new reference each parent render). This effect only
+    // depends on slack.status changing — which already triggers a refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slack.status])
+
   const github = statuses?.github ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const gitlab = statuses?.gitlab ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
   const notion = statuses?.notion ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
@@ -214,7 +255,15 @@ export function IntegrationCards({
             onConnect={handleConnectSlack}
             onDisconnect={handleDisconnectSlack}
           >
-            <SlackChannels onSaved={fetchStatuses} />
+            <div className="space-y-3">
+              {slackExtra?.needs_reauth && (
+                <SlackReauthBanner onReconnectStarted={fetchStatuses} />
+              )}
+              {slack.status === 'connected' && !slackExtra?.needs_reauth && (
+                <SlackDmToggle initialIncludeDms={slackExtra?.include_dms} />
+              )}
+              <SlackChannels onSaved={fetchStatuses} />
+            </div>
           </IntegrationCard>
           <IntegrationCard
             name="Telegram"
