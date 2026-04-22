@@ -386,12 +386,346 @@ class TestEnumerate:
 
 
 class TestPolling:
-    """Polling behaviors: backfill cap, 429 retry, 401 handling, config bookkeeping."""
+    """Polling behaviors: backfill cap, 429 retry, 401 handling, bookkeeping."""
 
-    pass
+    @pytest.mark.asyncio
+    async def test_E_backfill_cap_stops_pagination(self, _patch_queue_embedding) -> None:
+        """Test E: backfill mode caps each conversation at 100 messages.
+
+        When has_more=True and the first page returns 100 messages, the
+        poller does NOT paginate further for that conversation.
+        """
+        from src.services.slack_messages import (
+            BACKFILL_MESSAGES_PER_CONVERSATION_CAP,
+            poll_user_messages,
+        )
+
+        integration = _mock_integration(
+            {
+                "include_dms": True,
+                "dms_first_enabled_at": "2026-04-21T10:00:00",
+                # no dms_backfill_done -> backfill path
+            }
+        )
+        session = _mock_session_with_integration(integration)
+        # Make _upsert_messages trivially skip everything by patching it to
+        # avoid the DB. Task 2 test F verifies the upsert path itself.
+        mock_client = AsyncMock()
+        history_calls: list[dict] = []
+
+        full_page = _make_history_response(
+            [
+                _make_message(f"170000{i:04d}.000001", text=f"m{i}")
+                for i in range(BACKFILL_MESSAGES_PER_CONVERSATION_CAP)
+            ],
+            has_more=True,
+            next_cursor="next_page",
+        )
+
+        async def _fake_get(url: str, params: dict | None = None, headers=None):
+            if "users.conversations" in url:
+                return _make_http_resp(_make_dm_list_response(["D001"]))
+            history_calls.append(dict(params or {}))
+            return _make_http_resp(full_page)
+
+        mock_client.get = AsyncMock(side_effect=_fake_get)
+
+        with (
+            patch(
+                "src.services.slack_messages.get_user_token",
+                new_callable=AsyncMock,
+                return_value="xoxp-token",
+            ),
+            patch(
+                "src.services.slack_messages.httpx.AsyncClient"
+            ) as mock_httpx,
+            patch(
+                "src.services.slack_messages._upsert_messages",
+                new_callable=AsyncMock,
+                return_value=(100, 0),
+            ),
+        ):
+            mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            await poll_user_messages(session, UUID(TEST_WORKSPACE_ID))
+
+        # Only ONE history call for D001 -- pagination stopped after cap hit.
+        assert len(history_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_G_rate_limit_retry_honors_retry_after(
+        self, monkeypatch
+    ) -> None:
+        """Test G: 429 response sleeps Retry-After seconds and retries once."""
+        import src.services.slack_messages as mod
+        from src.services.slack_messages import poll_user_messages
+
+        sleep_calls: list[float] = []
+
+        async def _fake_sleep(seconds: float) -> None:
+            sleep_calls.append(seconds)
+
+        monkeypatch.setattr(mod.asyncio, "sleep", _fake_sleep)
+
+        integration = _mock_integration({"include_dms": True})
+        session = _mock_session_with_integration(integration)
+
+        rate_limited_resp = _make_http_resp(
+            {}, status_code=429, headers={"Retry-After": "2"}
+        )
+
+        conv_ok = _make_http_resp(_make_dm_list_response(["D001"]))
+        hist_ok = _make_http_resp(_make_history_response([]))
+
+        mock_client = AsyncMock()
+        # First call (users.conversations) -> 429; retry succeeds.
+        # Then history call succeeds immediately.
+        mock_client.get = AsyncMock(
+            side_effect=[rate_limited_resp, conv_ok, hist_ok]
+        )
+
+        with (
+            patch(
+                "src.services.slack_messages.get_user_token",
+                new_callable=AsyncMock,
+                return_value="xoxp-token",
+            ),
+            patch(
+                "src.services.slack_messages.httpx.AsyncClient"
+            ) as mock_httpx,
+        ):
+            mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            await poll_user_messages(session, UUID(TEST_WORKSPACE_ID))
+
+        # Slept exactly 2 seconds (from Retry-After).
+        assert 2 in sleep_calls
+        # Three total GETs: 429'd conv, retry conv, history for D001.
+        assert mock_client.get.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_H_invalid_auth_short_circuits_remaining(self) -> None:
+        """Test H: invalid_auth during history aborts remaining conversations."""
+        from src.services.slack_messages import poll_user_messages
+
+        integration = _mock_integration({"include_dms": True})
+        session = _mock_session_with_integration(integration)
+
+        mock_client = AsyncMock()
+        history_calls: list[dict] = []
+
+        async def _fake_get(url: str, params: dict | None = None, headers=None):
+            if "users.conversations" in url:
+                return _make_http_resp(
+                    _make_dm_list_response(["D001", "D002"])
+                )
+            history_calls.append(dict(params or {}))
+            # First history call fails with invalid_auth.
+            return _make_http_resp({"ok": False, "error": "invalid_auth"})
+
+        mock_client.get = AsyncMock(side_effect=_fake_get)
+
+        with (
+            patch(
+                "src.services.slack_messages.get_user_token",
+                new_callable=AsyncMock,
+                return_value="xoxp-token",
+            ),
+            patch(
+                "src.services.slack_messages.httpx.AsyncClient"
+            ) as mock_httpx,
+        ):
+            mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await poll_user_messages(session, UUID(TEST_WORKSPACE_ID))
+
+        # Only the first history call happened; D002 was never fetched.
+        assert len(history_calls) == 1
+        assert result["reason"] == "needs_reauth"
+        # Integration config was NOT updated (no commit of last_user_poll_at).
+        assert "last_user_poll_at" not in integration.config
+
+    @pytest.mark.asyncio
+    async def test_I_updates_last_user_poll_at_on_success(self) -> None:
+        """Test I: success path updates last_user_poll_at and flips dms_backfill_done."""
+        from datetime import datetime, timedelta
+
+        from src.services.slack_messages import poll_user_messages
+
+        integration = _mock_integration(
+            {
+                "include_dms": True,
+                "dms_first_enabled_at": "2026-04-21T10:00:00",
+                # dms_backfill_done absent -> first backfill
+            }
+        )
+        session = _mock_session_with_integration(integration)
+
+        mock_client = AsyncMock()
+
+        async def _fake_get(url: str, params: dict | None = None, headers=None):
+            if "users.conversations" in url:
+                return _make_http_resp(_make_dm_list_response(["D001"]))
+            return _make_http_resp(
+                _make_history_response(
+                    [_make_message("1700000000.000001", text="hi")]
+                )
+            )
+
+        mock_client.get = AsyncMock(side_effect=_fake_get)
+
+        with (
+            patch(
+                "src.services.slack_messages.get_user_token",
+                new_callable=AsyncMock,
+                return_value="xoxp-token",
+            ),
+            patch(
+                "src.services.slack_messages.httpx.AsyncClient"
+            ) as mock_httpx,
+            patch(
+                "src.services.slack_messages._upsert_messages",
+                new_callable=AsyncMock,
+                return_value=(1, 0),
+            ),
+        ):
+            mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            before = datetime.now(UTC).replace(tzinfo=None)
+            result = await poll_user_messages(session, UUID(TEST_WORKSPACE_ID))
+            after = datetime.now(UTC).replace(tzinfo=None)
+
+        assert result["ingested"] == 1
+        assert result["reason"] is None
+
+        # last_user_poll_at set to a naive-UTC ISO string within the call window.
+        last = integration.config.get("last_user_poll_at")
+        assert last is not None
+        last_dt = datetime.fromisoformat(last)
+        assert (before - timedelta(seconds=2)) <= last_dt <= (after + timedelta(seconds=2))
+
+        # dms_backfill_done flipped True after first backfill.
+        assert integration.config.get("dms_backfill_done") is True
 
 
 class TestUpsert:
     """Upsert + embedding + graph parity + dedup."""
 
-    pass
+    @pytest.mark.asyncio
+    async def test_F_upsert_parity_with_slack_events(
+        self,
+        _patch_queue_embedding,
+        _patch_graph_extractor,
+    ) -> None:
+        """Test F: polled message triggers pg_insert.on_conflict_do_update(uq_slack_msg),
+        one embedding call, one graph-extraction call; filtered messages are NOT
+        upserted or embedded; SET-clause source inspection guards SLACK-USR-04 drift.
+        """
+        import inspect
+
+        import src.services.slack_messages as mod
+        from src.services.slack_messages import _upsert_messages
+
+        # --- 1) SET-clause drift guard -------------------------------------
+        src_code = inspect.getsource(mod._upsert_messages)
+        for field in (
+            "text",
+            "user_id",
+            "thread_ts",
+            "parent_ts",
+            "is_thread_reply",
+            "raw_data",
+        ):
+            assert f'"{field}"' in src_code, f"SET clause missing field: {field}"
+
+        # --- 2) Upsert path executes exactly once for one message ---------
+        workspace_id = UUID(TEST_WORKSPACE_ID)
+        conv_id = "D001"
+
+        # Seed a filtered bot message alongside a real one; only the real
+        # one should hit the upsert path.
+        real_msg = _make_message(
+            "1700000000.000001", user="U001", text="hi there"
+        )
+        bot_msg = _make_message(
+            "1700000000.000002", user="U002", text="bot noise", bot_id="B999"
+        )
+
+        # Mock session with two execute branches:
+        #  - SELECT existing slack_ts (dedup pre-count) -> empty result
+        #  - INSERT ... RETURNING id -> returns a fresh UUID
+        from uuid import uuid4
+
+        inserted_id = uuid4()
+        session = AsyncMock()
+        existing_result = MagicMock()
+        existing_result.all.return_value = []  # no prior rows
+
+        insert_result = MagicMock()
+        insert_result.scalar_one.return_value = inserted_id
+
+        session.execute = AsyncMock(
+            side_effect=[existing_result, insert_result]
+        )
+        session.commit = AsyncMock()
+
+        ingested, skipped = await _upsert_messages(
+            session, workspace_id, conv_id, [real_msg, bot_msg]
+        )
+
+        assert ingested == 1
+        # bot_msg is filter-skipped; real_msg inserted.
+        assert skipped == 1
+
+        # Embedding queued exactly once for the real message.
+        _patch_queue_embedding.assert_awaited_once()
+        queue_call = _patch_queue_embedding.await_args
+        assert queue_call.args[1] == workspace_id
+        assert queue_call.args[2] == "slack_message"
+        assert queue_call.args[3] == [inserted_id]
+
+        # Graph extraction called exactly once with source_type=slack_message.
+        _patch_graph_extractor.assert_awaited_once()
+        graph_kwargs = _patch_graph_extractor.await_args.kwargs
+        assert graph_kwargs["source_type"] == "slack_message"
+        assert graph_kwargs["source_id"] == inserted_id
+        assert graph_kwargs["workspace_id"] == workspace_id
+
+    @pytest.mark.asyncio
+    async def test_J_dedup_via_upsert_counts_as_skipped(
+        self,
+        _patch_queue_embedding,
+        _patch_graph_extractor,
+    ) -> None:
+        """Test J: message ts already present -> counted as skipped, not ingested."""
+        from uuid import uuid4
+
+        from src.services.slack_messages import _upsert_messages
+
+        workspace_id = UUID(TEST_WORKSPACE_ID)
+        conv_id = "D001"
+        msg = _make_message("1700000000.000001", user="U001", text="already seen")
+
+        existing_result = MagicMock()
+        # Pre-existing row: the dedup SELECT returns a 1-tuple row with the ts.
+        existing_result.all.return_value = [(msg["ts"],)]
+
+        insert_result = MagicMock()
+        insert_result.scalar_one.return_value = uuid4()
+
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            side_effect=[existing_result, insert_result]
+        )
+        session.commit = AsyncMock()
+
+        ingested, skipped = await _upsert_messages(
+            session, workspace_id, conv_id, [msg]
+        )
+
+        assert ingested == 0
+        assert skipped == 1
