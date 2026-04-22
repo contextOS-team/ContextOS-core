@@ -22,6 +22,7 @@ from sqlmodel import select
 from src.db import async_session
 from src.models.context_page import ContextPage
 from src.models.integration import Provider, WorkspaceIntegration
+from src.services.slack_messages import poll_user_messages
 from src.services.sync_adapter import SyncRunLogger
 
 logger = logging.getLogger(__name__)
@@ -263,6 +264,31 @@ async def run_polling_fallback() -> None:
                 except Exception:
                     logger.exception(
                         "Code index freshness check failed for workspace %s", ws_id
+                    )
+
+            # Slack DM polling (user-token) per Phase 39. Channels still use
+            # the bot Events API webhook path — this only covers im/mpim.
+            slack_workspaces = await _get_connected_workspaces(Provider.SLACK)
+            for ws_id in slack_workspaces:
+                try:
+                    async with async_session() as session:
+                        result = await poll_user_messages(session, ws_id)
+                    if result.get("reason") is None and result.get("ingested", 0) > 0:
+                        logger.info(
+                            "Slack DM poll for workspace %s: ingested=%d skipped=%d",
+                            ws_id,
+                            result["ingested"],
+                            result["skipped"],
+                        )
+                    elif result.get("reason") not in (None, "dms_disabled"):
+                        logger.warning(
+                            "Slack DM poll for workspace %s reason=%s",
+                            ws_id,
+                            result["reason"],
+                        )
+                except Exception:
+                    logger.exception(
+                        "Slack DM poll crashed for workspace %s", ws_id
                     )
 
             # Daily digests for messaging integrations (dedup handled inside generate_digest)

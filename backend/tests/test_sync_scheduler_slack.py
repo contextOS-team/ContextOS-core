@@ -160,9 +160,10 @@ class TestSlackPollingIntegration:
         # Both workspaces were attempted
         assert poll_mock.await_count == 2
         # ws_a's failure was logged with exception()
-        assert any(
-            str(ws_a) in rec.getMessage() for rec in caplog.records
-        ), f"Expected exception log to reference {ws_a}; got {[r.getMessage() for r in caplog.records]}"
+        logged_messages = [rec.getMessage() for rec in caplog.records]
+        assert any(str(ws_a) in msg for msg in logged_messages), (
+            f"Expected exception log to reference {ws_a}; got {logged_messages}"
+        )
 
     @pytest.mark.asyncio
     async def test_C_does_not_poll_non_slack_providers(
