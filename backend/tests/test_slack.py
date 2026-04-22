@@ -1117,14 +1117,45 @@ class TestDmToggleAndStatus:
         integration.config = config
         return integration
 
+    def _wire_session(
+        self,
+        mock_session: AsyncMock,
+        integration_rows: list,
+    ) -> None:
+        """Wire session.execute to return:
+
+        1st call  -> workspace_id UUID (for get_current_user auth lookup)
+        Nth calls -> integration rows for the route handler
+
+        Each element of `integration_rows` represents one call to
+        `session.execute(...)` inside the route; `scalar_one_or_none()` on
+        the returned MagicMock will yield that value.
+        """
+        ws_result = MagicMock()
+        ws_result.scalar_one_or_none.return_value = UUID(TEST_WORKSPACE_ID)
+
+        results: list = [ws_result]
+        for row in integration_rows:
+            r = MagicMock()
+            r.scalar_one_or_none.return_value = row
+            results.append(r)
+
+        fallback = MagicMock()
+        fallback.scalar_one_or_none.return_value = None
+
+        async def _execute(*args, **kwargs):
+            if results:
+                return results.pop(0)
+            return fallback
+
+        mock_session.execute = AsyncMock(side_effect=_execute)
+
     def test_status_needs_reauth_true_when_user_token_missing(
         self, slack_client: TestClient, mock_session: AsyncMock
     ) -> None:
         """Connected workspace with no user token -> needs_reauth=true."""
         integration = self._make_connected_integration()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = integration
-        mock_session.execute.return_value = mock_result
+        self._wire_session(mock_session, [integration])
 
         with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
             mock_read.return_value = None  # No user token in Vault
@@ -1143,9 +1174,7 @@ class TestDmToggleAndStatus:
     ) -> None:
         """Connected workspace with user token -> needs_reauth=false."""
         integration = self._make_connected_integration()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = integration
-        mock_session.execute.return_value = mock_result
+        self._wire_session(mock_session, [integration])
 
         with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
             mock_read.return_value = "xoxp-user-present"
@@ -1166,9 +1195,7 @@ class TestDmToggleAndStatus:
         integration = self._make_connected_integration()
         # Ensure no include_dms key at all
         integration.config = {}
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = integration
-        mock_session.execute.return_value = mock_result
+        self._wire_session(mock_session, [integration])
 
         with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
             mock_read.return_value = "xoxp-user"
@@ -1184,9 +1211,7 @@ class TestDmToggleAndStatus:
     ) -> None:
         """include_dms=true in config -> status reflects it."""
         integration = self._make_connected_integration(include_dms=True)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = integration
-        mock_session.execute.return_value = mock_result
+        self._wire_session(mock_session, [integration])
 
         with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
             mock_read.return_value = "xoxp-user"
@@ -1202,9 +1227,7 @@ class TestDmToggleAndStatus:
     ) -> None:
         """POST /dms/toggle {enabled: true} persists include_dms=true."""
         integration = self._make_connected_integration()
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = integration
-        mock_session.execute.return_value = mock_result
+        self._wire_session(mock_session, [integration])
 
         with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
             mock_read.return_value = "xoxp-user"  # user token present
@@ -1227,9 +1250,7 @@ class TestDmToggleAndStatus:
     ) -> None:
         """POST /dms/toggle {enabled: false} persists include_dms=false."""
         integration = self._make_connected_integration(include_dms=True)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = integration
-        mock_session.execute.return_value = mock_result
+        self._wire_session(mock_session, [integration])
 
         with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
             mock_read.return_value = "xoxp-user"
@@ -1249,9 +1270,7 @@ class TestDmToggleAndStatus:
         """POST /dms/toggle returns 409 when user token missing; does not mutate config."""
         integration = self._make_connected_integration()
         original_config = dict(integration.config)
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = integration
-        mock_session.execute.return_value = mock_result
+        self._wire_session(mock_session, [integration])
 
         with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
             mock_read.return_value = None  # No user token -> needs_reauth
@@ -1270,9 +1289,7 @@ class TestDmToggleAndStatus:
         self, slack_client: TestClient, mock_session: AsyncMock
     ) -> None:
         """POST /dms/toggle returns 400 when workspace is not connected to Slack."""
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None  # No integration
-        mock_session.execute.return_value = mock_result
+        self._wire_session(mock_session, [None])  # No integration
 
         response = slack_client.post(
             "/api/slack/dms/toggle",

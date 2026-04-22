@@ -8,7 +8,8 @@ Handles real-time Slack messages via the Events API:
 - Upsert via on_conflict_do_update for idempotent ingestion
 
 Per user decisions:
-- Filter out: bot messages, messages under 10 characters, system messages
+- Filter out: bot messages, system messages (channel_join/leave/topic/etc.)
+- Short messages ("done", "no", "approved") are retained as of Phase 39
 - Store file-sharing messages' text but do not download attached files
 - On message edit: overwrite stored text with latest version
 - On message delete: soft-delete (set deleted_at)
@@ -125,10 +126,14 @@ async def process_event(
 def _should_filter(event: dict) -> bool:
     """Determine if a message should be filtered out.
 
-    Filters:
+    Filters retained:
     - Messages with bot_id (bot messages)
     - System message subtypes (channel_join, channel_leave, etc.)
-    - Messages with text shorter than 10 characters
+
+    Phase 39: the <10-character length filter was removed -- short messages
+    such as "done", "no", "approved" carry meaningful signal. This applies
+    to both the channel webhook path and the DM polling path (both call
+    this helper), per the Phase 39 CONTEXT.md decision.
 
     Args:
         event: The Slack event dict.
@@ -143,11 +148,6 @@ def _should_filter(event: dict) -> bool:
     # Filter system message subtypes
     subtype = event.get("subtype")
     if subtype in SYSTEM_SUBTYPES:
-        return True
-
-    # Filter short messages (< 10 characters)
-    text = event.get("text", "")
-    if len(text) < 10:
         return True
 
     return False

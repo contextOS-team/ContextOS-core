@@ -40,6 +40,7 @@ from src.services.slack_oauth import (
 )
 from src.services.oauth_common import sign_oauth_state, verify_state_or_raise
 from src.services.sync_adapter import emit_activity
+from src.services.vault import read_token, token_name
 
 logger = logging.getLogger(__name__)
 
@@ -172,12 +173,23 @@ async def get_status(
             "connected": False,
             "team_name": None,
             "status": "disconnected",
+            "needs_reauth": False,
+            "include_dms": False,
         }
+
+    # Phase 39: needs_reauth signals workspaces that connected before dual-token
+    # OAuth shipped (no user_access entry in Vault). include_dms mirrors the
+    # DM opt-in flag in integration.config (defaults to false).
+    user_key = token_name(Provider.SLACK, user.workspace_id, "user_access")
+    user_token = await read_token(session, user_key)
+    config = integration.config or {}
 
     return {
         "connected": integration.status == "connected",
         "team_name": integration.external_id,
         "status": integration.status,
+        "needs_reauth": integration.status == "connected" and user_token is None,
+        "include_dms": bool(config.get("include_dms", False)),
     }
 
 
@@ -247,6 +259,59 @@ async def select_channels(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+@router.post("/dms/toggle")
+async def toggle_dms(
+    request: Request,
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Enable or disable DM ingestion for this workspace.
+
+    Body: {"enabled": bool}
+
+    - 400 if Slack is not connected.
+    - 409 with detail="needs_reauth" if no user token is stored in Vault
+      (pre-Phase-39 workspace that hasn't re-authorized yet).
+    - On success, persists `include_dms` in integration.config. The first
+      time DMs are enabled, records `dms_first_enabled_at` so the DM
+      polling worker knows to run a 7-day backfill on the next cycle.
+    """
+    body = await request.json()
+    enabled = bool(body.get("enabled", False))
+
+    stmt = select(WorkspaceIntegration).where(
+        WorkspaceIntegration.workspace_id == user.workspace_id,
+        WorkspaceIntegration.provider == Provider.SLACK,
+    )
+    result = await session.execute(stmt)
+    integration = result.scalar_one_or_none()
+    if integration is None or integration.status != "connected":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Slack not connected",
+        )
+
+    user_key = token_name(Provider.SLACK, user.workspace_id, "user_access")
+    user_token = await read_token(session, user_key)
+    if user_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="needs_reauth",
+        )
+
+    updated_config = dict(integration.config) if integration.config else {}
+    updated_config["include_dms"] = enabled
+    # First-time enable: mark so the DM poller runs a 7-day backfill on next cycle.
+    if enabled and "dms_first_enabled_at" not in updated_config:
+        from datetime import UTC, datetime
+        updated_config["dms_first_enabled_at"] = (
+            datetime.now(UTC).replace(tzinfo=None).isoformat()
+        )
+    integration.config = updated_config
+    await session.commit()
+    return {"include_dms": enabled}
 
 
 @router.post("/events")
