@@ -318,12 +318,26 @@ class TestMessageFiltering:
         }
         assert _should_filter(event) is True
 
-    def test_filters_short_messages(self) -> None:
-        """Messages with less than 10 characters should be filtered out."""
+    def test_short_messages_no_longer_filtered(self) -> None:
+        """Phase 39: the <10-char length filter has been removed.
+
+        Short messages like 'done', 'no', 'approved' carry meaningful
+        signal and must pass the filter on both the channel webhook
+        path and the new DM polling path.
+        """
         from src.services.slack_events import _should_filter
 
-        event = {"type": "message", "text": "Hi"}
-        assert _should_filter(event) is True
+        # Previously filtered; now pass
+        assert _should_filter({"type": "message", "text": "done"}) is False
+        assert _should_filter({"type": "message", "text": "no"}) is False
+        assert _should_filter({"type": "message", "text": ""}) is False
+
+        # Bot and system-subtype filters remain
+        assert _should_filter({"bot_id": "B1", "text": "hello world"}) is True
+        assert (
+            _should_filter({"subtype": "channel_join", "text": "long enough text"})
+            is True
+        )
 
     def test_filters_system_messages(self) -> None:
         """System message subtypes (channel_join, etc.) should be filtered out."""
@@ -1069,3 +1083,208 @@ class TestUserTokenOAuth:
                 session=mock_session,
                 workspace_id=UUID(TEST_WORKSPACE_ID),
             )
+
+
+# ===========================================================================
+# Phase 39: /status needs_reauth + include_dms, POST /dms/toggle
+# ===========================================================================
+
+
+class TestDmToggleAndStatus:
+    """Tests for the Phase 39 status + DM toggle endpoints.
+
+    - GET /api/slack/status returns needs_reauth + include_dms
+    - POST /api/slack/dms/toggle persists include_dms in integration.config
+    - Toggle is rejected with 409 when no user token is stored
+    - Toggle requires a valid JWT (401 when missing)
+    """
+
+    def _make_connected_integration(
+        self,
+        *,
+        include_dms: bool | None = None,
+        extra_config: dict | None = None,
+    ):
+        """Build a MagicMock WorkspaceIntegration row in the `connected` state."""
+        integration = MagicMock()
+        integration.status = "connected"
+        integration.external_id = "Acme"
+        config: dict = {}
+        if include_dms is not None:
+            config["include_dms"] = include_dms
+        if extra_config:
+            config.update(extra_config)
+        integration.config = config
+        return integration
+
+    def test_status_needs_reauth_true_when_user_token_missing(
+        self, slack_client: TestClient, mock_session: AsyncMock
+    ) -> None:
+        """Connected workspace with no user token -> needs_reauth=true."""
+        integration = self._make_connected_integration()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = integration
+        mock_session.execute.return_value = mock_result
+
+        with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
+            mock_read.return_value = None  # No user token in Vault
+            response = slack_client.get(
+                "/api/slack/status", headers=_make_auth_header()
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["connected"] is True
+        assert data["needs_reauth"] is True
+        assert data["include_dms"] is False
+
+    def test_status_needs_reauth_false_when_user_token_present(
+        self, slack_client: TestClient, mock_session: AsyncMock
+    ) -> None:
+        """Connected workspace with user token -> needs_reauth=false."""
+        integration = self._make_connected_integration()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = integration
+        mock_session.execute.return_value = mock_result
+
+        with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
+            mock_read.return_value = "xoxp-user-present"
+            response = slack_client.get(
+                "/api/slack/status", headers=_make_auth_header()
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["connected"] is True
+        assert data["needs_reauth"] is False
+        assert data["include_dms"] is False
+
+    def test_status_include_dms_defaults_false(
+        self, slack_client: TestClient, mock_session: AsyncMock
+    ) -> None:
+        """Fresh connect (config without include_dms) -> include_dms=false."""
+        integration = self._make_connected_integration()
+        # Ensure no include_dms key at all
+        integration.config = {}
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = integration
+        mock_session.execute.return_value = mock_result
+
+        with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
+            mock_read.return_value = "xoxp-user"
+            response = slack_client.get(
+                "/api/slack/status", headers=_make_auth_header()
+            )
+
+        assert response.status_code == 200
+        assert response.json()["include_dms"] is False
+
+    def test_status_include_dms_reflects_config(
+        self, slack_client: TestClient, mock_session: AsyncMock
+    ) -> None:
+        """include_dms=true in config -> status reflects it."""
+        integration = self._make_connected_integration(include_dms=True)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = integration
+        mock_session.execute.return_value = mock_result
+
+        with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
+            mock_read.return_value = "xoxp-user"
+            response = slack_client.get(
+                "/api/slack/status", headers=_make_auth_header()
+            )
+
+        assert response.status_code == 200
+        assert response.json()["include_dms"] is True
+
+    def test_dms_toggle_enables_and_persists(
+        self, slack_client: TestClient, mock_session: AsyncMock
+    ) -> None:
+        """POST /dms/toggle {enabled: true} persists include_dms=true."""
+        integration = self._make_connected_integration()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = integration
+        mock_session.execute.return_value = mock_result
+
+        with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
+            mock_read.return_value = "xoxp-user"  # user token present
+            response = slack_client.post(
+                "/api/slack/dms/toggle",
+                headers=_make_auth_header(),
+                json={"enabled": True},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"include_dms": True}
+
+        # The handler must mutate integration.config with include_dms=True and commit
+        assert integration.config.get("include_dms") is True
+        assert "dms_first_enabled_at" in integration.config  # backfill marker set
+        assert mock_session.commit.await_count >= 1
+
+    def test_dms_toggle_disables(
+        self, slack_client: TestClient, mock_session: AsyncMock
+    ) -> None:
+        """POST /dms/toggle {enabled: false} persists include_dms=false."""
+        integration = self._make_connected_integration(include_dms=True)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = integration
+        mock_session.execute.return_value = mock_result
+
+        with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
+            mock_read.return_value = "xoxp-user"
+            response = slack_client.post(
+                "/api/slack/dms/toggle",
+                headers=_make_auth_header(),
+                json={"enabled": False},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"include_dms": False}
+        assert integration.config.get("include_dms") is False
+
+    def test_dms_toggle_returns_409_when_needs_reauth(
+        self, slack_client: TestClient, mock_session: AsyncMock
+    ) -> None:
+        """POST /dms/toggle returns 409 when user token missing; does not mutate config."""
+        integration = self._make_connected_integration()
+        original_config = dict(integration.config)
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = integration
+        mock_session.execute.return_value = mock_result
+
+        with patch("src.routers.slack.read_token", new_callable=AsyncMock) as mock_read:
+            mock_read.return_value = None  # No user token -> needs_reauth
+            response = slack_client.post(
+                "/api/slack/dms/toggle",
+                headers=_make_auth_header(),
+                json={"enabled": True},
+            )
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == "needs_reauth"
+        # Config must be unchanged
+        assert integration.config == original_config
+
+    def test_dms_toggle_returns_400_when_not_connected(
+        self, slack_client: TestClient, mock_session: AsyncMock
+    ) -> None:
+        """POST /dms/toggle returns 400 when workspace is not connected to Slack."""
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = None  # No integration
+        mock_session.execute.return_value = mock_result
+
+        response = slack_client.post(
+            "/api/slack/dms/toggle",
+            headers=_make_auth_header(),
+            json={"enabled": True},
+        )
+
+        assert response.status_code == 400
+
+    def test_dms_toggle_requires_auth(self, slack_client: TestClient) -> None:
+        """POST /api/slack/dms/toggle without JWT returns 401/403."""
+        response = slack_client.post(
+            "/api/slack/dms/toggle", json={"enabled": True}
+        )
+        assert response.status_code in (401, 403)
