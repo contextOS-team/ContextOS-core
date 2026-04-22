@@ -59,9 +59,23 @@ export interface ProviderStatus {
   last_sync_at?: string | null
 }
 
+/**
+ * Slack-specific provider status. Carries the extra fields populated from
+ * `/api/slack/status` (introduced in Plan 39-01) so the Settings UI can render
+ * the re-auth banner and DM toggle conditionally.
+ *
+ * The aggregator endpoint `/api/integrations/status` does not populate these
+ * fields — the Settings page fetches them on demand via `getSlackStatus()`.
+ * Both fields are therefore optional on this type.
+ */
+export interface SlackProviderStatus extends ProviderStatus {
+  needs_reauth?: boolean
+  include_dms?: boolean
+}
+
 export interface IntegrationStatusResponse {
   linear: ProviderStatus
-  slack: ProviderStatus
+  slack: SlackProviderStatus
   fathom: ProviderStatus
   github: ProviderStatus
   gitlab: ProviderStatus
@@ -164,6 +178,38 @@ export function saveSlackChannelSelection(
       body: JSON.stringify({ channel_ids: channelIds }),
     }
   )
+}
+
+export interface SlackStatusResponse {
+  connected: boolean
+  team_name: string | null
+  status: 'connected' | 'disconnected' | string
+  needs_reauth: boolean
+  include_dms: boolean
+}
+
+/**
+ * Fetch the scoped Slack status — includes `needs_reauth` and `include_dms`
+ * which are not populated by the aggregator `/api/integrations/status`.
+ */
+export function getSlackStatus(): Promise<SlackStatusResponse> {
+  return apiFetch<SlackStatusResponse>('/api/slack/status')
+}
+
+/**
+ * Toggle DM ingestion on/off.
+ *
+ * Errors:
+ * - 409 (detail="needs_reauth") — user token not present; user must reconnect.
+ * - 400 (detail="Slack not connected") — no Slack integration at all.
+ */
+export function toggleSlackDms(
+  enabled: boolean
+): Promise<{ include_dms: boolean }> {
+  return apiFetch<{ include_dms: boolean }>('/api/slack/dms/toggle', {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
 }
 
 // ---------------------------------------------------------------------------
