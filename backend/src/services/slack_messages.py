@@ -1,10 +1,20 @@
-"""Slack user-token DM/group-DM polling service.
+"""Slack user-token polling service (DMs + group-DMs + channels).
 
-Channels remain on the bot Events API webhook path per Phase 39 CONTEXT.md.
-This module covers the DM-only polling path driven by the Slack user token
-minted during the OAuth V2 flow (scopes: im:read, im:history, mpim:read,
-mpim:history). Mirrors slack_huddles polling conventions (429 handling,
-cursor pagination, sequential conversation iteration).
+Phase 39 originally scoped this to DM-only. Phase 39.1 expanded coverage
+to channels (public + private) because bot /invite permissions were
+blocked for rollout, and the user token can already read every channel
+the installer is a member of -- no workspace admin required.
+
+Duplicate ingestion vs. the bot Events API webhook path is safe: both
+paths upsert on (workspace_id, channel_id, ts) with identical SET-clause
+parity (see SLACK-USR-04 + Test K source-inspection guard).
+
+User scopes required (see slack_oauth.SLACK_USER_SCOPES):
+im:read, im:history, mpim:read, mpim:history,
+channels:read, channels:history, groups:read, groups:history.
+
+Mirrors slack_huddles polling conventions (429 handling, cursor
+pagination, sequential conversation iteration).
 
 Public entry point:
     poll_user_messages(session, workspace_id) -> dict
@@ -17,9 +27,16 @@ Return shape:
                                  # "not_connected" | None on success
     }
 
+The `include_dms` config gate controls ALL user-token polling (DMs and
+channels). The key name is retained for backwards compatibility; treat
+it semantically as "poll everything via user token". A rename to
+e.g. `include_user_token_polling` would require a data migration and
+breaks roundtrip with Plan 39-01's config keys, so we keep the
+historical name -- see Phase 39.1 gap-closure decision log.
+
 The function never raises for expected states (disabled, missing token,
-empty DM list). Programmer errors and unexpected HTTP failures still
-surface as exceptions.
+empty conversation list). Programmer errors and unexpected HTTP failures
+still surface as exceptions.
 """
 
 from __future__ import annotations

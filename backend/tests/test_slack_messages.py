@@ -1,11 +1,12 @@
-"""Tests for Slack user-token DM/group-DM polling service.
+"""Tests for Slack user-token DM + channel polling service.
 
-Covers 10 behaviors (split across Task 1 and Task 2 of Plan 39-02):
+Covers 11 behaviors (Plans 39-02 + Phase 39.1 gap closure):
 
 Task 1 (TestEnumerate):
 - A: dms_disabled short-circuit -- zero HTTP calls when include_dms is False/missing
 - B: needs_reauth -- SlackOAuthError from get_user_token returns reason="needs_reauth"
-- C: enumerate DMs only -- users.conversations called with types=im,mpim, no channels
+- C: enumerate DMs + channels -- users.conversations called with types covering
+     im, mpim, public_channel, private_channel (Phase 39.1 gap closure)
 - D: incremental polling -- last_user_poll_at used as oldest; backfill window when
      first-time DM opt-in and dms_backfill_done is falsy
 
@@ -16,6 +17,8 @@ Task 2 (TestPolling + TestUpsert):
 - H: 401 handling -- invalid_auth logs and short-circuits remaining conversations
 - I: updates last_user_poll_at; flips dms_backfill_done=True on first backfill
 - J: dedup via upsert -- webhook-path overlap counted as skipped, not ingested
+- K: channel message upsert parity with DM -- a message from a public_channel ID
+     goes through the same _upsert_messages path as a DM (Phase 39.1)
 """
 
 from __future__ import annotations
@@ -224,18 +227,21 @@ class TestEnumerate:
         mock_httpx.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_C_enumerates_only_im_and_mpim(self) -> None:
-        """Test C: users.conversations is called exactly once with types=im,mpim.
+    async def test_C_enumerates_dms_and_channels(self) -> None:
+        """Test C: users.conversations is called once with types covering DMs + channels.
 
-        The returned 2 DMs + 1 mpim are iterated; no public/private channel calls.
+        Phase 39.1 gap closure: the user-token poller now covers channels the
+        installer is already a member of (no bot /invite required). Returned
+        DMs, mpims, and channels are all iterated through conversations.history.
         """
         from src.services.slack_messages import poll_user_messages
 
         integration = _mock_integration({"include_dms": True})
         session = _mock_session_with_integration(integration)
 
-        dm_list = _make_dm_list_response(["D001", "D002", "G001"])
-        # Each of 3 convs gets an empty history fetch
+        # 1 DM + 1 mpim + 1 public channel + 1 private channel
+        dm_list = _make_dm_list_response(["D001", "G001", "C001", "C002"])
+        # Each conv gets an empty history fetch
         empty_hist = _make_history_response([])
 
         mock_client = AsyncMock()
@@ -269,15 +275,16 @@ class TestEnumerate:
         conv_calls = [c for c in captured_calls if "users.conversations" in c[0]]
         assert len(conv_calls) == 1
         types_param = conv_calls[0][1].get("types", "")
-        assert "im" in types_param and "mpim" in types_param
-        # Must NOT enumerate public or private channels
-        assert "public_channel" not in types_param
-        assert "private_channel" not in types_param
+        # DMs + channels all included (Phase 39.1)
+        assert "im" in types_param
+        assert "mpim" in types_param
+        assert "public_channel" in types_param
+        assert "private_channel" in types_param
 
-        # Iterated all 3 DM conversations
+        # Iterated all 4 conversations (DMs + mpim + channels)
         hist_calls = [c for c in captured_calls if "conversations.history" in c[0]]
         hist_channels = {c[1].get("channel") for c in hist_calls}
-        assert hist_channels == {"D001", "D002", "G001"}
+        assert hist_channels == {"D001", "G001", "C001", "C002"}
 
     @pytest.mark.asyncio
     async def test_D_incremental_uses_last_user_poll_at(self) -> None:
@@ -741,3 +748,61 @@ class TestUpsert:
 
         assert ingested == 0
         assert skipped == 1
+
+    @pytest.mark.asyncio
+    async def test_K_channel_message_upserted_same_as_dm(
+        self,
+        _patch_queue_embedding,
+        _patch_graph_extractor,
+    ) -> None:
+        """Test K: a message from a public_channel ID flows through the same
+        _upsert_messages path as a DM (Phase 39.1 gap closure).
+
+        Verifies that the upsert helper is channel-agnostic -- the conv_id
+        kind (D..., G..., C...) does not gate any code path. Same pg_insert,
+        same embedding enqueue, same graph extraction call.
+        """
+        from uuid import uuid4
+
+        from src.services.slack_messages import _upsert_messages
+
+        workspace_id = UUID(TEST_WORKSPACE_ID)
+        # Public channel ID (C...) instead of DM (D...) or mpim (G...)
+        conv_id = "C001"
+        msg = _make_message(
+            "1700000000.000001", user="U001", text="channel message"
+        )
+
+        inserted_id = uuid4()
+        existing_result = MagicMock()
+        existing_result.all.return_value = []  # no prior rows
+
+        upsert_result = MagicMock()
+        id_result = MagicMock()
+        id_result.scalar_one.return_value = inserted_id
+
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            side_effect=[existing_result, upsert_result, id_result]
+        )
+        session.commit = AsyncMock()
+
+        ingested, skipped = await _upsert_messages(
+            session, workspace_id, conv_id, [msg]
+        )
+
+        assert ingested == 1
+        assert skipped == 0
+
+        # Embedding + graph extraction fire identically to the DM path.
+        _patch_queue_embedding.assert_awaited_once()
+        queue_call = _patch_queue_embedding.await_args
+        assert queue_call.args[1] == workspace_id
+        assert queue_call.args[2] == "slack_message"
+        assert queue_call.args[3] == [inserted_id]
+
+        _patch_graph_extractor.assert_awaited_once()
+        graph_kwargs = _patch_graph_extractor.await_args.kwargs
+        assert graph_kwargs["source_type"] == "slack_message"
+        assert graph_kwargs["source_id"] == inserted_id
+        assert graph_kwargs["workspace_id"] == workspace_id
