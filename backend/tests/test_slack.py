@@ -838,8 +838,8 @@ class TestSlackOAuthService:
 class TestUserTokenOAuth:
     """Tests for dual-token (bot + user) OAuth exchange and user token helpers.
 
-    Covers Phase 39 Plan 01 requirements:
-    - SLACK_USER_SCOPES is DM-only (im/mpim/users); no channels/groups scopes
+    Covers Phase 39 Plan 01 + Phase 39.1 gap closure requirements:
+    - SLACK_USER_SCOPES covers DM + channel read/history (channels + groups)
     - build_auth_url wires user_scope to SLACK_USER_SCOPES
     - exchange_code stores both bot and user tokens when authed_user present
     - exchange_code tolerates missing authed_user (bot-only, warns)
@@ -847,16 +847,21 @@ class TestUserTokenOAuth:
     - get_user_token reads user_access token from Vault; raises when missing
     """
 
-    def test_build_auth_url_includes_dm_only_user_scopes(
+    def test_build_auth_url_includes_dm_and_channel_user_scopes(
         self, slack_settings: Settings
     ) -> None:
-        """build_auth_url wires SLACK_USER_SCOPES into user_scope param."""
+        """build_auth_url wires SLACK_USER_SCOPES (DM + channel) into user_scope param."""
         from urllib.parse import parse_qs, urlparse
 
         from src.services.slack_oauth import SLACK_USER_SCOPES, build_auth_url
 
-        # SLACK_USER_SCOPES is DM-only per CONTEXT.md lock
-        expected = "im:read,im:history,mpim:read,mpim:history,users:read,users:read.email"
+        # SLACK_USER_SCOPES covers DM + channel read/history per Phase 39.1 gap closure
+        # (bot-invite permissions blocked; poll channels via user token instead).
+        expected = (
+            "im:read,im:history,mpim:read,mpim:history,"
+            "channels:read,channels:history,groups:read,groups:history,"
+            "users:read,users:read.email"
+        )
         assert SLACK_USER_SCOPES == expected
 
         url = build_auth_url("test-state", slack_settings)
@@ -867,11 +872,11 @@ class TestUserTokenOAuth:
         user_scope_value = query["user_scope"][0]
         assert user_scope_value == SLACK_USER_SCOPES
 
-        # Channels/groups scopes must NOT appear in user_scope
-        assert "channels:read" not in user_scope_value
-        assert "channels:history" not in user_scope_value
-        assert "groups:read" not in user_scope_value
-        assert "groups:history" not in user_scope_value
+        # Channels/groups scopes MUST appear in user_scope (Phase 39.1)
+        assert "channels:read" in user_scope_value
+        assert "channels:history" in user_scope_value
+        assert "groups:read" in user_scope_value
+        assert "groups:history" in user_scope_value
 
     @pytest.mark.asyncio
     async def test_exchange_code_stores_both_tokens_and_slack_user_id(
