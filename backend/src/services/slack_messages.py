@@ -67,7 +67,11 @@ BACKFILL_MESSAGES_PER_CONVERSATION_CAP = 100
 # Conservative page size: RESEARCH.md flags a 1-rpm cap with limit=15 for
 # non-Marketplace apps. Start at 100 and let 429 handling absorb bursts.
 DEFAULT_PAGE_SIZE = 100
-DM_CONVERSATION_TYPES = "im,mpim"
+# User-token polling covers every conversation kind the installer can read:
+# DMs (im), group DMs (mpim), public channels, and private channels. This
+# expanded from DM-only ("im,mpim") in Phase 39.1 -- see module docstring
+# and SLACK_USER_SCOPES for the rationale (bot /invite permissions blocked).
+USER_CONVERSATION_TYPES = "im,mpim,public_channel,private_channel"
 
 # Slack error codes that indicate the user token is no longer valid --
 # treat as needs_reauth and short-circuit the current poll cycle.
@@ -92,10 +96,10 @@ async def poll_user_messages(
     session: AsyncSession,
     workspace_id: UUID,
 ) -> dict[str, Any]:
-    """Poll the user's Slack DMs and group-DMs for new messages.
+    """Poll the user's Slack conversations (DMs, group-DMs, channels).
 
     Contract documented at module level. See 39-02-PLAN.md for the full
-    behavioral spec (tests A-J).
+    behavioral spec (tests A-J); Phase 39.1 adds channel coverage + test K.
     """
     integration = await _get_integration(session, workspace_id)
     if integration is None or integration.status != "connected":
@@ -145,8 +149,8 @@ async def poll_user_messages(
                 )
             except _NeedsReauth:
                 logger.warning(
-                    "Slack invalid_auth during DM history for ws %s -- "
-                    "short-circuiting remaining conversations",
+                    "Slack invalid_auth during conversations.history for ws %s"
+                    " -- short-circuiting remaining conversations",
                     workspace_id,
                 )
                 needs_reauth_hit = True
@@ -233,11 +237,16 @@ async def _enumerate_dms(
     client: httpx.AsyncClient,
     user_token: str,
 ) -> list[str]:
-    """Enumerate the user's DM and group-DM conversation IDs.
+    """Enumerate every conversation the user token can read.
 
-    Calls ``users.conversations`` with ``types=im,mpim`` (no public/private
-    channels). Paginates via ``response_metadata.next_cursor``. 429 responses
-    sleep for ``Retry-After`` seconds and retry once.
+    Calls ``users.conversations`` with
+    ``types=im,mpim,public_channel,private_channel`` (Phase 39.1 gap closure:
+    expanded from DM-only to cover channels the installer is a member of).
+    Paginates via ``response_metadata.next_cursor``. 429 responses sleep for
+    ``Retry-After`` seconds and retry once.
+
+    Function name is retained for git-history continuity; semantically it now
+    returns IDs for DMs, mpims, public channels, and private channels.
     """
     headers = {"Authorization": f"Bearer {user_token}"}
     ids: list[str] = []
@@ -245,7 +254,7 @@ async def _enumerate_dms(
 
     while True:
         params: dict[str, str] = {
-            "types": DM_CONVERSATION_TYPES,
+            "types": USER_CONVERSATION_TYPES,
             "exclude_archived": "true",
             "limit": "200",
         }
@@ -289,13 +298,14 @@ async def _fetch_history(
     oldest: str | None,
     cap: int | None,
 ) -> list[dict[str, Any]]:
-    """Fetch conversations.history for a DM/mpim with pagination.
+    """Fetch conversations.history for a conversation (DM, mpim, or channel).
 
     - Respects ``oldest`` for incremental polling.
     - Honors 429 Retry-After (single retry per page, handled in _slack_get).
     - If ``cap`` is set (backfill mode), truncates to ``cap`` and stops paging.
     - Per-conversation errors (missing_scope, not_in_channel, channel_not_found)
-      are logged and return ``[]`` so one bad DM does not abort the poll.
+      are logged and return ``[]`` so one bad conversation does not abort the
+      poll cycle.
     - 401/invalid_auth raises _NeedsReauth so the caller aborts the cycle.
     """
     headers = {"Authorization": f"Bearer {user_token}"}
@@ -325,7 +335,9 @@ async def _fetch_history(
                 raise _NeedsReauth(error)
             if error in _SKIP_CONVERSATION_ERRORS:
                 logger.warning(
-                    "Skipping DM %s due to Slack error: %s", conv_id, error
+                    "Skipping conversation %s due to Slack error: %s",
+                    conv_id,
+                    error,
                 )
                 return []
             logger.error(
@@ -402,7 +414,7 @@ async def _upsert_messages(
     conv_id: str,
     messages: list[dict[str, Any]],
 ) -> tuple[int, int]:
-    """Upsert polled DM messages into SlackMessage with webhook-path parity.
+    """Upsert polled messages into SlackMessage with webhook-path parity.
 
     Returns (ingested, skipped) where:
       - ingested = newly inserted rows (ts was NOT in the table before)
@@ -505,7 +517,7 @@ async def _upsert_messages(
                 content=msg.get("text", ""),
                 source_type="slack_message",
                 source_id=row_id,
-                source_name=f"Slack DM in {conv_id}",
+                source_name=f"Slack message in {conv_id}",
                 source_external_id=msg["ts"],
             )
         except Exception:  # noqa: BLE001 -- graph extraction is best-effort
