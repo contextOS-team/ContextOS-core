@@ -167,7 +167,7 @@ Note: Phases 35, 36, 37, 38, 39 are independent and can execute in parallel afte
 | 36. Landing Page Polish | 0/TBD | Not started | - |
 | 37. Privacy Architecture Research | 0/TBD | Not started | - |
 | 38. RAG Quality Improvements | 0/TBD | Not started | - |
-| 39. Slack User Token Migration & DM Support | 2/4 | In Progress|  |
+| 39. Slack User Token Migration & DM Support | 3/4 | In Progress|  |
 
 ### Phase 39: Slack User Token Migration & DM Support
 **Goal**: Add DM and group-DM ingestion to the Slack integration via user-token polling, while keeping the existing bot Events API webhook path for channel messages (Slack's May 2025 rate-limit cap makes user-token polling unviable for channels at scale)
@@ -180,10 +180,10 @@ Note: Phases 35, 36, 37, 38, 39 are independent and can execute in parallel afte
   4. Existing-install users without a user token see a re-auth banner prompting them to reconnect Slack
   5. Channel picker UI remains functional (channels still require bot invites)
   6. Short messages (<10 chars) such as "ok" or "done" are no longer filtered on either path, so they appear in the feed
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 Plans:
 - [x] 39-01-PLAN.md -- OAuth dual-token capture + /status needs_reauth flag + /dms/toggle endpoint + remove <10 char filter
-- [ ] 39-02-PLAN.md -- slack_messages.poll_user_messages service (DMs + group DMs, 7d backfill, embedding/graph parity)
+- [x] 39-02-PLAN.md -- slack_messages.poll_user_messages service (DMs + group DMs, 7d backfill, embedding/graph parity)
 - [x] 39-03-PLAN.md -- Settings UI: re-auth banner + DM toggle + typed api.ts clients (channel picker preserved)
 - [ ] 39-04-PLAN.md -- Wire poll_user_messages into run_polling_fallback + onboarding DM consent panel + human-verify checkpoint
 

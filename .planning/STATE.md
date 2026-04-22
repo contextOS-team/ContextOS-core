@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Live Intelligence
 status: in_progress
-stopped_at: Completed 39-03-PLAN.md (Settings DM toggle + re-auth banner)
-last_updated: "2026-04-22T15:32:24.686Z"
-last_activity: 2026-04-22 -- Completed 39-03 Settings UX for DM toggle + re-auth banner
+stopped_at: Completed 39-02-PLAN.md
+last_updated: "2026-04-22T15:43:00.000Z"
+last_activity: 2026-04-22 -- Completed 39-02 Slack DM polling service
 progress:
   total_phases: 8
   completed_phases: 1
   total_plans: 9
-  completed_plans: 6
-  percent: 94
+  completed_plans: 8
+  percent: 97
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 39 - Slack User Token Migration & DM Support (Plans 01 and 03 complete, 02 and 04 remaining)
+**Current focus:** Phase 39 - Slack User Token Migration & DM Support (Plans 01, 02, 03 complete; 04 remaining)
 
 ## Current Position
 
 Milestone: v1.3 Live Intelligence
 Phase: 39 of 39 (Slack User Token Migration & DM Support)
-Plan: 3 of 4 in current phase
-Status: Plan 39-01 and 39-03 complete, 39-02 and 39-04 remaining
-Last activity: 2026-04-22 -- Completed 39-03 Settings DM toggle + re-auth banner
+Plan: 4 of 4 in current phase
+Status: Plans 39-01, 39-02, 39-03 complete; 39-04 remaining
+Last activity: 2026-04-22 -- Completed 39-02 Slack DM polling service
 
-Progress: [██████████] 95%
+Progress: [██████████] 97%
 
 ## Accumulated Context
 
@@ -60,6 +60,11 @@ Progress: [██████████] 95%
 - [39-03] Switch component added manually via radix-ui namespace to match existing Label pattern (not shadcn CLI which pulls standalone @radix-ui/react-switch)
 - [39-03] Fetch-separately pattern: getSlackStatus on mount avoids extending backend aggregator endpoint (matches GitHub/GitLab repos pattern)
 - [39-03] SlackDmToggle re-reads include_dms on mount for reload-survival; Label wrapper min-h-10 provides >=40px hit area while Switch stays visually compact
+- [39-02] _compute_oldest coerces naive last_user_poll_at to UTC before .timestamp() -- fixes TZ-offset bug in literal plan spec
+- [39-02] _upsert_messages mirrors slack_events._handle_message exactly: pg_insert + on_conflict_do_update + post-commit SELECT for id (not .returning())
+- [39-02] SET-clause parity with slack_events verified via inspect.getsource() assertion in TestUpsert.test_F (runtime drift guard, SLACK-USR-04)
+- [39-02] Sequential DM iteration (no asyncio.gather) + single-retry 429 Retry-After via shared _slack_get helper
+- [39-02] DM-only lock: users.conversations called with types=im,mpim exclusively; channels stay on webhook path per CONTEXT.md
 
 ### Roadmap Evolution
 
@@ -77,6 +82,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-22T15:31:03Z
-Stopped at: Completed 39-03-PLAN.md
-Resume file: .planning/phases/39-slack-user-token-migration-dm-support/39-02-PLAN.md
+Last session: 2026-04-22T15:41:23Z
+Stopped at: Completed 39-02-PLAN.md
+Resume file: .planning/phases/39-slack-user-token-migration-dm-support/39-04-PLAN.md
