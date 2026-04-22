@@ -396,6 +396,8 @@ def _ts_to_datetime(slack_ts: str) -> datetime | None:
     """
     try:
         epoch = float(slack_ts)
-        return datetime.fromtimestamp(epoch, tz=timezone.utc)
+        # slack_messages.slack_created_at is TIMESTAMP WITHOUT TIME ZONE;
+        # return naive UTC to match column type.
+        return datetime.fromtimestamp(epoch, tz=timezone.utc).replace(tzinfo=None)
     except (ValueError, TypeError, OSError):
         return None
