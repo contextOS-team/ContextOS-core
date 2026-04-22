@@ -113,8 +113,11 @@ async def callback(
         )
 
         # Emit initial message digest in background (picks up any existing messages)
-        from src.services.sync_scheduler import _emit_slack_daily_digest
-        background_tasks.add_task(_emit_slack_daily_digest, workspace_id)
+        try:
+            from src.services.sync_scheduler import _emit_slack_daily_digest
+            background_tasks.add_task(_emit_slack_daily_digest, workspace_id)
+        except ImportError:
+            logger.debug("_emit_slack_daily_digest not available, skipping initial digest")
 
         return RedirectResponse(
             url=f"{frontend_url}/dashboard/settings?tab=integrations&slack=connected&team={team_name}",
