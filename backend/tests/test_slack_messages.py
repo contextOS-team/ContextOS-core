@@ -389,7 +389,9 @@ class TestPolling:
     """Polling behaviors: backfill cap, 429 retry, 401 handling, bookkeeping."""
 
     @pytest.mark.asyncio
-    async def test_E_backfill_cap_stops_pagination(self, _patch_queue_embedding) -> None:
+    async def test_E_backfill_cap_stops_pagination(
+        self, _patch_queue_embedding
+    ) -> None:
         """Test E: backfill mode caps each conversation at 100 messages.
 
         When has_more=True and the first page returns 100 messages, the
@@ -550,7 +552,7 @@ class TestPolling:
 
     @pytest.mark.asyncio
     async def test_I_updates_last_user_poll_at_on_success(self) -> None:
-        """Test I: success path updates last_user_poll_at and flips dms_backfill_done."""
+        """Test I: success updates last_user_poll_at + flips dms_backfill_done."""
         from datetime import datetime, timedelta
 
         from src.services.slack_messages import poll_user_messages
@@ -606,7 +608,9 @@ class TestPolling:
         last = integration.config.get("last_user_poll_at")
         assert last is not None
         last_dt = datetime.fromisoformat(last)
-        assert (before - timedelta(seconds=2)) <= last_dt <= (after + timedelta(seconds=2))
+        low = before - timedelta(seconds=2)
+        high = after + timedelta(seconds=2)
+        assert low <= last_dt <= high
 
         # dms_backfill_done flipped True after first backfill.
         assert integration.config.get("dms_backfill_done") is True
@@ -621,9 +625,12 @@ class TestUpsert:
         _patch_queue_embedding,
         _patch_graph_extractor,
     ) -> None:
-        """Test F: polled message triggers pg_insert.on_conflict_do_update(uq_slack_msg),
-        one embedding call, one graph-extraction call; filtered messages are NOT
-        upserted or embedded; SET-clause source inspection guards SLACK-USR-04 drift.
+        """Test F: upsert path + embedding + graph + SET-clause drift guard.
+
+        - pg_insert.on_conflict_do_update(uq_slack_msg) runs once for the real
+          message; the filtered bot message is skipped.
+        - One embedding call + one graph-extraction call per real message.
+        - Source-inspection guards SLACK-USR-04 SET-clause drift.
         """
         import inspect
 
@@ -655,9 +662,10 @@ class TestUpsert:
             "1700000000.000002", user="U002", text="bot noise", bot_id="B999"
         )
 
-        # Mock session with two execute branches:
+        # Mock session with three execute branches (matches slack_events pattern):
         #  - SELECT existing slack_ts (dedup pre-count) -> empty result
-        #  - INSERT ... RETURNING id -> returns a fresh UUID
+        #  - INSERT ... ON CONFLICT DO UPDATE (no returning) -> bare result
+        #  - SELECT id WHERE ts=... -> returns fresh UUID
         from uuid import uuid4
 
         inserted_id = uuid4()
@@ -665,11 +673,13 @@ class TestUpsert:
         existing_result = MagicMock()
         existing_result.all.return_value = []  # no prior rows
 
-        insert_result = MagicMock()
-        insert_result.scalar_one.return_value = inserted_id
+        upsert_result = MagicMock()  # unused return value
+
+        id_result = MagicMock()
+        id_result.scalar_one.return_value = inserted_id
 
         session.execute = AsyncMock(
-            side_effect=[existing_result, insert_result]
+            side_effect=[existing_result, upsert_result, id_result]
         )
         session.commit = AsyncMock()
 
@@ -714,12 +724,14 @@ class TestUpsert:
         # Pre-existing row: the dedup SELECT returns a 1-tuple row with the ts.
         existing_result.all.return_value = [(msg["ts"],)]
 
-        insert_result = MagicMock()
-        insert_result.scalar_one.return_value = uuid4()
+        upsert_result = MagicMock()  # unused return value
+
+        id_result = MagicMock()
+        id_result.scalar_one.return_value = uuid4()
 
         session = AsyncMock()
         session.execute = AsyncMock(
-            side_effect=[existing_result, insert_result]
+            side_effect=[existing_result, upsert_result, id_result]
         )
         session.commit = AsyncMock()
 

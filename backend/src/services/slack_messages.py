@@ -31,18 +31,15 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.models.integration import Provider, WorkspaceIntegration
-
-# These are imported at module scope so tests (and Task 2's _upsert_messages)
-# can patch / use them. Task 1's _upsert_messages is a stub; Task 2 wires
-# the real upsert + embedding + graph extraction parity.
-from src.services import embedding  # noqa: F401  -- used in Task 2
-from src.services.graph_extractor import (  # noqa: F401  -- used in Task 2
-    extract_and_populate_graph,
-)
+from src.models.slack import SlackMessage
+from src.services import embedding
+from src.services.graph_extractor import extract_and_populate_graph
+from src.services.slack_events import _should_filter, _ts_to_datetime
 from src.services.slack_oauth import SlackOAuthError, get_user_token
 
 logger = logging.getLogger(__name__)
@@ -388,13 +385,119 @@ async def _upsert_messages(
     conv_id: str,
     messages: list[dict[str, Any]],
 ) -> tuple[int, int]:
-    """Upsert polled messages into SlackMessage with webhook-path parity.
+    """Upsert polled DM messages into SlackMessage with webhook-path parity.
 
-    TODO(39-02 Task 2): replace stub -- SET clause MUST match
-    slack_events._handle_message (fields: text, user_id, thread_ts,
-    parent_ts, is_thread_reply, raw_data). Keep this helper in sync with
-    that handler to avoid silent data corruption under dual-path ingestion.
+    Returns (ingested, skipped) where:
+      - ingested = newly inserted rows (ts was NOT in the table before)
+      - skipped  = filter-drops + dedup-updates (ts was already in the table,
+                   so on_conflict_do_update updated the fields in place)
+
+    SET clause parity: the ``on_conflict_do_update.set_`` dict MUST match
+    ``slack_events._handle_message`` exactly. Fields: text, user_id,
+    thread_ts, parent_ts, is_thread_reply, raw_data. Any mismatch causes
+    silent data corruption under dual-path ingestion (webhook + poll).
+    See SLACK-USR-04 and the Test F source-inspection guard.
     """
-    # Stub: Task 1 does not perform DB writes. Return (0, len(messages)) so
-    # the caller's counters remain sensible during the skeleton phase.
-    return (0, len(messages))
+    if not messages:
+        return (0, 0)
+
+    # --- 1) Filter out bot/system messages first -----------------------------
+    filtered: list[dict[str, Any]] = []
+    skipped_filter = 0
+    for msg in messages:
+        if _should_filter(msg):
+            skipped_filter += 1
+            continue
+        filtered.append(msg)
+
+    if not filtered:
+        return (0, skipped_filter)
+
+    # --- 2) Pre-count existing rows for dedup bookkeeping (Test J) -----------
+    ts_list = [m["ts"] for m in filtered]
+    existing_stmt = select(SlackMessage.slack_ts).where(
+        SlackMessage.workspace_id == workspace_id,
+        SlackMessage.channel_id == conv_id,
+        SlackMessage.slack_ts.in_(ts_list),  # type: ignore[attr-defined]
+    )
+    existing_rows = (await session.execute(existing_stmt)).all()
+    existing_ts = {row[0] for row in existing_rows}
+
+    # --- 3) Upsert each message via pg_insert on uq_slack_msg ----------------
+    # Mirrors slack_events._handle_message: pg_insert + on_conflict_do_update,
+    # commit, then fetch the id back by (workspace_id, channel_id, slack_ts).
+    # SLACK-USR-04 parity: SET-clause fields MUST match slack_events exactly.
+    inserted_ids: list[UUID] = []
+    for msg in filtered:
+        thread_ts = msg.get("thread_ts")
+        is_thread_reply = bool(thread_ts and thread_ts != msg["ts"])
+        parent_ts = thread_ts if is_thread_reply else None
+
+        values = {
+            "workspace_id": workspace_id,
+            "slack_ts": msg["ts"],
+            "channel_id": conv_id,
+            "channel_name": None,
+            "user_id": msg.get("user"),
+            "user_name": None,
+            "text": msg.get("text", ""),
+            "thread_ts": thread_ts,
+            "parent_ts": parent_ts,
+            "is_thread_reply": is_thread_reply,
+            "slack_created_at": _ts_to_datetime(msg["ts"]),
+            "raw_data": msg,
+        }
+
+        stmt = pg_insert(SlackMessage).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_slack_msg",
+            set_={
+                "text": stmt.excluded.text,
+                "user_id": stmt.excluded.user_id,
+                "thread_ts": stmt.excluded.thread_ts,
+                "parent_ts": stmt.excluded.parent_ts,
+                "is_thread_reply": stmt.excluded.is_thread_reply,
+                "raw_data": stmt.excluded.raw_data,
+            },
+        )
+        await session.execute(stmt)
+
+        # Fetch the row id back (same pattern as slack_events._handle_message).
+        id_stmt = select(SlackMessage.id).where(
+            SlackMessage.workspace_id == workspace_id,
+            SlackMessage.channel_id == conv_id,
+            SlackMessage.slack_ts == msg["ts"],
+        )
+        id_result = await session.execute(id_stmt)
+        row_id = id_result.scalar_one()
+        inserted_ids.append(row_id)
+
+    await session.commit()
+
+    # --- 4) Embedding + graph extraction parity with slack_events ------------
+    # Parity with slack_events._handle_message: one queue_embedding_generation
+    # call per message, followed by a (non-fatal) graph extraction call.
+    for msg, row_id in zip(filtered, inserted_ids, strict=True):
+        await embedding.queue_embedding_generation(
+            session, workspace_id, "slack_message", [row_id]
+        )
+        try:
+            await extract_and_populate_graph(
+                session=session,
+                workspace_id=workspace_id,
+                content=msg.get("text", ""),
+                source_type="slack_message",
+                source_id=row_id,
+                source_name=f"Slack DM in {conv_id}",
+                source_external_id=msg["ts"],
+            )
+        except Exception:  # noqa: BLE001 -- graph extraction is best-effort
+            logger.warning(
+                "graph extraction failed for slack_message %s (non-fatal)",
+                row_id,
+                exc_info=True,
+            )
+
+    ingested = sum(1 for m in filtered if m["ts"] not in existing_ts)
+    skipped = skipped_filter + sum(1 for m in filtered if m["ts"] in existing_ts)
+    return (ingested, skipped)
