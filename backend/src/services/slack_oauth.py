@@ -17,9 +17,10 @@ from uuid import UUID
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from src.config import Settings
-from src.models.integration import Provider
+from src.models.integration import Provider, WorkspaceIntegration
 from src.services.oauth_common import (
     disconnect_provider,
     upsert_oauth_token,
@@ -35,6 +36,11 @@ SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access"
 
 # Bot scopes for reading channel messages, user info, user emails, and canvas/file access
 SLACK_BOT_SCOPES = "channels:read,channels:history,groups:read,groups:history,users:read,users:read.email,canvases:read,files:read"
+
+# User scopes -- DM-only per Phase 39 CONTEXT.md lock.
+# Channels and groups remain on the bot token via the Events API webhook.
+# DO NOT add channels:* or groups:* here -- any expansion requires a new phase.
+SLACK_USER_SCOPES = "im:read,im:history,mpim:read,mpim:history,users:read,users:read.email"
 
 
 class SlackOAuthError(Exception):
@@ -56,11 +62,31 @@ def build_auth_url(state: str, settings: Settings) -> str:
         "client_id": settings.SLACK_CLIENT_ID,
         "redirect_uri": settings.slack_redirect_uri,
         "scope": SLACK_BOT_SCOPES,
-        "user_scope": "",
+        "user_scope": SLACK_USER_SCOPES,
         "state": state,
     }
     query = urlencode(params)
     return f"{SLACK_AUTHORIZE_URL}?{query}"
+
+
+def _extract_tokens(data: dict) -> tuple[str, str | None, str | None, dict]:  # type: ignore[type-arg]
+    """Extract bot token, optional user token, optional Slack user id, and team dict.
+
+    Slack's oauth.v2.access response shape:
+        {
+          "ok": true,
+          "access_token": "xoxb-...",        # bot token
+          "team": {"id": "T...", "name": "..."},
+          "authed_user": {                   # only present when user_scope was requested
+            "id": "U...",
+            "access_token": "xoxp-...",
+            "scope": "..."
+          }
+        }
+    """
+    bot = data["access_token"]
+    authed = data.get("authed_user") or {}
+    return (bot, authed.get("access_token"), authed.get("id"), data.get("team") or {})
 
 
 async def exchange_code(
@@ -112,14 +138,27 @@ async def exchange_code(
         error = data.get("error", "unknown_error")
         raise SlackOAuthError(f"Slack token exchange failed: {error}")
 
-    # Extract bot token and team info
-    access_token_value = data["access_token"]
-    team_id = data.get("team", {}).get("id", "")
-    team_name = data.get("team", {}).get("name", "")
+    # Extract bot token, optional user token, and team info
+    bot_token_value, user_token_value, slack_user_id, team = _extract_tokens(data)
+    team_id = team.get("id", "")
+    team_name = team.get("name", "")
 
     # Store bot token in Vault (encrypted at rest)
     bot_token_name = token_name(Provider.SLACK, workspace_id, "bot_access")
-    await store_token(session, bot_token_name, access_token_value)
+    await store_token(session, bot_token_name, bot_token_value)
+
+    # Store user token when present. Pre-Phase-39 installs that re-auth without
+    # granting user scopes will receive no authed_user.access_token -- keep
+    # working but log so we can detect workspaces that still need re-auth.
+    if user_token_value:
+        user_token_name_v = token_name(Provider.SLACK, workspace_id, "user_access")
+        await store_token(session, user_token_name_v, user_token_value)
+    else:
+        logger.warning(
+            "Slack OAuth response missing authed_user.access_token for workspace %s "
+            "(user_scope likely empty at authorize time)",
+            workspace_id,
+        )
 
     await upsert_oauth_token(
         session, workspace_id, user_id, Provider.SLACK,
@@ -133,6 +172,21 @@ async def exchange_code(
         external_id=team_id,
         config={"external_name": team_name} if team_name else None,
     )
+
+    # Merge slack_user_id into integration.config without clobbering existing keys
+    # (upsert_workspace_integration already merges external_name; re-query and
+    # patch so we don't need to change the shared helper's signature).
+    if slack_user_id:
+        int_stmt = select(WorkspaceIntegration).where(
+            WorkspaceIntegration.workspace_id == workspace_id,
+            WorkspaceIntegration.provider == Provider.SLACK,
+        )
+        int_result = await session.execute(int_stmt)
+        integration = int_result.scalar_one_or_none()
+        if integration is not None:
+            updated_config = dict(integration.config) if integration.config else {}
+            updated_config["slack_user_id"] = slack_user_id
+            integration.config = updated_config
 
     await session.commit()
 
@@ -173,9 +227,10 @@ async def disconnect(
         user_id: User who initiated the disconnect.
     """
     bot_token_name_val = token_name(Provider.SLACK, workspace_id, "bot_access")
+    user_token_name_v = token_name(Provider.SLACK, workspace_id, "user_access")
     await disconnect_provider(
         session, workspace_id, user_id, Provider.SLACK,
-        vault_token_names=[bot_token_name_val],
+        vault_token_names=[bot_token_name_val, user_token_name_v],
     )
 
 
@@ -217,5 +272,34 @@ async def get_bot_token(
 
     if not token_value:
         raise SlackOAuthError("No Slack bot token found for this workspace")
+
+    return token_value
+
+
+async def get_user_token(
+    session: AsyncSession,
+    workspace_id: UUID,
+) -> str:
+    """Read the Slack user token from Vault.
+
+    User tokens are new in Phase 39 and have no legacy name fallback.
+    Workspaces that connected before Phase 39 will not have a user token
+    stored; callers should check `/api/slack/status.needs_reauth` first.
+
+    Args:
+        session: Async database session.
+        workspace_id: Workspace to get the user token for.
+
+    Returns:
+        The decrypted user token string.
+
+    Raises:
+        SlackOAuthError: If no user token is found.
+    """
+    user_token_name_v = token_name(Provider.SLACK, workspace_id, "user_access")
+    token_value = await read_token(session, user_token_name_v)
+
+    if not token_value:
+        raise SlackOAuthError("No Slack user token found for this workspace")
 
     return token_value

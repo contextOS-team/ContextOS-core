@@ -745,6 +745,11 @@ class TestSlackOAuthService:
         mock_integration = MagicMock()
         mock_integration.status = "connected"
 
+        # disconnect_provider flow (with Phase 39 dual-token change):
+        #   1. Select OAuthToken  -> returns mock_oauth_token
+        #   2. delete_token(bot_access)   -> internal execute
+        #   3. delete_token(user_access)  -> internal execute (new in Phase 39)
+        #   4. Select WorkspaceIntegration -> returns mock_integration
         call_count = 0
 
         def mock_execute_side_effect(*args, **kwargs):
@@ -753,7 +758,7 @@ class TestSlackOAuthService:
             result = MagicMock()
             if call_count == 1:
                 result.scalar_one_or_none.return_value = mock_oauth_token
-            elif call_count == 3:
+            elif call_count == 4:
                 result.scalar_one_or_none.return_value = mock_integration
             else:
                 result.scalar_one_or_none.return_value = None
