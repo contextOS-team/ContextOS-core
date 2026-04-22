@@ -11,22 +11,22 @@ Task 1 (TestEnumerate):
 
 Task 2 (TestPolling + TestUpsert):
 - E: backfill cap -- 100 messages per conversation cap, no further pagination
-- F: upsert + embedding + graph parity -- pg_insert on uq_slack_msg, SET clause drift guard
+- F: upsert + embedding + graph parity -- pg_insert on uq_slack_msg, SET drift guard
 - G: 429 retry -- honor Retry-After header, single retry
 - H: 401 handling -- invalid_auth logs and short-circuits remaining conversations
-- I: updates last_user_poll_at on success; dms_backfill_done flipped True on first backfill
+- I: updates last_user_poll_at; flips dms_backfill_done=True on first backfill
 - J: dedup via upsert -- webhook-path overlap counted as skipped, not ingested
 """
 
 from __future__ import annotations
 
+from datetime import UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
 
 from tests.conftest import TEST_WORKSPACE_ID
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -155,7 +155,7 @@ class TestEnumerate:
 
     @pytest.mark.asyncio
     async def test_A_dms_disabled_short_circuits(self) -> None:
-        """Test A: include_dms=False (or missing) returns reason=dms_disabled with zero HTTP calls."""
+        """Test A: include_dms=False returns dms_disabled and makes no HTTP calls."""
         from src.services.slack_messages import poll_user_messages
 
         integration = _mock_integration({"include_dms": False})
@@ -281,7 +281,7 @@ class TestEnumerate:
 
     @pytest.mark.asyncio
     async def test_D_incremental_uses_last_user_poll_at(self) -> None:
-        """Test D (steady state): last_user_poll_at -> oldest on conversations.history."""
+        """Test D (steady state): last_user_poll_at -> oldest on history call."""
         from src.services.slack_messages import poll_user_messages
 
         last_poll = "2026-04-20T10:00:00"
@@ -317,16 +317,21 @@ class TestEnumerate:
             await poll_user_messages(session, UUID(TEST_WORKSPACE_ID))
 
         assert len(captured_oldests) == 1
-        # oldest should be the Slack ts float-string derived from the ISO last_poll
+        # last_user_poll_at is written as naive UTC (see poll_user_messages).
+        # _compute_oldest coerces it to UTC before converting to a Slack ts
+        # float-string -- otherwise .timestamp() would treat the naive value
+        # as local time and produce a TZ-offset bug.
         from datetime import datetime
 
-        expected = f"{datetime.fromisoformat(last_poll).timestamp():.6f}"
+        expected = (
+            f"{datetime.fromisoformat(last_poll).replace(tzinfo=UTC).timestamp():.6f}"
+        )
         assert captured_oldests[0] == expected
 
     @pytest.mark.asyncio
     async def test_D_backfill_uses_seven_day_window(self) -> None:
         """Test D (backfill): first-time DM opt-in uses oldest = now-7d."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from src.services.slack_messages import poll_user_messages
 
@@ -369,8 +374,9 @@ class TestEnumerate:
         oldest_val = captured_oldests[0]
         assert oldest_val is not None
         oldest_float = float(oldest_val)
-        expected_low = (datetime.now(timezone.utc) - timedelta(days=7, minutes=5)).timestamp()
-        expected_high = (datetime.now(timezone.utc) - timedelta(days=7) + timedelta(minutes=5)).timestamp()
+        now = datetime.now(UTC)
+        expected_low = (now - timedelta(days=7, minutes=5)).timestamp()
+        expected_high = (now - timedelta(days=7) + timedelta(minutes=5)).timestamp()
         assert expected_low <= oldest_float <= expected_high
 
 
