@@ -34,6 +34,7 @@ import {
   TelegramLogo,
 } from '@/components/icons/brand-logos'
 import { SourceCard } from './source-card'
+import { SlackDmToggle } from '@/app/dashboard/integrations/slack-dm-toggle'
 import { toast } from 'sonner'
 import { Check, Lock, Globe, RefreshCw, Search } from 'lucide-react'
 
@@ -41,7 +42,7 @@ import { Check, Lock, Globe, RefreshCw, Search } from 'lucide-react'
 // Types
 // ---------------------------------------------------------------------------
 
-type ExpandedSource = 'github' | 'gitlab' | 'notion' | null
+type ExpandedSource = 'github' | 'gitlab' | 'notion' | 'slack' | null
 
 interface StepSourcesProps {
   onComplete: () => void
@@ -88,8 +89,11 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
     } else if (notionConnected && !expandedSource) {
       autoExpandedRef.current = true
       setExpandedSource('notion')
+    } else if (slackConnected && !expandedSource) {
+      autoExpandedRef.current = true
+      setExpandedSource('slack')
     }
-  }, [githubConnected, gitlabConnected, notionConnected, expandedSource])
+  }, [githubConnected, gitlabConnected, notionConnected, slackConnected, expandedSource])
 
   // Poll Telegram sync status when syncing
   useEffect(() => {
@@ -223,6 +227,10 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
       setExpandedSource(expandedSource === 'notion' ? null : 'notion')
       return
     }
+    if (source === 'slack' && slackConnected) {
+      setExpandedSource(expandedSource === 'slack' ? null : 'slack')
+      return
+    }
   }
 
   const connectedCount = [slackConnected, githubConnected, gitlabConnected, notionConnected, fathomConnected, telegramConnected].filter(Boolean).length
@@ -241,7 +249,7 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
           name="Slack"
           logo={<SlackLogo width={32} height={32} />}
           connected={slackConnected}
-          onClick={handleSlack}
+          onClick={slackConnected ? () => handleSourceCardClick('slack') : handleSlack}
           disabled={connecting === 'slack'}
         />
         <SourceCard
@@ -288,6 +296,9 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
       )}
       {expandedSource === 'notion' && notionConnected && (
         <OnboardingNotionSync />
+      )}
+      {expandedSource === 'slack' && slackConnected && (
+        <OnboardingSlackDms />
       )}
 
       {/* Fathom inline form */}
@@ -738,6 +749,26 @@ function OnboardingNotionSync() {
           Syncing continues in background — you can leave this page
         </p>
       )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Inline Slack DM consent (post-connect)
+// ---------------------------------------------------------------------------
+
+function OnboardingSlackDms() {
+  return (
+    <div className="rounded-lg border border-border p-4 space-y-2">
+      <p className="text-xs font-medium text-foreground">Direct messages</p>
+      <SlackDmToggle />
+      <p
+        className="text-[11px] text-muted-foreground/80"
+        style={{ textWrap: 'pretty' }}
+      >
+        You can also change this later in Settings. Channels are monitored
+        separately via the Slack bot.
+      </p>
     </div>
   )
 }
