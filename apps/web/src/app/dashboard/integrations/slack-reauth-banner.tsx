@@ -17,8 +17,9 @@ interface Props {
 
 /**
  * Amber banner shown inside the Slack integration card when the stored
- * OAuth install predates the user_scope change (Plan 39-01). Clicking
- * "Reconnect Slack" runs the standard connectSlack() OAuth flow.
+ * OAuth install predates the user_scope change (Plan 39-01) or predates
+ * the Phase 39.1 channel-scope expansion. Clicking "Reconnect Slack"
+ * runs the standard connectSlack() OAuth flow.
  */
 export function SlackReauthBanner({ onReconnectStarted }: Props) {
   const [busy, setBusy] = useState(false)
@@ -49,14 +50,14 @@ export function SlackReauthBanner({ onReconnectStarted }: Props) {
       />
       <div className="flex-1 space-y-1.5">
         <p className="text-xs font-medium text-foreground">
-          Reconnect required for DM support
+          Reconnect required for channel + DM ingestion
         </p>
         <p
           className="text-xs text-muted-foreground"
           style={{ textWrap: 'pretty' }}
         >
-          Your Slack connection predates DM ingestion. Reconnect to grant the
-          new scopes and unlock the DM toggle.
+          Your Slack connection needs additional scopes to read channels and
+          DMs. Reconnect to grant access.
         </p>
         <Button
           size="xs"
