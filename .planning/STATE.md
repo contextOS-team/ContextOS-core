@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Live Intelligence
 status: in_progress
-stopped_at: Phase 39.1 gap closure complete; Plan 39-04 still awaiting human verify
-last_updated: "2026-04-22T16:47:09.783Z"
-last_activity: 2026-04-22 -- Phase 39.1 gap closure (user-token channel polling)
+stopped_at: Phase 39 complete -- Slack user token migration + DM support shipped; E2E verified on live workspace
+last_updated: "2026-04-22T20:17:47Z"
+last_activity: 2026-04-22 -- Plan 39-04 complete (scheduler + onboarding + live E2E, 177 messages ingested)
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 9
-  completed_plans: 8
-  percent: 97
+  completed_plans: 9
+  percent: 100
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 39 - Slack User Token Migration & DM Support (Plans 01-04 complete; Phase 39.1 gap closure complete; Plan 39-04 still awaiting human verify)
+**Current focus:** Phase 39 complete -- Slack User Token Migration & DM Support shipped end-to-end and verified on a live workspace (177 messages ingested across DMs + channels).
 
 ## Current Position
 
 Milestone: v1.3 Live Intelligence
-Phase: 39 of 39 (Slack User Token Migration & DM Support)
-Plan: 4 of 4 in current phase (+ Phase 39.1 inline gap closure)
-Status: Plans 39-01 through 39-04 complete; Phase 39.1 gap closure shipped; Plan 39-04 still at human-verify checkpoint
-Last activity: 2026-04-22 -- Phase 39.1 gap closure (user-token channel polling)
+Phase: 39 of 39 (Slack User Token Migration & DM Support) -- COMPLETE
+Plan: 4 of 4 in current phase (+ Phase 39.1 inline gap closure) -- all complete
+Status: Plans 39-01 through 39-04 complete; Phase 39.1 gap closure shipped; Plan 39-04 verified end-to-end by user and approved
+Last activity: 2026-04-22 -- Plan 39-04 complete (scheduler wire-up + onboarding DM consent + live E2E verification)
 
-Progress: [██████████] 97%
+Progress: [██████████] 100%
 
 ## Accumulated Context
 
@@ -67,6 +67,11 @@ Progress: [██████████] 97%
 - [39-02] DM-only lock: users.conversations called with types=im,mpim exclusively; channels stay on webhook path per CONTEXT.md
 - [39.1] Pivoted to user-token channel polling (CTO invite permissions blocked); accepts idempotent duplicate ingestion path vs. bot webhook
 - [39.1] USER_CONVERSATION_TYPES includes im,mpim,public_channel,private_channel; include_dms gate controls all user-token polling
+- [39-04] poll_user_messages imported at module top of sync_scheduler.py (not deferred) so tests can patch src.services.sync_scheduler.poll_user_messages; fresh AsyncSession per workspace mirrors Notion reconcile pattern
+- [39-04] Slack DM poll block placed between code-index-freshness and daily-digest blocks so digests in the same cycle see freshly-polled DM/channel data
+- [39-04] Onboarding Slack card auto-expands once per session after OAuth redirect (guarded by autoExpandedRef); DM toggle defaults OFF — onboarding completion independent of opt-in state
+- [39-04] Plan 39-04 verified end-to-end on user's real Slack workspace (177 messages ingested across 3 DMs, 1 group DM, and 4 channels)
+- [39-04] Discovered and fixed 2 pre-existing Slack upsert bugs during live test (constraint name drift: switched to ON CONFLICT index_elements; tz mismatch: _ts_to_datetime now returns naive UTC). Both were silent on the bot webhook path due to exception-swallowing.
 
 ### Roadmap Evolution
 
@@ -84,6 +89,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-22T16:47:09Z
-Stopped at: Phase 39.1 gap closure complete; Plan 39-04 still awaiting human verify
-Resume file: .planning/phases/39-slack-user-token-migration-dm-support/39-04-PLAN.md
+Last session: 2026-04-22T20:17:47Z
+Stopped at: Phase 39 complete -- Slack user token migration + DM support shipped; E2E verified on live workspace
+Resume file: None
