@@ -57,6 +57,7 @@ async def connect(
 async def callback(
     code: str = Query(...),
     state: str = Query(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
@@ -110,6 +111,23 @@ async def callback(
             metadata={"integration": "notion"},
             actor_id=user_id,
         )
+
+        # Auto-trigger initial Notion sync so pages are available immediately
+        try:
+            now_iso = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            await _update_sync_config(session, workspace_id, {
+                "sync_status": "syncing",
+                "sync_progress": 0,
+                "sync_total": None,
+                "sync_started_at": now_iso,
+            })
+            await session.commit()
+            background_tasks.add_task(
+                _run_sync, workspace_id, user_id, settings
+            )
+            logger.info("Auto-triggered Notion sync for workspace %s", workspace_id)
+        except Exception:
+            logger.debug("Auto-sync trigger failed (non-critical), user can trigger manually")
 
         return RedirectResponse(
             url=f"{frontend_url}/dashboard/settings?tab=integrations&notion=connected&workspace={ws_name}",
