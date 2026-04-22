@@ -37,10 +37,21 @@ SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access"
 # Bot scopes for reading channel messages, user info, user emails, and canvas/file access
 SLACK_BOT_SCOPES = "channels:read,channels:history,groups:read,groups:history,users:read,users:read.email,canvases:read,files:read"
 
-# User scopes -- DM-only per Phase 39 CONTEXT.md lock.
-# Channels and groups remain on the bot token via the Events API webhook.
-# DO NOT add channels:* or groups:* here -- any expansion requires a new phase.
-SLACK_USER_SCOPES = "im:read,im:history,mpim:read,mpim:history,users:read,users:read.email"
+# User scopes -- DM + channel read/history (Phase 39.1 gap closure).
+#
+# Phase 39 originally scoped this to DM-only on the assumption that channels
+# would stay on the bot Events API webhook path. In practice, bot-invite
+# permissions are workspace-admin gated and were blocked for rollout, so we
+# pivoted to polling channels via the user token too. The user token already
+# has access to every channel the installer is a member of -- no /invite
+# required. Duplicate ingestion vs. the bot webhook is safe because
+# SlackMessage upserts on (workspace_id, channel_id, ts) with identical
+# SET-clause parity (see SLACK-USR-04).
+SLACK_USER_SCOPES = (
+    "im:read,im:history,mpim:read,mpim:history,"
+    "channels:read,channels:history,groups:read,groups:history,"
+    "users:read,users:read.email"
+)
 
 
 class SlackOAuthError(Exception):
