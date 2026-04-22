@@ -676,9 +676,9 @@ function OnboardingNotionSync() {
       const status = await getNotionSyncStatus()
       if (!mountedRef.current) return
       if (status.status === 'syncing' || status.status === 'discovering') {
-        setPageCount(status.synced ?? 0)
+        setPageCount(status.sync_progress ?? 0)
       } else {
-        setPageCount(status.synced ?? status.total ?? 0)
+        setPageCount(status.pages_count ?? status.sync_total ?? 0)
         setDone(true)
         setSyncing(false)
         if (pollRef.current) clearInterval(pollRef.current)
@@ -700,13 +700,13 @@ function OnboardingNotionSync() {
         const status = await getNotionSyncStatus()
         if (status.status === 'syncing' || status.status === 'discovering') {
           // Already syncing, just poll
-          setPageCount(status.synced ?? 0)
+          setPageCount(status.sync_progress ?? 0)
           pollRef.current = setInterval(pollStatus, 2500)
           return
         }
-        if ((status.total ?? 0) > 0) {
+        if ((status.pages_count ?? 0) > 0) {
           // Already has data
-          setPageCount(status.total ?? 0)
+          setPageCount(status.pages_count ?? 0)
           setDone(true)
           setSyncing(false)
           return
