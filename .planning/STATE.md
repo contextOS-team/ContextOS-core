@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Live Intelligence
 status: in_progress
-stopped_at: Completed 39-01-PLAN.md (dual-token OAuth + DM toggle + filter fix)
-last_updated: "2026-04-22T15:23:33.855Z"
-last_activity: 2026-04-22 -- Completed 39-01 Slack user token OAuth foundation
+stopped_at: Completed 39-03-PLAN.md (Settings DM toggle + re-auth banner)
+last_updated: "2026-04-22T15:32:24.686Z"
+last_activity: 2026-04-22 -- Completed 39-03 Settings UX for DM toggle + re-auth banner
 progress:
   total_phases: 8
   completed_phases: 1
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 39 - Slack User Token Migration & DM Support (Plan 01 complete, 02-04 remaining)
+**Current focus:** Phase 39 - Slack User Token Migration & DM Support (Plans 01 and 03 complete, 02 and 04 remaining)
 
 ## Current Position
 
 Milestone: v1.3 Live Intelligence
 Phase: 39 of 39 (Slack User Token Migration & DM Support)
-Plan: 2 of 4 in current phase
-Status: Plan 39-01 complete, 39-02/03/04 remaining
-Last activity: 2026-04-22 -- Completed 39-01 Slack user token OAuth foundation
+Plan: 3 of 4 in current phase
+Status: Plan 39-01 and 39-03 complete, 39-02 and 39-04 remaining
+Last activity: 2026-04-22 -- Completed 39-03 Settings DM toggle + re-auth banner
 
-Progress: [█████████░] 94%
+Progress: [██████████] 95%
 
 ## Accumulated Context
 
@@ -56,6 +56,10 @@ Progress: [█████████░] 94%
 - [39-01] needs_reauth flag computed from status=connected AND user_access missing in Vault
 - [39-01] _should_filter drops <10-char rule across ALL paths (webhook + future DM poller)
 - [39-01] dms_first_enabled_at set on first enable so Plan 02's DM poller knows to run 7-day backfill
+- [39-03] fetchStatuses prop NOT wrapped in useCallback at parent — Settings useEffect uses [slack.status] deps with eslint-disable (Option B) to avoid infinite render loop
+- [39-03] Switch component added manually via radix-ui namespace to match existing Label pattern (not shadcn CLI which pulls standalone @radix-ui/react-switch)
+- [39-03] Fetch-separately pattern: getSlackStatus on mount avoids extending backend aggregator endpoint (matches GitHub/GitLab repos pattern)
+- [39-03] SlackDmToggle re-reads include_dms on mount for reload-survival; Label wrapper min-h-10 provides >=40px hit area while Switch stays visually compact
 
 ### Roadmap Evolution
 
@@ -73,6 +77,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-22T15:22:08Z
-Stopped at: Completed 39-01-PLAN.md
+Last session: 2026-04-22T15:31:03Z
+Stopped at: Completed 39-03-PLAN.md
 Resume file: .planning/phases/39-slack-user-token-migration-dm-support/39-02-PLAN.md
