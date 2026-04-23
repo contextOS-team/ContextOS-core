@@ -44,7 +44,13 @@ export async function updateSession(request: NextRequest) {
     pathname === '/' ||
     pathname === '/login' ||
     pathname === '/signup' ||
-    pathname.startsWith('/auth/callback')
+    pathname.startsWith('/auth/callback') ||
+    pathname === '/opengraph-image' ||
+    pathname === '/twitter-image' ||
+    pathname === '/icon' ||
+    pathname === '/apple-icon' ||
+    pathname === '/robots.txt' ||
+    pathname === '/sitemap.xml'
 
   if (!user && !isPublicPath) {
     // Redirect unauthenticated users to login
