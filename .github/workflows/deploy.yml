@@ -31,6 +31,11 @@ jobs:
             docker compose -f docker-compose.prod.yml build
             echo "--- restarting stack ---"
             docker compose -f docker-compose.prod.yml up -d
+            # Force-recreate nginx on every deploy: nginx conf files are bind-mounted as
+            # single files, so `git reset --hard` replaces inodes that the running
+            # container still has pinned. Without this, nginx serves stale config until
+            # someone SSHes in and recreates it manually.
+            docker compose -f docker-compose.prod.yml up -d --force-recreate nginx
             echo "--- waiting for health ---"
             sleep 15
             docker compose -f docker-compose.prod.yml ps
