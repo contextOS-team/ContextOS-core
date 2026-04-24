@@ -47,14 +47,21 @@ export default function SignupPage() {
       return
     }
 
-    // If email confirmation is disabled, the user is signed in immediately
+    // Supabase returns a fake user with identities=[] when the email is already
+    // registered (anti-enumeration). Treat that as an explicit error so the form
+    // doesn't silently stall on the "Creating account..." spinner.
+    if (data.user && data.user.identities && data.user.identities.length === 0) {
+      setError('This email is already registered. Sign in instead.')
+      setLoading(false)
+      return
+    }
+
     if (data.session) {
       router.push('/onboarding')
       router.refresh()
       return
     }
 
-    // If email confirmation is enabled, show success message
     setSuccess(true)
     setLoading(false)
   }
