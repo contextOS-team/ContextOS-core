@@ -10,10 +10,20 @@ Per nightly cron:
 
 from __future__ import annotations
 
+import json
 import logging
+import uuid as _uuid
+from dataclasses import dataclass, field
 from typing import Any
 
-import networkx as nx
+import networkx as nx  # type: ignore[import-untyped]
+from sqlalchemy import delete as sql_delete
+from sqlalchemy import select as sql_select
+from sqlalchemy import update as sql_update
+
+from src.models.graph_community import GraphCommunity
+from src.models.graph_edge import GraphEdge
+from src.models.graph_node import GraphNode
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +69,7 @@ def partition_communities(g: nx.Graph) -> list[list[Any]]:
     if g.number_of_nodes() == 0:
         return []
 
-    from networkx.algorithms.community import louvain_communities
+    from networkx.algorithms.community import louvain_communities  # type: ignore[import-untyped]
 
     raw = louvain_communities(g, weight="weight", seed=LOUVAIN_SEED)
     return [list(community) for community in raw if len(community) >= MIN_COMMUNITY_SIZE]
@@ -115,8 +125,6 @@ def build_louvain_graph(
 
     return g
 
-
-import json
 
 SUMMARY_TEMPERATURE = 0.3
 SUMMARY_PROMPT_TEMPLATE = """\
@@ -181,18 +189,6 @@ async def generate_community_summary(
         return {"label": None, "summary": None}
 
 
-import uuid as _uuid
-from dataclasses import dataclass, field
-
-from sqlalchemy import delete as sql_delete
-from sqlalchemy import select as sql_select
-from sqlalchemy import update as sql_update
-
-from src.models.graph_community import GraphCommunity
-from src.models.graph_edge import GraphEdge
-from src.models.graph_node import GraphNode
-
-
 @dataclass
 class CommunityMeta:
     """Per-community metadata produced by orchestration, fed to persistence."""
@@ -220,11 +216,11 @@ async def persist_communities(
     async with session.begin():
         # 1. Clear previous snapshot.
         await session.execute(
-            sql_delete(GraphCommunity).where(GraphCommunity.workspace_id == workspace_id)
+            sql_delete(GraphCommunity).where(GraphCommunity.workspace_id == workspace_id)  # type: ignore[arg-type]
         )
         await session.execute(
             sql_update(GraphNode)
-            .where(GraphNode.workspace_id == workspace_id)
+            .where(GraphNode.workspace_id == workspace_id)  # type: ignore[arg-type]
             .values(community_id=None)
         )
 
@@ -247,21 +243,24 @@ async def persist_communities(
         for node_id, cid in assignments.items():
             await session.execute(
                 sql_update(GraphNode)
-                .where(GraphNode.id == node_id)
+                .where(GraphNode.id == node_id)  # type: ignore[arg-type]
                 .values(community_id=cid)
             )
 
 
-async def _load_workspace_subgraph(session: Any, workspace_id: _uuid.UUID):
+async def _load_workspace_subgraph(
+    session: Any,
+    workspace_id: _uuid.UUID,
+) -> tuple[list[Any], list[Any], list[Any]]:
     """Load Person+Ticket nodes, direct P/T edges, and bridge descriptors.
 
     Returns (person_ticket_nodes, direct_edges, bridges).
     """
     # 1. Person + Ticket nodes (community members).
     pt_stmt = sql_select(GraphNode).where(
-        GraphNode.workspace_id == workspace_id,
-        GraphNode.entity_type.in_(("Person", "Ticket")),
-        GraphNode.deleted_at.is_(None),
+        GraphNode.workspace_id == workspace_id,  # type: ignore[arg-type]
+        GraphNode.entity_type.in_(("Person", "Ticket")),  # type: ignore[attr-defined]
+        GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     pt_result = await session.execute(pt_stmt)
     pt_nodes = list(pt_result.scalars().all())
@@ -269,9 +268,9 @@ async def _load_workspace_subgraph(session: Any, workspace_id: _uuid.UUID):
 
     # 2. Bridge nodes (Decision/SlackThread/Meeting/PR).
     bridge_stmt = sql_select(GraphNode).where(
-        GraphNode.workspace_id == workspace_id,
-        GraphNode.entity_type.in_(tuple(BRIDGE_ENTITY_TYPES)),
-        GraphNode.deleted_at.is_(None),
+        GraphNode.workspace_id == workspace_id,  # type: ignore[arg-type]
+        GraphNode.entity_type.in_(tuple(BRIDGE_ENTITY_TYPES)),  # type: ignore[attr-defined]
+        GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     bridge_result = await session.execute(bridge_stmt)
     bridge_nodes = list(bridge_result.scalars().all())
@@ -279,8 +278,8 @@ async def _load_workspace_subgraph(session: Any, workspace_id: _uuid.UUID):
 
     # 3. All non-deleted edges in this workspace.
     edge_stmt = sql_select(GraphEdge).where(
-        GraphEdge.workspace_id == workspace_id,
-        GraphEdge.deleted_at.is_(None),
+        GraphEdge.workspace_id == workspace_id,  # type: ignore[arg-type]
+        GraphEdge.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     edge_result = await session.execute(edge_stmt)
     all_edges = list(edge_result.scalars().all())
@@ -294,7 +293,7 @@ async def _load_workspace_subgraph(session: Any, workspace_id: _uuid.UUID):
     # Build bridge descriptors keyed by bridge_id.
     person_ids = {n.id for n in pt_nodes if n.entity_type == "Person"}
     ticket_ids = {n.id for n in pt_nodes if n.entity_type == "Ticket"}
-    bridges_acc: dict[_uuid.UUID, tuple[list, list]] = {
+    bridges_acc: dict[_uuid.UUID, tuple[list[Any], list[Any]]] = {
         b: ([], []) for b in bridge_ids
     }
     for e in all_edges:

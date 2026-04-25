@@ -43,7 +43,7 @@ async def fetch_workspaces_with_graph_nodes() -> list[UUID]:
     """Workspaces with at least one non-deleted graph_node."""
     async with async_session() as session:
         stmt = select(GraphNode.workspace_id).where(
-            GraphNode.deleted_at.is_(None),
+            GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
         ).distinct()
         result = await session.execute(stmt)
         return [row[0] for row in result.fetchall()]
