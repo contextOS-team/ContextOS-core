@@ -257,3 +257,56 @@ class TestGenerateCommunitySummary:
         flat = kwargs.get("temperature")
         nested = (kwargs.get("config") or {}).get("temperature") if "config" in kwargs else None
         assert flat == 0.3 or nested == 0.3
+
+
+from src.services.graph_communities import (
+    CommunityMeta,
+    persist_communities,
+)
+
+
+class TestPersistCommunities:
+    @pytest.fixture
+    def session(self):
+        sess = MagicMock()
+        sess.execute = _AsyncMock()
+        sess.add = MagicMock()
+        sess.flush = _AsyncMock()
+        sess.begin = MagicMock()
+        # Make session.begin() usable as `async with session.begin()`
+        sess.begin.return_value.__aenter__ = _AsyncMock(return_value=None)
+        sess.begin.return_value.__aexit__ = _AsyncMock(return_value=None)
+        return sess
+
+    @pytest.mark.asyncio
+    async def test_clears_previous_snapshot_then_writes_new(self, session):
+        ws_id = uuid.uuid4()
+        node_a = uuid.uuid4()
+        node_b = uuid.uuid4()
+        meta = {
+            1: CommunityMeta(
+                community_id=1,
+                label="Auth",
+                summary="...",
+                member_count=2,
+                person_count=1,
+                ticket_count=1,
+                top_member_names=["@alice", "ENG-1"],
+            ),
+        }
+        assignments = {node_a: 1, node_b: 1}
+
+        await persist_communities(session, ws_id, assignments, meta)
+
+        # session.execute called for: DELETE communities, UPDATE clear nodes,
+        # plus per-node update and per-community add.
+        assert session.execute.await_count >= 2
+        assert session.add.call_count == 1  # one GraphCommunity row
+
+    @pytest.mark.asyncio
+    async def test_empty_inputs_still_clear_previous(self, session):
+        ws_id = uuid.uuid4()
+        await persist_communities(session, ws_id, {}, {})
+        # Even with empty assignments, we must still wipe the previous snapshot.
+        assert session.execute.await_count >= 2
+        assert session.add.call_count == 0

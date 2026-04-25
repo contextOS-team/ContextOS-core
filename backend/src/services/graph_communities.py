@@ -179,3 +179,72 @@ async def generate_community_summary(
     except Exception:
         logger.warning("Community summary generation failed; persisting NULL", exc_info=True)
         return {"label": None, "summary": None}
+
+
+import uuid as _uuid
+from dataclasses import dataclass, field
+
+from sqlalchemy import delete as sql_delete
+from sqlalchemy import update as sql_update
+
+from src.models.graph_community import GraphCommunity
+from src.models.graph_node import GraphNode
+
+
+@dataclass
+class CommunityMeta:
+    """Per-community metadata produced by orchestration, fed to persistence."""
+
+    community_id: int
+    label: str | None
+    summary: str | None
+    member_count: int
+    person_count: int
+    ticket_count: int
+    top_member_names: list[str] = field(default_factory=list)
+
+
+async def persist_communities(
+    session: Any,
+    workspace_id: _uuid.UUID,
+    assignments: dict[_uuid.UUID, int],
+    meta_by_id: dict[int, CommunityMeta],
+) -> None:
+    """Atomically replace this workspace's community snapshot.
+
+    Wipes previous graph_communities rows and clears community_id on graph_nodes
+    for the workspace, then inserts the new snapshot. All in one transaction.
+    """
+    async with session.begin():
+        # 1. Clear previous snapshot.
+        await session.execute(
+            sql_delete(GraphCommunity).where(GraphCommunity.workspace_id == workspace_id)
+        )
+        await session.execute(
+            sql_update(GraphNode)
+            .where(GraphNode.workspace_id == workspace_id)
+            .values(community_id=None)
+        )
+
+        # 2. Insert new community rows.
+        for cid, m in meta_by_id.items():
+            session.add(
+                GraphCommunity(
+                    workspace_id=workspace_id,
+                    community_id=cid,
+                    label=m.label,
+                    summary=m.summary,
+                    member_count=m.member_count,
+                    person_count=m.person_count,
+                    ticket_count=m.ticket_count,
+                    top_member_names=m.top_member_names,
+                )
+            )
+
+        # 3. Update community_id on member nodes (per-id; small N).
+        for node_id, cid in assignments.items():
+            await session.execute(
+                sql_update(GraphNode)
+                .where(GraphNode.id == node_id)
+                .values(community_id=cid)
+            )
