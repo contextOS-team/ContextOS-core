@@ -41,4 +41,8 @@ class GraphCommunity(BaseModel, table=True):
             server_default=sa_text("'{}'"),
         ),
     )
-    computed_at: datetime | None = Field(default=None)
+    computed_at: datetime | None = Field(
+        default=None,
+        nullable=False,
+        sa_column_kwargs={"server_default": sa_text("now()")},
+    )
