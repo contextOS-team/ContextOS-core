@@ -64,8 +64,9 @@ def build_louvain_graph(
               - person_edges is a list of (person_id, relationship_type) tuples
                 describing edges incident to the bridge whose other end is a Person
               - ticket_edges is the same shape for Tickets
-            All edge directions ignored.
-            NOTE: bridge projection is not yet implemented (Task 6).
+            All edge directions ignored. For each bridge, a weighted edge is added
+            for every (person, ticket) pair using BRIDGE_DAMPENER * min(p_weight, t_weight).
+            If a direct edge already exists between the pair, the bridge weight is summed in.
 
     Returns:
         nx.Graph with one node per Person/Ticket and weighted edges.
@@ -83,5 +84,15 @@ def build_louvain_graph(
         else:
             g.add_edge(e.source_node_id, e.target_node_id, weight=w)
 
-    # Bridge projection added in the next task.
+    for bridge_id, person_edges, ticket_edges in bridges:
+        if not person_edges or not ticket_edges:
+            continue
+        for person_id, p_rel in person_edges:
+            for ticket_id, t_rel in ticket_edges:
+                w = BRIDGE_DAMPENER * min(_weight(p_rel), _weight(t_rel))
+                if g.has_edge(person_id, ticket_id):
+                    g[person_id][ticket_id]["weight"] += w
+                else:
+                    g.add_edge(person_id, ticket_id, weight=w)
+
     return g
