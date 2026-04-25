@@ -146,3 +146,50 @@ class TestBuildLouvainGraphBridgeProjection:
             bridges=[(b_id, [(p_id, "authored_by")], [])],
         )
         assert g.number_of_edges() == 0
+
+
+from src.services.graph_communities import partition_communities
+
+
+class TestPartitionCommunities:
+    def _make_two_clusters(self):
+        # Two tightly connected triangles, weakly bridged.
+        a, b, c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        d, e, f = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        g = nx.Graph()
+        for n in (a, b, c, d, e, f):
+            g.add_node(n)
+        for u, v in [(a, b), (b, c), (a, c)]:
+            g.add_edge(u, v, weight=10.0)
+        for u, v in [(d, e), (e, f), (d, f)]:
+            g.add_edge(u, v, weight=10.0)
+        g.add_edge(c, d, weight=0.1)  # weak bridge
+        return g, {a, b, c}, {d, e, f}
+
+    def test_partitions_two_clear_clusters(self):
+        g, cluster1, cluster2 = self._make_two_clusters()
+        communities = partition_communities(g)
+        assert len(communities) == 2
+        cluster_sets = [set(c) for c in communities]
+        assert cluster1 in cluster_sets
+        assert cluster2 in cluster_sets
+
+    def test_filters_communities_below_min_size(self):
+        # 3-node clique + 2-node pair: only the 3-clique survives.
+        a, b, c, d, e = (uuid.uuid4() for _ in range(5))
+        g = nx.Graph()
+        for u, v in [(a, b), (b, c), (a, c)]:
+            g.add_edge(u, v, weight=10.0)
+        g.add_edge(d, e, weight=10.0)
+        communities = partition_communities(g)
+        assert len(communities) == 1
+        assert set(communities[0]) == {a, b, c}
+
+    def test_empty_graph_returns_empty_list(self):
+        assert partition_communities(nx.Graph()) == []
+
+    def test_deterministic_with_same_seed(self):
+        g, _, _ = self._make_two_clusters()
+        c1 = partition_communities(g)
+        c2 = partition_communities(g)
+        assert [set(c) for c in c1] == [set(c) for c in c2]

@@ -47,6 +47,24 @@ def _weight(rel: str) -> float:
     return EDGE_WEIGHTS.get(rel, 1.0)
 
 
+LOUVAIN_SEED = 42
+
+
+def partition_communities(g: nx.Graph) -> list[list[Any]]:
+    """Run Louvain on a weighted graph and return communities of size >= MIN_COMMUNITY_SIZE.
+
+    Returns a list of node-id lists. Each inner list is one community.
+    Communities smaller than MIN_COMMUNITY_SIZE are dropped.
+    """
+    if g.number_of_nodes() == 0:
+        return []
+
+    from networkx.algorithms.community import louvain_communities
+
+    raw = louvain_communities(g, weight="weight", seed=LOUVAIN_SEED)
+    return [list(community) for community in raw if len(community) >= MIN_COMMUNITY_SIZE]
+
+
 def build_louvain_graph(
     person_ticket_nodes: list[Any],
     direct_edges: list[Any],
