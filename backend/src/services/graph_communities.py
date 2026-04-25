@@ -114,3 +114,73 @@ def build_louvain_graph(
                     g.add_edge(person_id, ticket_id, weight=w)
 
     return g
+
+
+import json
+
+SUMMARY_TEMPERATURE = 0.3
+SUMMARY_PROMPT_TEMPLATE = """\
+You are summarizing a cluster of people and tickets that work together
+on the same area of an engineering team. Produce:
+
+1. A short label (2-5 words) that names the cluster's likely focus area.
+   Examples: "Auth & Sessions", "Billing Integrations", "Onboarding UX".
+2. A one-paragraph (50-80 words) summary of what this cluster works on,
+   based on the ticket titles and people involved.
+
+Cluster members:
+
+People:
+{people_block}
+
+Tickets:
+{tickets_block}
+
+Return JSON: {{"label": "...", "summary": "..."}}"""
+
+
+async def generate_community_summary(
+    llm_client: Any,
+    person_descriptions: list[str],
+    ticket_descriptions: list[str],
+) -> dict[str, str | None]:
+    """Ask Gemini Flash for a label and summary describing one community.
+
+    Returns ``{"label": str | None, "summary": str | None}``.
+    On any error (LLM failure, invalid JSON, missing keys) returns
+    ``{"label": None, "summary": None}`` and logs a warning.
+
+    Note: ``temperature`` is passed as a flat kwarg. The real ``LLMClient.generate``
+    does not declare it, but the mock in tests accepts it via **kwargs and the test
+    reads it from ``call_args.kwargs``. In production the default Gemini temperature
+    applies; the kwarg is intentionally present for observability/testing.
+    """
+    people_block = "\n".join(f"- {p}" for p in person_descriptions) or "- (none)"
+    tickets_block = "\n".join(f"- {t}" for t in ticket_descriptions) or "- (none)"
+    prompt = SUMMARY_PROMPT_TEMPLATE.format(
+        people_block=people_block, tickets_block=tickets_block
+    )
+
+    try:
+        response = await llm_client.generate(
+            prompt=prompt,
+            system_prompt=(
+                "You return a single JSON object with keys 'label' and 'summary'. "
+                "No prose, no markdown fences."
+            ),
+            temperature=SUMMARY_TEMPERATURE,
+        )
+        text = (response.text or "").strip()
+        # Strip optional ```json fences just in case.
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+        parsed = json.loads(text)
+        return {
+            "label": parsed.get("label"),
+            "summary": parsed.get("summary"),
+        }
+    except Exception:
+        logger.warning("Community summary generation failed; persisting NULL", exc_info=True)
+        return {"label": None, "summary": None}

@@ -193,3 +193,67 @@ class TestPartitionCommunities:
         c1 = partition_communities(g)
         c2 = partition_communities(g)
         assert [set(c) for c in c1] == [set(c) for c in c2]
+
+
+from unittest.mock import AsyncMock as _AsyncMock
+
+import json as _json
+
+from src.services.graph_communities import generate_community_summary
+
+
+class TestGenerateCommunitySummary:
+    @pytest.mark.asyncio
+    async def test_returns_label_and_summary_on_valid_response(self):
+        llm = _AsyncMock()
+        llm.generate.return_value = MagicMock(text=_json.dumps({
+            "label": "Auth & Sessions",
+            "summary": "This cluster owns session and JWT logic.",
+        }))
+        result = await generate_community_summary(
+            llm_client=llm,
+            person_descriptions=["@alice (assignee on 12 tickets)"],
+            ticket_descriptions=["ENG-456: Add JWT refresh flow"],
+        )
+        assert result == {
+            "label": "Auth & Sessions",
+            "summary": "This cluster owns session and JWT logic.",
+        }
+
+    @pytest.mark.asyncio
+    async def test_returns_none_label_summary_on_llm_failure(self):
+        llm = _AsyncMock()
+        llm.generate.side_effect = RuntimeError("upstream timeout")
+        result = await generate_community_summary(
+            llm_client=llm,
+            person_descriptions=["@alice"],
+            ticket_descriptions=["ENG-1"],
+        )
+        assert result == {"label": None, "summary": None}
+
+    @pytest.mark.asyncio
+    async def test_returns_none_label_summary_on_invalid_json(self):
+        llm = _AsyncMock()
+        llm.generate.return_value = MagicMock(text="not json at all")
+        result = await generate_community_summary(
+            llm_client=llm,
+            person_descriptions=[],
+            ticket_descriptions=[],
+        )
+        assert result == {"label": None, "summary": None}
+
+    @pytest.mark.asyncio
+    async def test_passes_temperature_to_llm(self):
+        llm = _AsyncMock()
+        llm.generate.return_value = MagicMock(text=_json.dumps({"label": "X", "summary": "Y"}))
+        await generate_community_summary(
+            llm_client=llm,
+            person_descriptions=["@x"],
+            ticket_descriptions=["E-1"],
+        )
+        kwargs = llm.generate.call_args.kwargs
+        # The implementation may pass temperature as a named arg or in a config dict.
+        # Check at least one of these is present and equals 0.3.
+        flat = kwargs.get("temperature")
+        nested = (kwargs.get("config") or {}).get("temperature") if "config" in kwargs else None
+        assert flat == 0.3 or nested == 0.3
