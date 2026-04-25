@@ -287,6 +287,45 @@ def _format_graph_section(items: list) -> str:
     return GRAPH_SECTION_TEMPLATE.format(graph_content="\n\n---\n\n".join(sections))
 
 
+TEAM_CONTEXT_TEMPLATE = """\
+### Team & Feature Context
+
+The retrieved items below cluster into the following team/feature areas
+(discovered by nightly community detection over the knowledge graph):
+
+{community_blocks}"""
+
+
+def _format_team_context_section(communities: list) -> str:
+    """Format CommunityContext list into a synthesis-prompt section.
+
+    Returns empty string if there are no usable communities (empty list,
+    or all entries have NULL summary). Entries with NULL summary are skipped
+    defensively even though _select_communities already drops them.
+    """
+    if not communities:
+        return ""
+    usable = [c for c in communities if c.summary]
+    if not usable:
+        return ""
+
+    blocks: list[str] = []
+    for c in usable:
+        label = c.label or "Unlabeled cluster"
+        top = ", ".join(c.top_member_names) if c.top_member_names else "(no top members)"
+        blocks.append(
+            f"**{label}** ({c.member_count} members; "
+            f"{c.person_count} people, {c.ticket_count} tickets)\n"
+            f"{c.summary}\n"
+            f"Top members: {top}\n"
+            f"Why included: {c.relevance_reason}"
+        )
+
+    return TEAM_CONTEXT_TEMPLATE.format(
+        community_blocks="\n\n---\n\n".join(blocks)
+    )
+
+
 def _format_related_content(
     items: list,
     code_provenance: dict[UUID, list[str]] | None = None,
