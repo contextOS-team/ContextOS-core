@@ -29,41 +29,44 @@ export default function SignupPage() {
       return
     }
 
-    const supabase = createClient()
-    const { error, data } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
+    try {
+      const supabase = createClient()
+      const { error, data } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
+          emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`,
         },
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`,
-      },
-    })
+      })
 
-    if (error) {
-      setError(error.message)
+      if (error) {
+        setError(error.message)
+        return
+      }
+
+      // Supabase anti-enumeration: when an email is already registered it returns
+      // a stub user with identities=[] (not an error). Surface as a clear error.
+      if (data.user && data.user.identities && data.user.identities.length === 0) {
+        setError('This email is already registered. Sign in instead.')
+        return
+      }
+
+      if (data.session) {
+        router.push('/onboarding')
+        router.refresh()
+        return
+      }
+
+      setSuccess(true)
+    } catch (err) {
+      console.error('signup failed', err)
+      setError(err instanceof Error ? err.message : 'Sign up failed. Please try again.')
+    } finally {
       setLoading(false)
-      return
     }
-
-    // Supabase returns a fake user with identities=[] when the email is already
-    // registered (anti-enumeration). Treat that as an explicit error so the form
-    // doesn't silently stall on the "Creating account..." spinner.
-    if (data.user && data.user.identities && data.user.identities.length === 0) {
-      setError('This email is already registered. Sign in instead.')
-      setLoading(false)
-      return
-    }
-
-    if (data.session) {
-      router.push('/onboarding')
-      router.refresh()
-      return
-    }
-
-    setSuccess(true)
-    setLoading(false)
   }
 
   if (success) {
