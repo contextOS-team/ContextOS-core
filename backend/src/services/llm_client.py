@@ -93,19 +93,24 @@ class LLMClient:
         self,
         prompt: str,
         system_prompt: str | None = None,
+        temperature: float | None = None,
         workspace_id: UUID | None = None,
         ticket_identifier: str | None = None,
     ) -> LLMResponse:
-        """Generate a response from the Gemini model."""
+        """Generate a response from the Gemini model.
+
+        ``temperature`` is optional; when omitted Gemini's model default applies.
+        """
         if workspace_id is not None or ticket_identifier is not None:
             set_laminar_metadata(
                 workspace_id=str(workspace_id) if workspace_id else None,
                 ticket_identifier=ticket_identifier,
             )
 
-        config = types.GenerateContentConfig(
-            system_instruction=system_prompt,
-        )
+        config_kwargs: dict[str, object] = {"system_instruction": system_prompt}
+        if temperature is not None:
+            config_kwargs["temperature"] = temperature
+        config = types.GenerateContentConfig(**config_kwargs)
 
         text, prompt_tokens, completion_tokens, total_tokens, elapsed_ms = (
             await self._call_gemini(prompt, config)

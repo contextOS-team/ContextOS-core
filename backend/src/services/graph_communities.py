@@ -149,11 +149,6 @@ async def generate_community_summary(
     Returns ``{"label": str | None, "summary": str | None}``.
     On any error (LLM failure, invalid JSON, missing keys) returns
     ``{"label": None, "summary": None}`` and logs a warning.
-
-    Note: ``temperature`` is passed as a flat kwarg. The real ``LLMClient.generate``
-    does not declare it, but the mock in tests accepts it via **kwargs and the test
-    reads it from ``call_args.kwargs``. In production the default Gemini temperature
-    applies; the kwarg is intentionally present for observability/testing.
     """
     people_block = "\n".join(f"- {p}" for p in person_descriptions) or "- (none)"
     tickets_block = "\n".join(f"- {t}" for t in ticket_descriptions) or "- (none)"
