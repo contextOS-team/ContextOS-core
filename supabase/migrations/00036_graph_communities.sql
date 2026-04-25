@@ -28,6 +28,7 @@ CREATE TABLE public.graph_communities (
   ticket_count integer NOT NULL,
   top_member_names text[],
   computed_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT graph_communities_workspace_id_key UNIQUE (workspace_id, community_id)
 );
 
@@ -42,3 +43,10 @@ CREATE POLICY "workspace_data" ON public.graph_communities
       SELECT workspace_id FROM public.workspace_members WHERE user_id = auth.uid()
     )
   );
+
+-- ============================================================
+-- TRIGGERS (auto-update updated_at via moddatetime)
+-- ============================================================
+
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.graph_communities
+  FOR EACH ROW EXECUTE FUNCTION moddatetime(updated_at);
