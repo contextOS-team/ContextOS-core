@@ -573,3 +573,58 @@ async def test_token_budget_diversity() -> None:
     assert "explicit" in signal_types, "Missing explicit signal in budget result"
     assert "hybrid" in signal_types, "Missing hybrid signal in budget result"
     assert "graph" in signal_types, "Missing graph signal in budget result"
+
+
+class TestLinkingResultCommunities:
+    """Verify LinkingResult exposes selected community contexts."""
+
+    def test_community_context_dataclass_shape(self):
+        from src.services.linking import CommunityContext
+        cc = CommunityContext(
+            community_id=1,
+            label="Auth",
+            summary="Owns auth.",
+            person_count=2,
+            ticket_count=3,
+            member_count=5,
+            top_member_names=["@alice", "@bob"],
+            relevance_reason="assignee_primary",
+        )
+        assert cc.community_id == 1
+        assert cc.relevance_reason == "assignee_primary"
+
+    def test_select_communities_picks_assignee_primary_first(self):
+        from src.services.linking import _select_communities, CommunityContext
+        # 4 candidate communities, all valid; assignee_primary must be #1 in result.
+        candidates = [
+            CommunityContext(community_id=10, label="A", summary="a", person_count=2,
+                             ticket_count=2, member_count=4, top_member_names=[],
+                             relevance_reason="retrieved_member"),
+            CommunityContext(community_id=20, label="B", summary="b", person_count=3,
+                             ticket_count=3, member_count=6, top_member_names=[],
+                             relevance_reason="assignee_primary"),
+            CommunityContext(community_id=30, label="C", summary="c", person_count=2,
+                             ticket_count=2, member_count=4, top_member_names=[],
+                             relevance_reason="retrieved_member"),
+            CommunityContext(community_id=40, label="D", summary="d", person_count=2,
+                             ticket_count=2, member_count=4, top_member_names=[],
+                             relevance_reason="retrieved_member"),
+        ]
+        chosen = _select_communities(candidates, max_communities=3)
+        assert chosen[0].community_id == 20
+        assert len(chosen) == 3
+
+    def test_select_communities_caps_at_max(self):
+        from src.services.linking import _select_communities, CommunityContext
+        candidates = [
+            CommunityContext(community_id=i, label=str(i), summary="s",
+                             person_count=2, ticket_count=2, member_count=4,
+                             top_member_names=[], relevance_reason="retrieved_member")
+            for i in range(10)
+        ]
+        chosen = _select_communities(candidates, max_communities=3)
+        assert len(chosen) == 3
+
+    def test_select_communities_handles_empty_list(self):
+        from src.services.linking import _select_communities
+        assert _select_communities([], max_communities=3) == []
