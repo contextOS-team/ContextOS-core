@@ -310,3 +310,82 @@ class TestPersistCommunities:
         # Even with empty assignments, we must still wipe the previous snapshot.
         assert session.execute.await_count >= 2
         assert session.add.call_count == 0
+
+
+from src.services.graph_communities import rebuild_communities
+
+
+class TestRebuildCommunitiesOrchestrator:
+    @pytest.mark.asyncio
+    async def test_no_nodes_means_empty_persist_call(self, monkeypatch):
+        ws_id = uuid.uuid4()
+
+        async def fake_load(session, ws):
+            return [], [], []  # nodes, edges, bridges
+
+        captured: dict = {}
+        async def fake_persist(session, ws, assignments, meta_by_id):
+            captured["assignments"] = assignments
+            captured["meta_by_id"] = meta_by_id
+
+        monkeypatch.setattr(
+            "src.services.graph_communities._load_workspace_subgraph", fake_load
+        )
+        monkeypatch.setattr(
+            "src.services.graph_communities.persist_communities", fake_persist
+        )
+
+        session = MagicMock()
+        llm = _AsyncMock()
+        await rebuild_communities(session, ws_id, llm_client=llm)
+        assert captured == {"assignments": {}, "meta_by_id": {}}
+        # No LLM calls when there are no communities.
+        assert llm.generate.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_single_community_triggers_one_summary_call(self, monkeypatch):
+        ws_id = uuid.uuid4()
+        # Three Person nodes forming one community of size 3.
+        ids = [uuid.uuid4() for _ in range(3)]
+        node_objs = [
+            MagicMock(id=ids[0], entity_type="Person", name="@alice"),
+            MagicMock(id=ids[1], entity_type="Person", name="@bob"),
+            MagicMock(id=ids[2], entity_type="Ticket", name="ENG-1"),
+        ]
+        edges = [
+            MagicMock(source_node_id=ids[0], target_node_id=ids[1], relationship_type="reviews"),
+            MagicMock(source_node_id=ids[1], target_node_id=ids[2], relationship_type="assigned_to"),
+            MagicMock(source_node_id=ids[0], target_node_id=ids[2], relationship_type="authored_by"),
+        ]
+
+        async def fake_load(session, ws):
+            return node_objs, edges, []
+
+        captured: dict = {}
+        async def fake_persist(session, ws, assignments, meta_by_id):
+            captured["assignments"] = assignments
+            captured["meta_by_id"] = meta_by_id
+
+        monkeypatch.setattr(
+            "src.services.graph_communities._load_workspace_subgraph", fake_load
+        )
+        monkeypatch.setattr(
+            "src.services.graph_communities.persist_communities", fake_persist
+        )
+
+        session = MagicMock()
+        llm = _AsyncMock()
+        llm.generate.return_value = MagicMock(text=_json.dumps({
+            "label": "Test Cluster",
+            "summary": "Test summary.",
+        }))
+
+        await rebuild_communities(session, ws_id, llm_client=llm)
+        assert llm.generate.await_count == 1
+        assert len(captured["meta_by_id"]) == 1
+        only_meta = next(iter(captured["meta_by_id"].values()))
+        assert only_meta.label == "Test Cluster"
+        assert only_meta.member_count == 3
+        assert only_meta.person_count == 2
+        assert only_meta.ticket_count == 1
+        assert set(captured["assignments"].keys()) == set(ids)

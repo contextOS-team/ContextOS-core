@@ -185,9 +185,11 @@ import uuid as _uuid
 from dataclasses import dataclass, field
 
 from sqlalchemy import delete as sql_delete
+from sqlalchemy import select as sql_select
 from sqlalchemy import update as sql_update
 
 from src.models.graph_community import GraphCommunity
+from src.models.graph_edge import GraphEdge
 from src.models.graph_node import GraphNode
 
 
@@ -248,3 +250,157 @@ async def persist_communities(
                 .where(GraphNode.id == node_id)
                 .values(community_id=cid)
             )
+
+
+async def _load_workspace_subgraph(session: Any, workspace_id: _uuid.UUID):
+    """Load Person+Ticket nodes, direct P/T edges, and bridge descriptors.
+
+    Returns (person_ticket_nodes, direct_edges, bridges).
+    """
+    # 1. Person + Ticket nodes (community members).
+    pt_stmt = sql_select(GraphNode).where(
+        GraphNode.workspace_id == workspace_id,
+        GraphNode.entity_type.in_(("Person", "Ticket")),
+        GraphNode.deleted_at.is_(None),
+    )
+    pt_result = await session.execute(pt_stmt)
+    pt_nodes = list(pt_result.scalars().all())
+    pt_ids = {n.id for n in pt_nodes}
+
+    # 2. Bridge nodes (Decision/SlackThread/Meeting/PR).
+    bridge_stmt = sql_select(GraphNode).where(
+        GraphNode.workspace_id == workspace_id,
+        GraphNode.entity_type.in_(tuple(BRIDGE_ENTITY_TYPES)),
+        GraphNode.deleted_at.is_(None),
+    )
+    bridge_result = await session.execute(bridge_stmt)
+    bridge_nodes = list(bridge_result.scalars().all())
+    bridge_ids = {n.id for n in bridge_nodes}
+
+    # 3. All non-deleted edges in this workspace.
+    edge_stmt = sql_select(GraphEdge).where(
+        GraphEdge.workspace_id == workspace_id,
+        GraphEdge.deleted_at.is_(None),
+    )
+    edge_result = await session.execute(edge_stmt)
+    all_edges = list(edge_result.scalars().all())
+
+    # 4. Split into direct (P/T <-> P/T) and bridge-incident.
+    direct_edges = [
+        e for e in all_edges
+        if e.source_node_id in pt_ids and e.target_node_id in pt_ids
+    ]
+
+    # Build bridge descriptors keyed by bridge_id.
+    person_ids = {n.id for n in pt_nodes if n.entity_type == "Person"}
+    ticket_ids = {n.id for n in pt_nodes if n.entity_type == "Ticket"}
+    bridges_acc: dict[_uuid.UUID, tuple[list, list]] = {
+        b: ([], []) for b in bridge_ids
+    }
+    for e in all_edges:
+        for endpoint, other in (
+            (e.source_node_id, e.target_node_id),
+            (e.target_node_id, e.source_node_id),
+        ):
+            if endpoint in bridge_ids:
+                if other in person_ids:
+                    bridges_acc[endpoint][0].append((other, e.relationship_type))
+                elif other in ticket_ids:
+                    bridges_acc[endpoint][1].append((other, e.relationship_type))
+
+    bridges = [
+        (b_id, p_edges, t_edges)
+        for b_id, (p_edges, t_edges) in bridges_acc.items()
+        if p_edges and t_edges  # drop bridges that don't touch both sides
+    ]
+
+    return pt_nodes, direct_edges, bridges
+
+
+def _split_community_by_type(
+    member_ids: list[_uuid.UUID],
+    node_lookup: dict[_uuid.UUID, Any],
+) -> tuple[list[Any], list[Any]]:
+    persons = [node_lookup[i] for i in member_ids if node_lookup[i].entity_type == "Person"]
+    tickets = [node_lookup[i] for i in member_ids if node_lookup[i].entity_type == "Ticket"]
+    return persons, tickets
+
+
+def _top_members_by_weight(
+    g: nx.Graph,
+    member_ids: list[_uuid.UUID],
+    node_lookup: dict[_uuid.UUID, Any],
+    k: int = 5,
+) -> list[str]:
+    """Top-k members of the community by sum of their internal edge weights."""
+    member_set = set(member_ids)
+    scores: list[tuple[float, str]] = []
+    for nid in member_ids:
+        weight_sum = 0.0
+        for nbr in g.neighbors(nid):
+            if nbr in member_set:
+                weight_sum += g[nid][nbr].get("weight", 1.0)
+        scores.append((weight_sum, node_lookup[nid].name))
+    scores.sort(key=lambda x: x[0], reverse=True)
+    return [name for _, name in scores[:k]]
+
+
+async def rebuild_communities(
+    session: Any,
+    workspace_id: _uuid.UUID,
+    llm_client: Any,
+) -> None:
+    """Top-level orchestrator: load → build → partition → summarize → persist.
+
+    Failure-tolerant. If summary generation fails for a community, that community
+    is still persisted with label=NULL, summary=NULL. If the whole rebuild fails
+    before persistence, the previous snapshot is left intact.
+    """
+    pt_nodes, direct_edges, bridges = await _load_workspace_subgraph(session, workspace_id)
+
+    if not pt_nodes:
+        logger.info("No Person/Ticket nodes for workspace %s; clearing snapshot", workspace_id)
+        await persist_communities(session, workspace_id, {}, {})
+        return
+
+    g = build_louvain_graph(pt_nodes, direct_edges, bridges)
+    communities = partition_communities(g)
+
+    if not communities:
+        logger.info("No communities >= MIN_COMMUNITY_SIZE for workspace %s", workspace_id)
+        await persist_communities(session, workspace_id, {}, {})
+        return
+
+    node_lookup = {n.id: n for n in pt_nodes}
+    assignments: dict[_uuid.UUID, int] = {}
+    meta_by_id: dict[int, CommunityMeta] = {}
+
+    for cid, member_ids in enumerate(communities, start=1):
+        persons, tickets = _split_community_by_type(member_ids, node_lookup)
+        person_descs = [f"@{p.name.lstrip('@')}" for p in persons]
+        ticket_descs = [t.name for t in tickets]
+
+        summary_result = await generate_community_summary(
+            llm_client=llm_client,
+            person_descriptions=person_descs,
+            ticket_descriptions=ticket_descs,
+        )
+
+        meta_by_id[cid] = CommunityMeta(
+            community_id=cid,
+            label=summary_result.get("label"),
+            summary=summary_result.get("summary"),
+            member_count=len(member_ids),
+            person_count=len(persons),
+            ticket_count=len(tickets),
+            top_member_names=_top_members_by_weight(g, member_ids, node_lookup),
+        )
+
+        for nid in member_ids:
+            assignments[nid] = cid
+
+    await persist_communities(session, workspace_id, assignments, meta_by_id)
+    logger.info(
+        "Rebuilt communities for workspace %s: %d communities, %d members assigned",
+        workspace_id, len(meta_by_id), len(assignments),
+    )
