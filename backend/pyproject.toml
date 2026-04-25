@@ -32,6 +32,7 @@ dependencies = [
     "sse-starlette>=3.3.2",
 
     "telethon>=1.36",
+    "networkx>=3.2",
 ]
 
 [project.optional-dependencies]
