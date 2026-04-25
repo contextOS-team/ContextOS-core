@@ -51,3 +51,42 @@ class TestTeamContextSection:
     def test_top_members_rendered(self):
         out = _format_team_context_section([_ctx(1)])
         assert "@alice" in out
+
+
+from unittest.mock import MagicMock
+from src.services.linking import LinkingResult
+
+
+class TestSynthesisTemplateIntegration:
+    def _build_linking_result(self, with_communities: bool):
+        result = LinkingResult(
+            ticket_id=MagicMock(),
+            ticket_identifier="ENG-1",
+            items=[],
+            communities=[_ctx(1)] if with_communities else [],
+        )
+        return result
+
+    def test_template_renders_team_context_when_present(self):
+        from src.services.synthesis import _build_synthesis_prompt_text
+        ticket = MagicMock(
+            identifier="ENG-1", title="Test", status="In Progress",
+            assignee_name="@alice", priority="High", labels="auth",
+            description="Desc",
+        )
+        prompt = _build_synthesis_prompt_text(
+            ticket, self._build_linking_result(with_communities=True), code_provenance=None,
+        )
+        assert "### Team & Feature Context" in prompt
+
+    def test_template_omits_team_context_when_empty(self):
+        from src.services.synthesis import _build_synthesis_prompt_text
+        ticket = MagicMock(
+            identifier="ENG-1", title="Test", status="In Progress",
+            assignee_name="@alice", priority="High", labels="auth",
+            description="Desc",
+        )
+        prompt = _build_synthesis_prompt_text(
+            ticket, self._build_linking_result(with_communities=False), code_provenance=None,
+        )
+        assert "### Team & Feature Context" not in prompt
