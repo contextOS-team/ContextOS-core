@@ -208,44 +208,45 @@ async def persist_communities(
     assignments: dict[_uuid.UUID, int],
     meta_by_id: dict[int, CommunityMeta],
 ) -> None:
-    """Atomically replace this workspace's community snapshot.
+    """Replace this workspace's community snapshot.
 
     Wipes previous graph_communities rows and clears community_id on graph_nodes
-    for the workspace, then inserts the new snapshot. All in one transaction.
+    for the workspace, then inserts the new snapshot. Caller is responsible for
+    transaction lifecycle (commit/rollback) — all DML happens on the caller's
+    session and shares its autobegin transaction.
     """
-    async with session.begin():
-        # 1. Clear previous snapshot.
-        await session.execute(
-            sql_delete(GraphCommunity).where(GraphCommunity.workspace_id == workspace_id)  # type: ignore[arg-type]
+    # 1. Clear previous snapshot.
+    await session.execute(
+        sql_delete(GraphCommunity).where(GraphCommunity.workspace_id == workspace_id)  # type: ignore[arg-type]
+    )
+    await session.execute(
+        sql_update(GraphNode)
+        .where(GraphNode.workspace_id == workspace_id)  # type: ignore[arg-type]
+        .values(community_id=None)
+    )
+
+    # 2. Insert new community rows.
+    for cid, m in meta_by_id.items():
+        session.add(
+            GraphCommunity(
+                workspace_id=workspace_id,
+                community_id=cid,
+                label=m.label,
+                summary=m.summary,
+                member_count=m.member_count,
+                person_count=m.person_count,
+                ticket_count=m.ticket_count,
+                top_member_names=m.top_member_names,
+            )
         )
+
+    # 3. Update community_id on member nodes (per-id; small N).
+    for node_id, cid in assignments.items():
         await session.execute(
             sql_update(GraphNode)
-            .where(GraphNode.workspace_id == workspace_id)  # type: ignore[arg-type]
-            .values(community_id=None)
+            .where(GraphNode.id == node_id)  # type: ignore[arg-type]
+            .values(community_id=cid)
         )
-
-        # 2. Insert new community rows.
-        for cid, m in meta_by_id.items():
-            session.add(
-                GraphCommunity(
-                    workspace_id=workspace_id,
-                    community_id=cid,
-                    label=m.label,
-                    summary=m.summary,
-                    member_count=m.member_count,
-                    person_count=m.person_count,
-                    ticket_count=m.ticket_count,
-                    top_member_names=m.top_member_names,
-                )
-            )
-
-        # 3. Update community_id on member nodes (per-id; small N).
-        for node_id, cid in assignments.items():
-            await session.execute(
-                sql_update(GraphNode)
-                .where(GraphNode.id == node_id)  # type: ignore[arg-type]
-                .values(community_id=cid)
-            )
 
 
 async def _load_workspace_subgraph(
@@ -360,6 +361,7 @@ async def rebuild_communities(
     if not pt_nodes:
         logger.info("No Person/Ticket nodes for workspace %s; clearing snapshot", workspace_id)
         await persist_communities(session, workspace_id, {}, {})
+        await session.commit()
         return
 
     g = build_louvain_graph(pt_nodes, direct_edges, bridges)
@@ -368,6 +370,7 @@ async def rebuild_communities(
     if not communities:
         logger.info("No communities >= MIN_COMMUNITY_SIZE for workspace %s", workspace_id)
         await persist_communities(session, workspace_id, {}, {})
+        await session.commit()
         return
 
     node_lookup = {n.id: n for n in pt_nodes}
@@ -399,6 +402,7 @@ async def rebuild_communities(
             assignments[nid] = cid
 
     await persist_communities(session, workspace_id, assignments, meta_by_id)
+    await session.commit()
     logger.info(
         "Rebuilt communities for workspace %s: %d communities, %d members assigned",
         workspace_id, len(meta_by_id), len(assignments),

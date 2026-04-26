@@ -272,10 +272,6 @@ class TestPersistCommunities:
         sess.execute = _AsyncMock()
         sess.add = MagicMock()
         sess.flush = _AsyncMock()
-        sess.begin = MagicMock()
-        # Make session.begin() usable as `async with session.begin()`
-        sess.begin.return_value.__aenter__ = _AsyncMock(return_value=None)
-        sess.begin.return_value.__aexit__ = _AsyncMock(return_value=None)
         return sess
 
     @pytest.mark.asyncio
@@ -336,6 +332,7 @@ class TestRebuildCommunitiesOrchestrator:
         )
 
         session = MagicMock()
+        session.commit = _AsyncMock()  # rebuild_communities now calls this
         llm = _AsyncMock()
         await rebuild_communities(session, ws_id, llm_client=llm)
         assert captured == {"assignments": {}, "meta_by_id": {}}
@@ -374,6 +371,7 @@ class TestRebuildCommunitiesOrchestrator:
         )
 
         session = MagicMock()
+        session.commit = _AsyncMock()  # rebuild_communities now calls this
         llm = _AsyncMock()
         llm.generate.return_value = MagicMock(text=_json.dumps({
             "label": "Test Cluster",
