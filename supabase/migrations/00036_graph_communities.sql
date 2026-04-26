@@ -28,7 +28,9 @@ CREATE TABLE public.graph_communities (
   ticket_count integer NOT NULL,
   top_member_names text[],
   computed_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
+  deleted_at timestamptz,
   CONSTRAINT graph_communities_workspace_id_key UNIQUE (workspace_id, community_id)
 );
 
