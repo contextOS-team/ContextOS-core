@@ -6,12 +6,16 @@ WORKDIR /app
 # Install uv for fast dependency resolution
 RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml .
+COPY pyproject.toml uv.lock ./
 
-# Install only the dependencies (not the package itself)
-RUN mkdir -p src && touch src/__init__.py \
-    && uv pip install --system . \
-    || pip install --no-cache-dir .
+# Install dependencies from the lockfile so prod resolution matches dev exactly.
+# Without this, transitive deps drift (e.g. tree-sitter-language-pack jumped from
+# 0.13.0 to a broken 1.6.3 stub). uv export emits a flat requirements.txt that pip
+# can install into the system Python, preserving the existing layer-copy layout
+# in stage 2.
+RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt \
+        --output-file /tmp/requirements.txt \
+    && uv pip install --system --no-cache --requirement /tmp/requirements.txt
 
 # Stage 2: Production image
 FROM python:3.12-slim AS production
