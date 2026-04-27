@@ -34,3 +34,4 @@ class GraphNode(BaseModel, table=True):
         default_factory=dict,
         sa_column=Column("properties", JSONB, nullable=True, server_default=sa_text("'{}'")),
     )
+    community_id: int | None = Field(default=None)

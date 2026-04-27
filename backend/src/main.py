@@ -85,6 +85,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from src.services.embedding_worker import run_embedding_worker
     from src.services.gitlab_sync_worker import run_gitlab_sync_worker
     from src.services.sync_scheduler import run_polling_fallback
+    from src.services.graph_scheduler import (
+        run_community_rebuild_loop,
+        backfill_missing_workspaces,
+    )
 
     # Startup: clear any stale sync locks left from previous crashes
     await _reset_stale_sync_locks()
@@ -105,8 +109,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     polling_task = asyncio.create_task(_supervised("polling_fallback", run_polling_fallback))
     code_index_task = asyncio.create_task(_supervised("code_index_worker", run_code_index_worker))
     gitlab_sync_task = asyncio.create_task(_supervised("gitlab_sync_worker", run_gitlab_sync_worker))
+    community_rebuild_task = asyncio.create_task(
+        _supervised("community_rebuild", run_community_rebuild_loop)
+    )
+    # On-startup backfill — runs once, doesn't block startup.
+    asyncio.create_task(_supervised("community_backfill", backfill_missing_workspaces))
 
-    logger.info("Background workers started: embedding_worker, polling_fallback, code_index_worker, gitlab_sync_worker")
+    logger.info("Background workers started: embedding_worker, polling_fallback, code_index_worker, gitlab_sync_worker, community_rebuild")
 
     yield
 
@@ -115,8 +124,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     polling_task.cancel()
     code_index_task.cancel()
     gitlab_sync_task.cancel()
+    community_rebuild_task.cancel()
 
-    for task in [embedding_task, polling_task, code_index_task, gitlab_sync_task]:
+    for task in [embedding_task, polling_task, code_index_task, gitlab_sync_task, community_rebuild_task]:
         try:
             await task
         except asyncio.CancelledError:

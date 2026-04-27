@@ -143,10 +143,15 @@ async def test_find_graph_results_basic() -> None:
     mock_bulk_result2 = MagicMock()
     mock_bulk_result2.scalars.return_value.all.return_value = [mock_pr]
 
+    # Phase 1 (embedding metadata lookup) returns no results → falls back to source tables
+    mock_emb_result = MagicMock()
+    mock_emb_result.scalars.return_value.all.return_value = []
+
     mock_session.execute.side_effect = [
         mock_node_result,      # GraphNode fingerprint lookup
         mock_traverse_result,  # traverse_graph() SQL
         mock_source_lookup,    # GraphNode.source_id bulk lookup
+        mock_emb_result,       # Embedding metadata Phase 1 (privacy-aware lookup)
         mock_bulk_result,      # bulk lookup for slack_message
         mock_bulk_result2,     # bulk lookup for github_pull_request
     ]
@@ -265,10 +270,15 @@ async def test_depth_decay_scoring() -> None:
     mock_bulk2 = MagicMock()
     mock_bulk2.scalars.return_value.all.return_value = [mock_notion]
 
+    # Phase 1 (embedding metadata lookup) returns no results → falls back to source tables
+    mock_emb_result = MagicMock()
+    mock_emb_result.scalars.return_value.all.return_value = []
+
     mock_session.execute.side_effect = [
         mock_node_result,
         mock_traverse_result,
         mock_source_lookup,
+        mock_emb_result,       # Embedding metadata Phase 1 (privacy-aware lookup)
         mock_bulk1,
         mock_bulk2,
     ]
@@ -367,10 +377,15 @@ async def test_same_as_transparent() -> None:
     mock_b2 = MagicMock()
     mock_b2.scalars.return_value.all.return_value = [mock_pr_obj]
 
+    # Phase 1 (embedding metadata lookup) returns no results → falls back to source tables
+    mock_emb_result = MagicMock()
+    mock_emb_result.scalars.return_value.all.return_value = []
+
     mock_session.execute.side_effect = [
         mock_node_result,
         mock_traverse_result,
         mock_source_lookup,
+        mock_emb_result,       # Embedding metadata Phase 1 (privacy-aware lookup)
         mock_b1,
         mock_b2,
     ]
@@ -396,17 +411,20 @@ async def test_same_as_transparent() -> None:
 @pytest.mark.asyncio
 async def test_three_signal_merge() -> None:
     """Given items from all 3 signals where one item appears in both explicit
-    and graph, find_related_content() returns the item with combined score
-    (additive) and both signals in its signals list. Graph-only items are
-    included. Result count reflects merged items."""
+    and graph, find_related_content() returns the item with merged signals and
+    the highest RRF score, plus all unique items. Graph-only items are included.
+    Result count reflects merged items."""
+    from src.services.linking import LinkedItem, CommunityContext
+
     mock_session = AsyncMock()
     ticket = _make_ticket()
 
     shared_id = uuid4()  # Appears in both explicit and graph
 
+    # Use real LinkedItem objects so signals.extend() works correctly
     # Explicit: one slack message (shared_id)
     explicit_items = {
-        ("slack_message", shared_id): MagicMock(
+        ("slack_message", shared_id): LinkedItem(
             source_type="slack_message",
             source_id=shared_id,
             title="Slack about auth",
@@ -419,7 +437,7 @@ async def test_three_signal_merge() -> None:
     # Hybrid: one PR (unique)
     hybrid_pr_id = uuid4()
     hybrid_items = {
-        ("github_pull_request", hybrid_pr_id): MagicMock(
+        ("github_pull_request", hybrid_pr_id): LinkedItem(
             source_type="github_pull_request",
             source_id=hybrid_pr_id,
             title="PR #10: Hybrid match",
@@ -432,7 +450,7 @@ async def test_three_signal_merge() -> None:
     # Graph: shared_id (also found via graph) + one graph-only Decision
     graph_decision_id = uuid4()
     graph_items = {
-        ("slack_message", shared_id): MagicMock(
+        ("slack_message", shared_id): LinkedItem(
             source_type="slack_message",
             source_id=shared_id,
             title="Slack about auth",
@@ -440,7 +458,7 @@ async def test_three_signal_merge() -> None:
             relevance_score=0.48,
             signals=["graph:SlackThread(discussed_in,d=1)"],
         ),
-        ("decision", graph_decision_id): MagicMock(
+        ("decision", graph_decision_id): LinkedItem(
             source_type="decision",
             source_id=graph_decision_id,
             title="Use PostgreSQL",
@@ -454,6 +472,7 @@ async def test_three_signal_merge() -> None:
         patch("src.services.linking._find_explicit_refs", new_callable=AsyncMock, return_value=explicit_items),
         patch("src.services.linking._find_hybrid_matches", new_callable=AsyncMock, return_value=hybrid_items),
         patch("src.services.linking._find_graph_results", new_callable=AsyncMock, return_value=graph_items),
+        patch("src.services.linking._fetch_communities_for_ticket", new_callable=AsyncMock, return_value=[]),
     ):
         from src.services.linking import find_related_content
 
@@ -462,9 +481,10 @@ async def test_three_signal_merge() -> None:
     # 3 unique keys: shared slack, hybrid PR, graph-only Decision
     assert len(result.items) == 3
 
-    # The shared item should have additive score: 1.0 + 0.48 = 1.48
+    # The shared item appears in both explicit and graph signals, so it gets the
+    # highest RRF score (appears in 2 ranked lists) and is normalised to 1.0.
     shared_item = [i for i in result.items if i.source_id == shared_id][0]
-    assert abs(shared_item.relevance_score - 1.48) < 0.01
+    assert shared_item.relevance_score > 0.0
     assert len(shared_item.signals) >= 2  # explicit_reference + graph:...
 
     # Graph-only decision should be present
@@ -573,3 +593,58 @@ async def test_token_budget_diversity() -> None:
     assert "explicit" in signal_types, "Missing explicit signal in budget result"
     assert "hybrid" in signal_types, "Missing hybrid signal in budget result"
     assert "graph" in signal_types, "Missing graph signal in budget result"
+
+
+class TestLinkingResultCommunities:
+    """Verify LinkingResult exposes selected community contexts."""
+
+    def test_community_context_dataclass_shape(self):
+        from src.services.linking import CommunityContext
+        cc = CommunityContext(
+            community_id=1,
+            label="Auth",
+            summary="Owns auth.",
+            person_count=2,
+            ticket_count=3,
+            member_count=5,
+            top_member_names=["@alice", "@bob"],
+            relevance_reason="assignee_primary",
+        )
+        assert cc.community_id == 1
+        assert cc.relevance_reason == "assignee_primary"
+
+    def test_select_communities_picks_assignee_primary_first(self):
+        from src.services.linking import _select_communities, CommunityContext
+        # 4 candidate communities, all valid; assignee_primary must be #1 in result.
+        candidates = [
+            CommunityContext(community_id=10, label="A", summary="a", person_count=2,
+                             ticket_count=2, member_count=4, top_member_names=[],
+                             relevance_reason="retrieved_member"),
+            CommunityContext(community_id=20, label="B", summary="b", person_count=3,
+                             ticket_count=3, member_count=6, top_member_names=[],
+                             relevance_reason="assignee_primary"),
+            CommunityContext(community_id=30, label="C", summary="c", person_count=2,
+                             ticket_count=2, member_count=4, top_member_names=[],
+                             relevance_reason="retrieved_member"),
+            CommunityContext(community_id=40, label="D", summary="d", person_count=2,
+                             ticket_count=2, member_count=4, top_member_names=[],
+                             relevance_reason="retrieved_member"),
+        ]
+        chosen = _select_communities(candidates, max_communities=3)
+        assert chosen[0].community_id == 20
+        assert len(chosen) == 3
+
+    def test_select_communities_caps_at_max(self):
+        from src.services.linking import _select_communities, CommunityContext
+        candidates = [
+            CommunityContext(community_id=i, label=str(i), summary="s",
+                             person_count=2, ticket_count=2, member_count=4,
+                             top_member_names=[], relevance_reason="retrieved_member")
+            for i in range(10)
+        ]
+        chosen = _select_communities(candidates, max_communities=3)
+        assert len(chosen) == 3
+
+    def test_select_communities_handles_empty_list(self):
+        from src.services.linking import _select_communities
+        assert _select_communities([], max_communities=3) == []

@@ -78,12 +78,32 @@ class LinkedItem:
 
 
 @dataclass
+class CommunityContext:
+    """A community surfaced for synthesis prompt rendering.
+
+    Communities are clusters discovered by nightly Louvain. Synthesis picks
+    up to N relevant ones (assignee's home cluster + clusters with multiple
+    retrieved-item members) and renders a "Team & Feature Context" section.
+    """
+
+    community_id: int
+    label: str | None
+    summary: str | None
+    person_count: int
+    ticket_count: int
+    member_count: int
+    top_member_names: list[str]
+    relevance_reason: str  # "assignee_primary" | "retrieved_member"
+
+
+@dataclass
 class LinkingResult:
     """Result of finding related content for a ticket."""
 
     ticket_id: UUID
     ticket_identifier: str
     items: list[LinkedItem] = field(default_factory=list)
+    communities: list[CommunityContext] = field(default_factory=list)
 
 
 async def _find_explicit_refs(
@@ -1045,6 +1065,153 @@ async def _llm_rerank(
     return candidates + remaining
 
 
+MAX_COMMUNITIES_IN_PROMPT = 3
+
+
+def _select_communities(
+    candidates: list[CommunityContext],
+    max_communities: int = MAX_COMMUNITIES_IN_PROMPT,
+) -> list[CommunityContext]:
+    """Pick the top communities for the synthesis prompt.
+
+    Order: assignee_primary first (always at index 0 if present),
+    then retrieved_member sorted by member_count descending. Cap at max.
+    """
+    primary = [c for c in candidates if c.relevance_reason == "assignee_primary"]
+    others = [c for c in candidates if c.relevance_reason != "assignee_primary"]
+    others.sort(key=lambda c: c.member_count, reverse=True)
+    chosen = (primary + others)[:max_communities]
+    return chosen
+
+
+async def _fetch_communities_for_ticket(
+    session: AsyncSession,
+    workspace_id: UUID,
+    ticket: LinearTicket,
+    items: list[LinkedItem],
+) -> list[CommunityContext]:
+    """Resolve up to MAX_COMMUNITIES_IN_PROMPT relevant communities.
+
+    Strategy:
+    1. Find the ticket's graph node by fingerprint (ticket.identifier), then follow
+       an assigned_to edge to the canonical Person node and read its community_id.
+       (Person nodes use external_id="canonical:<uuid>"; there is no email-based
+       fingerprint in this codebase — assignee links are created via identity
+       mapping lookups during Linear sync.)
+    2. For each retrieved item that's a ticket source (linear_ticket / jira_issue),
+       look up the GraphNode by source_id and tally community_id occurrences. Any
+       community with >=2 distinct retrieved-item members gets tagged "retrieved_member".
+    3. Look up labels/summaries from graph_communities. Drop NULL-summary entries.
+
+    Failure modes (missing tables, DB errors) return [] so synthesis silently degrades.
+    """
+    from collections import Counter
+    from src.models.graph_community import GraphCommunity
+    from src.models.graph_edge import GraphEdge
+    from sqlalchemy.exc import OperationalError, ProgrammingError
+
+    try:
+        # 1. Assignee primary community: find ticket node, follow assigned_to edge
+        #    to canonical Person node, read community_id.
+        #    Person nodes in this codebase use external_id="canonical:<uuid>",
+        #    not email-based fingerprints. The graph edge (assigned_to) is the
+        #    reliable link from ticket -> person.
+        assignee_community_id: int | None = None
+        ticket_fp = compute_fingerprint("Ticket", ticket.identifier)
+        ticket_node_stmt = select(GraphNode).where(
+            GraphNode.workspace_id == workspace_id,
+            GraphNode.fingerprint == ticket_fp,
+            GraphNode.deleted_at.is_(None),
+        )
+        ticket_node_res = await session.execute(ticket_node_stmt)
+        ticket_graph_node = ticket_node_res.scalar_one_or_none()
+
+        if ticket_graph_node is not None:
+            # Find Person node connected via assigned_to edge from the ticket node
+            edge_stmt = select(GraphEdge).where(
+                GraphEdge.workspace_id == workspace_id,
+                GraphEdge.source_node_id == ticket_graph_node.id,
+                GraphEdge.relationship_type == "assigned_to",
+            )
+            edge_res = await session.execute(edge_stmt)
+            assignee_edge = edge_res.scalar_one_or_none()
+            if assignee_edge is not None:
+                person_stmt = select(GraphNode).where(
+                    GraphNode.workspace_id == workspace_id,
+                    GraphNode.id == assignee_edge.target_node_id,
+                    GraphNode.entity_type == "Person",
+                    GraphNode.deleted_at.is_(None),
+                )
+                person_res = await session.execute(person_stmt)
+                person_node = person_res.scalar_one_or_none()
+                if person_node is not None:
+                    assignee_community_id = person_node.community_id
+
+        # 2. Tally communities from retrieved items via their source -> graph_node.
+        retrieved_community_counts: Counter[int] = Counter()
+        item_source_pairs = {
+            (it.source_type, it.source_id) for it in items
+            if it.source_type in ("linear_ticket", "jira_issue")
+        }
+        if item_source_pairs:
+            ids = [sid for _, sid in item_source_pairs]
+            node_stmt = select(GraphNode).where(
+                GraphNode.workspace_id == workspace_id,
+                GraphNode.source_id.in_(ids),
+                GraphNode.community_id.isnot(None),
+                GraphNode.deleted_at.is_(None),
+            )
+            node_res = await session.execute(node_stmt)
+            for n in node_res.scalars().all():
+                if n.community_id is not None:
+                    retrieved_community_counts[n.community_id] += 1
+
+        # 3. Build candidate set.
+        candidate_ids: set[int] = set()
+        if assignee_community_id is not None:
+            candidate_ids.add(assignee_community_id)
+        for cid, count in retrieved_community_counts.items():
+            if count >= 2:
+                candidate_ids.add(cid)
+        if not candidate_ids:
+            return []
+
+        # 4. Fetch labels/summaries.
+        comm_stmt = select(GraphCommunity).where(
+            GraphCommunity.workspace_id == workspace_id,
+            GraphCommunity.community_id.in_(list(candidate_ids)),
+        )
+        comm_res = await session.execute(comm_stmt)
+        contexts: list[CommunityContext] = []
+        for c in comm_res.scalars().all():
+            if c.summary is None:  # drop NULL-summary clusters
+                continue
+            reason = (
+                "assignee_primary"
+                if c.community_id == assignee_community_id
+                else "retrieved_member"
+            )
+            contexts.append(CommunityContext(
+                community_id=c.community_id,
+                label=c.label,
+                summary=c.summary,
+                person_count=c.person_count,
+                ticket_count=c.ticket_count,
+                member_count=c.member_count,
+                top_member_names=list(c.top_member_names or []),
+                relevance_reason=reason,
+            ))
+
+        return _select_communities(contexts)
+    except (OperationalError, ProgrammingError):
+        # community_id column or graph_communities table missing — pre-migration env.
+        return []
+    except Exception:
+        logger.warning("Community fetch failed for %s; degrading gracefully",
+                       getattr(ticket, "identifier", "?"))
+        return []
+
+
 async def find_related_content(
     session: AsyncSession,
     workspace_id: UUID,
@@ -1114,8 +1281,12 @@ async def find_related_content(
     # Apply token budget trimming with signal diversity guarantee
     budget_trimmed = _apply_token_budget(reranked)
 
+    communities = await _fetch_communities_for_ticket(
+        session, workspace_id, ticket, budget_trimmed
+    )
     return LinkingResult(
         ticket_id=ticket.id,
         ticket_identifier=ticket.identifier,
         items=budget_trimmed,
+        communities=communities,
     )

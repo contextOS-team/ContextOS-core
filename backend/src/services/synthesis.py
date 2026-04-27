@@ -214,18 +214,19 @@ SYNTHESIS_TEMPLATE = """\
 ### Related Content
 {related_content}
 
+{team_context_section}
 {graph_section}
 ---
 
 Based on the ticket and related content above, produce a context page. Do NOT start with a title heading. Use only these sections (skip any section that has no real content from the sources):
 
 1. **Summary** — 2-3 sentence overview of what this ticket is about and why it matters
-2. **Background & Decisions** — Key decisions, discussions, and context from Slack, meetings, and comments. If the Graph Connections section above contains [DECISION] items, weave each into the narrative as a decision trail: state what was decided, who decided it (citing the person), where it was discussed (citing the source like Slack thread name or meeting title), and which tickets it affects. Include the confidence level (e.g., "confirmed" for high confidence, "likely decided" for lower). Always cite the source so engineers can verify. Show all decisions regardless of confidence.
+2. **Background & Decisions** — Key decisions, discussions, and context from Slack, meetings, and comments. If the Graph Connections section above contains [DECISION] items, weave each into the narrative as a decision trail: state what was decided, who decided it (citing the person), where it was discussed (citing the source like Slack thread name or meeting title), and which tickets it affects. Include the confidence level (e.g., "confirmed" for high confidence, "likely decided" for lower). Always cite the source so engineers can verify. Show all decisions regardless of confidence. If the **Team & Feature Context** section above lists clusters, weave the relevant cluster name and focus area into the narrative when it adds clarity (e.g., "as part of the Auth & Sessions area").
 3. **Requirements** — What needs to be built or fixed, extracted from the ticket and discussions. For each requirement, tag its implementation status: **[DONE — PR ref]** if a PR or code already fulfills it, **[IN PROGRESS — PR ref]** if work is underway, or **[NOT STARTED]** if no implementation evidence exists. This is critical — an AI agent must instantly know what still needs building.
-4. **Related Work** — PRs, linked tickets, and other relevant engineering artifacts. Separate into: (a) **Implementing PRs** — PRs that directly implement this ticket's requirements (state merged/open/draft and what they cover), (b) **Related PRs** — PRs in the same area but not directly implementing this ticket, (c) **Linked Tickets** — other tickets that overlap, depend on, or duplicate this work. If the Graph Connections section above shows relationships between items, explain WHY they are connected in natural language rather than listing raw connections.
+4. **Related Work** — PRs, linked tickets, and other relevant engineering artifacts. Separate into: (a) **Implementing PRs** — PRs that directly implement this ticket's requirements (state merged/open/draft and what they cover), (b) **Related PRs** — PRs in the same area but not directly implementing this ticket, (c) **Linked Tickets** — other tickets that overlap, depend on, or duplicate this work. If the Graph Connections section above shows relationships between items, explain WHY they are connected in natural language rather than listing raw connections. If the **Team & Feature Context** section identifies a cluster that owns this area, mention which cluster the related tickets belong to when it helps the engineer route a question.
 5. **Relevant Code** — Code snippets from across the codebase that are relevant to this ticket. Include function signatures, class definitions, and route handlers with file paths and repo names. This helps engineers understand existing implementations even from repos they have never worked in. If any code snippets have associated discussion provenance (noted as "Discussed in:" annotations in the Related Content), include that context so engineers know where this code was talked about.
 6. **Open Questions** — Unresolved questions or ambiguities that need clarification
-7. **Key People** — Who is involved and their roles (assignee, reviewers, participants in discussions). If graph data shows a person's involvement across multiple sources (e.g., authored ticket, discussed in Slack, reviewed PR), list their cross-source involvement to show the full picture of their engagement."""
+7. **Key People** — Who is involved and their roles (assignee, reviewers, participants in discussions). If graph data shows a person's involvement across multiple sources (e.g., authored ticket, discussed in Slack, reviewed PR), list their cross-source involvement to show the full picture of their engagement. If the **Team & Feature Context** section identifies the assignee's primary cluster and its top members, note that affiliation."""
 
 
 def _format_decision_node(name: str, properties: dict) -> str:
@@ -285,6 +286,74 @@ def _format_graph_section(items: list) -> str:
         sections.append(section)
 
     return GRAPH_SECTION_TEMPLATE.format(graph_content="\n\n---\n\n".join(sections))
+
+
+TEAM_CONTEXT_TEMPLATE = """\
+### Team & Feature Context
+
+The retrieved items below cluster into the following team/feature areas
+(discovered by nightly community detection over the knowledge graph):
+
+{community_blocks}"""
+
+
+def _format_team_context_section(communities: list) -> str:
+    """Format CommunityContext list into a synthesis-prompt section.
+
+    Returns empty string if there are no usable communities (empty list,
+    or all entries have NULL summary). Entries with NULL summary are skipped
+    defensively even though _select_communities already drops them.
+    """
+    if not communities:
+        return ""
+    usable = [c for c in communities if c.summary]
+    if not usable:
+        return ""
+
+    blocks: list[str] = []
+    for c in usable:
+        label = c.label or "Unlabeled cluster"
+        top = ", ".join(c.top_member_names) if c.top_member_names else "(no top members)"
+        blocks.append(
+            f"**{label}** ({c.member_count} members; "
+            f"{c.person_count} people, {c.ticket_count} tickets)\n"
+            f"{c.summary}\n"
+            f"Top members: {top}\n"
+            f"Why included: {c.relevance_reason}"
+        )
+
+    return TEAM_CONTEXT_TEMPLATE.format(
+        community_blocks="\n\n---\n\n".join(blocks)
+    )
+
+
+def _build_synthesis_prompt_text(
+    ticket,
+    linking_result,
+    code_provenance,
+) -> str:
+    """Render the full synthesis prompt body. Pure function, side-effect free."""
+    related_text = _format_related_content(
+        [it for it in linking_result.items if not any(s.startswith("graph:") for s in it.signals)],
+        code_provenance=code_provenance,
+    )
+    graph_text = _format_graph_section(
+        [it for it in linking_result.items if any(s.startswith("graph:") for s in it.signals)]
+    )
+    team_text = _format_team_context_section(getattr(linking_result, "communities", []))
+
+    return SYNTHESIS_TEMPLATE.format(
+        identifier=getattr(ticket, "identifier", ""),
+        title=getattr(ticket, "title", ""),
+        status=getattr(ticket, "status", ""),
+        assignee=getattr(ticket, "assignee_name", "") or "Unassigned",
+        priority=getattr(ticket, "priority", ""),
+        labels=getattr(ticket, "labels", "") or "",
+        description=getattr(ticket, "description", "") or "",
+        related_content=related_text,
+        team_context_section=team_text,
+        graph_section=graph_text,
+    )
 
 
 def _format_related_content(
@@ -445,33 +514,16 @@ def _build_synthesis_prompt(
 ) -> str:
     """Format the SYNTHESIS_TEMPLATE with ticket info and related content.
 
-    Separates graph items from non-graph items and formats them into
-    distinct sections for the synthesis prompt.
+    Delegates to _build_synthesis_prompt_text using a minimal namespace so
+    the helper's communities-aware logic is always exercised. Call sites that
+    have the full LinkingResult should prefer _build_synthesis_prompt_text
+    directly to pass communities through.
     """
-    # Separate graph items from non-graph items
-    graph_items = [
-        item for item in related_items
-        if any(s.startswith("graph:") for s in item.signals)
-    ]
-    non_graph_items = [
-        item for item in related_items
-        if not any(s.startswith("graph:") for s in item.signals)
-    ]
+    class _FakeLinkingResult:
+        items = related_items
+        communities: list = []
 
-    related_text = _format_related_content(non_graph_items, code_provenance=code_provenance)
-    graph_text = _format_graph_section(graph_items)
-
-    return SYNTHESIS_TEMPLATE.format(
-        identifier=ticket.identifier,
-        title=ticket.title,
-        status=ticket.status or "Unknown",
-        assignee=ticket.assignee_name or "Unassigned",
-        priority=_priority_label(ticket.priority),
-        labels=", ".join(ticket.labels) if ticket.labels else "None",
-        description=ticket.description or "No description provided.",
-        related_content=related_text,
-        graph_section=graph_text,
-    )
+    return _build_synthesis_prompt_text(ticket, _FakeLinkingResult(), code_provenance)
 
 
 # Entity types considered "discussion" sources for provenance annotations
@@ -643,7 +695,7 @@ async def generate_context_page(
         code_provenance = await _get_code_provenance(session, workspace_id, linking_result.items)
 
         # 4. Build prompt
-        prompt = _build_synthesis_prompt(ticket, linking_result.items, code_provenance=code_provenance)
+        prompt = _build_synthesis_prompt_text(ticket, linking_result, code_provenance=code_provenance)
 
         # 5. Call LLM
         llm = get_llm_client()
