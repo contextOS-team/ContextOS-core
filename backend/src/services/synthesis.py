@@ -331,6 +331,42 @@ def _format_team_context_section(communities: list) -> str:
     )
 
 
+def _format_cluster_membership_section(communities: list) -> str:
+    """Render a deterministic `### Cluster Membership` markdown block.
+
+    Appended to the LLM output so the cluster signal is always visible in
+    the rendered context page, regardless of whether the model honored the
+    in-prompt verbatim instructions. Returns empty string when there are no
+    usable communities (no entries, or all entries lacking summary/label).
+    """
+    if not communities:
+        return ""
+    usable = [c for c in communities if getattr(c, "summary", None) and getattr(c, "label", None)]
+    if not usable:
+        return ""
+
+    blocks: list[str] = []
+    for c in usable:
+        top = ", ".join(c.top_member_names) if getattr(c, "top_member_names", None) else "—"
+        member_breakdown = (
+            f"{c.member_count} members ({c.person_count} people, {c.ticket_count} tickets)"
+        )
+        blocks.append(
+            f"**[CLUSTER] {c.label}** — {member_breakdown}\n"
+            f"{c.summary}\n"
+            f"**Top members:** {top}\n"
+            f"**Why included:** {c.relevance_reason}"
+        )
+
+    body = "\n\n".join(blocks)
+    return (
+        "\n\n### Cluster Membership\n"
+        "Knowledge-graph cluster(s) this ticket belongs to "
+        "(discovered by nightly community detection):\n\n"
+        f"{body}\n"
+    )
+
+
 def _format_cluster_directive(communities: list) -> str:
     """Build a high-attention prefix that names the exact cluster labels to use.
 
@@ -758,9 +794,17 @@ async def generate_context_page(
 
         now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-        # 6. Update the context page with LLM results
+        # 6. Append deterministic Cluster Membership section so the cluster
+        # signal is always visible in the rendered page, regardless of
+        # whether the LLM honored in-prompt verbatim instructions.
+        cluster_section = _format_cluster_membership_section(
+            getattr(linking_result, "communities", []) or []
+        )
+        final_content = llm_response.text + cluster_section
+
+        # 7. Update the context page with LLM results
         context_page.title = f"Context: {ticket.title}"
-        context_page.content = llm_response.text
+        context_page.content = final_content
         context_page.summary = llm_response.text[:500]
         context_page.status = "ready"
         context_page.sources = sources_list
@@ -998,7 +1042,25 @@ async def generate_context_page_stream(
             ticket = TicketProxy.from_linear(ticket)
 
         code_provenance = await _get_code_provenance(session, workspace_id, all_items)
-        prompt = _build_synthesis_prompt(ticket, all_items, code_provenance=code_provenance)
+
+        # Fetch communities directly (the per-source streaming loop above
+        # used find_content_by_source rather than find_related_content, so
+        # we have no LinkingResult with .communities to reuse).
+        from src.services.linking import _fetch_communities_for_ticket
+        communities = await _fetch_communities_for_ticket(
+            session, workspace_id, ticket, all_items
+        )
+
+        class _StreamLinkingResult:
+            def __init__(self, items, communities):
+                self.items = items
+                self.communities = communities
+
+        prompt = _build_synthesis_prompt_text(
+            ticket,
+            _StreamLinkingResult(all_items, communities),
+            code_provenance=code_provenance,
+        )
 
         llm = get_llm_client()
         llm_response = await llm.generate(
@@ -1021,8 +1083,11 @@ async def generate_context_page_stream(
         ]
 
         now = datetime.now(timezone.utc).replace(tzinfo=None)
+        cluster_section = _format_cluster_membership_section(communities or [])
+        final_content = llm_response.text + cluster_section
+
         context_page.title = f"Context: {ticket.title}"
-        context_page.content = llm_response.text
+        context_page.content = final_content
         context_page.summary = llm_response.text[:500]
         context_page.status = "ready"
         context_page.sources = sources_list
