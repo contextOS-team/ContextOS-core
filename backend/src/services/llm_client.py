@@ -42,7 +42,7 @@ class LLMClient:
 
     def __init__(
         self,
-        model_name: str = "gemini-3.1-flash-lite-preview",
+        model_name: str = "gemini-3.0-flash",
     ) -> None:
         self.model_name = model_name
         from src.config import get_settings

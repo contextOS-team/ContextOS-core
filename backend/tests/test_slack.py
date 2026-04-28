@@ -407,7 +407,17 @@ class TestMessageProcessing:
         )
         mock_session.commit = AsyncMock()
 
-        with patch("src.services.slack_events.embedding") as mock_embedding:
+        with (
+            patch("src.services.slack_events.embedding") as mock_embedding,
+            patch(
+                "src.services.slack_events._resolve_channel_name",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "src.services.slack_events._resolve_user_name",
+                AsyncMock(return_value=None),
+            ),
+        ):
             mock_embedding.queue_embedding_generation = AsyncMock()
             await process_event(event_payload, workspace_id, mock_session)
 
@@ -505,7 +515,17 @@ class TestMessageProcessing:
         )
         mock_session.commit = AsyncMock()
 
-        with patch("src.services.slack_events.embedding") as mock_embedding:
+        with (
+            patch("src.services.slack_events.embedding") as mock_embedding,
+            patch(
+                "src.services.slack_events._resolve_channel_name",
+                AsyncMock(return_value=None),
+            ),
+            patch(
+                "src.services.slack_events._resolve_user_name",
+                AsyncMock(return_value=None),
+            ),
+        ):
             mock_embedding.queue_embedding_generation = AsyncMock()
             await process_event(event_payload, workspace_id, mock_session)
 

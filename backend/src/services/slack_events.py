@@ -23,6 +23,7 @@ import time
 from datetime import datetime, timezone
 from uuid import UUID
 
+import httpx
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -33,6 +34,15 @@ from src.services import embedding
 from src.services.graph_extractor import extract_and_populate_graph
 
 logger = logging.getLogger(__name__)
+
+_SLACK_API_BASE = "https://slack.com/api"
+
+# Process-local caches keyed by (workspace_id, slack_id) so we don't hit
+# users.info / conversations.info on every event. Channel and user names
+# rarely change and cache hits dominate after the first message per channel/user.
+_CHANNEL_NAME_CACHE: dict[tuple[UUID, str], str] = {}
+_USER_NAME_CACHE: dict[tuple[UUID, str], str] = {}
+_CACHE_MAX_ENTRIES = 5000  # bounded to keep memory predictable
 
 # Subtypes that are system messages (filtered out)
 SYSTEM_SUBTYPES = frozenset({
@@ -211,6 +221,16 @@ async def _handle_message(
     if not await _is_channel_monitored(session, workspace_id, channel_id):
         return
 
+    user_id = event.get("user")
+
+    # Resolve human-readable names so synthesis citations read
+    # "(Slack: #engineering by Дулат Орманов)" instead of
+    # "(Slack: #unknown by Unknown)". Both lookups are cached per process
+    # and fail-silent — name resolution is never allowed to block message
+    # ingestion.
+    channel_name = await _resolve_channel_name(session, workspace_id, channel_id)
+    user_name = await _resolve_user_name(session, workspace_id, user_id) if user_id else None
+
     slack_ts = event.get("ts", "")
     thread_ts = event.get("thread_ts")
 
@@ -233,9 +253,9 @@ async def _handle_message(
         "workspace_id": workspace_id,
         "slack_ts": slack_ts,
         "channel_id": channel_id,
-        "channel_name": None,  # Can be enriched later
-        "user_id": event.get("user"),
-        "user_name": None,  # Can be enriched later via users.info
+        "channel_name": channel_name,
+        "user_id": user_id,
+        "user_name": user_name,
         "text": event.get("text", ""),
         "thread_ts": thread_ts,
         "parent_ts": parent_ts,
@@ -250,6 +270,8 @@ async def _handle_message(
         set_={
             "text": stmt.excluded.text,
             "user_id": stmt.excluded.user_id,
+            "user_name": stmt.excluded.user_name,
+            "channel_name": stmt.excluded.channel_name,
             "thread_ts": stmt.excluded.thread_ts,
             "parent_ts": stmt.excluded.parent_ts,
             "is_thread_reply": stmt.excluded.is_thread_reply,
@@ -401,3 +423,110 @@ def _ts_to_datetime(slack_ts: str) -> datetime | None:
         return datetime.fromtimestamp(epoch, tz=timezone.utc).replace(tzinfo=None)
     except (ValueError, TypeError, OSError):
         return None
+
+
+def _cache_set_bounded(cache: dict, key, value: str) -> None:
+    """Insert into cache and evict the oldest key if at the size cap."""
+    if len(cache) >= _CACHE_MAX_ENTRIES:
+        try:
+            oldest = next(iter(cache))
+            cache.pop(oldest, None)
+        except StopIteration:
+            pass
+    cache[key] = value
+
+
+async def _resolve_channel_name(
+    session: AsyncSession,
+    workspace_id: UUID,
+    channel_id: str,
+) -> str | None:
+    """Resolve a Slack channel ID to its `#name`.
+
+    Caches per (workspace, channel) to avoid hitting conversations.info on
+    every event. Returns None on any failure so the caller falls back
+    cleanly. Never raises.
+    """
+    if not channel_id:
+        return None
+    key = (workspace_id, channel_id)
+    cached = _CHANNEL_NAME_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    try:
+        from src.services.slack_oauth import get_bot_token
+
+        bot_token = await get_bot_token(session, workspace_id)
+        if not bot_token:
+            return None
+
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{_SLACK_API_BASE}/conversations.info",
+                params={"channel": channel_id},
+                headers={"Authorization": f"Bearer {bot_token}"},
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("ok"):
+                    raw = data.get("channel", {}).get("name") or channel_id
+                    name = f"#{raw}" if not raw.startswith("#") else raw
+                    _cache_set_bounded(_CHANNEL_NAME_CACHE, key, name)
+                    return name
+    except Exception:
+        logger.debug(
+            "Failed to resolve channel name for %s (non-blocking)",
+            channel_id, exc_info=True,
+        )
+    return None
+
+
+async def _resolve_user_name(
+    session: AsyncSession,
+    workspace_id: UUID,
+    user_id: str,
+) -> str | None:
+    """Resolve a Slack user ID to a display name.
+
+    Prefers real_name, falls back to display_name, then None. Cached per
+    (workspace, user). Fail-silent.
+    """
+    if not user_id:
+        return None
+    key = (workspace_id, user_id)
+    cached = _USER_NAME_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    try:
+        from src.services.slack_oauth import get_bot_token
+
+        bot_token = await get_bot_token(session, workspace_id)
+        if not bot_token:
+            return None
+
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{_SLACK_API_BASE}/users.info",
+                params={"user": user_id},
+                headers={"Authorization": f"Bearer {bot_token}"},
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("ok"):
+                    user = data.get("user", {})
+                    name = (
+                        user.get("real_name")
+                        or user.get("profile", {}).get("display_name")
+                        or None
+                    )
+                    if name:
+                        _cache_set_bounded(_USER_NAME_CACHE, key, name)
+                    return name
+    except Exception:
+        logger.debug(
+            "Failed to resolve user name for %s (non-blocking)",
+            user_id, exc_info=True,
+        )
+    return None
