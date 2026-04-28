@@ -375,6 +375,7 @@ class TestPollTranscripts:
             ),
             patch("src.services.fathom.httpx.AsyncClient") as mock_httpx,
             patch("src.services.fathom.embedding") as mock_embedding,
+            patch("src.services.graph_extractor.extract_and_populate_graph", AsyncMock()),
         ):
             mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -447,6 +448,7 @@ class TestPollTranscripts:
             ),
             patch("src.services.fathom.httpx.AsyncClient") as mock_httpx,
             patch("src.services.fathom.embedding") as mock_embedding,
+            patch("src.services.graph_extractor.extract_and_populate_graph", AsyncMock()),
         ):
             mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -503,6 +505,7 @@ class TestPollTranscripts:
             ),
             patch("src.services.fathom.httpx.AsyncClient") as mock_httpx,
             patch("src.services.fathom.embedding") as mock_embedding,
+            patch("src.services.graph_extractor.extract_and_populate_graph", AsyncMock()),
         ):
             mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -557,6 +560,7 @@ class TestPollTranscripts:
             ),
             patch("src.services.fathom.httpx.AsyncClient") as mock_httpx,
             patch("src.services.fathom.embedding") as mock_embedding,
+            patch("src.services.graph_extractor.extract_and_populate_graph", AsyncMock()),
         ):
             mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)
@@ -620,6 +624,7 @@ class TestPollTranscripts:
             ),
             patch("src.services.fathom.httpx.AsyncClient") as mock_httpx,
             patch("src.services.fathom.embedding") as mock_embedding,
+            patch("src.services.graph_extractor.extract_and_populate_graph", AsyncMock()),
         ):
             mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)

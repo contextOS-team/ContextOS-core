@@ -316,6 +316,11 @@ async def sync_single_ticket(
         # Create graph nodes for the synced ticket
         await _extract_graph_for_tickets(session, workspace_id, [issue], ticket_ids)
 
+        # Create the assigned_to edge if this issue has an assignee. Without
+        # this, single-ticket syncs (driven by Linear webhooks) leave the
+        # assignee edge missing — only full periodic syncs create it.
+        await _link_ticket_assignees(session, workspace_id, [issue])
+
         # Return the upserted ticket
         linear_id = issue["id"]
         ticket_uuid = ticket_ids.get(linear_id)

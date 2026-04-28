@@ -402,6 +402,33 @@ async def poll_transcripts(
                     session, workspace_id, "meeting_transcript", [meeting.id]
                 )
 
+                # Feed the transcript into the knowledge graph so meetings
+                # show up alongside Linear/Slack/PR entities. Fail-silent —
+                # graph extraction must never block transcript ingestion.
+                try:
+                    from src.services.graph_extractor import extract_and_populate_graph
+
+                    graph_text = full_text or ""
+                    if summary:
+                        graph_text = f"{summary}\n\n{graph_text}" if graph_text else summary
+                    if graph_text:
+                        await extract_and_populate_graph(
+                            session=session,
+                            workspace_id=workspace_id,
+                            content=graph_text,
+                            source_type="meeting_transcript",
+                            source_id=meeting.id,
+                            source_name=title,
+                            source_external_id=fathom_id,
+                        )
+                        await session.commit()
+                except Exception:
+                    logger.warning(
+                        "Graph extraction failed for Fathom transcript %s (non-blocking)",
+                        fathom_id,
+                        exc_info=True,
+                    )
+
                 # Emit meeting_recorded activity event
                 await emit_activity(session, workspace_id, "meeting_recorded", metadata={
                     "title": title,
