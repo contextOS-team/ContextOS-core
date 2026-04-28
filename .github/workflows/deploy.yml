@@ -27,6 +27,8 @@ jobs:
             echo "--- fetching origin/main ---"
             git fetch --prune origin
             git reset --hard origin/main
+            echo "--- applying pending DB migrations ---"
+            bash scripts/deploy-migrations.sh
             echo "--- building images ---"
             docker compose -f docker-compose.prod.yml build
             echo "--- restarting stack ---"
