@@ -1,14 +1,28 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isEarlyAccessError } from '@/lib/auth/early-access'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/dashboard'
 
+  // Supabase may redirect here with error params (no code) when the
+  // signup trigger rejected the OAuth user. Surface as waitlist.
+  const errorDescription = searchParams.get('error_description')
+  if (errorDescription && isEarlyAccessError(errorDescription)) {
+    return NextResponse.redirect(`${origin}/login?error=waitlist`)
+  }
+
   if (code) {
     const supabase = await createClient()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
+
+    if (error && isEarlyAccessError(error.message)) {
+      // Trigger rejected this OAuth signup. Make sure no partial session sticks.
+      await supabase.auth.signOut()
+      return NextResponse.redirect(`${origin}/login?error=waitlist`)
+    }
 
     if (!error) {
       // Check onboarding status to determine redirect destination

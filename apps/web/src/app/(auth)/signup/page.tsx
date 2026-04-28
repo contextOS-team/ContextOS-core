@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SocialButtons } from '@/components/auth/social-buttons'
+import { isEarlyAccessError, EARLY_ACCESS_MESSAGE } from '@/lib/auth/early-access'
 
 export default function SignupPage() {
   const router = useRouter()
@@ -43,7 +44,11 @@ export default function SignupPage() {
       })
 
       if (error) {
-        setError(error.message)
+        if (isEarlyAccessError(error.message)) {
+          setError(EARLY_ACCESS_MESSAGE)
+        } else {
+          setError(error.message)
+        }
         return
       }
 

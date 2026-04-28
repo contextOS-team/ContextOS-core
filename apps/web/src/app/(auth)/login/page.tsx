@@ -1,19 +1,22 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SocialButtons } from '@/components/auth/social-buttons'
+import { EARLY_ACCESS_MESSAGE } from '@/lib/auth/early-access'
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const initialError = searchParams.get('error') === 'waitlist' ? EARLY_ACCESS_MESSAGE : null
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initialError)
   const [loading, setLoading] = useState(false)
 
   async function handleSignIn(e: React.FormEvent) {
