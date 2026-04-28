@@ -331,6 +331,37 @@ def _format_team_context_section(communities: list) -> str:
     )
 
 
+def _format_cluster_directive(communities: list) -> str:
+    """Build a high-attention prefix that names the exact cluster labels to use.
+
+    Empty when no usable communities are present. Placing the directive at the
+    very top of the user prompt (before the ticket header) is necessary because
+    weaker Gemini variants ignore instructions that appear only near the end
+    of long prompts.
+    """
+    if not communities:
+        return ""
+    usable = [c for c in communities if getattr(c, "summary", None) and getattr(c, "label", None)]
+    if not usable:
+        return ""
+    labels = [c.label for c in usable]
+    quoted = ", ".join(f'"{lab}"' for lab in labels)
+    bullet_list = "\n".join(f"  - [CLUSTER] {lab}" for lab in labels)
+    return (
+        "## CRITICAL OUTPUT REQUIREMENT — CLUSTER NAMING\n"
+        f"This ticket's knowledge graph cluster(s): {quoted}.\n"
+        f"You MUST emit the verbatim `[CLUSTER] <name>` tag — using the exact "
+        f"strings shown — at least once each in **Background & Decisions**, "
+        f"**Related Work**, and **Key People** sections of your output. "
+        f"Required tags:\n{bullet_list}\n"
+        f"Do NOT paraphrase, abbreviate, translate, or substitute synonyms "
+        f"such as \"epic\", \"area\", \"feature\", or \"team\". Copy the "
+        f"label letter-for-letter (preserving case, punctuation, and the "
+        f"word \"and\"/\"&\" exactly). This rule supersedes any softer "
+        f"phrasing later in this prompt.\n\n---\n\n"
+    )
+
+
 def _build_synthesis_prompt_text(
     ticket,
     linking_result,
@@ -344,9 +375,11 @@ def _build_synthesis_prompt_text(
     graph_text = _format_graph_section(
         [it for it in linking_result.items if any(s.startswith("graph:") for s in it.signals)]
     )
-    team_text = _format_team_context_section(getattr(linking_result, "communities", []))
+    communities = getattr(linking_result, "communities", []) or []
+    team_text = _format_team_context_section(communities)
+    cluster_directive = _format_cluster_directive(communities)
 
-    return SYNTHESIS_TEMPLATE.format(
+    body = SYNTHESIS_TEMPLATE.format(
         identifier=getattr(ticket, "identifier", ""),
         title=getattr(ticket, "title", ""),
         status=getattr(ticket, "status", ""),
@@ -358,6 +391,7 @@ def _build_synthesis_prompt_text(
         team_context_section=team_text,
         graph_section=graph_text,
     )
+    return cluster_directive + body
 
 
 def _format_related_content(

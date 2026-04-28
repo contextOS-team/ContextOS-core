@@ -125,8 +125,11 @@ async def stream_context_generation(
                 result = await session.execute(stmt)
                 generating_page = result.scalar_one_or_none()
                 if generating_page:
-                    stale_cutoff = datetime.utcnow() - timedelta(minutes=5)
-                    if generating_page.updated_at and generating_page.updated_at > stale_cutoff:
+                    stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+                    page_updated_at = generating_page.updated_at
+                    if page_updated_at is not None and page_updated_at.tzinfo is None:
+                        page_updated_at = page_updated_at.replace(tzinfo=timezone.utc)
+                    if page_updated_at and page_updated_at > stale_cutoff:
                         yield ServerSentEvent(
                             data=json.dumps({"event": "error", "message": "Generation already in progress"}),
                             event="error",
