@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -11,6 +11,14 @@ import { SocialButtons } from '@/components/auth/social-buttons'
 import { EARLY_ACCESS_MESSAGE } from '@/lib/auth/early-access'
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const initialError = searchParams.get('error') === 'waitlist' ? EARLY_ACCESS_MESSAGE : null
