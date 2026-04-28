@@ -563,4 +563,27 @@ async def _upsert_telegram_message(
     ).returning(TelegramMessage.__table__.c.id)
 
     result = await session.execute(stmt)
-    return result.scalar_one()
+    msg_uuid = result.scalar_one()
+
+    # Run knowledge-graph extraction so the bulk-sync path mirrors what the
+    # webhook does. Fail-silent so a graph error never blocks ingestion.
+    try:
+        from src.services.graph_extractor import extract_and_populate_graph
+
+        chat_label = chat.get("title") or chat.get("type") or str(chat_id)
+        await extract_and_populate_graph(
+            session=session,
+            workspace_id=workspace_id,
+            content=message["text"],
+            source_type="telegram_message",
+            source_id=msg_uuid,
+            source_name=f"Telegram message in {chat_label}",
+            source_external_id=f"{chat_id}:{message_id}",
+        )
+    except Exception:
+        logger.warning(
+            "Graph extraction failed for Telegram message %s/%s (non-blocking)",
+            chat_id, message_id, exc_info=True,
+        )
+
+    return msg_uuid

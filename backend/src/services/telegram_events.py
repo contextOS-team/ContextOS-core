@@ -113,6 +113,30 @@ async def process_telegram_update(
     )
 
     await session.commit()
+
+    # Feed the message into the knowledge graph so Telegram can act as a
+    # bridge in community detection and surface in graph traversal.
+    # Fail-silent — graph extraction must never block message ingestion.
+    try:
+        from src.services.graph_extractor import extract_and_populate_graph
+
+        chat_label = chat.get("title") or chat.get("type") or str(chat_id)
+        await extract_and_populate_graph(
+            session=session,
+            workspace_id=workspace_id,
+            content=message["text"],
+            source_type="telegram_message",
+            source_id=msg_uuid,
+            source_name=f"Telegram message in {chat_label}",
+            source_external_id=f"{chat_id}:{message_id}",
+        )
+        await session.commit()
+    except Exception:
+        logger.warning(
+            "Graph extraction failed for Telegram message %s/%s (non-blocking)",
+            chat_id, message_id, exc_info=True,
+        )
+
     logger.info(
         "Processed Telegram message %d from chat %d for workspace %s",
         message_id,
