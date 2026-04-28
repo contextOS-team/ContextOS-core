@@ -33,7 +33,9 @@ fi
 
 : "${DATABASE_URL:?DATABASE_URL not set}"
 : "${SUPABASE_URL:?SUPABASE_URL not set}"
-: "${SUPABASE_SERVICE_ROLE_KEY:?SUPABASE_SERVICE_ROLE_KEY not set}"
+# Accept either name — the backend uses SUPABASE_KEY, Supabase docs use SUPABASE_SERVICE_ROLE_KEY.
+SERVICE_KEY="${SUPABASE_SERVICE_ROLE_KEY:-${SUPABASE_KEY:-}}"
+: "${SERVICE_KEY:?Set SUPABASE_KEY or SUPABASE_SERVICE_ROLE_KEY (must be the service-role JWT, not anon)}"
 
 DB_URL="${DATABASE_URL/postgresql+asyncpg:/postgresql:}"
 
@@ -57,8 +59,8 @@ SQL
 echo "==> Sending invite email via Supabase Auth"
 HTTP_CODE=$(curl -s -o /tmp/invite-resp.json -w "%{http_code}" \
   -X POST "${SUPABASE_URL}/auth/v1/invite" \
-  -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+  -H "apikey: ${SERVICE_KEY}" \
+  -H "Authorization: Bearer ${SERVICE_KEY}" \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"${EMAIL}\"}")
 
