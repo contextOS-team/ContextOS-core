@@ -168,6 +168,7 @@ Note: Phases 35, 36, 37, 38, 39 are independent and can execute in parallel afte
 | 37. Privacy Architecture Research | 0/TBD | Not started | - |
 | 38. RAG Quality Improvements | 0/TBD | Not started | - |
 | 39. Slack User Token Migration & DM Support | 4/4 | Complete    | 2026-04-22 |
+| 40. Telegram Shared-Bot Migration | 0/3 | Not started | - |
 
 ### Phase 39: Slack User Token Migration & DM Support
 **Goal**: Add DM and group-DM ingestion to the Slack integration via user-token polling, while keeping the existing bot Events API webhook path for channel messages (Slack's May 2025 rate-limit cap makes user-token polling unviable for channels at scale)
@@ -187,8 +188,31 @@ Plans:
 - [x] 39-03-PLAN.md -- Settings UI: re-auth banner + DM toggle + typed api.ts clients (channel picker preserved)
 - [x] 39-04-PLAN.md -- Wire poll_user_messages into run_polling_fallback + onboarding DM consent panel + E2E verified (177 messages ingested across DMs + channels on live workspace)
 
+### Phase 40: Telegram Shared-Bot Migration
+
+**Goal:** Replace the bring-your-own-bot Telegram flow (Phase 26) with a single shared `@ContextOSBot`. New users connect Telegram in one click via a `t.me/<bot>?startgroup=<code>` deep link — pick a group, bot joins, posts a pairing message, ingestion starts. No BotFather, no token paste, no group-privacy toggle.
+
+**Scope:**
+- New tables: `telegram_chat_workspace` (chat_id PK → workspace_id mapping) and `telegram_pairing_codes` (single-use, ~15-min TTL, base64url payload up to 64 chars)
+- Global webhook `/api/telegram/webhook` routes incoming updates by `chat_id` lookup; `/start@bot <code>` handler claims chats for workspaces (`my_chat_member` logged for visibility)
+- New env: `TELEGRAM_BOT_TOKEN_GLOBAL`, `TELEGRAM_BOT_USERNAME` (kept distinct from existing Sentry-alert `TELEGRAM_BOT_TOKEN`)
+- New UI: dashboard "Connect via @ContextOSBot" button rendering the `?startgroup=<code>` deep link, replacing the bot-token form
+- Clean cutover: legacy `/webhook/{workspace_id}`, `connect_telegram_bot()`, `disconnect_telegram_bot()`, BYO-bot UI form, `telegram_sync.py` (drain + Telethon), `TelegramSyncSection`, `connectTelegram(token)`, MTProto config (TELEGRAM_API_ID/HASH), and per-workspace Vault tokens are removed in this phase. No dual-mode, no migration banner, no backfill — founding team re-pairs the dogfood workspace manually.
+
+**Out of scope:** DMs to the bot, channel-broadcast posts (groups + supergroups only).
+
+**Depends on:** Phase 26 (TelegramMessage model, webhook scaffolding, graph extraction)
+**Requirements**: TG-05 (one-click shared-bot deep-link connect), TG-06 (sticky chat→workspace mapping via single-use 15-min pairing code), TG-07 (single global webhook routing by chat_id with claim-before-ingest dispatcher)
+**Plans:** 3 plans
+
+Plans:
+- [ ] 40-01-PLAN.md -- Migration `00039` (telegram_chat_workspace + telegram_pairing_codes + cleanup of legacy oauth_tokens rows) + SQLModel additions + `telegram_pairing` service + global `/webhook` dispatcher + `/pairing-code` endpoint + config (TELEGRAM_BOT_TOKEN_GLOBAL, TELEGRAM_BOT_USERNAME)
+- [ ] 40-02-PLAN.md -- Frontend: typed `createTelegramPairingCode()` client + `TelegramPairingProgress` component (deep link + countdown + Realtime subscription on `telegram_chat_workspace`) + integration-card swap in Settings (replace `TelegramConnect` token form)
+- [ ] 40-03-PLAN.md -- Phase-26 cleanup (delete `connect_telegram_bot`/`disconnect_telegram_bot`, `telegram_sync.py`, `TelegramSyncSection`, `connectTelegram`/`syncTelegramHistory`/`getTelegramSyncStatus`, MTProto config) + onboarding `step-sources.tsx` migration to new pairing component + Vault token purge script + deploy runbook (`setWebhook` with `my_chat_member`, BotFather Group Privacy OFF)
+
 ---
 *Roadmap created: 2026-02-24*
 *v1.1 shipped: 2026-03-15*
 *v1.3 roadmap added: 2026-03-15*
 *Phase 39 planned: 2026-04-22*
+*Phase 40 planned: 2026-05-03*

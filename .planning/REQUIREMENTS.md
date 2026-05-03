@@ -47,6 +47,12 @@ Requirements for the live intelligence milestone. Each maps to roadmap phases.
 
 - [ ] **RAG-01**: RAG quality improvements (scope TBD by Dulat)
 
+### Telegram Shared Bot
+
+- [ ] **TG-05**: Users connect Telegram in one click via a shared `@ContextOSBot` deep link — no BotFather, no token paste, no group-privacy toggle. Available from both the Settings → Integrations card and the onboarding sources step.
+- [ ] **TG-06**: Group/supergroup chats are bound to a workspace via a single-use, ~15-min TTL pairing code. Mapping is sticky — first claim wins; no cross-workspace re-claim. Soft-deleted on `kicked`/`left`/`banned` `my_chat_member` events; `telegram_messages` history retained.
+- [ ] **TG-07**: A single global webhook `/api/telegram/webhook` routes all updates by `chat_id` lookup against `telegram_chat_workspace`; messages are ingested through the existing filter + upsert + graph pipeline; `/start@bot <code>` claim path is detected and routed BEFORE the ingestion path so pairing commands never pollute `telegram_messages`.
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -70,6 +76,10 @@ Deferred to future release. Tracked but not in current roadmap.
 | Team invites and role management | Single team dogfooding, not needed yet |
 | Slack historical backfill | Real-time ingestion covers current needs |
 | Full privacy implementation | Research first in v1.3, implement in v1.4 based on findings |
+| Telegram DMs to the shared bot | Phase 40 scope locked to groups/supergroups; Telegram terms differ for DMs |
+| Telegram channel-broadcast post ingestion | One-way broadcasts; different content surface than group ingestion |
+| Per-chat enable/disable toggle for Telegram | Joining + pairing the bot equals consent in v1; finer-grained UI is a future enhancement |
+| Phase-26 BYO-bot migration banner + backfill | No real Phase-26 production users to migrate; founding team re-pairs manually |
 
 ## Traceability
 
@@ -96,12 +106,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LAND-03 | Phase 36 | Pending |
 | PRIV-01 | Phase 37 | Pending |
 | RAG-01 | Phase 38 | Pending |
+| TG-05 | Phase 40 | Pending |
+| TG-06 | Phase 40 | Pending |
+| TG-07 | Phase 40 | Pending |
 
 **Coverage:**
-- v1.3 requirements: 19 total
-- Mapped to phases: 19
+- v1.3 requirements: 22 total
+- Mapped to phases: 22
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-15*
-*Last updated: 2026-03-15 after roadmap creation*
+*Last updated: 2026-05-03 — added TG-05, TG-06, TG-07 for Phase 40 (Telegram Shared-Bot Migration)*
