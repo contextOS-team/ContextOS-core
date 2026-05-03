@@ -501,3 +501,400 @@ class TestPhase40Migration:
         text = path.read_text()
         assert "DELETE FROM public.oauth_tokens WHERE provider = 'telegram'" in text
         assert "DELETE FROM public.workspace_integrations WHERE provider = 'telegram'" in text
+
+
+# ===========================================================================
+# Phase 40: POST /api/telegram/pairing-code endpoint
+# ===========================================================================
+
+
+def _make_auth_header() -> dict[str, str]:
+    """Build a valid JWT bearer header for the test user."""
+    import jwt as pyjwt
+    from tests.conftest import TEST_EMAIL, TEST_JWT_SECRET
+
+    payload = {
+        "sub": TEST_USER_ID,
+        "email": TEST_EMAIL,
+        "role": "authenticated",
+        "exp": int(time.time()) + 3600,
+        "aud": "authenticated",
+        "iss": "http://localhost:54321/auth/v1",
+    }
+    token = pyjwt.encode(payload, TEST_JWT_SECRET, algorithm="HS256")
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def phase40_app(telegram_settings):
+    """App fixture with /pairing-code endpoint dependencies overridden.
+
+    Overrides get_current_user (so we don't need a real workspace_member row)
+    and get_session (so the route handler gets an AsyncMock).
+    """
+    from src.db import get_session as get_session_dep
+    from src.dependencies import UserContext, get_current_user
+    from src.main import app as fastapi_app
+
+    src.config._settings = telegram_settings
+    mock_session = AsyncMock()
+
+    async def _mock_get_session():
+        yield mock_session
+
+    async def _mock_get_current_user():
+        return UserContext(
+            user_id=UUID(TEST_USER_ID),
+            email="test@example.com",
+            workspace_id=UUID(TEST_WORKSPACE_ID),
+        )
+
+    fastapi_app.dependency_overrides[get_session_dep] = _mock_get_session
+    fastapi_app.dependency_overrides[get_current_user] = _mock_get_current_user
+    yield fastapi_app, mock_session
+    fastapi_app.dependency_overrides.clear()
+
+
+class TestPairingCodeEndpoint:
+    """POST /api/telegram/pairing-code (authenticated)."""
+
+    def test_returns_401_without_jwt(self, client):
+        resp = client.post("/api/telegram/pairing-code")
+        assert resp.status_code in (401, 403)  # FastAPI HTTPBearer returns 403 when no header
+
+    def test_returns_code_deep_link_expires_at(self, phase40_app):
+        from datetime import datetime, timezone
+
+        app, _ = phase40_app
+        client = TestClient(app, raise_server_exceptions=False)
+        fixed_expires = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+        with patch(
+            "src.routers.telegram.generate_pairing_code", new_callable=AsyncMock
+        ) as mock_gen:
+            mock_gen.return_value = {
+                "code": "abcdef0123456789",
+                "deep_link": "https://t.me/ContextOSBot?startgroup=abcdef0123456789",
+                "expires_at": fixed_expires,
+            }
+            resp = client.post("/api/telegram/pairing-code", headers=_make_auth_header())
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["code"] == "abcdef0123456789"
+        assert body["deep_link"].endswith("?startgroup=abcdef0123456789")
+        # expires_at must be ISO 8601 string (JSON-serializable)
+        assert isinstance(body["expires_at"], str)
+        # Round-trip parse confirms ISO 8601
+        from datetime import datetime as dt
+        dt.fromisoformat(body["expires_at"])
+
+    def test_calls_service_with_user_workspace_and_user_id(self, phase40_app):
+        from datetime import datetime, timezone
+
+        app, _ = phase40_app
+        client = TestClient(app, raise_server_exceptions=False)
+        with patch(
+            "src.routers.telegram.generate_pairing_code", new_callable=AsyncMock
+        ) as mock_gen:
+            mock_gen.return_value = {
+                "code": "x" * 16,
+                "deep_link": "https://t.me/ContextOSBot?startgroup=" + "x" * 16,
+                "expires_at": datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+            }
+            resp = client.post("/api/telegram/pairing-code", headers=_make_auth_header())
+
+        assert resp.status_code == 200
+        # Inspect the call: workspace_id and user_id come from UserContext
+        call = mock_gen.call_args
+        # Positional: (session, workspace_id, user_id)
+        args = call.args
+        assert len(args) >= 3
+        assert str(args[1]) == TEST_WORKSPACE_ID
+        assert str(args[2]) == TEST_USER_ID
+
+
+# ===========================================================================
+# Phase 40: POST /api/telegram/webhook (global, no path param)
+# ===========================================================================
+
+
+def _global_webhook_url() -> str:
+    return "/api/telegram/webhook"
+
+
+class TestGlobalWebhookEndpoint:
+    """Global /api/telegram/webhook (no path param) -- secret check + 200 path."""
+
+    def test_rejects_missing_secret(self, client):
+        update = _make_telegram_update()
+        resp = client.post(_global_webhook_url(), json=update)
+        assert resp.status_code == 403
+
+    def test_rejects_wrong_secret(self, client):
+        update = _make_telegram_update()
+        resp = client.post(
+            _global_webhook_url(),
+            json=update,
+            headers={"X-Telegram-Bot-Api-Secret-Token": "wrong"},
+        )
+        assert resp.status_code == 403
+
+    def test_accepts_valid_secret_returns_ok(self, client):
+        """Valid secret -> 200 and {ok: true} immediately, processing in BG."""
+        update = _make_telegram_update(is_bot=True)
+        with patch(
+            "src.routers.telegram.process_telegram_update", new_callable=AsyncMock
+        ), patch(
+            "src.routers.telegram.claim_chat", new_callable=AsyncMock
+        ), patch(
+            "src.routers.telegram.handle_my_chat_member", new_callable=AsyncMock
+        ), patch(
+            "src.routers.telegram.resolve_workspace_for_chat", new_callable=AsyncMock
+        ):
+            resp = client.post(
+                _global_webhook_url(),
+                json=update,
+                headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_WEBHOOK_SECRET},
+            )
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+
+
+class TestGlobalWebhookDispatcher:
+    """Verify dispatcher routing -- pairing path BEFORE ingestion (Pitfall 2)."""
+
+    @pytest.mark.asyncio
+    async def test_my_chat_member_routed_to_handler(self):
+        """Updates with `my_chat_member` go to handle_my_chat_member ONLY."""
+        from src.routers.telegram import _dispatch_global_update
+
+        payload = {
+            "update_id": 1,
+            "my_chat_member": {
+                "chat": {"id": -1001234567890},
+                "new_chat_member": {"status": "kicked"},
+            },
+        }
+
+        with patch(
+            "src.routers.telegram.handle_my_chat_member", new_callable=AsyncMock
+        ) as mock_handle, patch(
+            "src.routers.telegram.claim_chat", new_callable=AsyncMock
+        ) as mock_claim, patch(
+            "src.routers.telegram.process_telegram_update", new_callable=AsyncMock
+        ) as mock_process, patch(
+            "src.routers.telegram.async_session"
+        ) as mock_factory:
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+            await _dispatch_global_update(payload)
+
+        mock_handle.assert_awaited_once()
+        mock_claim.assert_not_called()
+        mock_process.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_start_command_in_group_routed_to_claim_BEFORE_ingestion(self):
+        """CRITICAL: `/start@bot <code>` in a group MUST hit claim_chat and
+        MUST NOT reach process_telegram_update (Pitfall 2 -- pairing message
+        otherwise gets ingested as content)."""
+        from src.routers.telegram import _dispatch_global_update
+
+        payload = {
+            "update_id": 1,
+            "message": {
+                "message_id": 99,
+                "from": {"id": 5, "is_bot": False, "first_name": "T"},
+                "chat": {"id": -1001234567890, "type": "supergroup", "title": "Eng"},
+                "date": int(time.time()),
+                "text": "/start@ContextOSBot abc123",
+            },
+        }
+
+        with patch(
+            "src.routers.telegram.claim_chat", new_callable=AsyncMock
+        ) as mock_claim, patch(
+            "src.routers.telegram.process_telegram_update", new_callable=AsyncMock
+        ) as mock_process, patch(
+            "src.routers.telegram.handle_my_chat_member", new_callable=AsyncMock
+        ) as mock_handle, patch(
+            "src.routers.telegram.resolve_workspace_for_chat", new_callable=AsyncMock
+        ) as mock_resolve, patch(
+            "src.routers.telegram.async_session"
+        ) as mock_factory:
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+            await _dispatch_global_update(payload)
+
+        mock_claim.assert_awaited_once()
+        mock_process.assert_not_called()
+        mock_handle.assert_not_called()
+        # Pairing path does NOT need workspace resolution
+        mock_resolve.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_private_chat_dropped_silently(self):
+        """chat.type == 'private' -> drop, no claim, no ingestion."""
+        from src.routers.telegram import _dispatch_global_update
+
+        payload = {
+            "update_id": 1,
+            "message": {
+                "message_id": 99,
+                "from": {"id": 5, "is_bot": False},
+                "chat": {"id": 5, "type": "private", "title": "DM"},
+                "date": int(time.time()),
+                "text": "hello bot",
+            },
+        }
+        with patch(
+            "src.routers.telegram.claim_chat", new_callable=AsyncMock
+        ) as mock_claim, patch(
+            "src.routers.telegram.process_telegram_update", new_callable=AsyncMock
+        ) as mock_process, patch(
+            "src.routers.telegram.resolve_workspace_for_chat", new_callable=AsyncMock
+        ) as mock_resolve, patch(
+            "src.routers.telegram.async_session"
+        ) as mock_factory:
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+            await _dispatch_global_update(payload)
+
+        mock_claim.assert_not_called()
+        mock_process.assert_not_called()
+        mock_resolve.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unmapped_chat_dropped_silently(self):
+        """Group message in a chat with no telegram_chat_workspace mapping
+        -> log + drop, ingestion is NOT called."""
+        from src.routers.telegram import _dispatch_global_update
+
+        payload = {
+            "update_id": 1,
+            "message": {
+                "message_id": 99,
+                "from": {"id": 5, "is_bot": False},
+                "chat": {"id": -1009999999999, "type": "supergroup", "title": "?"},
+                "date": int(time.time()),
+                "text": "hello there",
+            },
+        }
+        with patch(
+            "src.routers.telegram.resolve_workspace_for_chat",
+            new_callable=AsyncMock,
+        ) as mock_resolve, patch(
+            "src.routers.telegram.process_telegram_update", new_callable=AsyncMock
+        ) as mock_process, patch(
+            "src.routers.telegram.claim_chat", new_callable=AsyncMock
+        ) as mock_claim, patch(
+            "src.routers.telegram.async_session"
+        ) as mock_factory:
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_resolve.return_value = None
+            await _dispatch_global_update(payload)
+
+        mock_resolve.assert_awaited_once()
+        mock_process.assert_not_called()
+        mock_claim.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_mapped_chat_routed_to_process_telegram_update(self):
+        """Group message in a mapped chat -> process_telegram_update with
+        the resolved workspace_id (NOT a path-param workspace)."""
+        from src.routers.telegram import _dispatch_global_update
+
+        ws = UUID("33333333-3333-3333-3333-333333333333")
+        payload = {
+            "update_id": 1,
+            "message": {
+                "message_id": 99,
+                "from": {"id": 5, "is_bot": False, "first_name": "T"},
+                "chat": {"id": -1001234567890, "type": "supergroup", "title": "Eng"},
+                "date": int(time.time()),
+                "text": "real engineering content",
+            },
+        }
+        with patch(
+            "src.routers.telegram.resolve_workspace_for_chat",
+            new_callable=AsyncMock,
+        ) as mock_resolve, patch(
+            "src.routers.telegram.process_telegram_update", new_callable=AsyncMock
+        ) as mock_process, patch(
+            "src.routers.telegram.claim_chat", new_callable=AsyncMock
+        ) as mock_claim, patch(
+            "src.routers.telegram.async_session"
+        ) as mock_factory:
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_resolve.return_value = ws
+            await _dispatch_global_update(payload)
+
+        mock_resolve.assert_awaited_once()
+        mock_process.assert_awaited_once()
+        mock_claim.assert_not_called()
+        # Verify the workspace_id arg (process_telegram_update(session, ws, payload))
+        call = mock_process.call_args
+        assert call.args[1] == ws
+        assert call.args[2] == payload
+
+    @pytest.mark.asyncio
+    async def test_dispatcher_exception_does_not_crash(self):
+        """If something inside the dispatcher raises, it logs and rolls back
+        but does NOT bubble up (the webhook itself already returned 200)."""
+        from src.routers.telegram import _dispatch_global_update
+
+        payload = {
+            "update_id": 1,
+            "message": {
+                "message_id": 99,
+                "from": {"id": 5, "is_bot": False},
+                "chat": {"id": -1001234567890, "type": "supergroup"},
+                "date": int(time.time()),
+                "text": "hi",
+            },
+        }
+        with patch(
+            "src.routers.telegram.resolve_workspace_for_chat",
+            new_callable=AsyncMock,
+        ) as mock_resolve, patch(
+            "src.routers.telegram.async_session"
+        ) as mock_factory:
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_resolve.side_effect = RuntimeError("DB exploded")
+            # Must NOT raise
+            await _dispatch_global_update(payload)
+
+    @pytest.mark.asyncio
+    async def test_edited_message_in_mapped_chat_routed_to_ingestion(self):
+        """edited_message updates also go through the dispatcher."""
+        from src.routers.telegram import _dispatch_global_update
+
+        ws = UUID("44444444-4444-4444-4444-444444444444")
+        payload = {
+            "update_id": 1,
+            "edited_message": {
+                "message_id": 99,
+                "from": {"id": 5, "is_bot": False, "first_name": "T"},
+                "chat": {"id": -1001234567890, "type": "supergroup", "title": "Eng"},
+                "date": int(time.time()),
+                "text": "edited content",
+            },
+        }
+        with patch(
+            "src.routers.telegram.resolve_workspace_for_chat",
+            new_callable=AsyncMock,
+        ) as mock_resolve, patch(
+            "src.routers.telegram.process_telegram_update", new_callable=AsyncMock
+        ) as mock_process, patch(
+            "src.routers.telegram.async_session"
+        ) as mock_factory:
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_resolve.return_value = ws
+            await _dispatch_global_update(payload)
+
+        mock_process.assert_awaited_once()
