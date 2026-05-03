@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Live Intelligence
-status: verifying
-stopped_at: Phase 40 context gathered
-last_updated: "2026-05-03T13:42:32.707Z"
-last_activity: 2026-04-22 -- Plan 39-04 complete (scheduler wire-up + onboarding DM consent + live E2E verification)
+status: in_progress
+stopped_at: Completed 40-01-PLAN.md
+last_updated: "2026-05-03T14:45:35.688Z"
+last_activity: 2026-05-03 -- Plan 40-01 complete (telegram shared-bot backend: migration 00039 + telegram_pairing service + global webhook dispatcher)
 progress:
   total_phases: 9
   completed_phases: 2
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
+  total_plans: 12
+  completed_plans: 10
+  percent: 83
 ---
 
 # Project State
@@ -21,17 +21,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 39 complete -- Slack User Token Migration & DM Support shipped end-to-end and verified on a live workspace (177 messages ingested across DMs + channels).
+**Current focus:** Phase 40 in progress -- Telegram Shared-Bot Migration. Plan 01 (backend data plane + dispatcher + pairing-code endpoint) complete; Plans 02 (frontend pairing UI) and 03 (cutover/cleanup) pending.
 
 ## Current Position
 
 Milestone: v1.3 Live Intelligence
-Phase: 39 of 39 (Slack User Token Migration & DM Support) -- COMPLETE
-Plan: 4 of 4 in current phase (+ Phase 39.1 inline gap closure) -- all complete
-Status: Plans 39-01 through 39-04 complete; Phase 39.1 gap closure shipped; Plan 39-04 verified end-to-end by user and approved
-Last activity: 2026-04-22 -- Plan 39-04 complete (scheduler wire-up + onboarding DM consent + live E2E verification)
+Phase: 40 of 9 (Telegram Shared-Bot Migration) -- IN PROGRESS
+Current Plan: 2 of 3 in Phase 40
+Total Plans in Phase: 3
+Status: Plan 40-01 complete; Plan 40-02 (frontend pairing UI) ready to execute next; Plan 40-03 (cutover/cleanup) pending
+Last activity: 2026-05-03 -- Plan 40-01 complete (telegram shared-bot backend)
 
-Progress: [██████████] 100%
+Progress: [████████▎ ] 83%
 
 ## Accumulated Context
 
@@ -72,6 +73,14 @@ Progress: [██████████] 100%
 - [39-04] Onboarding Slack card auto-expands once per session after OAuth redirect (guarded by autoExpandedRef); DM toggle defaults OFF — onboarding completion independent of opt-in state
 - [39-04] Plan 39-04 verified end-to-end on user's real Slack workspace (177 messages ingested across 3 DMs, 1 group DM, and 4 channels)
 - [39-04] Discovered and fixed 2 pre-existing Slack upsert bugs during live test (constraint name drift: switched to ON CONFLICT index_elements; tz mismatch: _ts_to_datetime now returns naive UTC). Both were silent on the bot webhook path due to exception-swallowing.
+- [40-01] Pairing-code redemption uses peek-then-burn: SELECT ownership first, then DELETE...RETURNING only on fresh claim, so cross-workspace and same-workspace re-claim never burn the code (CONTEXT idempotency rule)
+- [40-01] secrets.token_urlsafe(12) -> exact 16-char base64url (~96 bits); plaintext storage with TTL+single-use is the security boundary
+- [40-01] _send_reply_safe swallows TelegramError so a muted/banned bot never rolls back a successful claim (Pitfall 6); Realtime UI flip is the user-visible ack
+- [40-01] Dispatcher branch order: my_chat_member -> private-drop -> /start in group/supergroup -> claim_chat -> resolve_workspace -> process_telegram_update (claim path BEFORE ingestion -- Pitfall 2)
+- [40-01] handle_my_chat_member resolves workspace BEFORE soft-deleting so integration_disconnected activity has correct workspace_id
+- [40-01] Bot reply text inlines hardcoded https://contextos.app/dashboard/settings link (no settings-derived frontend URL field exists yet); Plan 02 may parameterize
+- [40-01] Legacy /webhook/{workspace_id}, /connect, /disconnect, /sync routes left intact in this plan to keep it independently mergeable; Plan 03 deletes them
+- [40-01] Migration 00039 uses CREATE TABLE IF NOT EXISTS + DROP POLICY IF EXISTS for idempotency; legacy oauth_tokens + workspace_integrations purge runs at the bottom (Vault key cleanup is a Plan 03 deploy script)
 
 ### Roadmap Evolution
 
@@ -88,8 +97,14 @@ v1.3 roadmap created with 7 phases (32-38) covering 19 requirements across activ
 
 None.
 
+## Performance Metrics
+
+| Phase | Plan | Duration | Tasks | Files | Completed   |
+|-------|------|----------|-------|-------|-------------|
+| 40    | 01   | 12min    | 3     | 8     | 2026-05-03  |
+
 ## Session Continuity
 
-Last session: 2026-05-03T13:42:32.698Z
-Stopped at: Phase 40 context gathered
-Resume file: .planning/phases/40-telegram-shared-bot-migration/40-CONTEXT.md
+Last session: 2026-05-03T14:45:35.686Z
+Stopped at: Completed 40-01-PLAN.md
+Resume file: None

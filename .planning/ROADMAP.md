@@ -168,7 +168,7 @@ Note: Phases 35, 36, 37, 38, 39 are independent and can execute in parallel afte
 | 37. Privacy Architecture Research | 0/TBD | Not started | - |
 | 38. RAG Quality Improvements | 0/TBD | Not started | - |
 | 39. Slack User Token Migration & DM Support | 4/4 | Complete    | 2026-04-22 |
-| 40. Telegram Shared-Bot Migration | 0/3 | Not started | - |
+| 40. Telegram Shared-Bot Migration | 1/3 | In Progress|  |
 
 ### Phase 39: Slack User Token Migration & DM Support
 **Goal**: Add DM and group-DM ingestion to the Slack integration via user-token polling, while keeping the existing bot Events API webhook path for channel messages (Slack's May 2025 rate-limit cap makes user-token polling unviable for channels at scale)
@@ -203,7 +203,7 @@ Plans:
 
 **Depends on:** Phase 26 (TelegramMessage model, webhook scaffolding, graph extraction)
 **Requirements**: TG-05 (one-click shared-bot deep-link connect), TG-06 (sticky chat→workspace mapping via single-use 15-min pairing code), TG-07 (single global webhook routing by chat_id with claim-before-ingest dispatcher)
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
 - [ ] 40-01-PLAN.md -- Migration `00039` (telegram_chat_workspace + telegram_pairing_codes + cleanup of legacy oauth_tokens rows) + SQLModel additions + `telegram_pairing` service + global `/webhook` dispatcher + `/pairing-code` endpoint + config (TELEGRAM_BOT_TOKEN_GLOBAL, TELEGRAM_BOT_USERNAME)

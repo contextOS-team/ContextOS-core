@@ -50,8 +50,8 @@ Requirements for the live intelligence milestone. Each maps to roadmap phases.
 ### Telegram Shared Bot
 
 - [ ] **TG-05**: Users connect Telegram in one click via a shared `@ContextOSBot` deep link — no BotFather, no token paste, no group-privacy toggle. Available from both the Settings → Integrations card and the onboarding sources step.
-- [ ] **TG-06**: Group/supergroup chats are bound to a workspace via a single-use, ~15-min TTL pairing code. Mapping is sticky — first claim wins; no cross-workspace re-claim. Soft-deleted on `kicked`/`left`/`banned` `my_chat_member` events; `telegram_messages` history retained.
-- [ ] **TG-07**: A single global webhook `/api/telegram/webhook` routes all updates by `chat_id` lookup against `telegram_chat_workspace`; messages are ingested through the existing filter + upsert + graph pipeline; `/start@bot <code>` claim path is detected and routed BEFORE the ingestion path so pairing commands never pollute `telegram_messages`.
+- [x] **TG-06**: Group/supergroup chats are bound to a workspace via a single-use, ~15-min TTL pairing code. Mapping is sticky — first claim wins; no cross-workspace re-claim. Soft-deleted on `kicked`/`left`/`banned` `my_chat_member` events; `telegram_messages` history retained.
+- [x] **TG-07**: A single global webhook `/api/telegram/webhook` routes all updates by `chat_id` lookup against `telegram_chat_workspace`; messages are ingested through the existing filter + upsert + graph pipeline; `/start@bot <code>` claim path is detected and routed BEFORE the ingestion path so pairing commands never pollute `telegram_messages`.
 
 ## v2 Requirements
 
@@ -107,8 +107,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PRIV-01 | Phase 37 | Pending |
 | RAG-01 | Phase 38 | Pending |
 | TG-05 | Phase 40 | Pending |
-| TG-06 | Phase 40 | Pending |
-| TG-07 | Phase 40 | Pending |
+| TG-06 | Phase 40 | Complete |
+| TG-07 | Phase 40 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 22 total
