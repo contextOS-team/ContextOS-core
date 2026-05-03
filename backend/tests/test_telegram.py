@@ -356,3 +356,148 @@ class TestTelegramMessageModel:
         assert isinstance(col.type, BigInteger), (
             f"reply_to_message_id column type is {type(col.type).__name__}, expected BigInteger."
         )
+
+
+# ===========================================================================
+# Phase 40: Telegram Shared-Bot model tests
+# ===========================================================================
+
+
+class TestTelegramChatWorkspaceModel:
+    """Phase 40: Verify TelegramChatWorkspace model shape (chat_id BIGINT PK)."""
+
+    def test_imports_alongside_telegram_message(self):
+        # Both classes must coexist without SQLAlchemy mapper conflicts.
+        from src.models.telegram import (  # noqa: F401
+            TelegramChatWorkspace,
+            TelegramMessage,
+            TelegramPairingCode,
+        )
+
+    def test_chat_id_is_biginteger_pk(self):
+        from sqlalchemy import BigInteger
+        from src.models.telegram import TelegramChatWorkspace
+
+        col = TelegramChatWorkspace.__table__.c.chat_id
+        assert isinstance(col.type, BigInteger), (
+            f"chat_id column type is {type(col.type).__name__}, expected BigInteger. "
+            "Telegram supergroup IDs exceed int32 range."
+        )
+        assert col.primary_key is True, "chat_id must be PRIMARY KEY for sticky first-claim-wins"
+
+    def test_workspace_id_is_uuid_not_null(self):
+        from src.models.telegram import TelegramChatWorkspace
+
+        col = TelegramChatWorkspace.__table__.c.workspace_id
+        assert col.nullable is False, "workspace_id must be NOT NULL"
+
+    def test_table_name(self):
+        from src.models.telegram import TelegramChatWorkspace
+
+        assert TelegramChatWorkspace.__tablename__ == "telegram_chat_workspace"
+
+    def test_has_paired_at_paired_by_removed_at_columns(self):
+        from src.models.telegram import TelegramChatWorkspace
+
+        cols = TelegramChatWorkspace.__table__.c
+        assert "paired_at" in cols
+        assert "paired_by" in cols
+        assert "removed_at" in cols
+        assert "chat_title" in cols
+        assert "chat_type" in cols
+
+
+class TestTelegramPairingCodeModel:
+    """Phase 40: Verify TelegramPairingCode model shape (code TEXT PK)."""
+
+    def test_code_is_text_pk(self):
+        from src.models.telegram import TelegramPairingCode
+
+        col = TelegramPairingCode.__table__.c.code
+        assert col.primary_key is True, "code must be PRIMARY KEY"
+
+    def test_table_name(self):
+        from src.models.telegram import TelegramPairingCode
+
+        assert TelegramPairingCode.__tablename__ == "telegram_pairing_codes"
+
+    def test_workspace_id_not_null(self):
+        from src.models.telegram import TelegramPairingCode
+
+        col = TelegramPairingCode.__table__.c.workspace_id
+        assert col.nullable is False, "workspace_id must be NOT NULL"
+
+    def test_expires_at_not_null(self):
+        from src.models.telegram import TelegramPairingCode
+
+        col = TelegramPairingCode.__table__.c.expires_at
+        assert col.nullable is False, "expires_at must be NOT NULL for TTL semantics"
+
+
+class TestPhase40Migration:
+    """Phase 40: Verify migration 00039 file exists and contains the expected DDL."""
+
+    def test_migration_file_exists(self):
+        from pathlib import Path
+
+        path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "supabase"
+            / "migrations"
+            / "00039_telegram_shared_bot.sql"
+        )
+        assert path.exists(), f"Expected migration at {path}"
+
+    def test_migration_creates_both_tables(self):
+        from pathlib import Path
+
+        path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "supabase"
+            / "migrations"
+            / "00039_telegram_shared_bot.sql"
+        )
+        text = path.read_text()
+        assert "CREATE TABLE IF NOT EXISTS public.telegram_chat_workspace" in text
+        assert "CREATE TABLE IF NOT EXISTS public.telegram_pairing_codes" in text
+
+    def test_migration_uses_bigint_chat_id(self):
+        from pathlib import Path
+
+        path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "supabase"
+            / "migrations"
+            / "00039_telegram_shared_bot.sql"
+        )
+        text = path.read_text()
+        # chat_id must be BIGINT PRIMARY KEY (Pitfall 9 — supergroups overflow INT32)
+        assert "chat_id      BIGINT PRIMARY KEY" in text or "chat_id BIGINT PRIMARY KEY" in text
+
+    def test_migration_enables_rls_with_workspace_member_select(self):
+        from pathlib import Path
+
+        path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "supabase"
+            / "migrations"
+            / "00039_telegram_shared_bot.sql"
+        )
+        text = path.read_text()
+        assert "ALTER TABLE public.telegram_chat_workspace ENABLE ROW LEVEL SECURITY" in text
+        assert "ALTER TABLE public.telegram_pairing_codes ENABLE ROW LEVEL SECURITY" in text
+        # workspace_member_select policy mirrors 00030_telegram_messages.sql
+        assert text.count('CREATE POLICY "workspace_member_select"') >= 2
+
+    def test_migration_purges_legacy_telegram_oauth_rows(self):
+        from pathlib import Path
+
+        path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "supabase"
+            / "migrations"
+            / "00039_telegram_shared_bot.sql"
+        )
+        text = path.read_text()
+        assert "DELETE FROM public.oauth_tokens WHERE provider = 'telegram'" in text
+        assert "DELETE FROM public.workspace_integrations WHERE provider = 'telegram'" in text
