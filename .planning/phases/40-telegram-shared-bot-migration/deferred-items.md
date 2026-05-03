@@ -41,3 +41,28 @@ these tests failing, confirming the failures predate this plan.
 these tests when it deletes the legacy ingestion path.
 
 **Discovered during:** Plan 40-01, Task 1 verification run.
+
+## Pre-existing eslint warnings in `apps/web/src/app/dashboard/settings/tabs/integration-cards.tsx`
+
+**Status:** Pre-existing warnings (NOT introduced by Plan 40-02).
+**Findings:**
+- Line 6: `'Skeleton' is defined but never used` (`@typescript-eslint/no-unused-vars`)
+- Line 157: `Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')`
+
+**Root cause:** Both predate Phase 40 — `Skeleton` import is leftover from an
+earlier loading-state version; the disable directive on line 157 was added in
+Plan 39-03 to silence a then-real warning that has since been resolved by other
+edits.
+
+**Verification:** Plan 40-02 makes zero edits to `integration-cards.tsx`
+(`git diff HEAD apps/web/src/app/dashboard/settings/tabs/integration-cards.tsx`
+returns empty). The Telegram card already wires `connectForm={<TelegramConnect ... />}`
+which now renders the new pairing UI automatically via the rewritten
+`TelegramConnect` wrapper.
+
+**Disposition:** Out of scope for Plan 40-02. Plan 03 (cleanup) will touch this
+file to remove `<TelegramSyncSection />` and the `disconnectTelegram` import,
+which is the natural place to also remove the unused `Skeleton` import and the
+stale eslint-disable directive.
+
+**Discovered during:** Plan 40-02, Task 2 verification run.
