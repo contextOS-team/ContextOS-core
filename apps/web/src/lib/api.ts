@@ -458,6 +458,29 @@ export function getNotionPages(
 // Telegram
 // ---------------------------------------------------------------------------
 
+/**
+ * Phase 40 shared-bot pairing flow. The user clicks "Connect via @ContextOSBot",
+ * the server mints a single-use 16-char base64url code and returns a deep link
+ * (https://t.me/<bot>?startgroup=<code>). The frontend opens the deep link in
+ * a new tab and listens for the bot's claim via Supabase Realtime on
+ * telegram_chat_workspace inserts.
+ *
+ * NOTE: legacy `connectTelegram(botToken)` below is kept for backward compat
+ * during the cutover — Plan 40-03 deletes it once the legacy /connect route is
+ * removed from the backend.
+ */
+export interface TelegramPairingCodeResponse {
+  code: string
+  deep_link: string
+  expires_at: string // ISO 8601 UTC
+}
+
+export function createTelegramPairingCode(): Promise<TelegramPairingCodeResponse> {
+  return apiFetch<TelegramPairingCodeResponse>('/api/telegram/pairing-code', {
+    method: 'POST',
+  })
+}
+
 export function connectTelegram(
   botToken: string
 ): Promise<{ status: string; bot_username?: string }> {
