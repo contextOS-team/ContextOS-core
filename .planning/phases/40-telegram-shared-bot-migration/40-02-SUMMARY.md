@@ -230,6 +230,17 @@ didn't declare `user_setup`. Plan 03 (cutover/cleanup) is the natural place.
   - Address pre-existing `Skeleton` + `eslint-disable` warnings in `integration-cards.tsx` while editing it.
 - **No blockers.** The Realtime contract, tz columns, status-endpoint override, and env-driven bot identity are all live. Operator's bot `@contextOSdev_bot` is registered, webhook is live on ngrok, and the live pair test confirms end-to-end flow.
 
+## Self-Check: PASSED
+
+Verified after final metadata commit:
+- `40-02-SUMMARY.md` exists (237 lines).
+- All four commits present on `main`: `53ad5b1` (Task 1 feat), `6655c14` (Task 2 feat), `aab5bed` (Task 3 deviations fix), `2d3c58a` (docs metadata).
+- All 7 plan files present on disk (1 created + 6 modified).
+- `createTelegramPairingCode` symbol resolves in `apps/web/src/lib/api.ts`; `TelegramPairingProgress` resolves in `telegram-pairing-progress.tsx` and `telegram-connect.tsx`.
+- TG-05 marked `[x]` in `REQUIREMENTS.md` (line 52) and traceability row shows Complete (line 109).
+- ROADMAP.md plans `40-01` and `40-02` checkboxes flipped to `[x]`; `40-03` remains `[ ]`.
+- STATE.md `current_plan: 3`, `completed_plans: 11/12`, last_activity reflects Plan 40-02.
+
 ---
 
 *Phase: 40-telegram-shared-bot-migration*
