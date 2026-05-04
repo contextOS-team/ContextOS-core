@@ -22,6 +22,13 @@ FROM python:3.12-slim AS production
 
 WORKDIR /app
 
+# git is required at runtime: code_indexer.py shells out to `git clone` to
+# pull GitHub/GitLab repos for indexing. Without it, every clone fails with
+# FileNotFoundError and indexing produces zero chunks.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --gid 1000 appuser \
     && useradd --uid 1000 --gid 1000 --shell /bin/bash appuser
 
