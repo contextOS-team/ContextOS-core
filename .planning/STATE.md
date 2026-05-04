@@ -4,15 +4,15 @@ milestone: v1.3
 milestone_name: Live Intelligence
 current_plan: 3
 status: completed
-stopped_at: Completed 40-02-PLAN.md
-last_updated: "2026-05-04T10:04:33.723Z"
-last_activity: 2026-05-04
+stopped_at: Completed 40-03-PLAN.md (Phase 40 complete; v1.3 milestone closed)
+last_updated: "2026-05-04T11:07:08.266Z"
+last_activity: 2026-05-04 -- Plan 40-03 complete (Phase-26 surface deleted; onboarding wired to TelegramPairingProgress; Vault purge script + DEPLOY_RUNBOOK.md shipped; 5 inline deviations covering re-pair, multi-engineer guard, REPLICA IDENTITY FULL, dashboard URL, StrictMode)
 progress:
   total_phases: 9
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 12
-  completed_plans: 11
-  percent: 92
+  completed_plans: 12
+  percent: 100
 ---
 
 # Project State
@@ -22,18 +22,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 40 in progress -- Telegram Shared-Bot Migration. Plan 01 (backend data plane + dispatcher + pairing-code endpoint) complete; Plans 02 (frontend pairing UI) and 03 (cutover/cleanup) pending.
+**Current focus:** Phase 40 (Telegram Shared-Bot Migration) complete. v1.3 Live Intelligence milestone closed; ready for next milestone planning.
 
 ## Current Position
 
 Milestone: v1.3 Live Intelligence
-Phase: 40 of 9 (Telegram Shared-Bot Migration) -- IN PROGRESS
+Phase: 40 of 9 (Telegram Shared-Bot Migration) -- COMPLETE
 Current Plan: 3
-Total Plans in Phase: 3
-Status: Plans 40-01 (backend) + 40-02 (frontend pairing UI) complete; Plan 40-03 (cutover/cleanup) pending
-Last activity: 2026-05-04 -- Plan 40-02 complete (live UX verified: bot @contextOSdev_bot claimed chat -1003644773967, UI flipped to connected via Realtime)
+Total Plans in Phase: 3 (all complete)
+Status: All 3 plans complete (40-01 backend, 40-02 frontend pairing UI, 40-03 cutover/cleanup)
+Last activity: 2026-05-04 -- Plan 40-03 complete (Phase-26 surface deleted; onboarding wired to TelegramPairingProgress; Vault purge script + DEPLOY_RUNBOOK.md shipped; 5 inline deviations covering re-pair, multi-engineer guard, REPLICA IDENTITY FULL, dashboard URL, StrictMode)
 
-Progress: [█████████ ] 92%
+Progress: [██████████] 100%
 
 ## Accumulated Context
 
@@ -85,6 +85,13 @@ Progress: [█████████ ] 92%
 - [Phase 40]: [40-02] Bot username driven by env (NEXT_PUBLIC_TELEGRAM_BOT_USERNAME frontend, TELEGRAM_BOT_USERNAME backend, fail-loud) -- operator's real bot is @contextOSdev_bot, not the placeholder the plan assumed
 - [Phase 40]: [40-02] /api/integrations/status overrides Provider.TELEGRAM from telegram_chat_workspace (Phase-40 source of truth) after the standard workspace_integrations loop -- per-provider override pattern keeps the aggregator endpoint stable
 - [Phase 40]: [40-02] Local migration apply via psql -f against LOCAL_SUPABASE_URL (supabase db push only targets remote) -- standardize in a runbook later; tracked as future work
+- [Phase 40]: [40-03] Re-pair after kick uses ON CONFLICT (chat_id) DO UPDATE WHERE removed_at IS NOT NULL with RETURNING -- distinguishes successful re-claim from cross-workspace conflict
+- [Phase 40]: [40-03] /api/telegram/pairing-code returns 409 already_connected when workspace has any active mapping -- prevents multi-engineer 15-min UI hang; frontend surfaces TelegramAlreadyConnectedError as a typed phase with Close button
+- [Phase 40]: [40-03] Migration 00039 patched with REPLICA IDENTITY FULL on telegram_chat_workspace -- Supabase Realtime needs the full row in WAL to apply workspace_id filter against UPDATE events (re-pair UPDATEs were silently dropped without it)
+- [Phase 40]: [40-03] Realtime subscription widened from event:'INSERT' to event:'*' with !row.removed_at payload filter -- re-pair is ON CONFLICT DO UPDATE not INSERT; payload filter ignores soft-delete UPDATEs on kick
+- [Phase 40]: [40-03] StrictMode auto-mint guard via useRef(mintedRef) -- StrictMode dev double-fire posted /pairing-code twice; each mint wipes the prior code so the user pasted an already-burned code
+- [Phase 40]: [40-03] Settings disconnect button is intentionally a toast hint pointing at the in-Telegram remove flow; Phase 40 has no workspace-level disconnect endpoint by design (bot's my_chat_member handler soft-deletes per chat)
+- [Phase 40]: [40-03] Vault purge uses SQL LIKE prefilter + strict regex re-validation + per-row exception isolation -- defense in depth so an unrelated 'oauth_telegram_'-prefixed secret can't be deleted, and one permission glitch can't abort the whole run
 
 ### Roadmap Evolution
 
@@ -107,9 +114,10 @@ None.
 |-------|------|----------|-------|-------|-------------|
 | 40    | 01   | 12min    | 3     | 8     | 2026-05-03  |
 | 40    | 02   | 30min active (~19h incl. operator setup) | 3 | 7 | 2026-05-04 |
+| 40    | 03   | ~4h (incl. human-verify gate + 5 deviation fixes) | 4 | 16 | 2026-05-04 |
 
 ## Session Continuity
 
-Last session: 2026-05-04T10:04:33.720Z
-Stopped at: Completed 40-02-PLAN.md
+Last session: 2026-05-04T11:07:08.263Z
+Stopped at: Completed 40-03-PLAN.md (Phase 40 complete; v1.3 milestone closed)
 Resume file: None
