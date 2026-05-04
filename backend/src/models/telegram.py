@@ -8,7 +8,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Column, UniqueConstraint
+from sqlalchemy import BigInteger, Column, DateTime, UniqueConstraint
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
@@ -72,10 +72,14 @@ class TelegramChatWorkspace(SQLModel, table=True):
     paired_by: uuid.UUID | None = Field(default=None)
     paired_at: datetime | None = Field(
         default=None,
-        nullable=False,
-        sa_column_kwargs={"server_default": sa_text("now()")},
+        sa_column=Column(
+            DateTime(timezone=True), nullable=False, server_default=sa_text("now()")
+        ),
     )
-    removed_at: datetime | None = Field(default=None)
+    removed_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
 
 
 class TelegramPairingCode(SQLModel, table=True):
@@ -94,7 +98,10 @@ class TelegramPairingCode(SQLModel, table=True):
     created_by: uuid.UUID | None = Field(default=None)
     created_at: datetime | None = Field(
         default=None,
-        nullable=False,
-        sa_column_kwargs={"server_default": sa_text("now()")},
+        sa_column=Column(
+            DateTime(timezone=True), nullable=False, server_default=sa_text("now()")
+        ),
     )
-    expires_at: datetime = Field(nullable=False)
+    expires_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )

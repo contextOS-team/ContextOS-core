@@ -201,10 +201,12 @@ export function TelegramPairingProgress({
   const seconds = secondsLeft % 60
   const countdown = `${minutes}:${seconds.toString().padStart(2, '0')}`
 
+  const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? 'ContextOSBot'
+
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        Waiting for @ContextOSBot to join a Telegram group… (Choose a group when
+        Waiting for @{botUsername} to join a Telegram group… (Choose a group when
         the Telegram app opens; the bot will post a confirmation in-chat.)
       </p>
       {deepLink && (

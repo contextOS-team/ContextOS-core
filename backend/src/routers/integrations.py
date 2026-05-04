@@ -13,6 +13,7 @@ from sqlmodel import select
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
 from src.models.integration import Provider, WorkspaceIntegration
+from src.models.telegram import TelegramChatWorkspace
 
 logger = logging.getLogger(__name__)
 
@@ -107,5 +108,23 @@ async def get_integration_status(
             statuses[provider] = _build_provider_status(by_provider[provider])
         else:
             statuses[provider] = _disconnected_status()
+
+    # Telegram (Phase 40): connected state lives in telegram_chat_workspace,
+    # not workspace_integrations. The shared-bot flow inserts a row there
+    # when the user pairs a chat; we surface that as "connected".
+    tg_stmt = select(TelegramChatWorkspace).where(
+        TelegramChatWorkspace.workspace_id == user.workspace_id,
+        TelegramChatWorkspace.removed_at.is_(None),
+    )
+    tg_result = await session.execute(tg_stmt)
+    tg_chats = tg_result.scalars().all()
+    if tg_chats:
+        first = tg_chats[0]
+        statuses[Provider.TELEGRAM] = {
+            "status": "connected",
+            "external_name": first.chat_title,
+            "connected_at": first.paired_at.isoformat() if first.paired_at else None,
+            "chat_count": len(tg_chats),
+        }
 
     return statuses

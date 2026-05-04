@@ -77,6 +77,19 @@ CREATE POLICY "workspace_member_select" ON public.telegram_pairing_codes
     );
 
 -- ============================================================
+-- Realtime publication -- frontend pairing UI subscribes to
+-- INSERTs on telegram_chat_workspace to flip 'connected' state.
+-- ============================================================
+DO $$
+BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.telegram_chat_workspace;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END;
+$$;
+
+-- ============================================================
 -- Phase-26 cleanup -- drop legacy per-workspace bot tokens.
 -- Vault entries (`telegram_<workspace_id>_bot_token`) are purged via
 -- a one-shot deploy script in Plan 03 (Vault is not a regular table).

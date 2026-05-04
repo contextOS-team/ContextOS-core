@@ -100,10 +100,13 @@ async def generate_pairing_code(
     await session.commit()
 
     settings = get_settings()
-    bot_username = settings.TELEGRAM_BOT_USERNAME or "ContextOSBot"
+    if not settings.TELEGRAM_BOT_USERNAME:
+        raise RuntimeError(
+            "TELEGRAM_BOT_USERNAME is not configured; cannot build pairing deep link"
+        )
     return {
         "code": code,
-        "deep_link": f"https://t.me/{bot_username}?startgroup={code}",
+        "deep_link": f"https://t.me/{settings.TELEGRAM_BOT_USERNAME}?startgroup={code}",
         "expires_at": expires_at,
     }
 
