@@ -78,8 +78,15 @@ CREATE POLICY "workspace_member_select" ON public.telegram_pairing_codes
 
 -- ============================================================
 -- Realtime publication -- frontend pairing UI subscribes to
--- INSERTs on telegram_chat_workspace to flip 'connected' state.
+-- INSERTs (fresh claim) and UPDATEs (re-pair after kick) on
+-- telegram_chat_workspace to flip 'connected' state.
+--
+-- REPLICA IDENTITY FULL is required so the WAL records the full
+-- row on UPDATE, otherwise Realtime can't apply the workspace_id
+-- filter against UPDATE events and silently drops them.
 -- ============================================================
+ALTER TABLE public.telegram_chat_workspace REPLICA IDENTITY FULL;
+
 DO $$
 BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.telegram_chat_workspace;

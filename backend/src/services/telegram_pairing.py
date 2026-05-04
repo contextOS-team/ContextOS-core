@@ -48,7 +48,7 @@ PAIRING_TTL_MINUTES = 15
 # Default dashboard URL surfaced in bot replies. The settings module does not
 # yet expose a frontend URL field, so we hardcode here. Callers wanting to
 # override at deploy time can wire a settings field in a follow-up.
-_DASHBOARD_URL_DEFAULT = "https://contextos.app/dashboard/settings"
+_DASHBOARD_URL_DEFAULT = "https://contextos.pro/dashboard/settings?tab=integrations"
 
 
 class ClaimResult(str, Enum):
@@ -238,9 +238,12 @@ async def claim_chat(session: AsyncSession, message: dict[str, Any]) -> ClaimRes
         await _send_reply_safe(chat_id, _reply_text(ClaimResult.INVALID_CODE))
         return ClaimResult.INVALID_CODE
 
-    # Step 4: insert mapping. ON CONFLICT (chat_id) DO NOTHING enforces
-    # "first claim wins" -- if a parallel claim from another workspace beat
-    # us between our resolve and INSERT, we won't overwrite their row.
+    # Step 4: insert mapping. The PK is chat_id, so a previously-kicked chat
+    # leaves a soft-deleted row (removed_at IS NOT NULL) which would block a
+    # plain INSERT. ON CONFLICT (chat_id) DO UPDATE ... WHERE removed_at IS
+    # NOT NULL re-claims the slot for any workspace once the bot has left;
+    # an active mapping (removed_at IS NULL) is left untouched and the
+    # statement returns no row, which we treat as a race-loss conflict.
     insert_stmt = (
         pg_insert(TelegramChatWorkspace)
         .values(
@@ -250,10 +253,22 @@ async def claim_chat(session: AsyncSession, message: dict[str, Any]) -> ClaimRes
             chat_type=chat_type,
             paired_by=created_by,
         )
-        .on_conflict_do_nothing(index_elements=["chat_id"])
+        .on_conflict_do_update(
+            index_elements=["chat_id"],
+            set_={
+                "workspace_id": claimer_ws,
+                "chat_title": chat_title,
+                "chat_type": chat_type,
+                "paired_by": created_by,
+                "paired_at": func.now(),
+                "removed_at": None,
+            },
+            where=TelegramChatWorkspace.removed_at.is_not(None),
+        )
+        .returning(TelegramChatWorkspace.chat_id)
     )
     insert_result = await session.execute(insert_stmt)
-    inserted = getattr(insert_result, "rowcount", 0) == 1
+    inserted = insert_result.first() is not None
 
     # Emit activity event before commit so it lands in the same transaction
     # (emit_activity uses begin_nested + fail-silent under the hood).

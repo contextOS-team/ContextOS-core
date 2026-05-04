@@ -19,11 +19,13 @@ import hmac
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import get_settings
 from src.db import async_session, get_session
 from src.dependencies import UserContext, get_current_user
+from src.models.telegram import TelegramChatWorkspace
 from src.services.telegram_events import process_telegram_update
 from src.services.telegram_pairing import (
     claim_chat,
@@ -52,7 +54,29 @@ async def create_pairing_code(
     Deletes any unexpired prior codes for this workspace before insert
     (one-active-code-per-workspace invariant; Pitfall 5). Returns:
         {code, deep_link, expires_at (ISO 8601 string)}
+
+    If the workspace already has at least one active chat mapping
+    (`removed_at IS NULL`), responds 409 with `chat_count` so the UI can
+    surface "already connected" instead of opening Telegram. Prevents the
+    multi-engineer onboarding case where a teammate already paired the
+    workspace and a second engineer's pairing UI would otherwise hang
+    on "Waiting…" until the 15-min TTL expired.
     """
+    count_stmt = select(func.count()).select_from(TelegramChatWorkspace).where(
+        TelegramChatWorkspace.workspace_id == user.workspace_id,
+        TelegramChatWorkspace.removed_at.is_(None),
+    )
+    chat_count = (await session.execute(count_stmt)).scalar_one()
+    if chat_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "already_connected",
+                "message": "Workspace already has Telegram chat(s) paired",
+                "chat_count": chat_count,
+            },
+        )
+
     result = await generate_pairing_code(session, user.workspace_id, user.user_id)
     # Coerce datetime -> ISO 8601 string for JSON serialization.
     return {

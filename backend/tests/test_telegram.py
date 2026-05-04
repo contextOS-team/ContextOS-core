@@ -12,7 +12,7 @@ Covers:
 """
 
 import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -509,6 +509,14 @@ def phase40_app(telegram_settings):
             workspace_id=UUID(TEST_WORKSPACE_ID),
         )
 
+    # The /pairing-code endpoint runs a SELECT COUNT(*) ... .scalar_one()
+    # before delegating to the service to enforce the "already_connected"
+    # guard. Default the count to 0 so existing tests exercise the mint path;
+    # tests covering the 409 branch override this explicitly.
+    _count_result = MagicMock()
+    _count_result.scalar_one = MagicMock(return_value=0)
+    mock_session.execute = AsyncMock(return_value=_count_result)
+
     fastapi_app.dependency_overrides[get_session_dep] = _mock_get_session
     fastapi_app.dependency_overrides[get_current_user] = _mock_get_current_user
     yield fastapi_app, mock_session
@@ -548,6 +556,30 @@ class TestPairingCodeEndpoint:
         # Round-trip parse confirms ISO 8601
         from datetime import datetime as dt
         dt.fromisoformat(body["expires_at"])
+
+    def test_returns_409_when_workspace_already_connected(self, phase40_app):
+        """Workspace with at least one active telegram_chat_workspace row
+        gets a 409 with `chat_count` so the UI surfaces "already connected"
+        instead of opening Telegram. Prevents teammate-collision hangs.
+        """
+        app, mock_session = phase40_app
+        client = TestClient(app, raise_server_exceptions=False)
+        # Override the default scalar_one=0 to simulate 2 active mappings
+        count_result = MagicMock()
+        count_result.scalar_one = MagicMock(return_value=2)
+        mock_session.execute = AsyncMock(return_value=count_result)
+
+        with patch(
+            "src.routers.telegram.generate_pairing_code", new_callable=AsyncMock
+        ) as mock_gen:
+            resp = client.post("/api/telegram/pairing-code", headers=_make_auth_header())
+
+        assert resp.status_code == 409
+        body = resp.json()
+        assert body["detail"]["code"] == "already_connected"
+        assert body["detail"]["chat_count"] == 2
+        # Service must NOT be called when the guard fires.
+        mock_gen.assert_not_called()
 
     def test_calls_service_with_user_workspace_and_user_id(self, phase40_app):
         from datetime import datetime, timezone

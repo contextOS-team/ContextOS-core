@@ -299,9 +299,9 @@ class TestClaimChatBranches:
         # Second execute: redeem (DELETE...RETURNING returns row)
         redeem_result = MagicMock()
         redeem_result.first = MagicMock(return_value=(WORKSPACE_A,))
-        # Third execute: INSERT chat_workspace (rowcount == 1)
+        # Third execute: INSERT...ON CONFLICT...RETURNING (returns row -- inserted)
         insert_result = MagicMock()
-        insert_result.rowcount = 1
+        insert_result.first = MagicMock(return_value=(-1001234567890,))
 
         session.execute = AsyncMock(side_effect=[peek_result, redeem_result, insert_result])
         # Chat is unmapped
@@ -321,6 +321,62 @@ class TestClaimChatBranches:
         # And should reference workspace A
         # (positional signature: session, workspace_id, event_type)
         assert args[1] == WORKSPACE_A or kwargs.get("workspace_id") == WORKSPACE_A
+
+    @pytest.mark.asyncio
+    async def test_repair_after_kick_updates_soft_deleted_row(
+        self, mock_send_reply, mock_emit_activity
+    ):
+        """Bot was kicked (removed_at IS NOT NULL); same workspace re-pairs.
+        ON CONFLICT DO UPDATE WHERE removed_at IS NOT NULL re-claims the slot
+        and RETURNING yields a row -- result is CLAIMED, not race conflict.
+        """
+        session = _make_session()
+        peek_result = MagicMock()
+        peek_result.first = MagicMock(return_value=(WORKSPACE_A, USER_A))
+        redeem_result = MagicMock()
+        redeem_result.first = MagicMock(return_value=(WORKSPACE_A,))
+        # ON CONFLICT DO UPDATE matched the soft-deleted row -- RETURNING yields
+        insert_result = MagicMock()
+        insert_result.first = MagicMock(return_value=(-1001234567890,))
+
+        session.execute = AsyncMock(side_effect=[peek_result, redeem_result, insert_result])
+        # resolve_workspace_for_chat filters removed_at IS NULL -> None for kicked
+        session.scalar = AsyncMock(return_value=None)
+
+        message = _make_group_message(text="/start@ContextOSBot REPAIR0000")
+        result = await claim_chat(session, message)
+
+        assert result == ClaimResult.CLAIMED
+        session.commit.assert_awaited()
+        mock_send_reply.assert_awaited_once()
+        mock_emit_activity.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_race_insert_active_row_returns_already_claimed(
+        self, mock_send_reply, mock_emit_activity
+    ):
+        """A parallel claim from another workspace inserted an active row
+        between our resolve_workspace_for_chat and our ON CONFLICT DO UPDATE.
+        The UPDATE's WHERE removed_at IS NOT NULL filters that row out, so
+        RETURNING yields nothing -> ALREADY_CLAIMED_BY_OTHER.
+        """
+        session = _make_session()
+        peek_result = MagicMock()
+        peek_result.first = MagicMock(return_value=(WORKSPACE_A, USER_A))
+        redeem_result = MagicMock()
+        redeem_result.first = MagicMock(return_value=(WORKSPACE_A,))
+        insert_result = MagicMock()
+        insert_result.first = MagicMock(return_value=None)  # active row blocked the update
+
+        session.execute = AsyncMock(side_effect=[peek_result, redeem_result, insert_result])
+        session.scalar = AsyncMock(return_value=None)
+
+        message = _make_group_message(text="/start@ContextOSBot RACECONF00")
+        result = await claim_chat(session, message)
+
+        assert result == ClaimResult.ALREADY_CLAIMED_BY_OTHER
+        session.commit.assert_awaited()
+        mock_send_reply.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_race_redeem_returns_no_row_marks_invalid(
