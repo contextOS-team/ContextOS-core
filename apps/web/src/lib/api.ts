@@ -465,9 +465,9 @@ export function getNotionPages(
  * a new tab and listens for the bot's claim via Supabase Realtime on
  * telegram_chat_workspace inserts.
  *
- * NOTE: legacy `connectTelegram(botToken)` below is kept for backward compat
- * during the cutover — Plan 40-03 deletes it once the legacy /connect route is
- * removed from the backend.
+ * Disconnect is intentionally NOT exposed here: in the shared-bot model, the
+ * user removes @ContextOSBot from each Telegram group themselves; the bot's
+ * `my_chat_member` handler then soft-deletes the chat→workspace mapping.
  */
 export interface TelegramPairingCodeResponse {
   code: string
@@ -479,39 +479,6 @@ export function createTelegramPairingCode(): Promise<TelegramPairingCodeResponse
   return apiFetch<TelegramPairingCodeResponse>('/api/telegram/pairing-code', {
     method: 'POST',
   })
-}
-
-export function connectTelegram(
-  botToken: string
-): Promise<{ status: string; bot_username?: string }> {
-  return apiFetch<{ status: string; bot_username?: string }>(
-    '/api/telegram/connect',
-    {
-      method: 'POST',
-      body: JSON.stringify({ bot_token: botToken }),
-    }
-  )
-}
-
-export function disconnectTelegram(): Promise<{ status: string }> {
-  return apiFetch<{ status: string }>('/api/telegram/disconnect', {
-    method: 'POST',
-  })
-}
-
-export function syncTelegramHistory(): Promise<{ status: string }> {
-  return apiFetch<{ status: string }>('/api/telegram/sync', {
-    method: 'POST',
-  })
-}
-
-export function getTelegramSyncStatus(): Promise<{
-  sync_status: string
-  records_synced: number
-  last_sync_at: string | null
-  error_message: string | null
-}> {
-  return apiFetch('/api/telegram/sync/status')
 }
 
 // ---------------------------------------------------------------------------

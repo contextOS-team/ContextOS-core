@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { AlertCircle, RefreshCw } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import {
   connectLinear,
   disconnectLinear,
   connectSlack,
   disconnectSlack,
   disconnectFathom,
-  disconnectTelegram,
   connectGithub,
   disconnectGithub,
   connectGitlab,
@@ -40,7 +39,6 @@ import { FathomConnect } from '../../integrations/fathom-connect'
 import { GithubRepos } from '../../integrations/github-repos'
 import { GitlabRepos } from '../../integrations/gitlab-repos'
 import { TelegramConnect } from './telegram-connect'
-import { TelegramSyncSection } from './telegram-sync-section'
 import { NotionSyncSection } from './notion-sync-section'
 
 // ---------------------------------------------------------------------------
@@ -107,7 +105,12 @@ export function IntegrationCards({
   const handleConnectSlack = makeConnectHandler(connectSlack, 'authorization_url', setError)
   const handleDisconnectSlack = makeDisconnectHandler(disconnectSlack, 'Slack', setError, fetchStatuses)
   const handleDisconnectFathom = makeDisconnectHandler(disconnectFathom, 'Fathom', setError, fetchStatuses)
-  const handleDisconnectTelegram = makeDisconnectHandler(disconnectTelegram, 'Telegram', setError, fetchStatuses)
+  // Phase 40 shared-bot model: there is no workspace-level disconnect endpoint.
+  // The user removes @ContextOSBot from each Telegram group; the bot's
+  // my_chat_member handler then soft-deletes the chat→workspace mapping.
+  const handleDisconnectTelegram = async () => {
+    toast.info('To disconnect, remove @ContextOSBot from the Telegram group(s).')
+  }
   const handleConnectGithub = makeConnectHandler(connectGithub, 'installation_url', setError)
   const handleDisconnectGithub = makeDisconnectHandler(disconnectGithub, 'GitHub', setError, fetchStatuses)
   const handleConnectGitlab = makeConnectHandler(connectGitlab, 'authorization_url', setError)
@@ -154,7 +157,6 @@ export function IntegrationCards({
     // useCallback there. Including it in deps would cause an infinite
     // render loop (new reference each parent render). This effect only
     // depends on slack.status changing — which already triggers a refetch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slack.status])
 
   const github = statuses?.github ?? { status: 'disconnected' as const, external_name: null, connected_at: null }
@@ -274,9 +276,7 @@ export function IntegrationCards({
             onConnect={() => {}}
             onDisconnect={handleDisconnectTelegram}
             connectForm={<TelegramConnect onConnected={fetchStatuses} />}
-          >
-            <TelegramSyncSection />
-          </IntegrationCard>
+          />
           <IntegrationCard
             name="GitHub"
             icon={<GitHubLogo width={20} height={20} className="text-foreground" />}

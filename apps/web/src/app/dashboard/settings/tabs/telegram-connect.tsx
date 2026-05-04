@@ -14,8 +14,8 @@
  * authenticated user, so a typed Supabase select is safe here.
  *
  * NOTE: This file used to host a bot-token paste form (Phase 26). Plan 40-02
- * replaces it with the deep-link flow; Plan 40-03 will delete the legacy
- * `connectTelegram(botToken)` API client this file used to call.
+ * replaced it with the deep-link flow; Plan 40-03 deleted the legacy
+ * Phase-26 backend routes and API clients.
  */
 
 import { useEffect, useState } from 'react'

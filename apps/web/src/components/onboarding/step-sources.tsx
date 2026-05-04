@@ -9,8 +9,6 @@ import {
   connectGitlab,
   connectNotion,
   connectFathom,
-  connectTelegram,
-  getTelegramSyncStatus,
   resyncNotion,
   getNotionSyncStatus,
   getGithubRepos,
@@ -35,6 +33,8 @@ import {
 } from '@/components/icons/brand-logos'
 import { SourceCard } from './source-card'
 import { SlackDmToggle } from '@/app/dashboard/integrations/slack-dm-toggle'
+import { TelegramPairingProgress } from '@/app/dashboard/integrations/telegram-pairing-progress'
+import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { Check, Lock, Globe, RefreshCw, Search } from 'lucide-react'
 
@@ -42,7 +42,7 @@ import { Check, Lock, Globe, RefreshCw, Search } from 'lucide-react'
 // Types
 // ---------------------------------------------------------------------------
 
-type ExpandedSource = 'github' | 'gitlab' | 'notion' | 'slack' | null
+type ExpandedSource = 'github' | 'gitlab' | 'notion' | 'slack' | 'telegram' | null
 
 interface StepSourcesProps {
   onComplete: () => void
@@ -59,12 +59,11 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
   const [showFathomForm, setShowFathomForm] = useState(false)
   const [fathomKey, setFathomKey] = useState('')
   const [fathomLoading, setFathomLoading] = useState(false)
-  const [showTelegramForm, setShowTelegramForm] = useState(false)
-  const [telegramToken, setTelegramToken] = useState('')
-  const [telegramLoading, setTelegramLoading] = useState(false)
-  const [telegramSyncStatus, setTelegramSyncStatus] = useState<string | null>(null)
-  const [telegramSyncCount, setTelegramSyncCount] = useState(0)
-  const syncPollRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Phase 40 shared-bot pairing — Telegram source card opens an inline
+  // TelegramPairingProgress panel, identical to the Settings → Integrations
+  // surface. The new flow has no bot-token form and no history sync.
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null)
 
   // Post-connect config state
   const [expandedSource, setExpandedSource] = useState<ExpandedSource>(null)
@@ -75,6 +74,34 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
   const notionConnected = integrations?.notion.status === 'connected'
   const fathomConnected = integrations?.fathom.status === 'connected'
   const telegramConnected = integrations?.telegram.status === 'connected'
+
+  // Resolve workspace_id client-side via auth.getUser → workspace_members
+  // (mirror of the pattern in telegram-connect.tsx). RLS scopes the SELECT
+  // to the user's own membership row.
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user || cancelled) return
+      const { data: ws } = await supabase
+        .from('workspace_members')
+        .select('workspace_id')
+        .eq('user_id', user.id)
+        .limit(1)
+        .maybeSingle()
+      if (cancelled) return
+      if (ws?.workspace_id) {
+        setWorkspaceId(ws.workspace_id as string)
+      }
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Auto-expand config panel when returning from OAuth
   const autoExpandedRef = useRef(false)
@@ -94,29 +121,6 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
       setExpandedSource('slack')
     }
   }, [githubConnected, gitlabConnected, notionConnected, slackConnected, expandedSource])
-
-  // Poll Telegram sync status when syncing
-  useEffect(() => {
-    if (telegramSyncStatus !== 'syncing') return
-    syncPollRef.current = setInterval(async () => {
-      try {
-        const status = await getTelegramSyncStatus()
-        setTelegramSyncCount(status.records_synced)
-        if (status.sync_status === 'complete') {
-          setTelegramSyncStatus('complete')
-          setTelegramSyncCount(status.records_synced)
-          toast.success(`Synced ${status.records_synced} Telegram messages`)
-        } else if (status.sync_status === 'error') {
-          setTelegramSyncStatus('error')
-        }
-      } catch {
-        // Non-blocking
-      }
-    }, 3000)
-    return () => {
-      if (syncPollRef.current) clearInterval(syncPollRef.current)
-    }
-  }, [telegramSyncStatus])
 
   // ---- Connect handlers ----
 
@@ -167,33 +171,14 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
   function handleFathomClick() {
     if (fathomConnected) return
     setShowFathomForm(true)
-    setShowTelegramForm(false)
-    setTelegramToken('')
+    setExpandedSource(null)
   }
 
   function handleTelegramClick() {
     if (telegramConnected) return
-    setShowTelegramForm(true)
     setShowFathomForm(false)
     setFathomKey('')
-  }
-
-  async function handleTelegramSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!telegramToken.trim()) return
-    setTelegramLoading(true)
-    try {
-      await connectTelegram(telegramToken.trim())
-      setShowTelegramForm(false)
-      setTelegramToken('')
-      onSourceConnected()
-      toast.success('Telegram connected — syncing message history...')
-      setTelegramSyncStatus('syncing')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to connect Telegram')
-    } finally {
-      setTelegramLoading(false)
-    }
+    setExpandedSource(expandedSource === 'telegram' ? null : 'telegram')
   }
 
   async function handleFathomSubmit(e: React.FormEvent) {
@@ -301,6 +286,21 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
         <OnboardingSlackDms />
       )}
 
+      {/* Telegram inline pairing block (Phase 40 shared-bot model) */}
+      {expandedSource === 'telegram' && !telegramConnected && workspaceId && (
+        <div className="rounded-lg border border-border p-4">
+          <TelegramPairingProgress
+            workspaceId={workspaceId}
+            onConnected={() => {
+              onSourceConnected()
+              setExpandedSource(null)
+              toast.success('Telegram connected')
+            }}
+            onClose={() => setExpandedSource(null)}
+          />
+        </div>
+      )}
+
       {/* Fathom inline form */}
       {showFathomForm && !fathomConnected && (
         <form onSubmit={handleFathomSubmit} className="space-y-3 rounded-lg border border-border p-4">
@@ -344,61 +344,6 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
             </Button>
           </div>
         </form>
-      )}
-
-      {/* Telegram inline form */}
-      {showTelegramForm && !telegramConnected && (
-        <form onSubmit={handleTelegramSubmit} className="space-y-3 rounded-lg border border-border p-4">
-          <div className="space-y-1.5">
-            <label htmlFor="telegram-bot-token-onboarding" className="text-xs font-medium">
-              Telegram Bot Token
-            </label>
-            <Input
-              id="telegram-bot-token-onboarding"
-              type="password"
-              placeholder="Enter your bot token from @BotFather"
-              value={telegramToken}
-              onChange={(e) => setTelegramToken(e.target.value)}
-              className="h-8 text-xs"
-              autoComplete="off"
-              autoFocus
-            />
-            <p className="text-xs text-muted-foreground">
-              Create a bot via @BotFather on Telegram. In Bot Settings, turn Group Privacy OFF so the bot can read all messages.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" type="submit" disabled={telegramLoading || !telegramToken.trim()}>
-              {telegramLoading ? 'Connecting...' : 'Connect'}
-            </Button>
-            <Button
-              size="sm"
-              type="button"
-              variant="ghost"
-              onClick={() => { setShowTelegramForm(false); setTelegramToken('') }}
-            >
-              Cancel
-            </Button>
-          </div>
-        </form>
-      )}
-
-      {/* Telegram sync status */}
-      {telegramConnected && telegramSyncStatus === 'syncing' && (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
-          <div className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-          <p className="text-xs text-muted-foreground">
-            Syncing Telegram history{telegramSyncCount > 0 ? ` — ${telegramSyncCount} messages` : '...'}
-          </p>
-        </div>
-      )}
-      {telegramConnected && telegramSyncStatus === 'complete' && telegramSyncCount > 0 && (
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
-          <Check className="h-3.5 w-3.5 text-green-500" />
-          <p className="text-xs text-muted-foreground">
-            Synced {telegramSyncCount} Telegram messages
-          </p>
-        </div>
       )}
 
       <Button onClick={onComplete} className="w-full">
