@@ -475,10 +475,40 @@ export interface TelegramPairingCodeResponse {
   expires_at: string // ISO 8601 UTC
 }
 
-export function createTelegramPairingCode(): Promise<TelegramPairingCodeResponse> {
-  return apiFetch<TelegramPairingCodeResponse>('/api/telegram/pairing-code', {
+/**
+ * Thrown when the workspace already has at least one active Telegram chat
+ * mapping. The pairing UI surfaces this as "already connected" instead of
+ * opening a Telegram deep link.
+ */
+export class TelegramAlreadyConnectedError extends Error {
+  readonly chatCount: number
+  constructor(chatCount: number) {
+    super('Workspace already has Telegram chat(s) paired')
+    this.name = 'TelegramAlreadyConnectedError'
+    this.chatCount = chatCount
+  }
+}
+
+export async function createTelegramPairingCode(): Promise<TelegramPairingCodeResponse> {
+  const supabase = createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  const response = await fetch(`${BACKEND_URL}/api/telegram/pairing-code`, {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session?.access_token ?? ''}`,
+    },
   })
+  if (response.status === 409) {
+    const body = await response.json().catch(() => ({}))
+    const detail = (body as { detail?: { chat_count?: number } }).detail
+    throw new TelegramAlreadyConnectedError(detail?.chat_count ?? 1)
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(`API error ${response.status}: ${text}`)
+  }
+  return response.json()
 }
 
 // ---------------------------------------------------------------------------

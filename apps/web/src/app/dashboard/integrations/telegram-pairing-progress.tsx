@@ -34,9 +34,9 @@ import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
-import { createTelegramPairingCode } from '@/lib/api'
+import { createTelegramPairingCode, TelegramAlreadyConnectedError } from '@/lib/api'
 
-type Phase = 'idle' | 'minting' | 'waiting' | 'expired' | 'connected'
+type Phase = 'idle' | 'minting' | 'waiting' | 'expired' | 'connected' | 'already_connected'
 
 interface TelegramPairingProgressProps {
   /** Current authenticated user's workspace UUID — used for the Realtime filter. */
@@ -62,6 +62,12 @@ export function TelegramPairingProgress({
   const onConnectedRef = useRef(onConnected)
   onConnectedRef.current = onConnected
 
+  // Guard against React StrictMode's double-invoke of effects in dev — each
+  // call to /pairing-code wipes the prior unexpired code (one-active-code
+  // invariant), so a double-mint would race-burn the code shown to the user
+  // and the bot would reject `/start <code>` as expired/already-used.
+  const mintedRef = useRef(false)
+
   // Mint a new pairing code (also invoked by Regenerate).
   const startPairing = useCallback(async () => {
     setPhase('minting')
@@ -73,6 +79,11 @@ export function TelegramPairingProgress({
       // Open the deep link in a new tab so the user lands in the Telegram app/web.
       window.open(result.deep_link, '_blank', 'noopener,noreferrer')
     } catch (err) {
+      if (err instanceof TelegramAlreadyConnectedError) {
+        // A teammate already paired this workspace — no need to mint a code.
+        setPhase('already_connected')
+        return
+      }
       toast.error(err instanceof Error ? err.message : 'Failed to start pairing')
       setPhase('idle')
     }
@@ -80,9 +91,11 @@ export function TelegramPairingProgress({
 
   // Auto-start the flow when the component mounts. IntegrationCard only renders
   // the connectForm after the user clicks Connect, so mounting === user intent.
-  // We intentionally run this exactly once.
+  // We intentionally run this exactly once — `mintedRef` survives StrictMode's
+  // synchronous double-invoke so we don't race-burn the code (see ref decl).
   useEffect(() => {
-    if (phase === 'idle') {
+    if (phase === 'idle' && !mintedRef.current) {
+      mintedRef.current = true
       void startPairing()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -119,7 +132,10 @@ export function TelegramPairingProgress({
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          // INSERT covers fresh claims; UPDATE covers re-pair after a kick
+          // (the row stays around with removed_at set, then ON CONFLICT DO
+          // UPDATE re-claims it — that's an UPDATE event, not INSERT).
+          event: '*',
           schema: 'public',
           table: 'telegram_chat_workspace',
           filter: `workspace_id=eq.${workspaceId}`,
@@ -128,8 +144,11 @@ export function TelegramPairingProgress({
           const row = payload.new as {
             chat_id?: number
             chat_title?: string | null
+            removed_at?: string | null
           }
-          if (typeof row.chat_id === 'number') {
+          // Ignore soft-delete UPDATEs (kick events): only flip to connected
+          // when the row represents an active mapping.
+          if (typeof row.chat_id === 'number' && !row.removed_at) {
             setPhase('connected')
             onConnectedRef.current?.({
               chat_id: row.chat_id,
@@ -171,6 +190,20 @@ export function TelegramPairingProgress({
       <div className="flex items-center gap-2 text-xs text-emerald-500">
         <Check className="h-3.5 w-3.5" />
         Connected — refreshing…
+      </div>
+    )
+  }
+
+  if (phase === 'already_connected') {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-xs text-emerald-500">
+          <Check className="h-3.5 w-3.5" />
+          A teammate already connected this workspace to Telegram.
+        </div>
+        <Button size="sm" variant="ghost" onClick={handleCancel}>
+          Close
+        </Button>
       </div>
     )
   }
