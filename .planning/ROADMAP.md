@@ -168,7 +168,7 @@ Note: Phases 35, 36, 37, 38, 39 are independent and can execute in parallel afte
 | 37. Privacy Architecture Research | 0/TBD | Not started | - |
 | 38. RAG Quality Improvements | 0/TBD | Not started | - |
 | 39. Slack User Token Migration & DM Support | 4/4 | Complete    | 2026-04-22 |
-| 40. Telegram Shared-Bot Migration | 1/3 | In Progress|  |
+| 40. Telegram Shared-Bot Migration | 2/3 | In Progress|  |
 
 ### Phase 39: Slack User Token Migration & DM Support
 **Goal**: Add DM and group-DM ingestion to the Slack integration via user-token polling, while keeping the existing bot Events API webhook path for channel messages (Slack's May 2025 rate-limit cap makes user-token polling unviable for channels at scale)
@@ -203,11 +203,11 @@ Plans:
 
 **Depends on:** Phase 26 (TelegramMessage model, webhook scaffolding, graph extraction)
 **Requirements**: TG-05 (one-click shared-bot deep-link connect), TG-06 (sticky chat→workspace mapping via single-use 15-min pairing code), TG-07 (single global webhook routing by chat_id with claim-before-ingest dispatcher)
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
-- [ ] 40-01-PLAN.md -- Migration `00039` (telegram_chat_workspace + telegram_pairing_codes + cleanup of legacy oauth_tokens rows) + SQLModel additions + `telegram_pairing` service + global `/webhook` dispatcher + `/pairing-code` endpoint + config (TELEGRAM_BOT_TOKEN_GLOBAL, TELEGRAM_BOT_USERNAME)
-- [ ] 40-02-PLAN.md -- Frontend: typed `createTelegramPairingCode()` client + `TelegramPairingProgress` component (deep link + countdown + Realtime subscription on `telegram_chat_workspace`) + integration-card swap in Settings (replace `TelegramConnect` token form)
+- [x] 40-01-PLAN.md -- Migration `00039` (telegram_chat_workspace + telegram_pairing_codes + cleanup of legacy oauth_tokens rows) + SQLModel additions + `telegram_pairing` service + global `/webhook` dispatcher + `/pairing-code` endpoint + config (TELEGRAM_BOT_TOKEN_GLOBAL, TELEGRAM_BOT_USERNAME)
+- [x] 40-02-PLAN.md -- Frontend: typed `createTelegramPairingCode()` client + `TelegramPairingProgress` component (deep link + countdown + Realtime subscription on `telegram_chat_workspace`) + integration-card swap in Settings (replace `TelegramConnect` token form). Live verified: bot @contextOSdev_bot claimed chat -1003644773967, UI flipped to connected via Realtime within ~1s.
 - [ ] 40-03-PLAN.md -- Phase-26 cleanup (delete `connect_telegram_bot`/`disconnect_telegram_bot`, `telegram_sync.py`, `TelegramSyncSection`, `connectTelegram`/`syncTelegramHistory`/`getTelegramSyncStatus`, MTProto config) + onboarding `step-sources.tsx` migration to new pairing component + Vault token purge script + deploy runbook (`setWebhook` with `my_chat_member`, BotFather Group Privacy OFF)
 
 ---

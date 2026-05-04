@@ -2,16 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Live Intelligence
-status: in_progress
-stopped_at: Completed 40-01-PLAN.md
-last_updated: "2026-05-03T14:45:35.688Z"
-last_activity: 2026-05-03 -- Plan 40-01 complete (telegram shared-bot backend: migration 00039 + telegram_pairing service + global webhook dispatcher)
+current_plan: 3
+status: completed
+stopped_at: Completed 40-02-PLAN.md
+last_updated: "2026-05-04T10:04:33.723Z"
+last_activity: 2026-05-04
 progress:
   total_phases: 9
   completed_phases: 2
   total_plans: 12
-  completed_plans: 10
-  percent: 83
+  completed_plans: 11
+  percent: 92
 ---
 
 # Project State
@@ -27,12 +28,12 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 
 Milestone: v1.3 Live Intelligence
 Phase: 40 of 9 (Telegram Shared-Bot Migration) -- IN PROGRESS
-Current Plan: 2 of 3 in Phase 40
+Current Plan: 3
 Total Plans in Phase: 3
-Status: Plan 40-01 complete; Plan 40-02 (frontend pairing UI) ready to execute next; Plan 40-03 (cutover/cleanup) pending
-Last activity: 2026-05-03 -- Plan 40-01 complete (telegram shared-bot backend)
+Status: Plans 40-01 (backend) + 40-02 (frontend pairing UI) complete; Plan 40-03 (cutover/cleanup) pending
+Last activity: 2026-05-04 -- Plan 40-02 complete (live UX verified: bot @contextOSdev_bot claimed chat -1003644773967, UI flipped to connected via Realtime)
 
-Progress: [████████▎ ] 83%
+Progress: [█████████ ] 92%
 
 ## Accumulated Context
 
@@ -81,6 +82,9 @@ Progress: [████████▎ ] 83%
 - [40-01] Bot reply text inlines hardcoded https://contextos.app/dashboard/settings link (no settings-derived frontend URL field exists yet); Plan 02 may parameterize
 - [40-01] Legacy /webhook/{workspace_id}, /connect, /disconnect, /sync routes left intact in this plan to keep it independently mergeable; Plan 03 deletes them
 - [40-01] Migration 00039 uses CREATE TABLE IF NOT EXISTS + DROP POLICY IF EXISTS for idempotency; legacy oauth_tokens + workspace_integrations purge runs at the bottom (Vault key cleanup is a Plan 03 deploy script)
+- [Phase 40]: [40-02] Bot username driven by env (NEXT_PUBLIC_TELEGRAM_BOT_USERNAME frontend, TELEGRAM_BOT_USERNAME backend, fail-loud) -- operator's real bot is @contextOSdev_bot, not the placeholder the plan assumed
+- [Phase 40]: [40-02] /api/integrations/status overrides Provider.TELEGRAM from telegram_chat_workspace (Phase-40 source of truth) after the standard workspace_integrations loop -- per-provider override pattern keeps the aggregator endpoint stable
+- [Phase 40]: [40-02] Local migration apply via psql -f against LOCAL_SUPABASE_URL (supabase db push only targets remote) -- standardize in a runbook later; tracked as future work
 
 ### Roadmap Evolution
 
@@ -102,9 +106,10 @@ None.
 | Phase | Plan | Duration | Tasks | Files | Completed   |
 |-------|------|----------|-------|-------|-------------|
 | 40    | 01   | 12min    | 3     | 8     | 2026-05-03  |
+| 40    | 02   | 30min active (~19h incl. operator setup) | 3 | 7 | 2026-05-04 |
 
 ## Session Continuity
 
-Last session: 2026-05-03T14:45:35.686Z
-Stopped at: Completed 40-01-PLAN.md
+Last session: 2026-05-04T10:04:33.720Z
+Stopped at: Completed 40-02-PLAN.md
 Resume file: None
