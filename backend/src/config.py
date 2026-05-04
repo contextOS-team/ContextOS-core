@@ -102,19 +102,15 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
 
-    # Telegram integration webhook secret
-    # Per-workspace bot tokens stored in Vault. This secret verifies webhook authenticity.
+    # Phase 40: shared-bot integration secrets. The webhook secret verifies the
+    # X-Telegram-Bot-Api-Secret-Token header on the global webhook; the base URL
+    # is the public HTTPS endpoint Telegram POSTs to (override via ngrok in dev).
     TELEGRAM_WEBHOOK_SECRET: str = ""
-    # Public HTTPS base URL for Telegram webhooks (e.g. ngrok URL in dev)
     TELEGRAM_WEBHOOK_BASE_URL: str = ""
-    # Telegram MTProto credentials (from https://my.telegram.org) for history sync.
-    # Required for fetching chat message history via Telethon.
-    TELEGRAM_API_ID: str = ""
-    TELEGRAM_API_HASH: str = ""
-    # Phase 40: shared @ContextOSBot token (replaces per-workspace BotFather tokens).
+    # Shared @ContextOSBot token (replaces per-workspace BotFather tokens).
     # Distinct from TELEGRAM_BOT_TOKEN above (Sentry alerts) -- DO NOT collapse them.
     TELEGRAM_BOT_TOKEN_GLOBAL: str = ""
-    # Phase 40: shared bot username, used to render `https://t.me/<username>?startgroup=<code>`
+    # Shared bot username, used to render `https://t.me/<username>?startgroup=<code>`
     # deep links and to strip `/start@<username>` suffixes during claim parsing.
     TELEGRAM_BOT_USERNAME: str = ""
 
