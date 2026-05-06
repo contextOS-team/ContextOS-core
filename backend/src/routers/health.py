@@ -8,10 +8,12 @@ Provides two endpoints:
 Neither endpoint requires authentication.
 """
 
+import json
 import time
 from datetime import datetime, timezone
 
 import httpx
+import redis.asyncio as aioredis
 from fastapi import APIRouter
 from sqlalchemy import text
 
@@ -28,6 +30,32 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["health"])
+
+# Cache the readiness payload to avoid hammering the DB, Vault, and external
+# APIs on every probe. Singapore-DB round-trips alone make each fresh check
+# expensive (~280ms RTT), so a short shared TTL stabilizes load without
+# meaningfully delaying detection of regressions.
+_READY_CACHE_KEY = "health:ready"
+_READY_CACHE_TTL_SECONDS = 10
+
+_redis_client: aioredis.Redis | None = None
+
+
+async def _get_redis() -> aioredis.Redis | None:
+    """Lazy Redis connection for health-check caching. Returns None on failure."""
+    global _redis_client
+    if _redis_client is None:
+        try:
+            import src.config as config_module
+
+            settings = config_module.get_settings()
+            client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+            await client.ping()
+            _redis_client = client
+        except Exception:
+            logger.warning("health_ready_redis_connect_failed", exc_info=True)
+            return None
+    return _redis_client
 
 
 @router.get("/health")
@@ -111,7 +139,22 @@ async def health_ready() -> dict:
     - "unhealthy" if database OR Vault is not ok
 
     This endpoint does NOT require authentication.
+
+    The response is cached in Redis for ~10 seconds (key: ``health:ready``)
+    so frequent monitor/load-balancer probes don't repeatedly pay for the
+    DB SELECT, Vault round-trip, and external HEAD requests. If Redis is
+    unreachable, checks run live (graceful degrade).
     """
+    # Try cache first
+    redis_client = await _get_redis()
+    if redis_client is not None:
+        try:
+            cached = await redis_client.get(_READY_CACHE_KEY)
+            if cached:
+                return json.loads(cached)
+        except Exception:
+            logger.warning("health_ready_cache_read_failed", exc_info=True)
+
     import src.config as config_module
 
     settings = config_module.get_settings()
@@ -143,8 +186,21 @@ async def health_ready() -> dict:
         checks={k: v["status"] for k, v in checks.items()},
     )
 
-    return {
+    payload = {
         "status": overall_status,
         "checks": checks,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+    # Best-effort cache write; never let Redis errors fail the probe
+    if redis_client is not None:
+        try:
+            await redis_client.set(
+                _READY_CACHE_KEY,
+                json.dumps(payload),
+                ex=_READY_CACHE_TTL_SECONDS,
+            )
+        except Exception:
+            logger.warning("health_ready_cache_write_failed", exc_info=True)
+
+    return payload

@@ -5,6 +5,7 @@
  * Bearer token in the Authorization header.
  */
 
+import { cache } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
@@ -12,14 +13,24 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:800
 /**
  * Generic fetch wrapper that attaches the Supabase JWT.
  *
+ * Caching behavior (Next.js 15 fetch defaults are uncached):
+ * - GET-style requests are tagged with `next: { revalidate }` (default 60s) so
+ *   the Next.js Data Cache deduplicates them across requests on the server.
+ *   Pass `revalidate: false` to opt out (sets `cache: 'no-store'`), or supply
+ *   a custom number of seconds.
+ * - Non-GET methods (POST/PUT/DELETE/PATCH) always use `cache: 'no-store'`,
+ *   regardless of `revalidate`, since mutations must never be cached.
+ *
  * @param path - API path starting with / (e.g. "/api/integrations/status")
  * @param options - Standard RequestInit options
+ * @param revalidate - Seconds to cache GET responses, or `false` to disable caching. Default 60.
  * @returns Parsed JSON response
  * @throws Error if response is not ok
  */
 export async function apiFetch<T>(
   path: string,
-  options?: RequestInit
+  options?: RequestInit,
+  revalidate: number | false = 60
 ): Promise<T> {
   const supabase = createClient()
   const {
@@ -28,8 +39,17 @@ export async function apiFetch<T>(
 
   const accessToken = session?.access_token ?? ''
 
+  const method = (options?.method ?? 'GET').toUpperCase()
+  const isMutation = method !== 'GET' && method !== 'HEAD'
+
+  const cacheInit: Pick<RequestInit, 'cache' | 'next'> =
+    isMutation || revalidate === false
+      ? { cache: 'no-store' }
+      : { next: { revalidate } }
+
   const response = await fetch(`${BACKEND_URL}${path}`, {
     ...options,
+    ...cacheInit,
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
@@ -84,9 +104,10 @@ export interface IntegrationStatusResponse {
   jira: ProviderStatus
 }
 
-export function getIntegrationStatus(): Promise<IntegrationStatusResponse> {
-  return apiFetch<IntegrationStatusResponse>('/api/integrations/status')
-}
+export const getIntegrationStatus = cache(
+  (): Promise<IntegrationStatusResponse> =>
+    apiFetch<IntegrationStatusResponse>('/api/integrations/status')
+)
 
 // ---------------------------------------------------------------------------
 // Linear
@@ -122,20 +143,22 @@ export type LinearTicketSearchResponse = {
   end_cursor: string | null
 }
 
-export function searchLinearTickets(
-  query?: string,
-  limit?: number,
-  after?: string
-): Promise<LinearTicketSearchResponse> {
-  const params = new URLSearchParams()
-  if (query) params.set('q', query)
-  if (limit) params.set('limit', String(limit))
-  if (after) params.set('after', after)
-  const qs = params.toString()
-  return apiFetch<LinearTicketSearchResponse>(
-    `/api/linear/tickets/search${qs ? `?${qs}` : ''}`
-  )
-}
+export const searchLinearTickets = cache(
+  (
+    query?: string,
+    limit?: number,
+    after?: string
+  ): Promise<LinearTicketSearchResponse> => {
+    const params = new URLSearchParams()
+    if (query) params.set('q', query)
+    if (limit) params.set('limit', String(limit))
+    if (after) params.set('after', after)
+    const qs = params.toString()
+    return apiFetch<LinearTicketSearchResponse>(
+      `/api/linear/tickets/search${qs ? `?${qs}` : ''}`
+    )
+  }
+)
 
 // ---------------------------------------------------------------------------
 // Slack
@@ -158,9 +181,12 @@ export interface SlackChannel {
   num_members: number
 }
 
-export function getSlackChannels(): Promise<{ channels: SlackChannel[]; selected_channels?: string[] }> {
-  return apiFetch<{ channels: SlackChannel[]; selected_channels?: string[] }>('/api/slack/channels')
-}
+export const getSlackChannels = cache(
+  (): Promise<{ channels: SlackChannel[]; selected_channels?: string[] }> =>
+    apiFetch<{ channels: SlackChannel[]; selected_channels?: string[] }>(
+      '/api/slack/channels'
+    )
+)
 
 export function refreshSlackChannels(): Promise<{ channels: SlackChannel[] }> {
   return apiFetch<{ channels: SlackChannel[] }>('/api/slack/channels/refresh', {
@@ -192,9 +218,10 @@ export interface SlackStatusResponse {
  * Fetch the scoped Slack status — includes `needs_reauth` and `include_dms`
  * which are not populated by the aggregator `/api/integrations/status`.
  */
-export function getSlackStatus(): Promise<SlackStatusResponse> {
-  return apiFetch<SlackStatusResponse>('/api/slack/status')
-}
+export const getSlackStatus = cache(
+  (): Promise<SlackStatusResponse> =>
+    apiFetch<SlackStatusResponse>('/api/slack/status')
+)
 
 /**
  * Toggle DM ingestion on/off.
@@ -261,9 +288,10 @@ export interface GithubReposResponse {
   selected_repos: string[]
 }
 
-export function getGithubRepos(): Promise<GithubReposResponse> {
-  return apiFetch<GithubReposResponse>('/api/github/repos')
-}
+export const getGithubRepos = cache(
+  (): Promise<GithubReposResponse> =>
+    apiFetch<GithubReposResponse>('/api/github/repos')
+)
 
 export function refreshGithubRepos(): Promise<GithubReposResponse> {
   return apiFetch<GithubReposResponse>('/api/github/repos/refresh', {
@@ -295,9 +323,10 @@ export interface GithubIndexStatus {
   repos: { repo: string; chunks: number }[]
 }
 
-export function getGithubIndexStatus(): Promise<GithubIndexStatus> {
-  return apiFetch<GithubIndexStatus>('/api/github/index/status')
-}
+export const getGithubIndexStatus = cache(
+  (): Promise<GithubIndexStatus> =>
+    apiFetch<GithubIndexStatus>('/api/github/index/status')
+)
 
 // ---------------------------------------------------------------------------
 // GitLab
@@ -327,9 +356,10 @@ export interface GitlabReposResponse {
   selected_projects: number[]
 }
 
-export function getGitlabRepos(): Promise<GitlabReposResponse> {
-  return apiFetch<GitlabReposResponse>('/api/gitlab/repos')
-}
+export const getGitlabRepos = cache(
+  (): Promise<GitlabReposResponse> =>
+    apiFetch<GitlabReposResponse>('/api/gitlab/repos')
+)
 
 export function refreshGitlabRepos(): Promise<GitlabReposResponse> {
   return apiFetch<GitlabReposResponse>('/api/gitlab/repos/refresh', {
@@ -364,9 +394,10 @@ export interface GitlabIndexStatus {
   current_repo: string | null
 }
 
-export function getGitlabIndexStatus(): Promise<GitlabIndexStatus> {
-  return apiFetch<GitlabIndexStatus>('/api/gitlab/index/status')
-}
+export const getGitlabIndexStatus = cache(
+  (): Promise<GitlabIndexStatus> =>
+    apiFetch<GitlabIndexStatus>('/api/gitlab/index/status')
+)
 
 export function triggerGitlabSync(): Promise<{ status: string }> {
   return apiFetch<{ status: string }>('/api/gitlab/sync', {
@@ -384,9 +415,10 @@ export interface GitlabSyncStatus {
   is_syncing: boolean
 }
 
-export function getGitlabSyncStatus(): Promise<GitlabSyncStatus> {
-  return apiFetch<GitlabSyncStatus>('/api/gitlab/sync/status')
-}
+export const getGitlabSyncStatus = cache(
+  (): Promise<GitlabSyncStatus> =>
+    apiFetch<GitlabSyncStatus>('/api/gitlab/sync/status')
+)
 
 // ---------------------------------------------------------------------------
 // Notion
@@ -426,9 +458,10 @@ export interface NotionSyncStatus {
   last_sync_at: string | null
 }
 
-export function getNotionSyncStatus(): Promise<NotionSyncStatus> {
-  return apiFetch<NotionSyncStatus>('/api/notion/status')
-}
+export const getNotionSyncStatus = cache(
+  (): Promise<NotionSyncStatus> =>
+    apiFetch<NotionSyncStatus>('/api/notion/status')
+)
 
 export interface NotionPageInfo {
   id: string
@@ -445,14 +478,15 @@ export interface NotionPagesResponse {
   page_size: number
 }
 
-export function getNotionPages(
-  page: number = 1,
-  pageSize: number = 10
-): Promise<NotionPagesResponse> {
-  return apiFetch<NotionPagesResponse>(
-    `/api/notion/pages?page=${page}&page_size=${pageSize}`
-  )
-}
+export const getNotionPages = cache(
+  (
+    page: number = 1,
+    pageSize: number = 10
+  ): Promise<NotionPagesResponse> =>
+    apiFetch<NotionPagesResponse>(
+      `/api/notion/pages?page=${page}&page_size=${pageSize}`
+    )
+)
 
 // ---------------------------------------------------------------------------
 // Telegram
@@ -539,16 +573,16 @@ export type JiraIssueSearchResponse = {
   count: number
 }
 
-export function searchJiraIssues(
-  query?: string
-): Promise<JiraIssueSearchResponse> {
-  const params = new URLSearchParams()
-  if (query) params.set('q', query)
-  const qs = params.toString()
-  return apiFetch<JiraIssueSearchResponse>(
-    `/api/jira/search${qs ? `?${qs}` : ''}`
-  )
-}
+export const searchJiraIssues = cache(
+  (query?: string): Promise<JiraIssueSearchResponse> => {
+    const params = new URLSearchParams()
+    if (query) params.set('q', query)
+    const qs = params.toString()
+    return apiFetch<JiraIssueSearchResponse>(
+      `/api/jira/search${qs ? `?${qs}` : ''}`
+    )
+  }
+)
 
 // ---------------------------------------------------------------------------
 // Context Pages
@@ -576,13 +610,12 @@ export interface ContextPageResponse {
   updated_at: string | null
 }
 
-export function getContextPage(
-  ticketIdentifier: string
-): Promise<ContextPageResponse> {
-  return apiFetch<ContextPageResponse>(
-    `/api/context/${encodeURIComponent(ticketIdentifier)}`
-  )
-}
+export const getContextPage = cache(
+  (ticketIdentifier: string): Promise<ContextPageResponse> =>
+    apiFetch<ContextPageResponse>(
+      `/api/context/${encodeURIComponent(ticketIdentifier)}`
+    )
+)
 
 export function generateContextPage(
   ticketIdentifier: string,
@@ -614,16 +647,18 @@ export interface SearchResponse {
   count: number
 }
 
-export function searchContext(
-  query: string,
-  sourceType?: string,
-  limit?: number
-): Promise<SearchResponse> {
-  const params = new URLSearchParams({ q: query })
-  if (sourceType) params.set('source_type', sourceType)
-  if (limit) params.set('limit', String(limit))
-  return apiFetch<SearchResponse>(`/api/context/?${params.toString()}`)
-}
+export const searchContext = cache(
+  (
+    query: string,
+    sourceType?: string,
+    limit?: number
+  ): Promise<SearchResponse> => {
+    const params = new URLSearchParams({ q: query })
+    if (sourceType) params.set('source_type', sourceType)
+    if (limit) params.set('limit', String(limit))
+    return apiFetch<SearchResponse>(`/api/context/?${params.toString()}`)
+  }
+)
 
 // ---------------------------------------------------------------------------
 // Settings - API Keys
@@ -640,9 +675,10 @@ export interface ApiKeyCreatedResponse extends ApiKeyResponse {
   key: string // Full key, shown once only
 }
 
-export function listApiKeys(): Promise<{ keys: ApiKeyResponse[] }> {
-  return apiFetch<{ keys: ApiKeyResponse[] }>('/api/workspaces/current/api-keys')
-}
+export const listApiKeys = cache(
+  (): Promise<{ keys: ApiKeyResponse[] }> =>
+    apiFetch<{ keys: ApiKeyResponse[] }>('/api/workspaces/current/api-keys')
+)
 
 export function createApiKey(name: string): Promise<ApiKeyCreatedResponse> {
   return apiFetch<ApiKeyCreatedResponse>('/api/workspaces/current/api-keys', {
@@ -668,9 +704,10 @@ export interface WorkspaceResponse {
   created_at: string
 }
 
-export function getWorkspace(): Promise<WorkspaceResponse> {
-  return apiFetch<WorkspaceResponse>('/api/workspaces/current')
-}
+export const getWorkspace = cache(
+  (): Promise<WorkspaceResponse> =>
+    apiFetch<WorkspaceResponse>('/api/workspaces/current')
+)
 
 export function updateWorkspaceName(name: string): Promise<WorkspaceResponse> {
   return apiFetch<WorkspaceResponse>('/api/workspaces/current', {
@@ -691,9 +728,10 @@ export interface TeamMember {
   created_at: string
 }
 
-export function listTeamMembers(): Promise<{ members: TeamMember[] }> {
-  return apiFetch<{ members: TeamMember[] }>('/api/workspaces/current/members')
-}
+export const listTeamMembers = cache(
+  (): Promise<{ members: TeamMember[] }> =>
+    apiFetch<{ members: TeamMember[] }>('/api/workspaces/current/members')
+)
 
 // ---------------------------------------------------------------------------
 // Dashboard Intelligence Widgets
@@ -739,21 +777,21 @@ export interface ResurfacedItem {
   type: 'resurfaced'
 }
 
-export function getDashboardAttention() {
-  return apiFetch<AttentionItem[]>('/api/dashboard/attention')
-}
+export const getDashboardAttention = cache(() =>
+  apiFetch<AttentionItem[]>('/api/dashboard/attention')
+)
 
-export function getDashboardWeeklySummary() {
-  return apiFetch<DaySummary[]>('/api/dashboard/weekly-summary')
-}
+export const getDashboardWeeklySummary = cache(() =>
+  apiFetch<DaySummary[]>('/api/dashboard/weekly-summary')
+)
 
-export function getDashboardSprint() {
-  return apiFetch<SprintData | null>('/api/dashboard/sprint')
-}
+export const getDashboardSprint = cache(() =>
+  apiFetch<SprintData | null>('/api/dashboard/sprint')
+)
 
-export function getDashboardResurfaced() {
-  return apiFetch<ResurfacedItem[]>('/api/dashboard/resurfaced')
-}
+export const getDashboardResurfaced = cache(() =>
+  apiFetch<ResurfacedItem[]>('/api/dashboard/resurfaced')
+)
 
 // ---------------------------------------------------------------------------
 // Graph Neighborhood
@@ -761,39 +799,40 @@ export function getDashboardResurfaced() {
 
 import type { GraphNeighborhoodResponse, WorkspaceGraphResponse, LensGraphResponse } from '@/components/graph/types'
 
-export function fetchWorkspaceGraph(
-  limit: number = 200
-): Promise<WorkspaceGraphResponse> {
-  return apiFetch<WorkspaceGraphResponse>(
-    `/api/graph/?limit=${limit}`
-  )
-}
+export const fetchWorkspaceGraph = cache(
+  (limit: number = 200): Promise<WorkspaceGraphResponse> =>
+    apiFetch<WorkspaceGraphResponse>(`/api/graph/?limit=${limit}`)
+)
 
-export function fetchGraphNeighborhood(
-  ticketIdentifier: string,
-  depth: number = 2,
-  limit: number = 50
-): Promise<GraphNeighborhoodResponse> {
-  return apiFetch<GraphNeighborhoodResponse>(
-    `/api/graph/${encodeURIComponent(ticketIdentifier)}?depth=${depth}&limit=${limit}`
-  )
-}
+export const fetchGraphNeighborhood = cache(
+  (
+    ticketIdentifier: string,
+    depth: number = 2,
+    limit: number = 50
+  ): Promise<GraphNeighborhoodResponse> =>
+    apiFetch<GraphNeighborhoodResponse>(
+      `/api/graph/${encodeURIComponent(ticketIdentifier)}?depth=${depth}&limit=${limit}`
+    )
+)
 
 // ---------------------------------------------------------------------------
 // Graph Lenses
 // ---------------------------------------------------------------------------
 
-export function fetchMyWorkGraph(): Promise<LensGraphResponse> {
-  return apiFetch<LensGraphResponse>('/api/graph/lens/my-work')
-}
+export const fetchMyWorkGraph = cache(
+  (): Promise<LensGraphResponse> =>
+    apiFetch<LensGraphResponse>('/api/graph/lens/my-work')
+)
 
-export function fetchSprintGraph(): Promise<LensGraphResponse> {
-  return apiFetch<LensGraphResponse>('/api/graph/lens/sprint')
-}
+export const fetchSprintGraph = cache(
+  (): Promise<LensGraphResponse> =>
+    apiFetch<LensGraphResponse>('/api/graph/lens/sprint')
+)
 
-export function fetchBlockedGraph(): Promise<LensGraphResponse> {
-  return apiFetch<LensGraphResponse>('/api/graph/lens/blocked')
-}
+export const fetchBlockedGraph = cache(
+  (): Promise<LensGraphResponse> =>
+    apiFetch<LensGraphResponse>('/api/graph/lens/blocked')
+)
 
 // ---------------------------------------------------------------------------
 // SSE Generation Progress

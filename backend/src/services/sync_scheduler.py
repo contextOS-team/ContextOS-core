@@ -30,6 +30,14 @@ logger = logging.getLogger(__name__)
 POLL_INTERVAL_SECONDS = 15 * 60  # 15 minutes per CONTEXT.md decision
 CODE_INDEX_INTERVAL_SECONDS = 60 * 60  # 60 minutes for code re-indexing
 STALE_GENERATION_MINUTES = 5  # Pages stuck in "generating" longer than this are marked as error
+DIGEST_MIN_INTERVAL_SECONDS = 23 * 60 * 60  # 23h gate to avoid wasting DB round-trips on digest dedup checks
+
+# In-memory dedup gate for daily digests. Survives within a single worker
+# process; on restart we fall back to generate_digest()'s internal DB-based
+# 20h cooldown. With --workers N each worker has its own dict (worst case:
+# digest considered N times instead of once — still cheap, still deduped
+# server-side). Key: (workspace_id, integration_name) -> last successful run.
+_last_digest_run: dict[tuple[UUID, str], datetime] = {}
 
 
 async def _get_connected_workspaces(provider: Provider) -> list[UUID]:
@@ -92,17 +100,25 @@ async def reconcile_notion(workspace_id: UUID) -> None:
                     from src.models.notion import NotionPage
                     from sqlmodel import select as sm_select
 
+                    notion_ids = [p.get("id", "") for p in pages if p.get("id")]
+                    stored_map: dict[str, object] = {}
+                    if notion_ids:
+                        prefetch_stmt = sm_select(
+                            NotionPage.notion_id, NotionPage.notion_updated_at
+                        ).where(
+                            NotionPage.workspace_id == workspace_id,
+                            NotionPage.notion_id.in_(notion_ids),  # type: ignore[attr-defined]
+                        )
+                        prefetch_result = await session.execute(prefetch_stmt)
+                        stored_map = {
+                            row[0]: row[1] for row in prefetch_result.fetchall()
+                        }
+
                     for page_data in pages:
                         notion_id = page_data.get("id", "")
                         notion_last_edited = page_data.get("last_edited_time")
 
-                        # Check if we need to re-sync this page
-                        check_stmt = sm_select(NotionPage.notion_updated_at).where(
-                            NotionPage.workspace_id == workspace_id,
-                            NotionPage.notion_id == notion_id,
-                        )
-                        check_result = await session.execute(check_stmt)
-                        stored_updated = check_result.scalar_one_or_none()
+                        stored_updated = stored_map.get(notion_id)
 
                         if notion_last_edited and stored_updated:
                             from src.utils.datetime import parse_notion_datetime
@@ -211,16 +227,28 @@ async def _expire_stale_generations() -> None:
 async def _emit_daily_digest(workspace_id: UUID, integration: str) -> None:
     """Generate and emit an LLM-powered daily digest for a messaging integration.
 
-    Deduplication is handled inside generate_digest (20h cooldown), so this
-    can safely be called every polling cycle — it will no-op if a recent
-    digest already exists.
+    Deduplication is handled inside generate_digest (20h cooldown), but that
+    check costs ~9 DB round-trips per workspace per cycle. We gate the call
+    with an in-memory ``_last_digest_run`` timestamp so we don't even enter
+    generate_digest() when <23h have passed since the last successful run.
+    On cold start (empty cache) or worker restart, we fall through and let
+    generate_digest()'s DB-based dedup do its job — worst case is the prior
+    behavior.
     """
     from src.services.digest import generate_digest
+
+    cache_key = (workspace_id, integration)
+    last_run = _last_digest_run.get(cache_key)
+    if last_run is not None:
+        elapsed = (datetime.now(timezone.utc) - last_run).total_seconds()
+        if elapsed < DIGEST_MIN_INTERVAL_SECONDS:
+            return  # In-memory gate: skip without touching the DB
 
     async with async_session() as session:
         result = await generate_digest(session, workspace_id, integration)
         if result:
             await session.commit()
+            _last_digest_run[cache_key] = datetime.now(timezone.utc)
             logger.info(
                 "%s daily digest: %d messages for workspace %s",
                 integration.capitalize(), result["message_count"], workspace_id,
@@ -246,8 +274,31 @@ async def run_polling_fallback() -> None:
             # Expire stale context page generations
             await _expire_stale_generations()
 
+            # Single batched query for all connected workspaces grouped by
+            # provider — avoids 4× sequential round-trips to Supabase.
+            polled_providers = [
+                Provider.NOTION,
+                Provider.GITHUB,
+                Provider.SLACK,
+                Provider.TELEGRAM,
+            ]
+            workspaces_by_provider: dict[Provider, list[UUID]] = {
+                p: [] for p in polled_providers
+            }
+            async with async_session() as session:
+                stmt = select(
+                    WorkspaceIntegration.workspace_id,
+                    WorkspaceIntegration.provider,
+                ).where(
+                    WorkspaceIntegration.status == "connected",
+                    WorkspaceIntegration.provider.in_(polled_providers),  # type: ignore[attr-defined]
+                )
+                result = await session.execute(stmt)
+                for ws_id, provider in result.fetchall():
+                    workspaces_by_provider.setdefault(provider, []).append(ws_id)
+
             # Notion reconciliation
-            notion_workspaces = await _get_connected_workspaces(Provider.NOTION)
+            notion_workspaces = workspaces_by_provider.get(Provider.NOTION, [])
             for ws_id in notion_workspaces:
                 try:
                     await reconcile_notion(ws_id)
@@ -257,7 +308,7 @@ async def run_polling_fallback() -> None:
                     )
 
             # GitHub code index freshness check (every 60 min)
-            github_workspaces = await _get_connected_workspaces(Provider.GITHUB)
+            github_workspaces = workspaces_by_provider.get(Provider.GITHUB, [])
             for ws_id in github_workspaces:
                 try:
                     await _check_code_index_freshness(ws_id)
@@ -268,7 +319,7 @@ async def run_polling_fallback() -> None:
 
             # Slack DM polling (user-token) per Phase 39. Channels still use
             # the bot Events API webhook path — this only covers im/mpim.
-            slack_workspaces = await _get_connected_workspaces(Provider.SLACK)
+            slack_workspaces = workspaces_by_provider.get(Provider.SLACK, [])
             for ws_id in slack_workspaces:
                 try:
                     async with async_session() as session:
@@ -296,7 +347,7 @@ async def run_polling_fallback() -> None:
                 (Provider.SLACK, "slack"),
                 (Provider.TELEGRAM, "telegram"),
             ]:
-                workspaces = await _get_connected_workspaces(provider)
+                workspaces = workspaces_by_provider.get(provider, [])
                 for ws_id in workspaces:
                     try:
                         await _emit_daily_digest(ws_id, integration_name)

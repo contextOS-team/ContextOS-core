@@ -1,28 +1,26 @@
-import { createClient } from '@/lib/supabase/server'
+import {
+  createClient,
+  getCachedUser,
+  getCachedWorkspaceMember,
+} from '@/lib/supabase/server'
 import { ActivityTimeline } from './activity-timeline'
 import { SyncStatus } from './sync-status'
 
 export default async function ActivityPage() {
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = await getCachedUser()
 
   if (!user) {
     return null // Dashboard layout already redirects unauthenticated users
   }
 
   // Get workspace_id from membership
-  const { data: membership } = await supabase
-    .from('workspace_members')
-    .select('workspace_id')
-    .eq('user_id', user.id)
-    .single()
+  const membership = await getCachedWorkspaceMember(user.id)
 
   if (!membership) {
     return null // No workspace membership
   }
+
+  const supabase = await createClient()
 
   // Fetch initial 30 events
   const { data: events } = await supabase

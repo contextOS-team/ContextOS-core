@@ -2,6 +2,7 @@
 
 from uuid import UUID
 
+import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
@@ -9,10 +10,120 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.auth import JWTError, decode_supabase_jwt
+from src.config import get_settings
 from src.db import get_session
 from src.models.user import Profile, WorkspaceMember
+from src.observability.logging import get_logger
+
+logger = get_logger(__name__)
 
 security = HTTPBearer()
+
+# Workspace membership cache (PERF-01)
+# ----------------------------------------------------------------------
+# Production Supabase is in Singapore (~280ms RTT from Nuremberg). The
+# workspace_members lookup runs on every authenticated request, so we
+# cache the resolved workspace_id in Redis to skip the round-trip on hits.
+#
+# Invalidation: workspace_members rows are created exclusively by the
+# Postgres trigger in supabase/migrations/00002_workspace_creation_trigger.sql
+# at user signup, and are never mutated by application code. Therefore a
+# 1h TTL is sufficient as a safety bound; there is no app-level write path
+# that needs to call _invalidate_workspace_cache(). If/when teammate
+# invites or workspace switching are added, those code paths must invoke
+# the helper below to clear the cached entry.
+_WORKSPACE_CACHE_TTL_SECONDS = 3600
+_WORKSPACE_CACHE_KEY_PREFIX = "userctx:workspace:"
+
+# Module-level Redis client. Lazily connected on first use; on any
+# connection error we fall back to the DB query and try again later.
+_redis_client: aioredis.Redis | None = None
+_redis_unavailable = False
+
+
+def _workspace_cache_key(user_id: UUID) -> str:
+    return f"{_WORKSPACE_CACHE_KEY_PREFIX}{user_id}"
+
+
+async def _get_redis() -> aioredis.Redis | None:
+    """Return a connected Redis client, or None if unreachable.
+
+    Caches the unavailability flag so repeated requests during a Redis
+    outage do not all pay the connection-timeout cost. A process restart
+    is required to retry after a hard failure -- acceptable because the
+    fallback (direct DB query) is correct, just slower.
+    """
+    global _redis_client, _redis_unavailable
+
+    if _redis_unavailable:
+        return None
+    if _redis_client is not None:
+        return _redis_client
+
+    try:
+        settings = get_settings()
+        if not settings.REDIS_URL:
+            _redis_unavailable = True
+            return None
+        client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        await client.ping()
+        _redis_client = client
+        return _redis_client
+    except Exception:
+        logger.warning("workspace_cache_redis_connect_failed", exc_info=True)
+        _redis_unavailable = True
+        return None
+
+
+async def _cache_get_workspace(user_id: UUID) -> UUID | None:
+    """Fetch cached workspace_id for user. Returns None on miss or error."""
+    r = await _get_redis()
+    if r is None:
+        return None
+    try:
+        raw = await r.get(_workspace_cache_key(user_id))
+    except Exception:
+        logger.warning("workspace_cache_get_failed", exc_info=True)
+        return None
+    if raw is None:
+        return None
+    try:
+        return UUID(raw)
+    except ValueError:
+        # Corrupt entry -- treat as miss; will be overwritten on next set.
+        return None
+
+
+async def _cache_set_workspace(user_id: UUID, workspace_id: UUID) -> None:
+    """Store workspace_id for user with TTL. Best-effort; swallows errors."""
+    r = await _get_redis()
+    if r is None:
+        return
+    try:
+        await r.set(
+            _workspace_cache_key(user_id),
+            str(workspace_id),
+            ex=_WORKSPACE_CACHE_TTL_SECONDS,
+        )
+    except Exception:
+        logger.warning("workspace_cache_set_failed", exc_info=True)
+
+
+async def _invalidate_workspace_cache(user_id: UUID) -> None:
+    """Drop the cached workspace_id for a user.
+
+    Call this whenever application code creates, soft-deletes, or
+    reassigns a workspace_members row for ``user_id``. Currently no
+    such write path exists (see module docstring above), but the helper
+    is kept exported for future use.
+    """
+    r = await _get_redis()
+    if r is None:
+        return
+    try:
+        await r.delete(_workspace_cache_key(user_id))
+    except Exception:
+        logger.warning("workspace_cache_delete_failed", exc_info=True)
 
 
 class UserContext(BaseModel):
@@ -40,6 +151,15 @@ async def get_current_user(
             detail="Not authenticated",
         )
 
+    # PERF-01: Try Redis cache first to skip the ~280ms Singapore round-trip.
+    cached = await _cache_get_workspace(payload.sub)
+    if cached is not None:
+        return UserContext(
+            user_id=payload.sub,
+            email=payload.email or "",
+            workspace_id=cached,
+        )
+
     # Look up the user's workspace membership
     # REL-02: ORDER BY + LIMIT 1 ensures deterministic result for single-workspace assumption
     stmt = (
@@ -59,6 +179,8 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
         )
+
+    await _cache_set_workspace(payload.sub, membership)
 
     return UserContext(
         user_id=payload.sub,

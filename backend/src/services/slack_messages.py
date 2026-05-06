@@ -488,17 +488,11 @@ async def _upsert_messages(
                 "is_thread_reply": stmt.excluded.is_thread_reply,
                 "raw_data": stmt.excluded.raw_data,
             },
-        )
-        await session.execute(stmt)
-
-        # Fetch the row id back (same pattern as slack_events._handle_message).
-        id_stmt = select(SlackMessage.id).where(
-            SlackMessage.workspace_id == workspace_id,
-            SlackMessage.channel_id == conv_id,
-            SlackMessage.slack_ts == msg["ts"],
-        )
-        id_result = await session.execute(id_stmt)
-        row_id = id_result.scalar_one()
+        ).returning(SlackMessage.id)
+        # Single round-trip: upsert + RETURNING id (was 2 statements; the
+        # follow-up SELECT cost ~280ms RTT to Singapore Supabase per message).
+        result = await session.execute(stmt)
+        row_id = result.scalar_one()
         inserted_ids.append(row_id)
 
     await session.commit()
