@@ -1,7 +1,7 @@
 """Health check router.
 
 Provides two endpoints:
-- GET /api/health: Lightweight check for load balancers (DB connectivity only).
+- GET /api/health: Liveness probe — process is up. No external dependencies.
 - GET /api/health/ready: Deep readiness probe checking DB, Vault, and external
   API reachability for deployment validation.
 
@@ -32,20 +32,13 @@ router = APIRouter(prefix="/api", tags=["health"])
 
 @router.get("/health")
 async def health_check() -> dict:
-    """Return application health status including database connectivity.
+    """Liveness probe: process is up. No external dependencies.
 
-    This endpoint does NOT require authentication.
+    Use /api/health/ready for a deep readiness check (DB + Vault + APIs).
+    Touching the DB here means every Docker healthcheck (every 30s) pays a
+    Singapore round-trip and shows up as ~1.5s TTFB.
     """
-    db_status = "disconnected"
-
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-            db_status = "connected"
-    except Exception:
-        db_status = "disconnected"
-
-    return {"status": "ok", "db": db_status}
+    return {"status": "ok"}
 
 
 async def _check_db() -> dict:
