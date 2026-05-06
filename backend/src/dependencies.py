@@ -1,5 +1,6 @@
 """FastAPI dependency injection for authentication and workspace scoping."""
 
+from time import monotonic
 from uuid import UUID
 
 import redis.asyncio as aioredis
@@ -25,20 +26,21 @@ security = HTTPBearer()
 # workspace_members lookup runs on every authenticated request, so we
 # cache the resolved workspace_id in Redis to skip the round-trip on hits.
 #
-# Invalidation: workspace_members rows are created exclusively by the
-# Postgres trigger in supabase/migrations/00002_workspace_creation_trigger.sql
-# at user signup, and are never mutated by application code. Therefore a
-# 1h TTL is sufficient as a safety bound; there is no app-level write path
-# that needs to call _invalidate_workspace_cache(). If/when teammate
-# invites or workspace switching are added, those code paths must invoke
-# the helper below to clear the cached entry.
-_WORKSPACE_CACHE_TTL_SECONDS = 3600
+# Invalidation: workspace_members rows are written exclusively by Postgres
+# triggers (see supabase/migrations 00002, 00012, 00018, 00038); no
+# application-level INSERT/UPDATE/DELETE exists today. The 5-minute TTL
+# is the safety bound for trigger bugs and for the day teammate invites
+# / workspace switching land — those paths must call
+# _invalidate_workspace_cache(user_id) to drop the stale entry.
+_WORKSPACE_CACHE_TTL_SECONDS = 300
 _WORKSPACE_CACHE_KEY_PREFIX = "userctx:workspace:"
 
-# Module-level Redis client. Lazily connected on first use; on any
-# connection error we fall back to the DB query and try again later.
+# Module-level Redis client. Lazily connected on first use; if Redis is
+# unreachable we mark it unavailable for a short window and retry later
+# rather than latching the failure for the lifetime of the worker.
 _redis_client: aioredis.Redis | None = None
-_redis_unavailable = False
+_REDIS_RETRY_COOLDOWN_SECONDS = 30.0
+_redis_retry_after: float = 0.0
 
 
 def _workspace_cache_key(user_id: UUID) -> str:
@@ -48,22 +50,23 @@ def _workspace_cache_key(user_id: UUID) -> str:
 async def _get_redis() -> aioredis.Redis | None:
     """Return a connected Redis client, or None if unreachable.
 
-    Caches the unavailability flag so repeated requests during a Redis
-    outage do not all pay the connection-timeout cost. A process restart
-    is required to retry after a hard failure -- acceptable because the
-    fallback (direct DB query) is correct, just slower.
+    On connection failure we set a short cooldown (default 30s) instead of
+    latching unavailability for the worker lifetime, so a transient Redis
+    blip during deploy doesn't permanently drop us into DB-fallback mode.
     """
-    global _redis_client, _redis_unavailable
+    global _redis_client, _redis_retry_after
 
-    if _redis_unavailable:
-        return None
     if _redis_client is not None:
         return _redis_client
+
+    now = monotonic()
+    if now < _redis_retry_after:
+        return None
 
     try:
         settings = get_settings()
         if not settings.REDIS_URL:
-            _redis_unavailable = True
+            _redis_retry_after = now + _REDIS_RETRY_COOLDOWN_SECONDS
             return None
         client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
         await client.ping()
@@ -71,7 +74,7 @@ async def _get_redis() -> aioredis.Redis | None:
         return _redis_client
     except Exception:
         logger.warning("workspace_cache_redis_connect_failed", exc_info=True)
-        _redis_unavailable = True
+        _redis_retry_after = now + _REDIS_RETRY_COOLDOWN_SECONDS
         return None
 
 

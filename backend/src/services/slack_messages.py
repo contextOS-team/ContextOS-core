@@ -456,7 +456,9 @@ async def _upsert_messages(
     # Mirrors slack_events._handle_message: pg_insert + on_conflict_do_update,
     # commit, then fetch the id back by (workspace_id, channel_id, slack_ts).
     # SLACK-USR-04 parity: SET-clause fields MUST match slack_events exactly.
-    inserted_ids: list[UUID] = []
+    # Track (msg, row_id) so a skipped row (no RETURNING — see below) doesn't
+    # desync the downstream zip(filtered, inserted_ids, strict=True).
+    persisted: list[tuple[dict, UUID]] = []
     for msg in filtered:
         thread_ts = msg.get("thread_ts")
         is_thread_reply = bool(thread_ts and thread_ts != msg["ts"])
@@ -492,15 +494,24 @@ async def _upsert_messages(
         # Single round-trip: upsert + RETURNING id (was 2 statements; the
         # follow-up SELECT cost ~280ms RTT to Singapore Supabase per message).
         result = await session.execute(stmt)
-        row_id = result.scalar_one()
-        inserted_ids.append(row_id)
+        row_id = result.scalar_one_or_none()
+        if row_id is None:
+            # ON CONFLICT DO UPDATE always returns the row; a None here means
+            # something we don't expect (DB down, conflict-target mismatch).
+            # Skip rather than crash the whole batch.
+            logger.warning(
+                "slack upsert returned no row_id (workspace=%s channel=%s ts=%s); skipping",
+                workspace_id, conv_id, msg["ts"],
+            )
+            continue
+        persisted.append((msg, row_id))
 
     await session.commit()
 
     # --- 4) Embedding + graph extraction parity with slack_events ------------
     # Parity with slack_events._handle_message: one queue_embedding_generation
     # call per message, followed by a (non-fatal) graph extraction call.
-    for msg, row_id in zip(filtered, inserted_ids, strict=True):
+    for msg, row_id in persisted:
         await embedding.queue_embedding_generation(
             session, workspace_id, "slack_message", [row_id]
         )

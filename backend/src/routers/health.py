@@ -11,6 +11,7 @@ Neither endpoint requires authentication.
 import json
 import time
 from datetime import datetime, timezone
+from time import monotonic
 
 import httpx
 import redis.asyncio as aioredis
@@ -37,25 +38,32 @@ router = APIRouter(prefix="/api", tags=["health"])
 # meaningfully delaying detection of regressions.
 _READY_CACHE_KEY = "health:ready"
 _READY_CACHE_TTL_SECONDS = 10
+_READY_REDIS_RETRY_COOLDOWN_SECONDS = 30.0
 
 _redis_client: aioredis.Redis | None = None
+_redis_retry_after: float = 0.0
 
 
 async def _get_redis() -> aioredis.Redis | None:
-    """Lazy Redis connection for health-check caching. Returns None on failure."""
-    global _redis_client
-    if _redis_client is None:
-        try:
-            import src.config as config_module
+    """Lazy Redis connection. None if unreachable (with short cooldown to retry)."""
+    global _redis_client, _redis_retry_after
+    if _redis_client is not None:
+        return _redis_client
+    now = monotonic()
+    if now < _redis_retry_after:
+        return None
+    try:
+        import src.config as config_module
 
-            settings = config_module.get_settings()
-            client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-            await client.ping()
-            _redis_client = client
-        except Exception:
-            logger.warning("health_ready_redis_connect_failed", exc_info=True)
-            return None
-    return _redis_client
+        settings = config_module.get_settings()
+        client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        await client.ping()
+        _redis_client = client
+        return _redis_client
+    except Exception:
+        logger.warning("health_ready_redis_connect_failed", exc_info=True)
+        _redis_retry_after = now + _READY_REDIS_RETRY_COOLDOWN_SECONDS
+        return None
 
 
 @router.get("/health")
@@ -192,8 +200,9 @@ async def health_ready() -> dict:
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Best-effort cache write; never let Redis errors fail the probe
-    if redis_client is not None:
+    # Cache only healthy responses. Caching "unhealthy" would pin a transient
+    # blip for 10s after recovery — probes should fail closed but recover open.
+    if redis_client is not None and overall_status == "healthy":
         try:
             await redis_client.set(
                 _READY_CACHE_KEY,

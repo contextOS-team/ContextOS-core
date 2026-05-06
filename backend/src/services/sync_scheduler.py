@@ -12,13 +12,16 @@ that support webhooks (Notion, GitHub, Linear).
 import asyncio
 import logging
 from datetime import datetime, timezone
+from time import monotonic
 from uuid import UUID
 
 from datetime import timedelta
 
+import redis.asyncio as aioredis
 from sqlalchemy import update
 from sqlmodel import select
 
+from src.config import get_settings
 from src.db import async_session
 from src.models.context_page import ContextPage
 from src.models.integration import Provider, WorkspaceIntegration
@@ -30,14 +33,44 @@ logger = logging.getLogger(__name__)
 POLL_INTERVAL_SECONDS = 15 * 60  # 15 minutes per CONTEXT.md decision
 CODE_INDEX_INTERVAL_SECONDS = 60 * 60  # 60 minutes for code re-indexing
 STALE_GENERATION_MINUTES = 5  # Pages stuck in "generating" longer than this are marked as error
-DIGEST_MIN_INTERVAL_SECONDS = 23 * 60 * 60  # 23h gate to avoid wasting DB round-trips on digest dedup checks
 
-# In-memory dedup gate for daily digests. Survives within a single worker
-# process; on restart we fall back to generate_digest()'s internal DB-based
-# 20h cooldown. With --workers N each worker has its own dict (worst case:
-# digest considered N times instead of once — still cheap, still deduped
-# server-side). Key: (workspace_id, integration_name) -> last successful run.
-_last_digest_run: dict[tuple[UUID, str], datetime] = {}
+# Daily digest gate
+# ---------------------------------------------------------------------
+# generate_digest()'s internal _has_recent_digest is a non-locking SELECT,
+# so two workers running it concurrently would both pass dedup and emit
+# duplicate activity events. We use a Redis SET NX EX lock here so only
+# one worker per (workspace, integration) enters the function per ~23h
+# window. SET NX is atomic across workers; this is also the dedup gate
+# that saves the wasted DB round-trips on every poll cycle.
+DIGEST_LOCK_TTL_SECONDS = 23 * 60 * 60
+_DIGEST_LOCK_KEY_PREFIX = "digest:lock:"
+
+_redis_client: aioredis.Redis | None = None
+_DIGEST_REDIS_RETRY_COOLDOWN_SECONDS = 30.0
+_redis_retry_after: float = 0.0
+
+
+async def _get_redis() -> aioredis.Redis | None:
+    """Lazy Redis connection for digest locks. None if unreachable (with cooldown)."""
+    global _redis_client, _redis_retry_after
+    if _redis_client is not None:
+        return _redis_client
+    now = monotonic()
+    if now < _redis_retry_after:
+        return None
+    try:
+        settings = get_settings()
+        if not settings.REDIS_URL:
+            _redis_retry_after = now + _DIGEST_REDIS_RETRY_COOLDOWN_SECONDS
+            return None
+        client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        await client.ping()
+        _redis_client = client
+        return _redis_client
+    except Exception:
+        logger.warning("digest_redis_connect_failed", exc_info=True)
+        _redis_retry_after = now + _DIGEST_REDIS_RETRY_COOLDOWN_SECONDS
+        return None
 
 
 async def _get_connected_workspaces(provider: Provider) -> list[UUID]:
@@ -227,32 +260,54 @@ async def _expire_stale_generations() -> None:
 async def _emit_daily_digest(workspace_id: UUID, integration: str) -> None:
     """Generate and emit an LLM-powered daily digest for a messaging integration.
 
-    Deduplication is handled inside generate_digest (20h cooldown), but that
-    check costs ~9 DB round-trips per workspace per cycle. We gate the call
-    with an in-memory ``_last_digest_run`` timestamp so we don't even enter
-    generate_digest() when <23h have passed since the last successful run.
-    On cold start (empty cache) or worker restart, we fall through and let
-    generate_digest()'s DB-based dedup do its job — worst case is the prior
-    behavior.
+    generate_digest() has its own DB-based dedup, but it costs ~9 round-trips
+    per workspace per cycle and is non-locking, so concurrent workers would
+    both pass it. We gate the call with a Redis SET NX EX lock so only one
+    worker per (workspace, integration) enters the function per 23h window.
+    If Redis is unavailable we fall through and rely on the DB dedup —
+    worst case is the prior behavior (a wasted check, possibly a duplicate
+    digest under high concurrency).
     """
     from src.services.digest import generate_digest
 
-    cache_key = (workspace_id, integration)
-    last_run = _last_digest_run.get(cache_key)
-    if last_run is not None:
-        elapsed = (datetime.now(timezone.utc) - last_run).total_seconds()
-        if elapsed < DIGEST_MIN_INTERVAL_SECONDS:
-            return  # In-memory gate: skip without touching the DB
+    redis = await _get_redis()
+    lock_key = f"{_DIGEST_LOCK_KEY_PREFIX}{workspace_id}:{integration}"
+    if redis is not None:
+        try:
+            acquired = await redis.set(
+                lock_key, "1", nx=True, ex=DIGEST_LOCK_TTL_SECONDS
+            )
+        except Exception:
+            logger.warning("digest_lock_acquire_failed", exc_info=True)
+            acquired = True  # fail open: let DB dedup take over
+        if not acquired:
+            return  # Another worker (or earlier run) holds the lock; skip cleanly.
 
     async with async_session() as session:
-        result = await generate_digest(session, workspace_id, integration)
+        try:
+            result = await generate_digest(session, workspace_id, integration)
+        except Exception:
+            # Release the lock on failure so a retry isn't blocked for 23h.
+            if redis is not None:
+                try:
+                    await redis.delete(lock_key)
+                except Exception:
+                    pass
+            raise
         if result:
             await session.commit()
-            _last_digest_run[cache_key] = datetime.now(timezone.utc)
             logger.info(
                 "%s daily digest: %d messages for workspace %s",
                 integration.capitalize(), result["message_count"], workspace_id,
             )
+        else:
+            # generate_digest declined (no messages, or its own dedup tripped).
+            # Drop the lock so we don't suppress digests for 23h on a no-op cycle.
+            if redis is not None:
+                try:
+                    await redis.delete(lock_key)
+                except Exception:
+                    pass
 
 
 async def run_polling_fallback() -> None:

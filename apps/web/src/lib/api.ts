@@ -13,24 +13,20 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:800
 /**
  * Generic fetch wrapper that attaches the Supabase JWT.
  *
- * Caching behavior (Next.js 15 fetch defaults are uncached):
- * - GET-style requests are tagged with `next: { revalidate }` (default 60s) so
- *   the Next.js Data Cache deduplicates them across requests on the server.
- *   Pass `revalidate: false` to opt out (sets `cache: 'no-store'`), or supply
- *   a custom number of seconds.
- * - Non-GET methods (POST/PUT/DELETE/PATCH) always use `cache: 'no-store'`,
- *   regardless of `revalidate`, since mutations must never be cached.
+ * Caching: every request uses `cache: 'no-store'`. The Next.js Data Cache
+ * keys fetches by URL + method + body — NOT by Authorization header — so
+ * sharing responses across users via `next: { revalidate }` would leak one
+ * user's data to another. Per-request dedup within a single Server
+ * Component render is handled by `React.cache(...)` wrappers further down.
  *
  * @param path - API path starting with / (e.g. "/api/integrations/status")
  * @param options - Standard RequestInit options
- * @param revalidate - Seconds to cache GET responses, or `false` to disable caching. Default 60.
  * @returns Parsed JSON response
  * @throws Error if response is not ok
  */
 export async function apiFetch<T>(
   path: string,
-  options?: RequestInit,
-  revalidate: number | false = 60
+  options?: RequestInit
 ): Promise<T> {
   const supabase = createClient()
   const {
@@ -39,17 +35,9 @@ export async function apiFetch<T>(
 
   const accessToken = session?.access_token ?? ''
 
-  const method = (options?.method ?? 'GET').toUpperCase()
-  const isMutation = method !== 'GET' && method !== 'HEAD'
-
-  const cacheInit: Pick<RequestInit, 'cache' | 'next'> =
-    isMutation || revalidate === false
-      ? { cache: 'no-store' }
-      : { next: { revalidate } }
-
   const response = await fetch(`${BACKEND_URL}${path}`, {
     ...options,
-    ...cacheInit,
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,

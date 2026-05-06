@@ -122,6 +122,48 @@ def mock_session() -> AsyncMock:
     return session
 
 
+class _QueryCounter:
+    """Counts `session.execute()` calls and captures the SQL each ran.
+
+    Used by perf-regression tests to assert "this code path made ≤ N round-trips".
+    Wraps an existing AsyncSession (mock or real) by spying on .execute().
+    """
+
+    def __init__(self) -> None:
+        self.count = 0
+        self.sql: list[str] = []
+
+    def reset(self) -> None:
+        self.count = 0
+        self.sql.clear()
+
+    def attach(self, session) -> None:
+        original_execute = session.execute
+
+        async def counting_execute(stmt, *args, **kwargs):
+            self.count += 1
+            try:
+                self.sql.append(str(stmt))
+            except Exception:
+                self.sql.append("<unstringable stmt>")
+            return await original_execute(stmt, *args, **kwargs)
+
+        session.execute = counting_execute
+
+
+@pytest.fixture()
+def query_counter() -> _QueryCounter:
+    """Per-test query counter. Attach to a session via `query_counter.attach(session)`.
+
+    Example:
+        async def test_one_query(mock_session, query_counter):
+            query_counter.attach(mock_session)
+            await my_code(mock_session)
+            assert query_counter.count == 1
+    """
+    return _QueryCounter()
+
+
 @pytest.fixture()
 def app(mock_settings: Settings, mock_session: AsyncMock):
     """Create a FastAPI app with mocked dependencies for testing.
