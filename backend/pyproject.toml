@@ -42,6 +42,7 @@ dev = [
     "pytest-cov",
     "ruff",
     "mypy",
+    "fakeredis>=2.20",
 ]
 
 [build-system]

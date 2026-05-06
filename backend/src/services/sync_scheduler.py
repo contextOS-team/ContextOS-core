@@ -287,27 +287,26 @@ async def _emit_daily_digest(workspace_id: UUID, integration: str) -> None:
         try:
             result = await generate_digest(session, workspace_id, integration)
         except Exception:
-            # Release the lock on failure so a retry isn't blocked for 23h.
+            # Release on EXCEPTION only so a transient failure doesn't lock
+            # out for 23h. We deliberately do NOT release on a None return:
+            # generate_digest returns None both when its DB-based dedup tripped
+            # (a digest was already emitted recently) and when there were no
+            # messages to digest. In both cases the right answer is to keep
+            # the lock held — releasing would just have the next 15-minute
+            # poll cycle re-run the same wasted check.
             if redis is not None:
                 try:
                     await redis.delete(lock_key)
                 except Exception:
                     pass
             raise
+
         if result:
             await session.commit()
             logger.info(
                 "%s daily digest: %d messages for workspace %s",
                 integration.capitalize(), result["message_count"], workspace_id,
             )
-        else:
-            # generate_digest declined (no messages, or its own dedup tripped).
-            # Drop the lock so we don't suppress digests for 23h on a no-op cycle.
-            if redis is not None:
-                try:
-                    await redis.delete(lock_key)
-                except Exception:
-                    pass
 
 
 async def run_polling_fallback() -> None:
