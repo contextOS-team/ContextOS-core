@@ -32,6 +32,11 @@ services:
         NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN}
         NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: ${NEXT_PUBLIC_TELEGRAM_BOT_USERNAME}
     env_file: .env
+    environment:
+      # Cap Node heap below host RAM and rein in glibc arena-per-thread bloat
+      # so sharp/Next don't OOM on the 4 GB box.
+      - NODE_OPTIONS=--max-old-space-size=2560
+      - MALLOC_ARENA_MAX=2
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
@@ -39,6 +44,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    volumes:
+      # Persist Next.js ISR/data cache across deploys so revalidated pages
+      # survive container restarts. Mount only .next/cache, not the whole
+      # .next dir — otherwise stale code from old builds gets served.
+      - next_cache:/app/.next/cache
     networks:
       - contextos
 
@@ -79,6 +89,7 @@ services:
 
 volumes:
   redis_data:
+  next_cache:
 
 networks:
   contextos:

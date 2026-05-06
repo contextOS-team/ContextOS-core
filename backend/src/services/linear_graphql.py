@@ -46,7 +46,7 @@ class LinearGraphQLClient:
         self._access_token = access_token
         self._client = httpx.AsyncClient(
             headers={"Authorization": f"Bearer {access_token}"},
-            timeout=30.0,
+            timeout=5.0,
             http2=True,
             limits=httpx.Limits(
                 max_keepalive_connections=10,

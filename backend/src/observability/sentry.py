@@ -53,16 +53,16 @@ def init_sentry(settings: Settings) -> None:
     sentry_sdk.init(
         dsn=settings.SENTRY_DSN,
         integrations=integrations,
-        traces_sample_rate=0.2 if is_production else 1.0,
-        profiles_sample_rate=0.1 if is_production else 0.0,
+        traces_sample_rate=0.05 if is_production else 1.0,
+        profiles_sample_rate=0.0 if is_production else 0.0,
         environment=settings.ENVIRONMENT.value,
         release=f"contextos-backend@{_APP_VERSION}",
         send_default_pii=False,
     )
     logger.info(
-        "Sentry initialized (env=%s, traces=%.1f)",
+        "Sentry initialized (env=%s, traces=%.2f)",
         settings.ENVIRONMENT.value,
-        0.2 if is_production else 1.0,
+        0.05 if is_production else 1.0,
     )
 
 

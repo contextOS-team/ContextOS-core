@@ -60,34 +60,41 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user) {
-    // Check onboarding completion for authenticated users
-    const { data: onboarding } = await supabase
-      .from('user_onboarding_state')
-      .select('completed_at')
-      .eq('user_id', user.id)
-      .single()
+    // Onboarding state is only needed on routes that branch on it. Skipping
+    // the Supabase query on every other request removes a per-navigation
+    // round-trip on a Frankfurt → Hetzner-Nuremberg path that costs ~10-100ms.
+    const needsOnboardingCheck =
+      pathname === '/login' ||
+      pathname === '/signup' ||
+      pathname === '/onboarding' ||
+      pathname.startsWith('/dashboard')
 
-    const onboardingComplete = !!onboarding?.completed_at
+    if (needsOnboardingCheck) {
+      const { data: onboarding } = await supabase
+        .from('user_onboarding_state')
+        .select('completed_at')
+        .eq('user_id', user.id)
+        .single()
 
-    if (pathname === '/login' || pathname === '/signup') {
-      // Redirect authenticated users away from auth pages
-      const url = request.nextUrl.clone()
-      url.pathname = onboardingComplete ? '/dashboard' : '/onboarding'
-      return NextResponse.redirect(url)
-    }
+      const onboardingComplete = !!onboarding?.completed_at
 
-    if (!onboardingComplete && pathname.startsWith('/dashboard')) {
-      // Redirect to onboarding if not completed
-      const url = request.nextUrl.clone()
-      url.pathname = '/onboarding'
-      return NextResponse.redirect(url)
-    }
+      if (pathname === '/login' || pathname === '/signup') {
+        const url = request.nextUrl.clone()
+        url.pathname = onboardingComplete ? '/dashboard' : '/onboarding'
+        return NextResponse.redirect(url)
+      }
 
-    if (onboardingComplete && pathname === '/onboarding') {
-      // Redirect to dashboard if onboarding already done
-      const url = request.nextUrl.clone()
-      url.pathname = '/dashboard'
-      return NextResponse.redirect(url)
+      if (!onboardingComplete && pathname.startsWith('/dashboard')) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/onboarding'
+        return NextResponse.redirect(url)
+      }
+
+      if (onboardingComplete && pathname === '/onboarding') {
+        const url = request.nextUrl.clone()
+        url.pathname = '/dashboard'
+        return NextResponse.redirect(url)
+      }
     }
   }
 

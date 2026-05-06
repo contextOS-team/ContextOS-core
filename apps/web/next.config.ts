@@ -4,6 +4,22 @@ import { withSentryConfig } from "@sentry/nextjs";
 const nextConfig: NextConfig = {
   output: "standalone",
   serverExternalPackages: [],
+  compress: true,
+  poweredByHeader: false,
+  productionBrowserSourceMaps: false,
+  experimental: {
+    optimizePackageImports: [
+      "@xyflow/react",
+      "posthog-js",
+      "react-markdown",
+      "remark-gfm",
+      "radix-ui",
+    ],
+  },
+  images: {
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 60 * 60 * 24 * 7,
+  },
 };
 
 export default withSentryConfig(nextConfig, {

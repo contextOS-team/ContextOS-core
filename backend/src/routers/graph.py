@@ -368,34 +368,44 @@ async def _build_ticket_clusters(
 
     # Traverse 1-hop from each ticket node.
     # Phase 1: collect raw traversal data per ticket.
-    raw_traversals: dict[str, list[tuple]] = {}  # ident -> rows
+    # Single query with unnest+LATERAL collapses N per-ticket round-trips into one.
+    raw_traversals: dict[str, list[tuple]] = {ident: [] for ident in ident_to_node}
     all_traversed_node_ids: set[str] = set()
 
-    for ident, graph_node in ident_to_node.items():
-        traverse_stmt = text("""
-            SELECT node_id, entity_type, name, properties,
-                   edge_relationship_type, depth, path
-            FROM traverse_graph(
-                CAST(:start_node_id AS uuid),
-                CAST(:workspace_id AS uuid),
-                CAST(:max_depth AS int),
-                'both'::text,
-                NULL::text[],
-                NULL::text[]
-            )
-        """)
-        traverse_result = await session.execute(
-            traverse_stmt,
-            {
-                "start_node_id": str(graph_node.id),
-                "workspace_id": str(workspace_id),
-                "max_depth": 1,
-            },
-        )
-        rows = traverse_result.fetchall()
-        raw_traversals[ident] = rows
-        for row in rows:
-            all_traversed_node_ids.add(str(row[0]))
+    node_id_to_ident = {str(gn.id): ident for ident, gn in ident_to_node.items()}
+    start_ids = list(node_id_to_ident.keys())
+
+    bulk_traverse_stmt = text("""
+        SELECT t.start_id::text AS start_id,
+               tg.node_id, tg.entity_type, tg.name, tg.properties,
+               tg.edge_relationship_type, tg.depth, tg.path
+        FROM unnest(CAST(:start_ids AS uuid[])) AS t(start_id)
+        CROSS JOIN LATERAL traverse_graph(
+            t.start_id,
+            CAST(:workspace_id AS uuid),
+            CAST(:max_depth AS int),
+            'both'::text,
+            NULL::text[],
+            NULL::text[]
+        ) AS tg
+    """)
+    bulk_result = await session.execute(
+        bulk_traverse_stmt,
+        {
+            "start_ids": start_ids,
+            "workspace_id": str(workspace_id),
+            "max_depth": 1,
+        },
+    )
+    for row in bulk_result.fetchall():
+        start_id = row[0]
+        ident = node_id_to_ident.get(start_id)
+        if ident is None:
+            continue
+        # Drop the start_id prefix to keep downstream tuple shape unchanged.
+        traversal_row = row[1:]
+        raw_traversals[ident].append(traversal_row)
+        all_traversed_node_ids.add(str(traversal_row[0]))
 
     # Phase 2: bulk-fetch GraphNode records for filtering.
     # traverse_graph() doesn't return source_type, so we need the actual rows.

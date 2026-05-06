@@ -25,7 +25,7 @@ export function initSentry(): void {
 
   Sentry.init({
     dsn,
-    tracesSampleRate: isDev ? 1.0 : 0.2,
+    tracesSampleRate: isDev ? 1.0 : 0.05,
     replaysSessionSampleRate: 0,
     replaysOnErrorSampleRate: 0,
     environment: process.env.NODE_ENV,
