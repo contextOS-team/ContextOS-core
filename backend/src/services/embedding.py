@@ -13,7 +13,7 @@ from google import genai
 from google.genai import types
 from lmnr import observe
 from src.observability.langfuse_client import langfuse_observe, update_generation
-from sqlalchemy import text
+from sqlalchemy import or_, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -61,6 +61,10 @@ SOURCE_TYPE_MAP: dict[str, tuple[type, callable]] = {
     ),
     "slack_message": (
         SlackMessage,
+        # Base extractor (single message). For threaded messages this is
+        # replaced by a thread-aware text built in _enrich_slack_thread_text
+        # so each vector carries the surrounding discussion — a lone
+        # "ок, задача не крит" embeds nowhere near its ticket otherwise.
         lambda r: r.text,
     ),
     "meeting_transcript": (
@@ -293,6 +297,92 @@ async def generate_embeddings_batch(texts: list[str]) -> list[list[float]]:
     return [list(e.values) for e in response.embeddings]
 
 
+# Max sibling replies (newest-first, then re-ordered) folded into a
+# threaded message's embedding text. Enough to carry the discussion's
+# gist without diluting the focal message's own signal.
+_SLACK_THREAD_CONTEXT_LIMIT = 12
+
+
+async def _build_slack_thread_texts(
+    session: AsyncSession,
+    records: list[SlackMessage],
+) -> dict[UUID, str]:
+    """Build thread-aware embedding text for Slack messages.
+
+    A Slack message embedded in isolation is often a few words
+    ("да", "поэтапно") that share no vocabulary with the ticket that
+    should retrieve them. We anchor each threaded message to its thread:
+    the root message plus chronologically-prior siblings, so the vector
+    lands near the discussion topic instead of in noise.
+
+    Returns {source_id: thread_text}. Messages with no thread (thread_ts
+    NULL and not a parent) are omitted — the caller keeps the plain text.
+    """
+    # Group the focal records by their thread key. For a reply that's
+    # parent_ts; for a parent it's its own slack_ts; standalone messages
+    # have neither and are skipped.
+    thread_keys: dict[tuple[UUID, str], list[SlackMessage]] = {}
+    for r in records:
+        key_ts = r.parent_ts or (
+            r.slack_ts if (r.thread_ts and r.thread_ts == r.slack_ts) else None
+        )
+        if not key_ts:
+            continue
+        thread_keys.setdefault((r.workspace_id, key_ts), []).append(r)
+
+    if not thread_keys:
+        return {}
+
+    result: dict[UUID, str] = {}
+    for (ws_id, root_ts), focal_msgs in thread_keys.items():
+        # Pull the whole thread: the root (slack_ts == root_ts) plus every
+        # reply (parent_ts == root_ts), oldest first.
+        stmt = (
+            select(SlackMessage)
+            .where(
+                SlackMessage.workspace_id == ws_id,
+                SlackMessage.deleted_at.is_(None),  # type: ignore[union-attr]
+                or_(
+                    SlackMessage.slack_ts == root_ts,
+                    SlackMessage.parent_ts == root_ts,
+                ),
+            )
+            .order_by(SlackMessage.slack_created_at)
+        )
+        thread_msgs = list((await session.execute(stmt)).scalars().all())
+        if not thread_msgs:
+            continue
+
+        root = next(
+            (m for m in thread_msgs if m.slack_ts == root_ts), None
+        )
+        for focal in focal_msgs:
+            # Prior siblings = thread messages strictly before this one.
+            prior = [
+                m
+                for m in thread_msgs
+                if m.slack_created_at
+                and focal.slack_created_at
+                and m.slack_created_at < focal.slack_created_at
+                and m.id != focal.id
+            ][-_SLACK_THREAD_CONTEXT_LIMIT:]
+
+            lines: list[str] = []
+            if root is not None and root.id != focal.id:
+                who = root.user_name or "Unknown"
+                lines.append(f"[thread] {who}: {root.text}")
+            for m in prior:
+                if root is not None and m.id == root.id:
+                    continue
+                who = m.user_name or "Unknown"
+                lines.append(f"{who}: {m.text}")
+            who_f = focal.user_name or "Unknown"
+            lines.append(f">>> {who_f}: {focal.text}")
+            result[focal.id] = "\n".join(lines).strip()
+
+    return result
+
+
 async def queue_embedding_generation(
     session: AsyncSession,
     workspace_id: UUID,
@@ -337,6 +427,20 @@ async def queue_embedding_generation(
         for row in existing_result.fetchall():
             existing_hashes[row[0]] = row[1]
 
+    # --- Slack: build thread-aware text so each vector carries the
+    # surrounding discussion, not just an isolated fragment. ---
+    slack_thread_texts: dict[UUID, str] = {}
+    if source_type == "slack_message":
+        try:
+            slack_thread_texts = await _build_slack_thread_texts(
+                session, list(records_by_id.values())
+            )
+        except Exception:
+            logger.exception(
+                "Slack thread-context build failed; falling back to "
+                "per-message text for this batch"
+            )
+
     # --- Diff in-memory ---
     pending: list[tuple[UUID, str, str]] = []  # (source_id, text, content_hash)
 
@@ -346,7 +450,9 @@ async def queue_embedding_generation(
             if record is None:
                 continue
 
-            text_content = extract_text(record)
+            text_content = slack_thread_texts.get(source_id) or extract_text(
+                record
+            )
             if not text_content or not text_content.strip():
                 continue
 

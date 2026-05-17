@@ -440,12 +440,17 @@ async def _resolve_channel_name(
     session: AsyncSession,
     workspace_id: UUID,
     channel_id: str,
+    token: str | None = None,
 ) -> str | None:
     """Resolve a Slack channel ID to its `#name`.
 
     Caches per (workspace, channel) to avoid hitting conversations.info on
     every event. Returns None on any failure so the caller falls back
     cleanly. Never raises.
+
+    ``token`` lets callers (e.g. the user-token poll path) supply an
+    already-loaded token. When omitted, falls back to the workspace bot
+    token. Both token kinds carry the ``conversations:read`` scope.
     """
     if not channel_id:
         return None
@@ -455,11 +460,13 @@ async def _resolve_channel_name(
         return cached
 
     try:
-        from src.services.slack_oauth import get_bot_token
+        if token is None:
+            from src.services.slack_oauth import get_bot_token
 
-        bot_token = await get_bot_token(session, workspace_id)
-        if not bot_token:
+            token = await get_bot_token(session, workspace_id)
+        if not token:
             return None
+        bot_token = token
 
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(
@@ -486,11 +493,16 @@ async def _resolve_user_name(
     session: AsyncSession,
     workspace_id: UUID,
     user_id: str,
+    token: str | None = None,
 ) -> str | None:
     """Resolve a Slack user ID to a display name.
 
     Prefers real_name, falls back to display_name, then None. Cached per
     (workspace, user). Fail-silent.
+
+    ``token`` lets callers (e.g. the user-token poll path) supply an
+    already-loaded token. When omitted, falls back to the workspace bot
+    token. Both token kinds carry the ``users:read`` scope.
     """
     if not user_id:
         return None
@@ -500,11 +512,13 @@ async def _resolve_user_name(
         return cached
 
     try:
-        from src.services.slack_oauth import get_bot_token
+        if token is None:
+            from src.services.slack_oauth import get_bot_token
 
-        bot_token = await get_bot_token(session, workspace_id)
-        if not bot_token:
+            token = await get_bot_token(session, workspace_id)
+        if not token:
             return None
+        bot_token = token
 
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get(

@@ -130,6 +130,31 @@ def _patch_graph_extractor():
         yield m
 
 
+@pytest.fixture(autouse=True)
+def _patch_name_resolvers():
+    """Patch Slack name resolution to avoid DB/HTTP side-effects.
+
+    _upsert_messages now resolves user_name/channel_name (parity with
+    slack_events). Those resolvers do their own session.execute + httpx
+    calls, which would desync the per-test session.execute side_effect
+    sequences. Stub them here — name resolution is covered separately
+    in test_slack_events.
+    """
+    with (
+        patch(
+            "src.services.slack_messages._resolve_channel_name",
+            new_callable=AsyncMock,
+            return_value="#test-channel",
+        ) as ch,
+        patch(
+            "src.services.slack_messages._resolve_user_name",
+            new_callable=AsyncMock,
+            return_value="Test User",
+        ),
+    ):
+        yield ch
+
+
 def _mock_integration(config: dict | None) -> MagicMock:
     """Build a mocked WorkspaceIntegration row for session.execute chains."""
     integration = MagicMock()
@@ -649,6 +674,8 @@ class TestUpsert:
         for field in (
             "text",
             "user_id",
+            "user_name",
+            "channel_name",
             "thread_ts",
             "parent_ts",
             "is_thread_reply",
@@ -669,10 +696,9 @@ class TestUpsert:
             "1700000000.000002", user="U002", text="bot noise", bot_id="B999"
         )
 
-        # Mock session with three execute branches (matches slack_events pattern):
+        # Mock session with two execute branches (single round-trip upsert):
         #  - SELECT existing slack_ts (dedup pre-count) -> empty result
-        #  - INSERT ... ON CONFLICT DO UPDATE (no returning) -> bare result
-        #  - SELECT id WHERE ts=... -> returns fresh UUID
+        #  - INSERT ... ON CONFLICT DO UPDATE ... RETURNING id -> fresh UUID
         from uuid import uuid4
 
         inserted_id = uuid4()
@@ -680,13 +706,11 @@ class TestUpsert:
         existing_result = MagicMock()
         existing_result.all.return_value = []  # no prior rows
 
-        upsert_result = MagicMock()  # unused return value
-
-        id_result = MagicMock()
-        id_result.scalar_one.return_value = inserted_id
+        upsert_result = MagicMock()
+        upsert_result.scalar_one_or_none.return_value = inserted_id
 
         session.execute = AsyncMock(
-            side_effect=[existing_result, upsert_result, id_result]
+            side_effect=[existing_result, upsert_result]
         )
         session.commit = AsyncMock()
 
@@ -731,14 +755,12 @@ class TestUpsert:
         # Pre-existing row: the dedup SELECT returns a 1-tuple row with the ts.
         existing_result.all.return_value = [(msg["ts"],)]
 
-        upsert_result = MagicMock()  # unused return value
-
-        id_result = MagicMock()
-        id_result.scalar_one.return_value = uuid4()
+        upsert_result = MagicMock()
+        upsert_result.scalar_one_or_none.return_value = uuid4()
 
         session = AsyncMock()
         session.execute = AsyncMock(
-            side_effect=[existing_result, upsert_result, id_result]
+            side_effect=[existing_result, upsert_result]
         )
         session.commit = AsyncMock()
 
@@ -778,12 +800,11 @@ class TestUpsert:
         existing_result.all.return_value = []  # no prior rows
 
         upsert_result = MagicMock()
-        id_result = MagicMock()
-        id_result.scalar_one.return_value = inserted_id
+        upsert_result.scalar_one_or_none.return_value = inserted_id
 
         session = AsyncMock()
         session.execute = AsyncMock(
-            side_effect=[existing_result, upsert_result, id_result]
+            side_effect=[existing_result, upsert_result]
         )
         session.commit = AsyncMock()
 

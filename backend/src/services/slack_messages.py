@@ -56,7 +56,12 @@ from src.models.integration import Provider, WorkspaceIntegration
 from src.models.slack import SlackMessage
 from src.services import embedding
 from src.services.graph_extractor import extract_and_populate_graph
-from src.services.slack_events import _should_filter, _ts_to_datetime
+from src.services.slack_events import (
+    _resolve_channel_name,
+    _resolve_user_name,
+    _should_filter,
+    _ts_to_datetime,
+)
 from src.services.slack_oauth import SlackOAuthError, get_user_token
 
 logger = logging.getLogger(__name__)
@@ -156,8 +161,30 @@ async def poll_user_messages(
                 needs_reauth_hit = True
                 break
 
+            # conversations.history returns top-level messages only. For any
+            # thread parent (reply_count > 0), walk conversations.replies so
+            # the actual discussion — where decisions live — is ingested with
+            # correct thread_ts/parent_ts linkage. Without this, threaded
+            # messages enter the DB (if at all) as disconnected fragments and
+            # never surface coherently in retrieval (see RD-781 miss).
+            for thread_ts in _thread_parents_with_replies(messages):
+                try:
+                    replies = await _fetch_thread_replies(
+                        client, user_token, conv_id, thread_ts
+                    )
+                except _NeedsReauth:
+                    needs_reauth_hit = True
+                    break
+                # Slack returns the parent again in replies; the upsert is
+                # idempotent on (workspace_id, channel_id, slack_ts) so the
+                # duplicate parent is a harmless no-op SET.
+                messages.extend(replies)
+
+            if needs_reauth_hit:
+                break
+
             ins, skp = await _upsert_messages(
-                session, workspace_id, conv_id, messages
+                session, workspace_id, conv_id, messages, user_token
             )
             ingested += ins
             skipped += skp
@@ -361,6 +388,93 @@ async def _fetch_history(
     return messages
 
 
+async def _fetch_thread_replies(
+    client: httpx.AsyncClient,
+    user_token: str,
+    conv_id: str,
+    thread_ts: str,
+) -> list[dict[str, Any]]:
+    """Fetch every reply in a thread via ``conversations.replies``.
+
+    ``conversations.history`` returns only top-level messages: a thread
+    parent appears (with ``reply_count``), but its replies never do. The
+    poll path therefore has to walk each thread explicitly or the actual
+    discussion content (the part with the decisions) is never ingested.
+
+    Returns the full message list (parent + replies) Slack hands back.
+    Per-conversation errors degrade to ``[]`` so one bad thread does not
+    abort the poll cycle; 401/invalid_auth still raises _NeedsReauth.
+    """
+    headers = {"Authorization": f"Bearer {user_token}"}
+    replies: list[dict[str, Any]] = []
+    cursor: str | None = None
+
+    while True:
+        params: dict[str, str] = {
+            "channel": conv_id,
+            "ts": thread_ts,
+            "limit": str(DEFAULT_PAGE_SIZE),
+        }
+        if cursor:
+            params["cursor"] = cursor
+
+        data = await _slack_get(
+            client,
+            f"{SLACK_API_BASE}/conversations.replies",
+            params=params,
+            headers=headers,
+        )
+
+        if not data.get("ok"):
+            error = data.get("error", "unknown_error")
+            if error in _REAUTH_ERRORS:
+                raise _NeedsReauth(error)
+            if error in _SKIP_CONVERSATION_ERRORS:
+                logger.warning(
+                    "Skipping thread %s/%s due to Slack error: %s",
+                    conv_id, thread_ts, error,
+                )
+                return []
+            logger.error(
+                "conversations.replies failed for %s/%s: %s",
+                conv_id, thread_ts, error,
+            )
+            return replies
+
+        for msg in data.get("messages", []):
+            replies.append(msg)
+
+        next_cursor = (
+            data.get("response_metadata", {}).get("next_cursor") or ""
+        )
+        if data.get("has_more") and next_cursor:
+            cursor = next_cursor
+            continue
+        break
+
+    return replies
+
+
+def _thread_parents_with_replies(
+    messages: list[dict[str, Any]],
+) -> list[str]:
+    """Return thread_ts values for history messages that have replies.
+
+    A thread parent in ``conversations.history`` carries ``reply_count``
+    > 0. We dedupe on thread_ts because Slack may surface the same parent
+    across paginated history windows.
+    """
+    seen: set[str] = set()
+    parents: list[str] = []
+    for msg in messages:
+        if msg.get("reply_count", 0) and not msg.get("subtype"):
+            ts = msg.get("thread_ts") or msg.get("ts")
+            if ts and ts not in seen:
+                seen.add(ts)
+                parents.append(ts)
+    return parents
+
+
 async def _slack_get(
     client: httpx.AsyncClient,
     url: str,
@@ -413,6 +527,7 @@ async def _upsert_messages(
     workspace_id: UUID,
     conv_id: str,
     messages: list[dict[str, Any]],
+    user_token: str | None = None,
 ) -> tuple[int, int]:
     """Upsert polled messages into SlackMessage with webhook-path parity.
 
@@ -458,19 +573,36 @@ async def _upsert_messages(
     # SLACK-USR-04 parity: SET-clause fields MUST match slack_events exactly.
     # Track (msg, row_id) so a skipped row (no RETURNING — see below) doesn't
     # desync the downstream zip(filtered, inserted_ids, strict=True).
+    # Resolve the channel name once per batch (all messages share conv_id);
+    # the resolver is process-cached so this is a single API call at most.
+    # Pass the user token: this poll path exists precisely for deployments
+    # where no bot token is available (bot /invite was blocked).
+    channel_name = await _resolve_channel_name(
+        session, workspace_id, conv_id, token=user_token
+    )
+
     persisted: list[tuple[dict, UUID]] = []
     for msg in filtered:
         thread_ts = msg.get("thread_ts")
         is_thread_reply = bool(thread_ts and thread_ts != msg["ts"])
         parent_ts = thread_ts if is_thread_reply else None
 
+        user_id = msg.get("user")
+        user_name = (
+            await _resolve_user_name(
+                session, workspace_id, user_id, token=user_token
+            )
+            if user_id
+            else None
+        )
+
         values = {
             "workspace_id": workspace_id,
             "slack_ts": msg["ts"],
             "channel_id": conv_id,
-            "channel_name": None,
-            "user_id": msg.get("user"),
-            "user_name": None,
+            "channel_name": channel_name,
+            "user_id": user_id,
+            "user_name": user_name,
             "text": msg.get("text", ""),
             "thread_ts": thread_ts,
             "parent_ts": parent_ts,
@@ -485,6 +617,8 @@ async def _upsert_messages(
             set_={
                 "text": stmt.excluded.text,
                 "user_id": stmt.excluded.user_id,
+                "user_name": stmt.excluded.user_name,
+                "channel_name": stmt.excluded.channel_name,
                 "thread_ts": stmt.excluded.thread_ts,
                 "parent_ts": stmt.excluded.parent_ts,
                 "is_thread_reply": stmt.excluded.is_thread_reply,
