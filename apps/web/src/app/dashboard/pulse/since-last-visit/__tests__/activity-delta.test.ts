@@ -62,7 +62,7 @@ describe('bucketDelta', () => {
       [
         row('ignored-1', 'sync_started'),
         row('ignored-2', 'integration_connected'),
-        row('ignored-3', 'ticket_updated'),
+        row('ignored-3', 'sync_completed'),
       ],
       [],
       'user-1'

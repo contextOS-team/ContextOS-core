@@ -1,0 +1,34 @@
+export interface NeedsYouItem {
+  id: string
+  ticketId: string
+  person: string
+  sinceDay: string
+  assignedToCurrentUser: boolean
+  ageMs: number
+}
+
+export interface TopUrgentItem {
+  person: string
+  ticketId: string
+  sinceDay: string
+}
+
+export interface Delta {
+  decisions: {
+    count: number
+    items: ReadonlyArray<{ id: string; createdAt: string }>
+  }
+  sources: {
+    count: number
+    items: ReadonlyArray<{ id: string; createdAt: string }>
+  }
+  needsYou: {
+    topUrgentItem: TopUrgentItem | null
+    items: ReadonlyArray<NeedsYouItem>
+  }
+}
+
+export interface HeadlineCopy {
+  headline: string
+  subtext: string
+}
