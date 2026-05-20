@@ -210,9 +210,12 @@ Plans:
 - [x] 40-02-PLAN.md -- Frontend: typed `createTelegramPairingCode()` client + `TelegramPairingProgress` component (deep link + countdown + Realtime subscription on `telegram_chat_workspace`) + integration-card swap in Settings (replace `TelegramConnect` token form). Live verified: bot @contextOSdev_bot claimed chat -1003644773967, UI flipped to connected via Realtime within ~1s.
 - [x] 40-03-PLAN.md -- Phase-26 cleanup (delete `connect_telegram_bot`/`disconnect_telegram_bot`, `telegram_sync.py`, `TelegramSyncSection`, `connectTelegram`/`syncTelegramHistory`/`getTelegramSyncStatus`, MTProto config) + onboarding `step-sources.tsx` migration to new pairing component + Vault token purge script + deploy runbook (`setWebhook` with `my_chat_member`, BotFather Group Privacy OFF). 5 inline deviations during human-verify gate: re-pair-after-kick UPDATE (d9aa4fd), 409 multi-engineer guard (d9aa4fd + 05bebcd), dashboard URL hostname/anchor (d9aa4fd), REPLICA IDENTITY FULL migration patch (d9aa4fd), StrictMode mintedRef (05bebcd).
 
----
-*Roadmap created: 2026-02-24*
-*v1.1 shipped: 2026-03-15*
-*v1.3 roadmap added: 2026-03-15*
-*Phase 39 planned: 2026-04-22*
-*Phase 40 planned: 2026-05-03*
+### Phase 41: Dashboard Pulse Redesign
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 40
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 41 to break down)

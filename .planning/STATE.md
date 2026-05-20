@@ -5,7 +5,7 @@ milestone_name: Live Intelligence
 current_plan: 3
 status: completed
 stopped_at: Completed 40-03-PLAN.md (Phase 40 complete; v1.3 milestone closed)
-last_updated: "2026-05-04T11:07:08.266Z"
+last_updated: "2026-05-20T15:30:37.074Z"
 last_activity: 2026-05-04 -- Plan 40-03 complete (Phase-26 surface deleted; onboarding wired to TelegramPairingProgress; Vault purge script + DEPLOY_RUNBOOK.md shipped; 5 inline deviations covering re-pair, multi-engineer guard, REPLICA IDENTITY FULL, dashboard URL, StrictMode)
 progress:
   total_phases: 9
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 ## Current Position
 
 Milestone: v1.3 Live Intelligence
-Phase: 40 of 9 (Telegram Shared-Bot Migration) -- COMPLETE
+Phase: 40 of 8 (Telegram Shared-Bot Migration) -- COMPLETE
 Current Plan: 3
 Total Plans in Phase: 3 (all complete)
 Status: All 3 plans complete (40-01 backend, 40-02 frontend pairing UI, 40-03 cutover/cleanup)
