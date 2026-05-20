@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter, JetBrains_Mono } from 'next/font/google'
+import { Geist, Geist_Mono, Instrument_Serif, Inter, JetBrains_Mono } from 'next/font/google'
 import { SentryInit } from '@/lib/sentry-init'
 import { DarkModeApplier } from '@/components/dashboard/dark-mode-applier'
 import { Toaster } from '@/components/ui/sonner'
@@ -14,6 +14,26 @@ const inter = Inter({
 const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-mono',
+  display: 'swap',
+})
+
+const geistSans = Geist({
+  subsets: ['latin', 'cyrillic'],
+  variable: '--font-geist-sans',
+  display: 'swap',
+})
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
+  display: 'swap',
+})
+
+const instrumentSerif = Instrument_Serif({
+  weight: '400',
+  style: ['normal', 'italic'],
+  subsets: ['latin'],
+  variable: '--font-serif',
   display: 'swap',
 })
 
@@ -52,7 +72,10 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} dark`}>
+    <html
+      lang="en"
+      className={`${inter.variable} ${jetbrainsMono.variable} ${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} dark`}
+    >
       <head />
       <body className="font-sans antialiased" suppressHydrationWarning>
         <SentryInit />
