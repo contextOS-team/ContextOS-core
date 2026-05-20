@@ -69,7 +69,8 @@ describe('SyncIndicator', () => {
       onOpenDrawer,
     }))
 
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    vi.useRealTimers()
+    const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: /last synced 4m ago/i }))
 
     expect(onOpenDrawer).toHaveBeenCalledTimes(1)
