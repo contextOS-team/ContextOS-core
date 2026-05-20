@@ -2,7 +2,7 @@
 
 import time
 from collections.abc import AsyncGenerator, Generator
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -120,6 +120,109 @@ def mock_session() -> AsyncMock:
     """Create a mock async database session."""
     session = AsyncMock(spec=AsyncSession)
     return session
+
+
+def _stmt_entity_name(stmt: object) -> str | None:
+    """Best-effort name of the ORM entity a SELECT targets.
+
+    Returns the mapped class name (e.g. ``"SlackMessage"``) for
+    ``select(Model)`` statements, or ``None`` for textual / unrecognised
+    statements (raw ``text()`` SQL, ``hybrid_search()`` calls, etc.).
+    """
+    try:
+        descriptions = getattr(stmt, "column_descriptions", None)
+        if descriptions:
+            for desc in descriptions:
+                entity = desc.get("entity") or desc.get("type")
+                name = getattr(entity, "__name__", None)
+                if name:
+                    return name
+    except Exception:
+        pass
+    return None
+
+
+class _TextualRouter:
+    """Marker wrapper: route textual statements by their bound params.
+
+    A plain ``callable()`` check can't distinguish "a function that maps
+    params -> result" from a ``MagicMock`` result (every MagicMock is
+    callable), so the router must be explicitly tagged. Build one with
+    :func:`route_textual`.
+    """
+
+    __slots__ = ("fn",)
+
+    def __init__(self, fn):
+        self.fn = fn
+
+
+def route_textual(fn):
+    """Wrap a ``(params: dict) -> result`` function for ``textual=``.
+
+    Use when several ``text()`` calls share one statement but differ by
+    bound params (e.g. the general vs. dedicated-code ``hybrid_search``
+    calls, which differ only by ``source_type``)::
+
+        textual=route_textual(
+            lambda p: code_rows if p.get("source_type") == "code_chunk"
+            else general_rows
+        )
+    """
+    return _TextualRouter(fn)
+
+
+def make_entity_execute(
+    results: dict[str, object] | None = None,
+    *,
+    textual: object | None = None,
+    default: object | None = None,
+):
+    """Build an ``AsyncMock`` side-effect that dispatches by ORM entity.
+
+    Positional ``side_effect`` lists rot every time a service grows another
+    ``session.execute()``: a test that doesn't care about the new query
+    still has to add a mock for it in exactly the right slot, or every
+    later mock shifts and the suite breaks with ``StopAsyncIteration``.
+
+    This dispatcher routes by *what* is being queried, not call order:
+
+    - ``results``: ``{"SlackMessage": <result>, ...}`` keyed by model name
+      (the class passed to ``select()``).
+    - ``textual``: result for raw ``text()`` / function statements such as
+      the ``hybrid_search()`` SQL (no ORM entity to key on). May be a fixed
+      result, or a callable ``(params: dict) -> result`` when several
+      ``text()`` calls share one statement but differ by bound params
+      (e.g. the general vs. dedicated-code hybrid_search calls, which only
+      differ by ``source_type``).
+    - ``default``: returned for any entity not in ``results``. Defaults to
+      an empty ``.scalars().all()`` result so unmodelled queries are inert.
+
+    Adding a new ``select(NewModel)`` to the service therefore can't break
+    a test that doesn't register ``NewModel`` — it just gets ``default``.
+    """
+    results = results or {}
+
+    def _empty():
+        r = MagicMock()
+        r.scalars.return_value.all.return_value = []
+        r.scalar_one_or_none.return_value = None
+        r.fetchall.return_value = []
+        return r
+
+    default_result = default if default is not None else _empty()
+
+    async def _execute(stmt, *args, **kwargs):
+        name = _stmt_entity_name(stmt)
+        if name is not None:
+            return results.get(name, default_result)
+        # Textual / function statement (no ORM entity to key on).
+        if isinstance(textual, _TextualRouter):
+            params = args[0] if args else kwargs.get("params") or {}
+            return textual.fn(params)
+        return textual if textual is not None else _empty()
+
+    return _execute
 
 
 class _QueryCounter:
