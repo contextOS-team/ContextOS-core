@@ -145,6 +145,20 @@ function getSectionStyle(heading: string) {
   return SECTION_STYLES[heading] ?? { accent: 'border-l-border', bg: '' }
 }
 
+/**
+ * Pull a Jira site URL out of a workspace_integrations.config row.
+ * Prefers the explicit `site_url`; falls back to `external_name` for
+ * configs saved before site_url was added.
+ */
+function resolveJiraSiteUrl(config: unknown): string | null {
+  const cfg = (config ?? {}) as Record<string, unknown>
+  const url = cfg.site_url
+  if (typeof url === 'string' && url) return url
+  const name = cfg.external_name
+  if (typeof name === 'string' && name) return `https://${name}.atlassian.net`
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -310,15 +324,26 @@ export default function ContextDetailPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [generation, setGeneration] = useState<GenerationState | null>(null)
-  const [jiraSiteUrl, setJiraSiteUrl] = useState<string | null>(null)
+  // Workspace's connected ticket provider, resolved once per mount.
+  // null while loading — the Linear button waits for this to avoid briefly
+  // flashing the wrong label on a Jira workspace whose linked sources
+  // happen to be Slack/GitLab only (e.g. RD-973). 'other' means the
+  // workspace either uses Linear or has no Jira integration; the
+  // page-level source signal then decides Jira-vs-Linear.
+  const [jiraWorkspace, setJiraWorkspace] = useState<
+    { connected: true; siteUrl: string | null } | { connected: false } | null
+  >(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  // Detect provider from sources (works for all pages, even those without jira_issue_id FK)
-  const isJiraTicket = useMemo(
-    () => page?.sources?.some((s) => s.type === 'jira_issue' || s.type === 'jira_comment')
-      ?? !!page?.jira_issue_id,
-    [page?.sources, page?.jira_issue_id],
-  )
+  // Page-level fallback: this specific page references Jira sources.
+  const pageHasJiraSources =
+    (page?.sources?.some((s) => s.type === 'jira_issue' || s.type === 'jira_comment')
+      ?? false) || !!page?.jira_issue_id
+
+  // Workspace integration is authoritative when loaded; sources are the
+  // fallback while it loads or when no Jira integration is configured.
+  const isJiraTicket = jiraWorkspace?.connected ?? pageHasJiraSources
+  const jiraSiteUrl = jiraWorkspace?.connected ? jiraWorkspace.siteUrl : null
 
   const loadPage = useCallback(async () => {
     if (!id) return
@@ -333,30 +358,22 @@ export default function ContextDetailPage() {
     }
   }, [id])
 
-  // Fetch Jira site URL when page is a Jira ticket
   useEffect(() => {
-    if (!isJiraTicket) return
     const supabase = createClient()
     supabase
       .from('workspace_integrations')
       .select('config')
       .eq('provider', 'jira')
+      .limit(1)
       .maybeSingle()
       .then(({ data }) => {
-        const config = data?.config as Record<string, unknown> | undefined
-        // Prefer site_url (actual URL like "https://foo.atlassian.net")
-        // Fall back to external_name for configs saved before site_url was added
-        const url = config?.site_url
-        if (typeof url === 'string' && url) {
-          setJiraSiteUrl(url)
-        } else {
-          const name = config?.external_name
-          if (typeof name === 'string' && name) {
-            setJiraSiteUrl(`https://${name}.atlassian.net`)
-          }
+        if (!data) {
+          setJiraWorkspace({ connected: false })
+          return
         }
+        setJiraWorkspace({ connected: true, siteUrl: resolveJiraSiteUrl(data.config) })
       })
-  }, [isJiraTicket])
+  }, [])
 
   useEffect(() => {
     loadPage()
@@ -639,18 +656,23 @@ export default function ContextDetailPage() {
               </a>
             </Button>
           )}
-          {page.ticket_identifier && !isJiraTicket && (
-            <Button variant="ghost" asChild>
-              <a
-                href={`https://linear.app/issue/${page.ticket_identifier}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <ExternalLink className="h-4 w-4 mr-1.5" />
-                Open in Linear
-              </a>
-            </Button>
-          )}
+          {/* Wait for jiraWorkspace to resolve before rendering Linear —
+              otherwise a Jira workspace whose sources are Slack/GitLab only
+              would briefly show "Open in Linear" until the query returns. */}
+          {page.ticket_identifier &&
+            !isJiraTicket &&
+            jiraWorkspace !== null && (
+              <Button variant="ghost" asChild>
+                <a
+                  href={`https://linear.app/issue/${page.ticket_identifier}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="h-4 w-4 mr-1.5" />
+                  Open in Linear
+                </a>
+              </Button>
+            )}
         </div>
       </div>
 
