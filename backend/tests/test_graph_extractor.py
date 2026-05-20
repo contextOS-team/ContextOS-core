@@ -183,13 +183,19 @@ class TestPRRefExtractor:
         assert len(pr_entities) == 0
 
     def test_commit_sha_match(self):
-        """Extracts commit SHA references (7+ hex chars)."""
+        """Bare commit SHA references are NOT extracted by PRRefExtractor.
+
+        Current contract (src/services/graph_extractor.py PRRefExtractor,
+        comment at ll. 322-323): "Commit SHA references removed -- they
+        create low-signal noise nodes. Commits are not actionable graph
+        entities; PRs are the meaningful unit." Only full github.com/.../
+        commit/<sha> URLs are resolved (by URLExtractor), not bare SHAs.
+        """
         entities = self.extractor.extract(
             "commit abc1234def", "github_pull_request"
         )
         sha_entities = [e for e in entities if e.external_id.startswith("commit:")]
-        assert len(sha_entities) == 1
-        assert sha_entities[0].external_id == "commit:abc1234"
+        assert len(sha_entities) == 0
 
     def test_all_digit_sha_rejection(self):
         """SHA-like strings that are all digits are rejected."""
@@ -359,11 +365,23 @@ class TestRunExtractors:
     """Tests for run_extractors() registry function."""
 
     def test_combined_results(self):
-        """run_extractors returns entities from all matching extractors."""
-        entities = run_extractors("ENG-123 by <@U12345ABC>", "slack_message")
+        """run_extractors returns entities from all *registered* extractors.
+
+        Current contract (src/services/graph_extractor.py ll. 845-851):
+        MentionExtractor is intentionally NOT registered ("its Person
+        entities are low-signal ... Person nodes should only come from
+        roster-based identity resolution"), so a raw <@U...> mention does
+        NOT yield a Person entity here. The registered extractors are
+        TicketRefExtractor, PRRefExtractor, FilePathExtractor and
+        URLExtractor -- exercise Ticket + PR to prove cross-extractor merge.
+        """
+        entities = run_extractors("ENG-123 fixed in #42", "github_pull_request")
         types = {e.entity_type for e in entities}
         assert "Ticket" in types
-        assert "Person" in types
+        assert "PR" in types
+        # Raw Slack mentions stay out of the graph (extractor not registered).
+        person_entities = run_extractors("by <@U12345ABC>", "slack_message")
+        assert all(e.entity_type != "Person" for e in person_entities)
 
     def test_dedup_across_extractors(self):
         """Duplicate entities across extractors are deduplicated by (entity_type, external_id)."""

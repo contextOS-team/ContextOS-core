@@ -1,10 +1,25 @@
 """Tests for the embedding generation service.
 
 Covers:
-- generate_embedding with mocked OpenAI API
+- generate_embedding with mocked Gemini API
 - queue_embedding_generation with content hash deduplication
 - Skip-unchanged behavior when content hash matches
 - process_pending_embeddings bulk backfill
+
+NOTE: src.services.embedding migrated OpenAI -> Google Gemini. The current
+contract (see src/services/embedding.py:235-297) is:
+
+    client = _get_gemini_client()
+    response = await client.aio.models.embed_content(
+        model=EMBEDDING_MODEL_NAME,            # "gemini-embedding-2-preview"
+        contents=truncated,                    # str (single) or list[str] (batch)
+        config=types.EmbedContentConfig(output_dimensionality=768),
+    )
+    return list(response.embeddings[0].values)               # single
+    return [list(e.values) for e in response.embeddings]      # batch
+
+So mocks patch ``src.services.embedding._get_gemini_client`` and shape the
+response as ``response.embeddings == [obj(.values=[...]), ...]``.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,36 +32,67 @@ from tests.conftest import TEST_WORKSPACE_ID
 WORKSPACE_ID = UUID(TEST_WORKSPACE_ID)
 
 
-def _mock_openai_response(dims: int = 768) -> MagicMock:
-    """Create a mock OpenAI embeddings response."""
-    mock_embedding = MagicMock()
-    mock_embedding.embedding = [0.1] * dims
-    mock_embedding.index = 0
+def _mock_gemini_response(*vectors: list[float], dims: int = 768) -> MagicMock:
+    """Create a mock Gemini embed_content response.
+
+    Each positional arg is one embedding vector; with no args a single
+    768-d vector of 0.1 is returned (the common single-text case).
+    """
+    if not vectors:
+        vectors = ([0.1] * dims,)
+
+    embeddings = []
+    for vec in vectors:
+        item = MagicMock()
+        item.values = list(vec)
+        embeddings.append(item)
 
     mock_response = MagicMock()
-    mock_response.data = [mock_embedding]
+    mock_response.embeddings = embeddings
     return mock_response
 
 
+def _mock_gemini_client(response: MagicMock) -> MagicMock:
+    """Build a mock Gemini client whose aio.models.embed_content returns response."""
+    client = MagicMock()
+    client.aio.models.embed_content = AsyncMock(return_value=response)
+    return client
+
+
 @pytest.mark.asyncio
-async def test_generate_embedding_calls_openai() -> None:
-    """generate_embedding should call text-embedding-3-small and return 768 floats."""
-    mock_response = _mock_openai_response()
+async def test_generate_embedding_calls_gemini() -> None:
+    """generate_embedding should call gemini-embedding-2-preview and return 768 floats.
 
-    mock_client = MagicMock()
-    mock_client.embeddings.create = AsyncMock(return_value=mock_response)
+    Provider migrated OpenAI -> Gemini; the behavioral intent (right model,
+    768 dims, returns the vector) is preserved against the new contract:
+    ``client.aio.models.embed_content(model=..., contents=...,
+    config=EmbedContentConfig(output_dimensionality=768))``.
+    """
+    mock_response = _mock_gemini_response()
+    mock_client = _mock_gemini_client(mock_response)
 
-    with patch("src.services.embedding._get_openai_client", return_value=mock_client):
-        from src.services.embedding import generate_embedding
+    with patch(
+        "src.services.embedding._get_gemini_client", return_value=mock_client
+    ):
+        from src.services.embedding import (
+            EMBEDDING_DIMENSIONS,
+            EMBEDDING_MODEL_NAME,
+            generate_embedding,
+        )
 
         result = await generate_embedding("test text")
 
     assert len(result) == 768
     assert result[0] == 0.1
-    mock_client.embeddings.create.assert_called_once()
-    call_kwargs = mock_client.embeddings.create.call_args.kwargs
-    assert call_kwargs["model"] == "text-embedding-3-small"
-    assert call_kwargs["dimensions"] == 768
+    mock_client.aio.models.embed_content.assert_called_once()
+    call_kwargs = mock_client.aio.models.embed_content.call_args.kwargs
+    assert call_kwargs["model"] == EMBEDDING_MODEL_NAME == "gemini-embedding-2-preview"
+    assert call_kwargs["contents"] == "test text"
+    assert (
+        call_kwargs["config"].output_dimensionality
+        == EMBEDDING_DIMENSIONS
+        == 768
+    )
 
 
 @pytest.mark.asyncio
@@ -62,19 +108,20 @@ async def test_generate_embedding_empty_text() -> None:
 @pytest.mark.asyncio
 async def test_generate_embedding_truncates_long_text() -> None:
     """generate_embedding should truncate input to MAX_INPUT_CHARS."""
-    mock_response = _mock_openai_response()
+    mock_response = _mock_gemini_response()
+    mock_client = _mock_gemini_client(mock_response)
 
-    mock_client = MagicMock()
-    mock_client.embeddings.create = AsyncMock(return_value=mock_response)
-
-    with patch("src.services.embedding._get_openai_client", return_value=mock_client):
+    with patch(
+        "src.services.embedding._get_gemini_client", return_value=mock_client
+    ):
         from src.services.embedding import generate_embedding
 
         long_text = "a" * 50_000
         await generate_embedding(long_text)
 
-    call_kwargs = mock_client.embeddings.create.call_args.kwargs
-    actual_text = call_kwargs["input"]
+    # Current contract truncates to MAX_INPUT_CHARS and passes via `contents=`.
+    call_kwargs = mock_client.aio.models.embed_content.call_args.kwargs
+    actual_text = call_kwargs["contents"]
     assert len(actual_text) == 30_000
 
 
@@ -102,11 +149,14 @@ async def test_queue_embedding_generation_creates_embedding() -> None:
         MagicMock(),         # upsert result
     ]
 
-    mock_response = _mock_openai_response()
-    mock_client = MagicMock()
-    mock_client.embeddings.create = AsyncMock(return_value=mock_response)
+    # queue_embedding_generation -> generate_embeddings_batch (batch path):
+    # one input text -> response.embeddings must have one item with .values.
+    mock_response = _mock_gemini_response([0.1] * 768)
+    mock_client = _mock_gemini_client(mock_response)
 
-    with patch("src.services.embedding._get_openai_client", return_value=mock_client):
+    with patch(
+        "src.services.embedding._get_gemini_client", return_value=mock_client
+    ):
         from src.services.embedding import queue_embedding_generation
 
         await queue_embedding_generation(
@@ -193,11 +243,12 @@ async def test_queue_embedding_stores_search_content() -> None:
         MagicMock(),         # upsert result
     ]
 
-    mock_response = _mock_openai_response()
-    mock_client = MagicMock()
-    mock_client.embeddings.create = AsyncMock(return_value=mock_response)
+    mock_response = _mock_gemini_response([0.1] * 768)
+    mock_client = _mock_gemini_client(mock_response)
 
-    with patch("src.services.embedding._get_openai_client", return_value=mock_client):
+    with patch(
+        "src.services.embedding._get_gemini_client", return_value=mock_client
+    ):
         from src.services.embedding import queue_embedding_generation
 
         await queue_embedding_generation(

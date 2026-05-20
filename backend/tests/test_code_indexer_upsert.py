@@ -135,9 +135,15 @@ class TestIndexRepoChangedChunkIds:
         mock_existing_result = MagicMock()
         mock_existing_result.fetchall.return_value = []
 
-        # Mock upsert returning
+        # Mock upsert returning.
+        # Drift note (commit b1b9046 "batch chunk upserts (500/batch)"):
+        # index_repo no longer does one INSERT...RETURNING per chunk read via
+        # result.first(). It now batch-upserts and collects ids with
+        # `changed_chunk_ids.extend(row[0] for row in result.fetchall())`
+        # (code_indexer.py line 356), so the upsert result must expose
+        # .fetchall(), not .first().
         mock_upsert_result = MagicMock()
-        mock_upsert_result.first.return_value = (new_id,)
+        mock_upsert_result.fetchall.return_value = [(new_id,)]
 
         mock_session.execute.side_effect = [
             mock_existing_result,  # prefetch

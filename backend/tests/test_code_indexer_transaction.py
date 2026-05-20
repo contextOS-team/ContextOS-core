@@ -112,6 +112,49 @@ class FakeSessionState:
 
 
 # ---------------------------------------------------------------------------
+# Per-repo session wiring
+#
+# Drift note (commit e8cd2fb "add concurrent repo indexing with semaphore and
+# per-repo timeout"): index_workspace_repos / index_gitlab_workspace_repos no
+# longer index through the caller's data session. Each repo now runs inside
+# its own `async with async_session() as task_session:` block (code_indexer.py
+# lines 631 / 512), commits that task_session on success, and relies on the
+# sessionmaker context manager to roll back on failure. The caller's `session`
+# arg is only used for get_cached_repos / is_*_monitored.
+#
+# These tests still want to assert commit/rollback isolation on a single
+# tracked session, so we patch `src.services.code_indexer.async_session` to
+# hand every task the SAME FakeSessionState, wrapped in a context manager that
+# mirrors real async_sessionmaker `async with` semantics: roll back on an
+# exception, close (no implicit commit) on clean exit.
+# ---------------------------------------------------------------------------
+
+
+class _SharedSessionCM:
+    """async-context-manager that yields a shared FakeSessionState and rolls
+    back on exception, matching async_sessionmaker() `async with` behavior."""
+
+    def __init__(self, session: "FakeSessionState"):
+        self._session = session
+
+    async def __aenter__(self):
+        return self._session
+
+    async def __aexit__(self, exc_type, exc, tb):
+        if exc_type is not None:
+            # Real AsyncSession context manager rolls back on a propagating
+            # exception before closing.
+            await self._session.rollback()
+        return False  # never suppress
+
+
+def _shared_async_session(session: "FakeSessionState"):
+    """Build a MagicMock factory usable as `async_session()` that always
+    yields the given shared FakeSessionState."""
+    return MagicMock(side_effect=lambda *a, **k: _SharedSessionCM(session))
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -170,8 +213,14 @@ def _noop_update_status():
     return _fake, calls
 
 
-def _patch_gitlab_deps(index_repo_fn, repos, monitored_ids=None):
-    """Return a context manager that patches all gitlab workspace indexer deps."""
+def _patch_gitlab_deps(index_repo_fn, repos, monitored_ids=None, shared_session=None):
+    """Return a context manager that patches all gitlab workspace indexer deps.
+
+    When ``shared_session`` is given, ``src.services.code_indexer.async_session``
+    is patched so every per-repo task session is that shared FakeSessionState
+    (see "Per-repo session wiring" above). This is what lets the per-repo
+    commit/rollback assertions work against the now-isolated task sessions.
+    """
     if monitored_ids is None:
         monitored_ids = {r["id"] for r in repos}
 
@@ -188,6 +237,12 @@ def _patch_gitlab_deps(index_repo_fn, repos, monitored_ids=None):
 
     @contextmanager
     def _ctx(update_fn):
+        extra = []
+        if shared_session is not None:
+            extra.append(patch(
+                "src.services.code_indexer.async_session",
+                _shared_async_session(shared_session),
+            ))
         with (
             patch("src.services.code_indexer._update_index_status", side_effect=update_fn),
             patch("src.services.code_indexer.index_repo", side_effect=index_repo_fn),
@@ -195,7 +250,11 @@ def _patch_gitlab_deps(index_repo_fn, repos, monitored_ids=None):
             patch("src.services.gitlab_repos.get_cached_repos", side_effect=fake_get_cached),
             patch("src.services.gitlab_repos.is_project_monitored", side_effect=fake_is_monitored),
         ):
-            yield
+            from contextlib import ExitStack
+            with ExitStack() as stack:
+                for p in extra:
+                    stack.enter_context(p)
+                yield
     return _ctx
 
 
@@ -223,7 +282,7 @@ class TestRepoIsolation:
         # First repo fails, second succeeds
         index_fn = _stub_index_repo_sequence([False, True], chunks_per_repo=3)
         update_fn, status_calls = _noop_update_status()
-        patches = _patch_gitlab_deps(index_fn, repos)
+        patches = _patch_gitlab_deps(index_fn, repos, shared_session=session)
 
         with patches(update_fn):
             results = await index_gitlab_workspace_repos(workspace_id, session, settings)
@@ -264,7 +323,7 @@ class TestRepoIsolation:
         # First fails, rest succeed
         index_fn = _stub_index_repo_sequence([False, True, True])
         update_fn, _ = _noop_update_status()
-        patches = _patch_gitlab_deps(index_fn, repos)
+        patches = _patch_gitlab_deps(index_fn, repos, shared_session=session)
 
         with patches(update_fn):
             results = await index_gitlab_workspace_repos(workspace_id, session, settings)
@@ -323,18 +382,29 @@ class TestStatusSessionIsolation:
     @pytest.mark.asyncio
     async def test_update_index_status_creates_own_session(self):
         """_update_index_status must use async_session() internally,
-        NOT accept a session parameter. Verify by calling it while
-        the 'caller session' is poisoned."""
+        NOT accept a session parameter, and commit on its own session.
+
+        Drift note (commit 8ef0d27 "eliminate JSONB read-modify-write race"):
+        _update_index_status no longer does SELECT -> mutate integration.config
+        -> write back. It now issues a single SQL-level
+        ``UPDATE WorkspaceIntegration ... SET config = config || :patch::jsonb``
+        and commits (code_indexer.py lines 438-452). There is no Python-side
+        config dict to inspect, so we assert on the emitted statement instead.
+        """
+        from sqlalchemy.dialects import postgresql
+
         from src.services.code_indexer import _update_index_status
 
-        # Build a mock for the independent session that _update_index_status creates
-        integration = MagicMock()
-        integration.config = {"existing": "data"}
+        captured: list = []
 
         inner_session = AsyncMock()
-        result_mock = MagicMock()
-        result_mock.scalar_one_or_none.return_value = integration
-        inner_session.execute.return_value = result_mock
+
+        async def _capture_execute(stmt, *a, **k):
+            captured.append(stmt)
+            return MagicMock()
+
+        inner_session.execute = AsyncMock(side_effect=_capture_execute)
+        inner_session.commit = AsyncMock()
 
         cm = AsyncMock()
         cm.__aenter__.return_value = inner_session
@@ -347,8 +417,22 @@ class TestStatusSessionIsolation:
                 uuid4(), "idle", last_at="2026-01-01T00:00:00", provider="gitlab",
             )
 
+        # Created and committed its own session
         inner_session.commit.assert_awaited_once()
-        assert integration.config["code_index_status"] == "idle"
+        assert len(captured) == 1, f"Expected exactly 1 statement, got {len(captured)}"
+
+        sql = str(captured[0].compile(dialect=postgresql.dialect()))
+        # SQL-level merge, not a read-modify-write
+        assert sql.startswith("UPDATE"), f"Expected UPDATE, got: {sql[:80]}"
+        assert "||" in sql, f"Expected JSONB || merge, got: {sql}"
+        assert "SELECT" not in sql, f"Must not read-modify-write, got: {sql}"
+
+        # The merge patch carries the new status (idle nulls progress keys)
+        params = dict(captured[0].compile(dialect=postgresql.dialect()).params)
+        patch_dicts = [v for v in params.values() if isinstance(v, dict)]
+        assert len(patch_dicts) == 1, f"Expected one patch dict, got: {params}"
+        assert patch_dicts[0]["code_index_status"] == "idle"
+        assert patch_dicts[0]["code_index_last_at"] == "2026-01-01T00:00:00"
 
 
 # ---------------------------------------------------------------------------
@@ -402,7 +486,7 @@ class TestDoubleCommit:
         repos = [{"id": 1, "path_with_namespace": "org/only-repo"}]
         index_fn = _stub_index_repo_sequence([False])
         update_fn, _ = _noop_update_status()
-        patches = _patch_gitlab_deps(index_fn, repos)
+        patches = _patch_gitlab_deps(index_fn, repos, shared_session=session)
 
         with patches(update_fn):
             results = await index_gitlab_workspace_repos(workspace_id, session, settings)
@@ -472,6 +556,7 @@ class TestTokenRollbackSafe:
             patch("src.services.code_indexer._update_index_status", side_effect=update_fn),
             patch("src.services.code_indexer.index_repo", side_effect=_fail_index),
             patch("src.services.code_indexer.ensure_valid_token", side_effect=_fake_ensure_token),
+            patch("src.services.code_indexer.async_session", _shared_async_session(session)),
             patch("src.services.gitlab_repos.get_cached_repos", side_effect=fake_get_cached),
             patch("src.services.gitlab_repos.is_project_monitored", side_effect=fake_is_monitored),
         ):
@@ -608,6 +693,7 @@ class TestGitHubParityWithGitLab:
         with (
             patch("src.services.code_indexer._update_index_status", side_effect=update_fn),
             patch("src.services.code_indexer.index_repo", side_effect=_index_fn),
+            patch("src.services.code_indexer.async_session", _shared_async_session(session)),
             patch("src.services.code_indexer.get_cached_repos", side_effect=fake_get_cached),
             patch("src.services.code_indexer.is_repo_monitored", side_effect=fake_is_monitored),
         ):
@@ -704,7 +790,7 @@ class TestPendingRollbackRecovery:
             }
 
         update_fn, _ = _noop_update_status()
-        patches = _patch_gitlab_deps(_index_fn, repos)
+        patches = _patch_gitlab_deps(_index_fn, repos, shared_session=session)
 
         with patches(update_fn):
             # This must NOT raise — the indexer should catch and rollback

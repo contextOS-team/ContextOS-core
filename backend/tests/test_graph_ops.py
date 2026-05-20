@@ -113,9 +113,16 @@ class TestUpsertNode:
 
             mock_pg_insert.assert_called_once_with(GraphNode)
 
-            # Verify on_conflict_do_update was called with correct constraint
+            # Current contract (src/services/graph_ops.py upsert_node): the
+            # ON CONFLICT target is a partial unique index expressed via
+            # index_elements=["workspace_id", "fingerprint"] +
+            # index_where=text("deleted_at IS NULL"), NOT a named constraint.
             conflict_call = mock_values.on_conflict_do_update.call_args
-            assert conflict_call.kwargs["constraint"] == "graph_nodes_workspace_fingerprint_key"
+            assert conflict_call.kwargs["index_elements"] == [
+                "workspace_id",
+                "fingerprint",
+            ]
+            assert "index_where" in conflict_call.kwargs
 
             # Verify deleted_at=None is in the update set (restores soft-deleted)
             set_dict = conflict_call.kwargs["set_"]
@@ -205,8 +212,19 @@ class TestUpsertEdge:
 
             mock_pg_insert.assert_called_once_with(GraphEdge)
 
+            # Current contract (src/services/graph_ops.py upsert_edge): the
+            # ON CONFLICT target is a partial unique index expressed via
+            # index_elements=[workspace_id, source_node_id, target_node_id,
+            # relationship_type] + index_where=text("deleted_at IS NULL"),
+            # NOT a named constraint.
             conflict_call = mock_values.on_conflict_do_update.call_args
-            assert conflict_call.kwargs["constraint"] == "graph_edges_workspace_source_target_type_key"
+            assert conflict_call.kwargs["index_elements"] == [
+                "workspace_id",
+                "source_node_id",
+                "target_node_id",
+                "relationship_type",
+            ]
+            assert "index_where" in conflict_call.kwargs
 
             # Verify deleted_at=None is in the update set
             set_dict = conflict_call.kwargs["set_"]

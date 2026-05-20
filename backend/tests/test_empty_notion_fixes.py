@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from src.models.ticket import LinearTicket
-from tests.conftest import TEST_WORKSPACE_ID
+from tests.conftest import TEST_WORKSPACE_ID, make_entity_execute, route_textual
 
 WORKSPACE_ID = UUID(TEST_WORKSPACE_ID)
 
@@ -50,31 +50,47 @@ async def test_hybrid_search_drops_missing_source_records() -> None:
     existing_page_id = uuid4()
     missing_page_id = uuid4()
 
-    # hybrid_search returns 2 notion_page hits
-    mock_match_result = MagicMock()
-    mock_match_result.fetchall.return_value = [
+    # _find_hybrid_matches (src/services/linking.py:361) now runs, in order:
+    #   1. general hybrid_search()  -> text(), source_type=None
+    #   2. dedicated code_chunk hybrid_search() -> text(), source_type="code_chunk"
+    #   3. _bulk_lookup_source_summaries:
+    #        Phase 1  select(Embedding)  (privacy metadata probe)
+    #        Phase 2  select(NotionPage) (fallback to source table)
+    # Brittle ordered side_effect lists rot whenever the bulk lookup adds a
+    # query, so dispatch by entity / bound params instead.
+
+    def _hybrid(rows):
+        r = MagicMock()
+        r.fetchall.return_value = rows
+        return r
+
+    # general search: 2 notion_page hits; code_chunk search: empty
+    general_rows = [
         (uuid4(), "notion_page", existing_page_id, 0.40, 0.0, 0.28, {}),
         (uuid4(), "notion_page", missing_page_id, 0.35, 0.0, 0.25, {}),
     ]
 
-    # Dedicated code_chunk search returns empty
-    mock_code_result = MagicMock()
-    mock_code_result.fetchall.return_value = []
-
-    # Bulk lookup only finds the first page — second is missing
+    # Phase 1 Embedding metadata probe -> no rows, so it falls back to the
+    # NotionPage source table (Phase 2). Phase 2 finds only the existing page;
+    # the missing page is absent from the result map entirely.
     mock_existing_page = MagicMock()
     mock_existing_page.id = existing_page_id
     mock_existing_page.title = "Экран загрузки приложения"
     mock_existing_page.content = "Реальный контент страницы"
 
-    mock_bulk_result = MagicMock()
-    mock_bulk_result.scalars.return_value.all.return_value = [mock_existing_page]
+    emb_result = MagicMock()
+    emb_result.scalars.return_value.all.return_value = []
+    notion_result = MagicMock()
+    notion_result.scalars.return_value.all.return_value = [mock_existing_page]
 
-    mock_session.execute.side_effect = [
-        mock_match_result,
-        mock_code_result,
-        mock_bulk_result,
-    ]
+    mock_session.execute.side_effect = make_entity_execute(
+        results={"Embedding": emb_result, "NotionPage": notion_result},
+        textual=route_textual(
+            lambda p: _hybrid([])
+            if p.get("source_type") == "code_chunk"
+            else _hybrid(general_rows)
+        ),
+    )
 
     mock_embedding = [0.1] * 768
 
@@ -106,19 +122,31 @@ async def test_hybrid_search_drops_unknown_source_type() -> None:
     mock_session = AsyncMock()
     ticket = _make_ticket()
 
-    # hybrid_search returns a hit with a source_type not in _SOURCE_SUMMARY_MAP
-    mock_match_result = MagicMock()
-    mock_match_result.fetchall.return_value = [
+    def _hybrid(rows):
+        r = MagicMock()
+        r.fetchall.return_value = rows
+        return r
+
+    # general hybrid_search returns one hit with a source_type that's not in
+    # _SOURCE_SUMMARY_MAP; code_chunk search empty. _bulk_lookup_source_summaries
+    # still runs its Phase 1 select(Embedding) probe (no metadata rows) but
+    # skips Phase 2 for the unknown type, so the key never enters the result
+    # map and the hit is dropped. Entity dispatch keeps this resilient to the
+    # bulk-lookup query count.
+    general_rows = [
         (uuid4(), "alien_artifact", uuid4(), 0.90, 0.5, 0.75, {}),
     ]
+    emb_result = MagicMock()
+    emb_result.scalars.return_value.all.return_value = []
 
-    # Dedicated code_chunk search returns empty
-    mock_code_result = MagicMock()
-    mock_code_result.fetchall.return_value = []
-
-    # Bulk lookup: no query runs for unknown types, so only the hybrid_search
-    # calls happen
-    mock_session.execute.side_effect = [mock_match_result, mock_code_result]
+    mock_session.execute.side_effect = make_entity_execute(
+        results={"Embedding": emb_result},
+        textual=route_textual(
+            lambda p: _hybrid([])
+            if p.get("source_type") == "code_chunk"
+            else _hybrid(general_rows)
+        ),
+    )
 
     mock_embedding = [0.1] * 768
 

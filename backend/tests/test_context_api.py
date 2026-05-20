@@ -16,7 +16,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.config import Settings
-from tests.conftest import TEST_WORKSPACE_ID, TEST_USER_ID, TEST_EMAIL
+from tests.conftest import (
+    TEST_WORKSPACE_ID,
+    TEST_USER_ID,
+    TEST_EMAIL,
+    make_entity_execute,
+)
 
 
 @pytest.fixture()
@@ -52,18 +57,25 @@ def test_get_context_page_success(
     mock_context_page: MagicMock,
 ) -> None:
     """GET /api/context/CON-16 returns the context page."""
-    # Mock: workspace membership lookup for auth
+    # get_current_user (dependencies.py:158) now consults a Redis
+    # workspace cache *before* the WorkspaceMember query. On a cache hit it
+    # makes zero session.execute calls for auth, so a fixed 2-element
+    # side_effect list shifts and the ContextPage query receives the
+    # membership result (a str) -> "'str' object has no attribute 'id'".
+    # Dispatch by ORM entity instead so the test is correct whether auth
+    # made 0 or 1 DB calls.
     mock_membership = MagicMock()
     mock_membership.scalar_one_or_none.return_value = TEST_WORKSPACE_ID
 
-    # Mock: context page lookup
     mock_page_result = MagicMock()
     mock_page_result.scalar_one_or_none.return_value = mock_context_page
 
-    mock_session.execute.side_effect = [
-        mock_membership,
-        mock_page_result,
-    ]
+    mock_session.execute.side_effect = make_entity_execute(
+        results={
+            "WorkspaceMember": mock_membership,
+            "ContextPage": mock_page_result,
+        },
+    )
 
     response = client.get("/api/context/CON-16", headers=valid_auth_header)
 

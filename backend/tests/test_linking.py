@@ -4,6 +4,12 @@ Covers:
 - Explicit reference finding (PRs, comments, Slack messages)
 - Hybrid search (vector + full-text) matching
 - Combined multi-signal scoring and ranking
+
+These tests dispatch ``session.execute`` by the ORM entity being queried
+(via ``make_entity_execute``) rather than by positional ``side_effect``
+order. Adding a new ``select(Model)`` to the linking engine therefore can
+not silently break a test that doesn't care about that model — it just
+receives the empty default.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -13,7 +19,7 @@ import pytest
 
 from src.models.ticket import LinearTicket
 
-from tests.conftest import TEST_WORKSPACE_ID
+from tests.conftest import TEST_WORKSPACE_ID, make_entity_execute
 
 WORKSPACE_ID = UUID(TEST_WORKSPACE_ID)
 
@@ -33,45 +39,56 @@ def _make_ticket(
     return ticket
 
 
+def _scalars(rows: list) -> MagicMock:
+    """Wrap rows in a result whose .scalars().all() yields them."""
+    r = MagicMock()
+    r.scalars.return_value.all.return_value = rows
+    return r
+
+
+def _hybrid(rows: list) -> MagicMock:
+    """Wrap rows in a result whose .fetchall() yields them (text() SQL)."""
+    r = MagicMock()
+    r.fetchall.return_value = rows
+    return r
+
+
+@pytest.fixture(autouse=True)
+def _no_slack_permalink_io():
+    """Linking unit tests assert on scoring, not Slack plumbing.
+
+    _find_explicit_refs() reads the Slack bot token and resolves each
+    message's canonical permalink via chat.getPermalink. Stub both so the
+    bare-URL fallback is exercised and no Vault/HTTP work happens here;
+    permalink behaviour is covered by the Slack suites.
+    """
+    with patch(
+        "src.services.slack_oauth.get_bot_token",
+        new_callable=AsyncMock,
+        return_value="xoxb-test",
+    ), patch(
+        "src.services.slack_events.resolve_slack_permalink",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        yield
+
+
 @pytest.mark.asyncio
 async def test_find_explicit_refs_linked_prs() -> None:
     """Should find PRs linked via linear_ticket_id FK."""
     mock_session = AsyncMock()
     ticket = _make_ticket()
 
-    # Mock PR query
     mock_pr = MagicMock()
     mock_pr.id = uuid4()
     mock_pr.number = 42
     mock_pr.title = "Implement synthesis"
     mock_pr.description = "PR description"
 
-    mock_pr_result = MagicMock()
-    mock_pr_result.scalars.return_value.all.return_value = [mock_pr]
-
-    # Mock review query (no reviews)
-    mock_review_result = MagicMock()
-    mock_review_result.scalars.return_value.all.return_value = []
-
-    # Mock GitLab MR query (no MRs)
-    mock_gl_mr_result = MagicMock()
-    mock_gl_mr_result.scalars.return_value.all.return_value = []
-
-    # Mock comment query (no comments)
-    mock_comment_result = MagicMock()
-    mock_comment_result.scalars.return_value.all.return_value = []
-
-    # Mock Slack query (no messages)
-    mock_slack_result = MagicMock()
-    mock_slack_result.scalars.return_value.all.return_value = []
-
-    mock_session.execute.side_effect = [
-        mock_pr_result,       # 1. GitHub PRs
-        mock_review_result,   # 2. Reviews on PR
-        mock_gl_mr_result,    # 3. GitLab MRs
-        mock_comment_result,  # 4. Linear comments
-        mock_slack_result,    # 5. Slack messages
-    ]
+    mock_session.execute.side_effect = make_entity_execute(
+        {"GithubPullRequest": _scalars([mock_pr])}
+    )
 
     from src.services.linking import _find_explicit_refs
 
@@ -90,34 +107,15 @@ async def test_find_explicit_refs_slack_mentions() -> None:
     mock_session = AsyncMock()
     ticket = _make_ticket(identifier="CON-42")
 
-    # Mock PR query (no PRs)
-    mock_pr_result = MagicMock()
-    mock_pr_result.scalars.return_value.all.return_value = []
-
-    # Mock GitLab MR query (no MRs)
-    mock_gl_mr_result = MagicMock()
-    mock_gl_mr_result.scalars.return_value.all.return_value = []
-
-    # Mock comment query (no comments)
-    mock_comment_result = MagicMock()
-    mock_comment_result.scalars.return_value.all.return_value = []
-
-    # Mock Slack query
     mock_msg = MagicMock()
     mock_msg.id = uuid4()
     mock_msg.text = "Hey, have you seen CON-42? We need to prioritize it."
     mock_msg.user_name = "alice"
     mock_msg.channel_name = "engineering"
 
-    mock_slack_result = MagicMock()
-    mock_slack_result.scalars.return_value.all.return_value = [mock_msg]
-
-    mock_session.execute.side_effect = [
-        mock_pr_result,       # 1. GitHub PRs
-        mock_gl_mr_result,    # 2. GitLab MRs
-        mock_comment_result,  # 3. Linear comments
-        mock_slack_result,    # 4. Slack messages
-    ]
+    mock_session.execute.side_effect = make_entity_execute(
+        {"SlackMessage": _scalars([mock_msg])}
+    )
 
     from src.services.linking import _find_explicit_refs
 
@@ -135,26 +133,19 @@ async def test_find_hybrid_matches() -> None:
     mock_session = AsyncMock()
     ticket = _make_ticket()
 
-    # Mock hybrid_search result (7 columns)
     other_id = uuid4()
-    mock_match_result = MagicMock()
-    mock_match_result.fetchall.return_value = [
-        (uuid4(), "slack_message", other_id, 0.82, 0.15, 0.619, {}),
-    ]
-
-    # Mock bulk source lookup for the matched item
     mock_msg = MagicMock()
     mock_msg.id = other_id
     mock_msg.text = "We discussed the context page approach"
     mock_msg.user_name = "bob"
     mock_msg.channel_name = "dev"
-    mock_bulk_result = MagicMock()
-    mock_bulk_result.scalars.return_value.all.return_value = [mock_msg]
 
-    mock_session.execute.side_effect = [
-        mock_match_result,
-        mock_bulk_result,
-    ]
+    # hybrid_search() is raw text() SQL -> routed via `textual`. The bulk
+    # summary lookup selects Embedding (none) then SlackMessage (fallback).
+    mock_session.execute.side_effect = make_entity_execute(
+        {"SlackMessage": _scalars([mock_msg])},
+        textual=_hybrid([(uuid4(), "slack_message", other_id, 0.82, 0.15, 0.619, {})]),
+    )
 
     mock_embedding = [0.1] * 768
 
@@ -181,13 +172,9 @@ async def test_find_hybrid_matches_skips_self() -> None:
     mock_session = AsyncMock()
     ticket = _make_ticket()
 
-    # Match result includes the ticket itself (7 columns)
-    mock_match_result = MagicMock()
-    mock_match_result.fetchall.return_value = [
-        (uuid4(), "linear_ticket", ticket.id, 1.0, 0.5, 0.85, {}),  # self-match
-    ]
-
-    mock_session.execute.side_effect = [mock_match_result]
+    mock_session.execute.side_effect = make_entity_execute(
+        textual=_hybrid([(uuid4(), "linear_ticket", ticket.id, 1.0, 0.5, 0.85, {})]),
+    )
 
     mock_embedding = [0.1] * 768
 
@@ -210,44 +197,18 @@ async def test_combined_scoring_multi_signal() -> None:
     ticket = _make_ticket(identifier="CON-16")
 
     shared_id = uuid4()
-
-    # --- Mock explicit refs ---
-    # PR: none
-    mock_pr_result = MagicMock()
-    mock_pr_result.scalars.return_value.all.return_value = []
-    # GitLab MR: none
-    mock_gl_mr_result = MagicMock()
-    mock_gl_mr_result.scalars.return_value.all.return_value = []
-    # Comments: none
-    mock_comment_result = MagicMock()
-    mock_comment_result.scalars.return_value.all.return_value = []
-    # Slack: one message mentioning CON-16
     mock_msg = MagicMock()
     mock_msg.id = shared_id
     mock_msg.text = "Working on CON-16 context synthesis"
     mock_msg.user_name = "alice"
     mock_msg.channel_name = "dev"
-    mock_slack_result = MagicMock()
-    mock_slack_result.scalars.return_value.all.return_value = [mock_msg]
 
-    # --- Mock hybrid matches (7-column result) ---
-    mock_match_result = MagicMock()
-    mock_match_result.fetchall.return_value = [
-        (uuid4(), "slack_message", shared_id, 0.85, 0.2, 0.655, {}),
-    ]
-    mock_bulk_result = MagicMock()
-    mock_bulk_result.scalars.return_value.all.return_value = [mock_msg]
-
-    mock_session.execute.side_effect = [
-        # Explicit refs
-        mock_pr_result,       # GitHub PRs
-        mock_gl_mr_result,    # GitLab MRs
-        mock_comment_result,  # Linear comments
-        mock_slack_result,    # Slack mentions
-        # Hybrid matches
-        mock_match_result,    # hybrid_search
-        mock_bulk_result,     # bulk source lookup
-    ]
+    # Same Slack message surfaces via explicit ref (select SlackMessage)
+    # and via hybrid search (text() -> bulk SlackMessage fallback).
+    mock_session.execute.side_effect = make_entity_execute(
+        {"SlackMessage": _scalars([mock_msg])},
+        textual=_hybrid([(uuid4(), "slack_message", shared_id, 0.85, 0.2, 0.655, {})]),
+    )
 
     mock_embedding = [0.1] * 768
 
@@ -261,12 +222,16 @@ async def test_combined_scoring_multi_signal() -> None:
         result = await find_related_content(mock_session, WORKSPACE_ID, ticket)
 
     assert len(result.items) >= 1
-    # The slack message found by both explicit + hybrid should have combined score
     top_item = result.items[0]
     assert top_item.source_id == shared_id
+    # Found by both explicit and hybrid signals — signals are merged.
     assert len(top_item.signals) >= 2
-    # Score should be explicit (1.0) + hybrid (0.655 * 0.8) > 1.0
-    assert top_item.relevance_score > 1.0
+    # find_related_content fuses signals with Reciprocal Rank Fusion and
+    # normalises the result to [0, 1] (max rank -> 1.0), so a multi-signal
+    # item that tops every list scores exactly 1.0. (The old additive
+    # "> 1.0" contract no longer holds after the RRF rewrite.)
+    assert top_item.relevance_score == pytest.approx(1.0)
+    assert all(0.0 <= it.relevance_score <= 1.0 for it in result.items)
 
 
 @pytest.mark.asyncio
@@ -275,39 +240,25 @@ async def test_find_content_by_source_skips_disconnected() -> None:
     mock_session = AsyncMock()
     ticket = _make_ticket(identifier="CON-50")
 
-    # Mock explicit refs: Linear comment only
-    mock_pr_result = MagicMock()
-    mock_pr_result.scalars.return_value.all.return_value = []
-
     mock_comment = MagicMock()
     mock_comment.id = uuid4()
     mock_comment.body = "A linear comment"
     mock_comment.author_name = "alice"
-    mock_comment_result = MagicMock()
-    mock_comment_result.scalars.return_value.all.return_value = [mock_comment]
 
-    # Hybrid search: returns a slack_message hit
-    mock_match_result = MagicMock()
     slack_id = uuid4()
-    mock_match_result.fetchall.return_value = [
-        (uuid4(), "slack_message", slack_id, 0.80, 0.10, 0.55, {}),
-    ]
     mock_slack_msg = MagicMock()
     mock_slack_msg.id = slack_id
     mock_slack_msg.text = "Slack about CON-50"
     mock_slack_msg.user_name = "bob"
     mock_slack_msg.channel_name = "dev"
-    mock_bulk_result = MagicMock()
-    mock_bulk_result.scalars.return_value.all.return_value = [mock_slack_msg]
 
-    mock_session.execute.side_effect = [
-        # _find_explicit_refs with connected_sources={"linear"}:
-        # Only Linear comments query runs (no github, gitlab, slack blocks)
-        mock_comment_result,  # Linear comments
-        # _find_hybrid_matches
-        mock_match_result,    # hybrid_search SQL
-        mock_bulk_result,     # bulk source lookup (empty after filtering)
-    ]
+    mock_session.execute.side_effect = make_entity_execute(
+        {
+            "LinearComment": _scalars([mock_comment]),
+            "SlackMessage": _scalars([mock_slack_msg]),
+        },
+        textual=_hybrid([(uuid4(), "slack_message", slack_id, 0.80, 0.10, 0.55, {})]),
+    )
 
     mock_embedding = [0.1] * 768
 
@@ -336,23 +287,10 @@ async def test_find_content_by_source_none_returns_all() -> None:
     mock_session = AsyncMock()
     ticket = _make_ticket(identifier="CON-51")
 
-    # Mock all queries returning empty results
-    empty_result = MagicMock()
-    empty_result.scalars.return_value.all.return_value = []
-
-    # Hybrid search: no matches
-    mock_match_result = MagicMock()
-    mock_match_result.fetchall.return_value = []
-
-    mock_session.execute.side_effect = [
-        # _find_explicit_refs (all blocks run when connected_sources=None):
-        empty_result,  # GitHub PRs
-        empty_result,  # GitLab MRs
-        empty_result,  # Linear comments
-        empty_result,  # Slack messages
-        # _find_hybrid_matches
-        mock_match_result,
-    ]
+    # All entity queries return empty; hybrid_search returns no rows.
+    mock_session.execute.side_effect = make_entity_execute(
+        textual=_hybrid([]),
+    )
 
     mock_embedding = [0.1] * 768
 
@@ -369,7 +307,6 @@ async def test_find_content_by_source_none_returns_all() -> None:
         ):
             yielded_sources.append(source_name)
 
-    # All source names from SOURCE_TYPE_MAP should be yielded
     from src.services.linking import SOURCE_TYPE_MAP
 
     for source_name in SOURCE_TYPE_MAP:

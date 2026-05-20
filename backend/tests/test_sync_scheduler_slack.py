@@ -21,7 +21,8 @@ top — the scheduler holds its own reference, not a lookup into slack_messages.
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock
+import contextlib
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -46,13 +47,42 @@ class _CancelAfterFirstCycle:
             raise asyncio.CancelledError()
 
 
-def _make_get_ws(ws_by_provider: dict[Provider, list[UUID]]):
-    """Build a fake _get_connected_workspaces returning provider-keyed lists."""
+def _patch_workspaces(
+    monkeypatch: pytest.MonkeyPatch,
+    ws_by_provider: dict[Provider, list[UUID]],
+) -> None:
+    """Patch sync_scheduler.async_session for the current batched-query contract.
 
-    async def _fake(provider: Provider) -> list[UUID]:
-        return list(ws_by_provider.get(provider, []))
+    CURRENT contract (src/services/sync_scheduler.py:331-352): run_polling_fallback
+    NO LONGER calls _get_connected_workspaces(provider) per provider. It opens a
+    single ``async with async_session() as session`` and runs ONE batched
+    ``select(WorkspaceIntegration.workspace_id, WorkspaceIntegration.provider)``,
+    building workspaces_by_provider from ``result.fetchall()`` rows of
+    ``(workspace_id, provider)``. The Slack-poll branch also opens its own
+    ``async with async_session() as session`` before calling poll_user_messages
+    (which is mocked, so that session's execute is never used).
 
-    return _fake
+    This fake async_session serves both: any execute() returns a result whose
+    .fetchall() yields the flattened (ws_id, provider) rows.
+    """
+    from src.services import sync_scheduler
+
+    rows = [
+        (ws_id, provider)
+        for provider, ws_ids in ws_by_provider.items()
+        for ws_id in ws_ids
+    ]
+
+    result = MagicMock()
+    result.fetchall.return_value = rows
+
+    @contextlib.asynccontextmanager
+    async def _fake_async_session():
+        session = AsyncMock()
+        session.execute = AsyncMock(return_value=result)
+        yield session
+
+    monkeypatch.setattr(sync_scheduler, "async_session", _fake_async_session)
 
 
 async def _run_one_cycle(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,11 +108,7 @@ class TestSlackPollingIntegration:
         ws_a = uuid4()
         ws_b = uuid4()
 
-        monkeypatch.setattr(
-            sync_scheduler,
-            "_get_connected_workspaces",
-            _make_get_ws({Provider.SLACK: [ws_a, ws_b]}),
-        )
+        _patch_workspaces(monkeypatch, {Provider.SLACK: [ws_a, ws_b]})
         monkeypatch.setattr(
             sync_scheduler, "_expire_stale_generations", AsyncMock(return_value=None)
         )
@@ -124,11 +150,7 @@ class TestSlackPollingIntegration:
         ws_a = uuid4()
         ws_b = uuid4()
 
-        monkeypatch.setattr(
-            sync_scheduler,
-            "_get_connected_workspaces",
-            _make_get_ws({Provider.SLACK: [ws_a, ws_b]}),
-        )
+        _patch_workspaces(monkeypatch, {Provider.SLACK: [ws_a, ws_b]})
         monkeypatch.setattr(
             sync_scheduler, "_expire_stale_generations", AsyncMock(return_value=None)
         )
@@ -175,17 +197,14 @@ class TestSlackPollingIntegration:
         github_ws = uuid4()
         telegram_ws = uuid4()
 
-        monkeypatch.setattr(
-            sync_scheduler,
-            "_get_connected_workspaces",
-            _make_get_ws(
-                {
-                    Provider.NOTION: [notion_ws],
-                    Provider.GITHUB: [github_ws],
-                    Provider.TELEGRAM: [telegram_ws],
-                    Provider.SLACK: [],
-                }
-            ),
+        _patch_workspaces(
+            monkeypatch,
+            {
+                Provider.NOTION: [notion_ws],
+                Provider.GITHUB: [github_ws],
+                Provider.TELEGRAM: [telegram_ws],
+                Provider.SLACK: [],
+            },
         )
         monkeypatch.setattr(
             sync_scheduler, "_expire_stale_generations", AsyncMock(return_value=None)
@@ -225,17 +244,14 @@ class TestSlackPollingIntegration:
         github_ws = uuid4()
         telegram_ws = uuid4()
 
-        monkeypatch.setattr(
-            sync_scheduler,
-            "_get_connected_workspaces",
-            _make_get_ws(
-                {
-                    Provider.SLACK: [slack_ws],
-                    Provider.NOTION: [notion_ws],
-                    Provider.GITHUB: [github_ws],
-                    Provider.TELEGRAM: [telegram_ws],
-                }
-            ),
+        _patch_workspaces(
+            monkeypatch,
+            {
+                Provider.SLACK: [slack_ws],
+                Provider.NOTION: [notion_ws],
+                Provider.GITHUB: [github_ws],
+                Provider.TELEGRAM: [telegram_ws],
+            },
         )
         expire_mock = AsyncMock(return_value=None)
         reconcile_mock = AsyncMock(return_value=None)

@@ -7,7 +7,56 @@ from uuid import UUID
 
 import pytest
 
-from tests.conftest import TEST_WORKSPACE_ID
+from tests.conftest import TEST_WORKSPACE_ID, make_entity_execute
+
+
+def _sync_repo_execute(mock_pr, pr_uuid):
+    """Build a session.execute side-effect for sync_single_repo.
+
+    Routes by ORM entity so the test no longer relies on a single shared
+    MagicMock for every query (which broke when sync_single_repo started
+    reading cursor.cursor_value as a string -- see github_sync.py:223-229,
+    `cutoff = datetime.fromisoformat(cursor.cursor_value...)`). The mock
+    SyncCursor must expose cursor_value=None so the 60-day backfill path is
+    taken instead of crashing on a MagicMock value.
+
+    - SyncCursor (get_or_create_cursor): scalar_one_or_none -> cursor with
+      cursor_value=None.
+    - GithubPullRequest: the post-insert `select(GithubPullRequest)` reads
+      .scalar_one() (-> mock_pr) and the final embedding-id query reads
+      .fetchall() (-> [(pr_uuid,)]).
+    - WorkspaceIntegration (_update_repo_sync_status): scalar_one_or_none
+      -> None (no-op).
+    - textual (insert...returning id for PR, insert for review): the PR
+      upsert reads .scalar_one() -> pr_uuid; the review insert reads nothing.
+    """
+    cursor = MagicMock()
+    cursor.cursor_value = None
+
+    cursor_result = MagicMock()
+    cursor_result.scalar_one_or_none.return_value = cursor
+
+    pr_result = MagicMock()
+    pr_result.scalar_one.return_value = mock_pr
+    pr_result.scalar_one_or_none.return_value = mock_pr
+    pr_result.fetchall.return_value = [(pr_uuid,)]
+
+    wi_result = MagicMock()
+    wi_result.scalar_one_or_none.return_value = None
+
+    textual_result = MagicMock()
+    textual_result.scalar_one.return_value = pr_uuid
+    textual_result.scalar_one_or_none.return_value = None
+    textual_result.fetchall.return_value = []
+
+    return make_entity_execute(
+        results={
+            "SyncCursor": cursor_result,
+            "GithubPullRequest": pr_result,
+            "WorkspaceIntegration": wi_result,
+        },
+        textual=textual_result,
+    )
 
 
 # ---------- extract_linear_issue_id ----------
@@ -138,12 +187,9 @@ class TestSyncSingleRepo:
         mock_pr.branch_name = "feat/ENG-123-add-auth"
         mock_pr.number = 42
 
-        mock_scalar_result = MagicMock()
-        mock_scalar_result.scalar_one.return_value = pr_uuid
-        mock_scalar_result.scalar_one_or_none.return_value = mock_pr
-        mock_scalar_result.fetchall.return_value = [(pr_uuid,)]
-
-        mock_session.execute = AsyncMock(return_value=mock_scalar_result)
+        mock_session.execute = AsyncMock(
+            side_effect=_sync_repo_execute(mock_pr, pr_uuid)
+        )
         mock_session.flush = AsyncMock()
         mock_session.commit = AsyncMock()
 
@@ -235,12 +281,9 @@ class TestSyncSingleRepo:
         mock_pr.branch_name = "fix/login-bug"
         mock_pr.number = 44
 
-        mock_result = MagicMock()
-        mock_result.scalar_one.return_value = pr_uuid
-        mock_result.scalar_one_or_none.return_value = mock_pr
-        mock_result.fetchall.return_value = [(pr_uuid,)]
-
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute = AsyncMock(
+            side_effect=_sync_repo_execute(mock_pr, pr_uuid)
+        )
         mock_session.flush = AsyncMock()
         mock_session.commit = AsyncMock()
 
@@ -315,12 +358,9 @@ class TestSyncSingleRepo:
         mock_pr.branch_name = "feat/new-feature"
         mock_pr.number = 45
 
-        mock_result = MagicMock()
-        mock_result.scalar_one.return_value = pr_uuid
-        mock_result.scalar_one_or_none.return_value = mock_pr
-        mock_result.fetchall.return_value = [(pr_uuid,)]
-
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute = AsyncMock(
+            side_effect=_sync_repo_execute(mock_pr, pr_uuid)
+        )
         mock_session.flush = AsyncMock()
         mock_session.commit = AsyncMock()
 
@@ -419,12 +459,9 @@ class TestSyncSingleRepo:
         mock_pr.branch_name = "feat/recent"
         mock_pr.number = 46
 
-        mock_result = MagicMock()
-        mock_result.scalar_one.return_value = pr_uuid
-        mock_result.scalar_one_or_none.return_value = mock_pr
-        mock_result.fetchall.return_value = [(pr_uuid,)]
-
-        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.execute = AsyncMock(
+            side_effect=_sync_repo_execute(mock_pr, pr_uuid)
+        )
         mock_session.flush = AsyncMock()
         mock_session.commit = AsyncMock()
 

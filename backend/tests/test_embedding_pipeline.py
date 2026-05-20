@@ -50,26 +50,38 @@ def testcompute_content_hash_different_for_real_changes():
 
 @pytest.mark.asyncio
 async def test_generate_embeddings_batch_returns_correct_count():
-    """Batch function returns one embedding per input text."""
+    """Batch function returns one embedding per input text, in input order.
+
+    Provider migrated OpenAI -> Gemini. Current contract
+    (src/services/embedding.py:267-297):
+
+        response = await client.aio.models.embed_content(
+            model=..., contents=truncated, config=EmbedContentConfig(...))
+        return [list(e.values) for e in response.embeddings]
+
+    Gemini returns embeddings in the same order as the input ``contents``
+    list (there is no ``.index`` reordering anymore), so the response is
+    shaped in input order here.
+    """
     mock_embedding_1 = MagicMock()
-    mock_embedding_1.index = 0
-    mock_embedding_1.embedding = [0.1] * 768
+    mock_embedding_1.values = [0.1] * 768
 
     mock_embedding_2 = MagicMock()
-    mock_embedding_2.index = 1
-    mock_embedding_2.embedding = [0.2] * 768
+    mock_embedding_2.values = [0.2] * 768
 
     mock_response = MagicMock()
-    mock_response.data = [mock_embedding_2, mock_embedding_1]  # Out of order
+    mock_response.embeddings = [mock_embedding_1, mock_embedding_2]
 
-    mock_client = AsyncMock()
-    mock_client.embeddings.create = AsyncMock(return_value=mock_response)
+    mock_client = MagicMock()
+    mock_client.aio.models.embed_content = AsyncMock(return_value=mock_response)
 
-    with patch("src.services.embedding._get_openai_client", return_value=mock_client):
+    with patch(
+        "src.services.embedding._get_gemini_client", return_value=mock_client
+    ):
         result = await generate_embeddings_batch(["text one", "text two"])
 
     assert len(result) == 2
-    # Should be sorted by index, so index 0 comes first
+    # Returned in input/response order (no index-based reordering).
     assert result[0][0] == pytest.approx(0.1)
     assert result[1][0] == pytest.approx(0.2)
 

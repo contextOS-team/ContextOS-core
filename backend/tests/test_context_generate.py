@@ -132,6 +132,7 @@ class TestGenerateInBackground:
                 user_id=UUID("11111111-1111-1111-1111-111111111111"),
                 ticket_identifier="ENG-42",
                 linear_issue_id="abc-123-uuid",
+                jira_issue_id=None,
                 settings=mock_settings,
             )
 
@@ -167,6 +168,7 @@ class TestGenerateInBackground:
                 user_id=UUID("11111111-1111-1111-1111-111111111111"),
                 ticket_identifier="ENG-42",
                 linear_issue_id="abc-123-uuid",
+                jira_issue_id=None,
                 settings=mock_settings,
             )
 
@@ -199,6 +201,7 @@ class TestGenerateInBackground:
                 user_id=UUID("11111111-1111-1111-1111-111111111111"),
                 ticket_identifier="ENG-42",
                 linear_issue_id=None,
+                jira_issue_id=None,
                 settings=mock_settings,
             )
 

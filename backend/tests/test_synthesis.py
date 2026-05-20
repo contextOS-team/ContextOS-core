@@ -13,7 +13,23 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from src.models.context_page import ContextPage
 from tests.conftest import TEST_WORKSPACE_ID
+
+
+def _added_context_pages(mock_session) -> list:
+    """ContextPage objects passed to session.add().
+
+    generate_context_page also session.add()s an AuditLog (and may add
+    other side records); asserting on raw call count / call_args is
+    brittle. Filter by type so these tests stay green when audit/activity
+    writes are added or reordered.
+    """
+    return [
+        c.args[0]
+        for c in mock_session.add.call_args_list
+        if c.args and isinstance(c.args[0], ContextPage)
+    ]
 
 WORKSPACE_ID = UUID(TEST_WORKSPACE_ID)
 
@@ -84,8 +100,10 @@ async def test_generate_context_page_creates_new() -> None:
 
         result = await generate_context_page(mock_session, WORKSPACE_ID, "CON-16")
 
-    # Verify new page was added to session
-    mock_session.add.assert_called_once()
+    # Exactly one ContextPage was added (plus an AuditLog, which we ignore).
+    added_pages = _added_context_pages(mock_session)
+    assert len(added_pages) == 1
+    assert added_pages[0] is result
     assert result.title == "Context: Implement context synthesis"
     assert result.status == "ready"
     assert result.generation_model == "gemini-3-flash-preview"
@@ -132,8 +150,9 @@ async def test_generate_context_page_updates_existing() -> None:
 
         result = await generate_context_page(mock_session, WORKSPACE_ID, "CON-16")
 
-    # Should NOT add a new record (updates existing)
-    mock_session.add.assert_not_called()
+    # Updates the existing page in place — no new ContextPage is added.
+    # (An AuditLog is still added; that's expected and not asserted here.)
+    assert _added_context_pages(mock_session) == []
     assert existing_page.status == "ready"
     assert existing_page.generation_model == "gemini-3-flash-preview"
 
@@ -199,7 +218,9 @@ async def test_generate_context_page_includes_sources() -> None:
 
         result = await generate_context_page(mock_session, WORKSPACE_ID, "CON-16")
 
-    added_page = mock_session.add.call_args[0][0]
+    added_pages = _added_context_pages(mock_session)
+    assert len(added_pages) == 1
+    added_page = added_pages[0]
     assert len(added_page.sources) == 1
     assert added_page.sources[0]["type"] == "slack_message"
     assert added_page.sources[0]["relevance_score"] == 0.85

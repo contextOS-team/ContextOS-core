@@ -19,6 +19,24 @@ from tests.conftest import TEST_WORKSPACE_ID
 WORKSPACE_ID = UUID(TEST_WORKSPACE_ID)
 
 
+def _added_context_page(mock_session):
+    """Return the ContextPage passed to session.add().
+
+    generate_context_page now side-writes an AuditLog (log_audit_event ->
+    session.add(AuditLog(...))) in addition to the ContextPage placeholder
+    (synthesis.py:577, 824-836). Selecting mock_session.add.call_args[0][0]
+    would grab the *last* add call (the AuditLog), so filter add() calls by
+    ContextPage type instead of relying on call order.
+    """
+    from src.models.context_page import ContextPage
+
+    for call in mock_session.add.call_args_list:
+        arg = call[0][0]
+        if isinstance(arg, ContextPage):
+            return arg
+    raise AssertionError("ContextPage was never added to the session")
+
+
 # ---------------------------------------------------------------------------
 # TicketProxy
 # ---------------------------------------------------------------------------
@@ -155,7 +173,7 @@ async def test_generate_context_page_jira_fallback():
         result = await generate_context_page(mock_session, WORKSPACE_ID, "PROJ-42")
 
     # ContextPage was added with ticket_id=None (no Linear FK)
-    added_page = mock_session.add.call_args[0][0]
+    added_page = _added_context_page(mock_session)
     assert added_page.ticket_id is None
     assert added_page.ticket_identifier == "PROJ-42"
     assert result.title == "Context: Fix login bug"

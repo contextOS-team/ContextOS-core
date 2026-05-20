@@ -27,6 +27,7 @@ from tests.conftest import (
     TEST_USER_ID,
     TEST_WORKSPACE_ID,
     _make_test_settings,
+    make_entity_execute,
 )
 
 WORKSPACE_UUID = UUID(TEST_WORKSPACE_ID)
@@ -122,10 +123,30 @@ def test_callback_success_redirects_to_settings(client: TestClient, mock_session
          patch("src.routers.jira.exchange_code", new_callable=AsyncMock) as mock_exchange:
         mock_exchange.return_value = {"cloud_id": "test-cloud", "site_name": "mysite"}
 
-        # Mock the workspace member lookup
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = USER_UUID
-        mock_session.execute.return_value = mock_result
+        # The callback now also enforces Linear/Jira mutual exclusion
+        # (jira.py:95-110): a `select(WorkspaceIntegration)` for a connected
+        # Linear integration. A blanket execute.return_value made that probe
+        # return USER_UUID (truthy) -> provider_conflict. Dispatch by entity:
+        #   - WorkspaceMember.user_id -> USER_UUID (workspace owner found)
+        #   - WorkspaceIntegration    -> None (no Linear conflict)
+        #   - textual (is_user_onboarding text() query) -> first()=None so
+        #     the user is treated as not onboarding -> settings redirect.
+        member_result = MagicMock()
+        member_result.scalar_one_or_none.return_value = USER_UUID
+
+        linear_result = MagicMock()
+        linear_result.scalar_one_or_none.return_value = None
+
+        onboarding_result = MagicMock()
+        onboarding_result.first.return_value = None
+
+        mock_session.execute.side_effect = make_entity_execute(
+            results={
+                "WorkspaceMember": member_result,
+                "WorkspaceIntegration": linear_result,
+            },
+            textual=onboarding_result,
+        )
 
         response = client.get(
             "/api/jira/callback",

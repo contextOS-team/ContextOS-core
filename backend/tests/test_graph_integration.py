@@ -108,32 +108,43 @@ class TestExtractAndPopulateGraph:
 
     @pytest.mark.asyncio
     async def test_multiple_entities_creates_all_nodes_and_edges(self):
-        """Content with ENG-123 and <@U12345ABC> creates source + 2 entity nodes + 2 edges."""
+        """Content with two extractable entities -> source + 2 entity nodes + 2 edges.
+
+        Current contract (src/services/graph_extractor.py ll. 845-851):
+        MentionExtractor is intentionally NOT registered, so a raw Slack
+        <@U...> mention no longer yields a Person node. To still exercise
+        the multi-entity path we use content that triggers two *registered*
+        extractors: TicketRefExtractor (ENG-123) and URLExtractor (a
+        github.com PR URL -> PR entity). source_type stays slack_message so
+        link_pr_code_to_discussions is not invoked, and the only post-pass
+        (link_code_mentions_to_chunks) is inert because there are no
+        CodeChunk entities -- so upsert_node/upsert_edge counts stay exact.
+        """
         source_node_id = uuid.uuid4()
         ticket_node_id = uuid.uuid4()
-        person_node_id = uuid.uuid4()
+        pr_node_id = uuid.uuid4()
         edge1_id = uuid.uuid4()
         edge2_id = uuid.uuid4()
 
         with patch("src.services.graph_ops.upsert_node", new_callable=AsyncMock) as mock_upsert_node, \
              patch("src.services.graph_ops.upsert_edge", new_callable=AsyncMock) as mock_upsert_edge:
 
-            mock_upsert_node.side_effect = [source_node_id, ticket_node_id, person_node_id]
+            mock_upsert_node.side_effect = [source_node_id, ticket_node_id, pr_node_id]
             mock_upsert_edge.side_effect = [edge1_id, edge2_id]
 
             await extract_and_populate_graph(
                 session=self.session,
                 workspace_id=self.workspace_id,
-                content="Hey <@U12345ABC> please look at ENG-123",
+                content="ENG-123 fixed in https://github.com/org/repo/pull/42",
                 source_type="slack_message",
                 source_id=self.source_id,
                 source_name="Slack message in #dev",
             )
 
-            # Source node + Ticket node + Person node = 3 upsert_node calls
+            # Source node + Ticket node + PR node = 3 upsert_node calls
             assert mock_upsert_node.call_count == 3
 
-            # 2 edges: source -> ticket, source -> person
+            # 2 edges: source -> ticket, source -> PR
             assert mock_upsert_edge.call_count == 2
 
             # Verify entity types
@@ -141,7 +152,7 @@ class TestExtractAndPopulateGraph:
                 call.kwargs["entity_type"]
                 for call in mock_upsert_node.call_args_list[1:]
             }
-            assert entity_types == {"Ticket", "Person"}
+            assert entity_types == {"Ticket", "PR"}
 
     @pytest.mark.asyncio
     async def test_failure_does_not_raise(self):

@@ -176,6 +176,9 @@ class TestConfigValidation:
             SUPABASE_JWT_SECRET="real-secret",
             SENTRY_DSN="https://fake@sentry.io/1",
             CORS_ORIGINS="https://app.contextos.dev",
+            # Production requires an HTTPS backend URL (validate_for_production
+            # rejects the http://localhost test default).
+            BACKEND_URL="https://api.contextos.dev",
         )
         # Must not raise
         settings.validate_for_production()

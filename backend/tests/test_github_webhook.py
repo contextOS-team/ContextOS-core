@@ -35,7 +35,11 @@ def _patch_queue_embedding():
 
 import src.config
 from src.config import Settings
-from tests.conftest import TEST_WORKSPACE_ID, _make_test_settings
+from tests.conftest import (
+    TEST_WORKSPACE_ID,
+    _make_test_settings,
+    make_entity_execute,
+)
 
 # Webhook secret used across tests
 TEST_GITHUB_WEBHOOK_SECRET = "test-github-webhook-secret"
@@ -253,15 +257,22 @@ async def test_handle_pull_request_opened() -> None:
     mock_pr_result = MagicMock()
     mock_pr_result.scalar_one_or_none.return_value = None
 
-    # link_pr_to_ticket: get_linear_team_keys returns empty
+    # link_pr_to_ticket now runs get_linear_team_keys AND
+    # get_jira_project_keys (both text()), plus the handler runs graph
+    # extraction (github_webhook.py:220-241) -- a fixed ordered side_effect
+    # list rots as queries are added. Dispatch by ORM entity instead:
+    # WorkspaceIntegration -> is_repo_monitored, GithubPullRequest ->
+    # existing-PR lookup, textual -> empty team/project key lookups.
     mock_team_result = MagicMock()
     mock_team_result.fetchall.return_value = []
 
-    mock_session.execute.side_effect = [
-        mock_int_result,  # is_repo_monitored
-        mock_pr_result,  # existing PR lookup
-        mock_team_result,  # get_linear_team_keys
-    ]
+    mock_session.execute.side_effect = make_entity_execute(
+        results={
+            "WorkspaceIntegration": mock_int_result,
+            "GithubPullRequest": mock_pr_result,
+        },
+        textual=mock_team_result,
+    )
 
     from src.services.github_webhook import handle_pull_request_event
 
@@ -318,14 +329,20 @@ async def test_handle_pull_request_closed_merged() -> None:
     mock_pr_result = MagicMock()
     mock_pr_result.scalar_one_or_none.return_value = existing_pr
 
+    # state == "merged" so the handler also runs link_pr_to_ticket
+    # (linear + jira text() lookups), graph extraction, and emit_activity
+    # (a text() INSERT). Dispatch by entity so added queries can't shift a
+    # positional side_effect list out of alignment.
     mock_team_result = MagicMock()
     mock_team_result.fetchall.return_value = []
 
-    mock_session.execute.side_effect = [
-        mock_int_result,
-        mock_pr_result,
-        mock_team_result,
-    ]
+    mock_session.execute.side_effect = make_entity_execute(
+        results={
+            "WorkspaceIntegration": mock_int_result,
+            "GithubPullRequest": mock_pr_result,
+        },
+        textual=mock_team_result,
+    )
 
     from src.services.github_webhook import handle_pull_request_event
 

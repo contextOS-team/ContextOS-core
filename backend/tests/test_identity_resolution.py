@@ -55,17 +55,14 @@ class TestResolveByEmail:
         mapping2.display_name = "Alice (GitHub)"
         mapping2.canonical_person_id = None
 
-        # Mock session.execute for the group-by query: returns one group
-        mock_group_result = MagicMock()
-        mock_group_result.all.return_value = [("alice@example.com",)]
-
-        # Mock for fetching mappings by email
+        # CURRENT contract (src/services/identity_resolution.py:129-149):
+        # resolve_by_email does ONE bulk query returning ALL mappings with an
+        # email, then groups by email in Python. _create_same_as_edge is
+        # patched out, so no further session.execute calls happen here.
         mock_mappings_result = MagicMock()
         mock_mappings_result.scalars.return_value.all.return_value = [mapping1, mapping2]
 
-        mock_session.execute = AsyncMock(
-            side_effect=[mock_group_result, mock_mappings_result]
-        )
+        mock_session.execute = AsyncMock(return_value=mock_mappings_result)
 
         canonical_node_id = uuid.uuid4()
 
@@ -124,22 +121,16 @@ class TestResolveByEmail:
         mapping_bob.display_name = "Bob"
         mapping_bob.canonical_person_id = None
 
-        # Two email groups
-        mock_group_result = MagicMock()
-        mock_group_result.all.return_value = [
-            ("alice@example.com",),
-            ("bob@example.com",),
+        # CURRENT contract (src/services/identity_resolution.py:129-149):
+        # ONE bulk query returns ALL email-bearing mappings; grouping by
+        # email happens in Python. _create_same_as_edge is patched out.
+        mock_mappings_result = MagicMock()
+        mock_mappings_result.scalars.return_value.all.return_value = [
+            mapping_alice,
+            mapping_bob,
         ]
 
-        mock_alice_result = MagicMock()
-        mock_alice_result.scalars.return_value.all.return_value = [mapping_alice]
-
-        mock_bob_result = MagicMock()
-        mock_bob_result.scalars.return_value.all.return_value = [mapping_bob]
-
-        mock_session.execute = AsyncMock(
-            side_effect=[mock_group_result, mock_alice_result, mock_bob_result]
-        )
+        mock_session.execute = AsyncMock(return_value=mock_mappings_result)
 
         node_ids = [uuid.uuid4(), uuid.uuid4()]
         call_count = 0
@@ -478,7 +469,10 @@ class TestFetchLinearRoster:
 
         assert len(result) == 2
         assert result[0]["platform_user_id"] == "user-1"
-        assert result[0]["display_name"] == "Alice"
+        # CURRENT contract (src/services/identity_resolution.py:412):
+        # display_name = user.get("name") or user.get("displayName")
+        #                or user.get("email", "")  -- "name" wins.
+        assert result[0]["display_name"] == "Alice Smith"
         assert result[0]["email"] == "alice@example.com"
         assert result[1]["platform_user_id"] == "user-2"
 
@@ -1018,6 +1012,14 @@ class TestSeedRoster:
             "src.services.identity_resolution.backfill_identity_resolution",
             new_callable=AsyncMock,
             return_value=0,
+        ), patch(
+            # CURRENT contract (src/services/identity_resolution.py:746):
+            # seed_roster now also calls resolve_unlinked_mappings()
+            # between resolve_by_email and find_fuzzy_candidates to create
+            # Person nodes for email-less mappings (e.g. Jira users).
+            "src.services.identity_resolution.resolve_unlinked_mappings",
+            new_callable=AsyncMock,
+            return_value=0,
         ):
             from src.services.identity_resolution import seed_roster
 
@@ -1066,33 +1068,42 @@ class TestBackfillIdentityResolution:
         workspace_id = uuid.uuid4()
         canonical_node_id = uuid.uuid4()
 
-        # A platform Person node with platform info in properties
+        from src.models.identity_mapping import IdentityMapping
+
+        # CURRENT contract (src/services/identity_resolution.py:917-1031):
+        # backfill_identity_resolution now runs THREE bulk queries
+        # (Person nodes, same_as edges, identity mappings) and parses the
+        # platform from properties["external_id"] like "slack:U12345" --
+        # it no longer calls lookup_mapping() nor reads separate
+        # "platform"/"platform_user_id" props.
         person_node = MagicMock(spec=GraphNode)
         person_node.id = uuid.uuid4()
         person_node.name = "Alice (Slack)"
         person_node.properties = {
-            "platform": "slack",
-            "platform_user_id": "U12345",
+            "external_id": "slack:U12345",
         }
 
-        # Mock: first query returns person nodes, second query returns no existing edge
+        # Query 1: Person nodes
         person_result = MagicMock()
         person_result.scalars.return_value.all.return_value = [person_node]
 
+        # Query 2: same_as edges -- iterated as rows; empty => not linked yet
         edge_result = MagicMock()
-        edge_result.scalar_one_or_none.return_value = None  # No existing same_as edge
+        edge_result.__iter__ = lambda self: iter([])
 
-        mock_session.execute = AsyncMock(side_effect=[person_result, edge_result])
-
-        # Mock: lookup_mapping returns a mapping with canonical_person_id
-        mock_mapping = MagicMock()
+        # Query 3: identity mappings -- prefetched into a (platform,uid) map
+        mock_mapping = MagicMock(spec=IdentityMapping)
+        mock_mapping.platform = "slack"
+        mock_mapping.platform_user_id = "U12345"
         mock_mapping.canonical_person_id = canonical_node_id
+        mapping_result = MagicMock()
+        mapping_result.scalars.return_value.all.return_value = [mock_mapping]
+
+        mock_session.execute = AsyncMock(
+            side_effect=[person_result, edge_result, mapping_result]
+        )
 
         with patch(
-            "src.services.identity_resolution.lookup_mapping",
-            new_callable=AsyncMock,
-            return_value=mock_mapping,
-        ), patch(
             "src.services.identity_resolution.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid.uuid4(),
@@ -1116,27 +1127,34 @@ class TestBackfillIdentityResolution:
 
         workspace_id = uuid.uuid4()
 
+        # CURRENT contract (src/services/identity_resolution.py:956-994):
+        # the same_as-edge query is bulk; its rows are iterated and
+        # collected into already_linked = {str(row[0]) ...}. A node whose
+        # id is in that set is skipped before any mapping lookup.
         person_node = MagicMock(spec=GraphNode)
         person_node.id = uuid.uuid4()
         person_node.name = "Bob (GitHub)"
         person_node.properties = {
-            "platform": "github",
-            "platform_user_id": "bob-gh",
+            "external_id": "github:bob-gh",
         }
 
-        # Mock: first query returns person nodes, second query returns existing edge
+        # Query 1: Person nodes
         person_result = MagicMock()
         person_result.scalars.return_value.all.return_value = [person_node]
 
+        # Query 2: same_as edges -- one row for this node => already linked
         edge_result = MagicMock()
-        edge_result.scalar_one_or_none.return_value = uuid.uuid4()  # Existing edge
+        edge_result.__iter__ = lambda self: iter([(person_node.id,)])
 
-        mock_session.execute = AsyncMock(side_effect=[person_result, edge_result])
+        # Query 3: identity mappings (still queried before the skip loop)
+        mapping_result = MagicMock()
+        mapping_result.scalars.return_value.all.return_value = []
+
+        mock_session.execute = AsyncMock(
+            side_effect=[person_result, edge_result, mapping_result]
+        )
 
         with patch(
-            "src.services.identity_resolution.lookup_mapping",
-            new_callable=AsyncMock,
-        ) as mock_lookup, patch(
             "src.services.identity_resolution.upsert_edge",
             new_callable=AsyncMock,
         ) as mock_upsert_edge:
@@ -1145,5 +1163,4 @@ class TestBackfillIdentityResolution:
             count = await backfill_identity_resolution(mock_session, workspace_id)
 
         assert count == 0
-        mock_lookup.assert_not_called()
         mock_upsert_edge.assert_not_called()

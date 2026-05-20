@@ -99,6 +99,35 @@ def _mock_traverse(rows: list[tuple]) -> MagicMock:
     return mock
 
 
+def _make_bulk_traverse_row(
+    start_node_id: UUID,
+    node_id: UUID,
+    entity_type: str,
+    name: str,
+    depth: int,
+    properties: dict | None = None,
+    edge_relationship_type: str | None = None,
+) -> tuple:
+    """Row for the *bulk* traverse query.
+
+    The current _build_ticket_clusters runs one unnest+LATERAL query whose
+    SELECT prefixes every traverse_graph row with ``t.start_id::text``
+    (src/routers/graph.py: ``start_id = row[0]`` then
+    ``traversal_row = row[1:]``). So each mocked row needs the originating
+    ticket node id (as str) prepended to the 7-col traverse tuple.
+    """
+    return (
+        str(start_node_id),
+        node_id,
+        entity_type,
+        name,
+        properties or {},
+        edge_relationship_type,
+        depth,
+        [str(node_id)],
+    )
+
+
 def _mock_source_type_lookup(
     id_to_info: dict[str, tuple[str | None, str, str]],
 ) -> MagicMock:
@@ -140,6 +169,79 @@ def _mock_empty_result() -> MagicMock:
     return mock
 
 
+def _stmt_signature(stmt) -> str:
+    """Stable key for a session.execute() statement.
+
+    The lens endpoints query the *same* ORM entity with several different
+    shapes (e.g. select(GraphNode) for the fingerprint lookup vs
+    select(GraphNode.id, GraphNode.source_type, ...) for the source-type
+    probe), so entity name alone is ambiguous. We disambiguate by
+    (entity name, number of selected column descriptions). Raw text()
+    statements (traverse_graph) have no entity -> "TEXT".
+    """
+    from tests.conftest import _stmt_entity_name
+
+    name = _stmt_entity_name(stmt)
+    if name is None:
+        return "TEXT"
+    try:
+        ncols = len(stmt.column_descriptions)
+    except Exception:
+        ncols = 0
+    return f"{name}:{ncols}"
+
+
+def _LensRouter(handlers: dict[str, list]):
+    """Build a session.execute side-effect routed by statement signature.
+
+    The current graph router collapsed N per-ticket traverse_graph round
+    trips into ONE bulk unnest+LATERAL query and added a trailing
+    _inject_user_decisions() pass (extra IdentityMapping / WorkspaceMember
+    queries). Brittle ordered side_effect lists rot on both changes; this
+    dispatcher keys on *what* is queried and serves a per-signature FIFO
+    queue, defaulting to an inert empty result for anything unregistered
+    (so the decisions pass never raises).
+
+    Returns a plain ``async def`` closure (NOT a callable object): AsyncMock
+    only auto-awaits function side_effects, not objects with an async
+    ``__call__`` -- the latter leak an un-awaited coroutine.
+    """
+    queues = {k: list(v) for k, v in handlers.items()}
+
+    def _empty():
+        m = MagicMock()
+        m.scalars.return_value.all.return_value = []
+        m.scalar_one_or_none.return_value = None
+        m.scalar_one.return_value = 0
+        m.fetchall.return_value = []
+        m.__iter__ = lambda self: iter([])
+        return m
+
+    async def _execute(stmt, *args, **kwargs):
+        sig = _stmt_signature(stmt)
+        queue = queues.get(sig)
+        if not queue:
+            return _empty()
+        # Keep last entry sticky so repeated identical queries (e.g. the
+        # per-cluster edge query, once per ticket) all get a result.
+        return queue.pop(0) if len(queue) > 1 else queue[0]
+
+    return _execute
+
+
+# Statement signatures (entity name : selected-column count).
+SIG_MEMBER = "WorkspaceMember:1"          # auth membership lookup
+SIG_INTEGRATION = "WorkspaceIntegration:1"  # _get_connected_providers
+SIG_LINEAR_VALIDATE = "LinearTicket:1"    # _validate_ticket_identifiers (linear)
+SIG_JIRA_VALIDATE = "JiraIssue:1"         # _validate_ticket_identifiers (jira)
+SIG_NODE_FULL = "GraphNode:1"             # select(GraphNode) fingerprint/blocked lookup
+SIG_NODE_SRC = "GraphNode:4"              # select(GraphNode.id, source_type, entity_type, name)
+SIG_EDGE = "GraphEdge:1"                  # select(GraphEdge) blocks / per-cluster edges
+SIG_TRAVERSE = "TEXT"                     # bulk traverse_graph text()
+SIG_IDENTITY_FALLBACK = "IdentityMapping:1"   # my-work fallback id lookup
+SIG_IDENTITY_DECISIONS = "IdentityMapping:2"  # _inject_user_decisions id+email
+
+
 # Stable test IDs
 TICKET_1_NODE = uuid4()
 TICKET_2_NODE = uuid4()
@@ -158,28 +260,33 @@ def test_my_work_linear_happy_path(
     mock_session: AsyncMock,
 ) -> None:
     """My Work lens with Linear returns assigned ticket clusters."""
-    mock_session.execute.side_effect = [
-        _mock_membership(),  # auth
-        _mock_provider_query(["linear"]),  # _get_connected_providers (endpoint)
-        # _build_ticket_clusters calls (allowed_src passed in, skips provider query):
-        _mock_ticket_validation(["CON-1"]),
-        _mock_fingerprint_nodes({"CON-1": TICKET_1_NODE}),
-        _mock_traverse([
-            _make_traverse_row(TICKET_1_NODE, "Ticket", "CON-1", 0),
-            _make_traverse_row(PERSON_NODE, "Person", "Alice", 1, edge_relationship_type="mentions"),
-        ]),
-        _mock_source_type_lookup({
+    # Signature-routed (not order-based): _build_ticket_clusters now issues
+    # ONE bulk traverse_graph text() query (was N), and the endpoint runs a
+    # trailing _inject_user_decisions() pass. The router serves an inert
+    # empty result for the (unregistered) IdentityMapping decisions query.
+    mock_session.execute.side_effect = _LensRouter({
+        SIG_MEMBER: [_mock_membership()],
+        SIG_INTEGRATION: [_mock_provider_query(["linear"])],
+        SIG_LINEAR_VALIDATE: [_mock_ticket_validation(["CON-1"])],
+        SIG_NODE_FULL: [_mock_fingerprint_nodes({"CON-1": TICKET_1_NODE})],
+        SIG_TRAVERSE: [_mock_traverse([
+            _make_bulk_traverse_row(TICKET_1_NODE, TICKET_1_NODE, "Ticket", "CON-1", 0),
+            _make_bulk_traverse_row(TICKET_1_NODE, PERSON_NODE, "Person", "Alice", 1, edge_relationship_type="mentions"),
+        ])],
+        SIG_NODE_SRC: [_mock_source_type_lookup({
             str(TICKET_1_NODE): ("linear_ticket", "Ticket", "CON-1"),
             str(PERSON_NODE): (None, "Person", "Alice"),
-        }),
-        _mock_edge_result([
+        })],
+        SIG_EDGE: [_mock_edge_result([
             _mock_edge(TICKET_1_NODE, PERSON_NODE, "mentions"),
-        ]),
-    ]
+        ])],
+    })
 
-    # Patch at source module paths (lazy imports inside function bodies)
-    with patch("src.services.linear_oauth.get_valid_access_token", new_callable=AsyncMock, return_value="fake-token"), \
-         patch("src.services.linear_graphql.LinearGraphQLClient") as mock_client_cls:
+    # LinearGraphQLClient + get_valid_access_token are bound into
+    # src.routers.graph at import time (module-level import), so they MUST
+    # be patched there, not at their defining modules.
+    with patch("src.routers.graph.get_valid_access_token", new_callable=AsyncMock, return_value="fake-token"), \
+         patch("src.routers.graph.LinearGraphQLClient") as mock_client_cls:
         mock_linear = AsyncMock()
         mock_linear.query.return_value = {
             "data": {
@@ -213,20 +320,20 @@ def test_my_work_jira_happy_path(
     mock_session: AsyncMock,
 ) -> None:
     """My Work lens with Jira returns assigned issue clusters."""
-    mock_session.execute.side_effect = [
-        _mock_membership(),
-        _mock_provider_query(["jira"]),
-        # _build_ticket_clusters calls (allowed_src passed in):
-        _mock_ticket_validation(["PROJ-1"]),
-        _mock_fingerprint_nodes({"PROJ-1": TICKET_1_NODE}),
-        _mock_traverse([
-            _make_traverse_row(TICKET_1_NODE, "Ticket", "PROJ-1", 0),
-        ]),
-        _mock_source_type_lookup({str(TICKET_1_NODE): ("jira_issue", "Ticket", "PROJ-1")}),
-        _mock_edge_result([]),
-    ]
+    mock_session.execute.side_effect = _LensRouter({
+        SIG_MEMBER: [_mock_membership()],
+        SIG_INTEGRATION: [_mock_provider_query(["jira"])],
+        SIG_JIRA_VALIDATE: [_mock_ticket_validation(["PROJ-1"])],
+        SIG_NODE_FULL: [_mock_fingerprint_nodes({"PROJ-1": TICKET_1_NODE})],
+        SIG_TRAVERSE: [_mock_traverse([
+            _make_bulk_traverse_row(TICKET_1_NODE, TICKET_1_NODE, "Ticket", "PROJ-1", 0),
+        ])],
+        SIG_NODE_SRC: [_mock_source_type_lookup({str(TICKET_1_NODE): ("jira_issue", "Ticket", "PROJ-1")})],
+        SIG_EDGE: [_mock_edge_result([])],
+    })
 
-    with patch("src.services.jira_sync.list_my_jira_issues", new_callable=AsyncMock) as mock_jira:
+    # list_my_jira_issues is imported into src.routers.graph at module load.
+    with patch("src.routers.graph.list_my_jira_issues", new_callable=AsyncMock) as mock_jira:
         mock_jira.return_value = [{"key": "PROJ-1", "summary": "Test issue"}]
         response = client.get("/api/graph/lens/my-work", headers=valid_auth_header)
 
@@ -243,12 +350,15 @@ def test_my_work_no_provider_falls_back_to_identity(
     mock_session: AsyncMock,
 ) -> None:
     """My Work lens with no provider falls back to identity mapping lookup."""
-    mock_session.execute.side_effect = [
-        _mock_membership(),
-        _mock_provider_query([]),  # no ticket providers
-        # Fallback: identity mapping lookup returns no person_ids
-        _mock_empty_result(),
-    ]
+    # No provider -> fallback IdentityMapping lookup (1-col select) yields
+    # nothing -> empty clusters. The trailing _inject_user_decisions pass
+    # also queries IdentityMapping (2-col) and is served an empty result.
+    mock_session.execute.side_effect = _LensRouter({
+        SIG_MEMBER: [_mock_membership()],
+        SIG_INTEGRATION: [_mock_provider_query([])],
+        SIG_IDENTITY_FALLBACK: [_mock_empty_result()],
+        SIG_IDENTITY_DECISIONS: [_mock_empty_result()],
+    })
 
     response = client.get("/api/graph/lens/my-work", headers=valid_auth_header)
 
@@ -266,14 +376,15 @@ def test_my_work_linear_api_failure_falls_back(
     mock_session: AsyncMock,
 ) -> None:
     """My Work lens gracefully handles Linear API failure."""
-    mock_session.execute.side_effect = [
-        _mock_membership(),
-        _mock_provider_query(["linear"]),
-        # Linear API will fail, fallback runs:
-        _mock_empty_result(),  # IdentityMapping query
-    ]
+    mock_session.execute.side_effect = _LensRouter({
+        SIG_MEMBER: [_mock_membership()],
+        SIG_INTEGRATION: [_mock_provider_query(["linear"])],
+        SIG_IDENTITY_FALLBACK: [_mock_empty_result()],
+        SIG_IDENTITY_DECISIONS: [_mock_empty_result()],
+    })
 
-    with patch("src.services.linear_oauth.get_valid_access_token", new_callable=AsyncMock, side_effect=Exception("token expired")):
+    # Patch the name bound into src.routers.graph (module-level import).
+    with patch("src.routers.graph.get_valid_access_token", new_callable=AsyncMock, side_effect=Exception("token expired")):
         response = client.get("/api/graph/lens/my-work", headers=valid_auth_header)
 
     assert response.status_code == 200
@@ -292,30 +403,34 @@ def test_sprint_linear_happy_path(
     mock_session: AsyncMock,
 ) -> None:
     """Sprint lens with active Linear cycle returns sprint tickets."""
-    mock_session.execute.side_effect = [
-        _mock_membership(),
-        _mock_provider_query(["linear"]),
-        # _build_ticket_clusters (allowed_src passed in):
-        _mock_ticket_validation(["CON-10", "CON-11"]),
-        _mock_fingerprint_nodes({"CON-10": TICKET_1_NODE, "CON-11": TICKET_2_NODE}),
-        _mock_traverse([
-            _make_traverse_row(TICKET_1_NODE, "Ticket", "CON-10", 0),
-            _make_traverse_row(PERSON_NODE, "Person", "Alice", 1, edge_relationship_type="mentions"),
-        ]),
-        _mock_traverse([
-            _make_traverse_row(TICKET_2_NODE, "Ticket", "CON-11", 0),
-        ]),
-        _mock_source_type_lookup({
+    # _build_ticket_clusters issues ONE bulk traverse_graph query covering
+    # BOTH tickets (start_ids = [CON-10 node, CON-11 node]); the per-ticket
+    # edge query then runs once per cluster (router replays SIG_EDGE).
+    mock_session.execute.side_effect = _LensRouter({
+        SIG_MEMBER: [_mock_membership()],
+        SIG_INTEGRATION: [_mock_provider_query(["linear"])],
+        SIG_LINEAR_VALIDATE: [_mock_ticket_validation(["CON-10", "CON-11"])],
+        SIG_NODE_FULL: [_mock_fingerprint_nodes({"CON-10": TICKET_1_NODE, "CON-11": TICKET_2_NODE})],
+        SIG_TRAVERSE: [_mock_traverse([
+            _make_bulk_traverse_row(TICKET_1_NODE, TICKET_1_NODE, "Ticket", "CON-10", 0),
+            _make_bulk_traverse_row(TICKET_1_NODE, PERSON_NODE, "Person", "Alice", 1, edge_relationship_type="mentions"),
+            _make_bulk_traverse_row(TICKET_2_NODE, TICKET_2_NODE, "Ticket", "CON-11", 0),
+        ])],
+        SIG_NODE_SRC: [_mock_source_type_lookup({
             str(TICKET_1_NODE): ("linear_ticket", "Ticket", "CON-10"),
             str(PERSON_NODE): (None, "Person", "Alice"),
             str(TICKET_2_NODE): ("linear_ticket", "Ticket", "CON-11"),
-        }),
-        _mock_edge_result([_mock_edge(TICKET_1_NODE, PERSON_NODE, "mentions")]),
-        _mock_edge_result([]),
-    ]
+        })],
+        SIG_EDGE: [
+            _mock_edge_result([_mock_edge(TICKET_1_NODE, PERSON_NODE, "mentions")]),
+            _mock_edge_result([]),
+        ],
+    })
 
-    with patch("src.services.dashboard_sprint.get_active_sprint", new_callable=AsyncMock) as mock_sprint, \
-         patch("src.services.dashboard_sprint.get_sprint_ticket_identifiers", new_callable=AsyncMock) as mock_tickets:
+    # get_active_sprint / get_sprint_ticket_identifiers are imported into
+    # src.routers.graph at module load -> patch there.
+    with patch("src.routers.graph.get_active_sprint", new_callable=AsyncMock) as mock_sprint, \
+         patch("src.routers.graph.get_sprint_ticket_identifiers", new_callable=AsyncMock) as mock_tickets:
         mock_sprint.return_value = {
             "team_name": "Engineering",
             "cycle_name": "Sprint 5",
@@ -363,12 +478,13 @@ def test_sprint_no_active_cycle(
     mock_session: AsyncMock,
 ) -> None:
     """Sprint lens with Linear but no active cycle returns empty."""
-    mock_session.execute.side_effect = [
-        _mock_membership(),
-        _mock_provider_query(["linear"]),
-    ]
+    mock_session.execute.side_effect = _LensRouter({
+        SIG_MEMBER: [_mock_membership()],
+        SIG_INTEGRATION: [_mock_provider_query(["linear"])],
+    })
 
-    with patch("src.services.dashboard_sprint.get_active_sprint", new_callable=AsyncMock, return_value=None):
+    # get_active_sprint is bound into src.routers.graph at import time.
+    with patch("src.routers.graph.get_active_sprint", new_callable=AsyncMock, return_value=None):
         response = client.get("/api/graph/lens/sprint", headers=valid_auth_header)
 
     assert response.status_code == 200
@@ -410,29 +526,35 @@ def test_blocked_happy_path(
         m.scalars.return_value.all.return_value = [n1, n2]
         return m
 
-    mock_session.execute.side_effect = [
-        _mock_membership(),
-        _mock_provider_query(["linear"]),
-        _mock_edge_result([_mock_edge(blocker_node, blocked_node, "blocks")]),
-        _blocked_node_result(),
-        # _build_ticket_clusters (allowed_src passed in):
-        _mock_ticket_validation(["CON-5", "CON-6"]),
-        _mock_fingerprint_nodes({"CON-5": blocker_node, "CON-6": blocked_node}),
-        _mock_traverse([
-            _make_traverse_row(blocker_node, "Ticket", "CON-5", 0),
-            _make_traverse_row(blocked_node, "Ticket", "CON-6", 1, edge_relationship_type="blocks"),
-        ]),
-        _mock_traverse([
-            _make_traverse_row(blocked_node, "Ticket", "CON-6", 0),
-            _make_traverse_row(blocker_node, "Ticket", "CON-5", 1, edge_relationship_type="blocks"),
-        ]),
-        _mock_source_type_lookup({
+    # GraphNode:1 (select(GraphNode)) is hit twice: first the blocked-ticket
+    # lookup, then the fingerprint lookup inside _build_ticket_clusters --
+    # so SIG_NODE_FULL is an ordered queue. GraphEdge:1 is hit for the
+    # blocks-edge scan then once per cluster (replayed). Traverse is now a
+    # single bulk query covering both ticket start nodes.
+    mock_session.execute.side_effect = _LensRouter({
+        SIG_MEMBER: [_mock_membership()],
+        SIG_INTEGRATION: [_mock_provider_query(["linear"])],
+        SIG_NODE_FULL: [
+            _blocked_node_result(),
+            _mock_fingerprint_nodes({"CON-5": blocker_node, "CON-6": blocked_node}),
+        ],
+        SIG_LINEAR_VALIDATE: [_mock_ticket_validation(["CON-5", "CON-6"])],
+        SIG_TRAVERSE: [_mock_traverse([
+            _make_bulk_traverse_row(blocker_node, blocker_node, "Ticket", "CON-5", 0),
+            _make_bulk_traverse_row(blocker_node, blocked_node, "Ticket", "CON-6", 1, edge_relationship_type="blocks"),
+            _make_bulk_traverse_row(blocked_node, blocked_node, "Ticket", "CON-6", 0),
+            _make_bulk_traverse_row(blocked_node, blocker_node, "Ticket", "CON-5", 1, edge_relationship_type="blocks"),
+        ])],
+        SIG_NODE_SRC: [_mock_source_type_lookup({
             str(blocker_node): ("linear_ticket", "Ticket", "CON-5"),
             str(blocked_node): ("linear_ticket", "Ticket", "CON-6"),
-        }),
-        _mock_edge_result([_mock_edge(blocker_node, blocked_node, "blocks")]),
-        _mock_edge_result([_mock_edge(blocker_node, blocked_node, "blocks")]),
-    ]
+        })],
+        SIG_EDGE: [
+            _mock_edge_result([_mock_edge(blocker_node, blocked_node, "blocks")]),  # blocks scan
+            _mock_edge_result([_mock_edge(blocker_node, blocked_node, "blocks")]),  # cluster 1
+            _mock_edge_result([_mock_edge(blocker_node, blocked_node, "blocks")]),  # cluster 2
+        ],
+    })
 
     response = client.get("/api/graph/lens/blocked", headers=valid_auth_header)
 
@@ -476,11 +598,12 @@ def test_lens_routes_dont_match_ticket_identifier(
     mock_session: AsyncMock,
 ) -> None:
     """Verify /lens/my-work routes to the lens endpoint, not /{ticket_identifier}."""
-    mock_session.execute.side_effect = [
-        _mock_membership(),
-        _mock_provider_query([]),
-        _mock_empty_result(),  # fallback identity mapping
-    ]
+    mock_session.execute.side_effect = _LensRouter({
+        SIG_MEMBER: [_mock_membership()],
+        SIG_INTEGRATION: [_mock_provider_query([])],
+        SIG_IDENTITY_FALLBACK: [_mock_empty_result()],
+        SIG_IDENTITY_DECISIONS: [_mock_empty_result()],
+    })
 
     response = client.get("/api/graph/lens/my-work", headers=valid_auth_header)
 
@@ -501,29 +624,28 @@ def test_build_clusters_filters_disconnected_sources(
     """Nodes from disconnected integrations are filtered from lens clusters."""
     notion_node = uuid4()
 
-    mock_session.execute.side_effect = [
-        _mock_membership(),
-        _mock_provider_query(["linear"]),
-        # _build_ticket_clusters (allowed_src passed in):
-        _mock_ticket_validation(["CON-1"]),
-        _mock_fingerprint_nodes({"CON-1": TICKET_1_NODE}),
-        _mock_traverse([
-            _make_traverse_row(TICKET_1_NODE, "Ticket", "CON-1", 0),
-            _make_traverse_row(PERSON_NODE, "Person", "Alice", 1, edge_relationship_type="mentions"),
-            _make_traverse_row(notion_node, "NotionPage", "Design Doc", 1, edge_relationship_type="references"),
-        ]),
-        _mock_source_type_lookup({
+    mock_session.execute.side_effect = _LensRouter({
+        SIG_MEMBER: [_mock_membership()],
+        SIG_INTEGRATION: [_mock_provider_query(["linear"])],
+        SIG_LINEAR_VALIDATE: [_mock_ticket_validation(["CON-1"])],
+        SIG_NODE_FULL: [_mock_fingerprint_nodes({"CON-1": TICKET_1_NODE})],
+        SIG_TRAVERSE: [_mock_traverse([
+            _make_bulk_traverse_row(TICKET_1_NODE, TICKET_1_NODE, "Ticket", "CON-1", 0),
+            _make_bulk_traverse_row(TICKET_1_NODE, PERSON_NODE, "Person", "Alice", 1, edge_relationship_type="mentions"),
+            _make_bulk_traverse_row(TICKET_1_NODE, notion_node, "NotionPage", "Design Doc", 1, edge_relationship_type="references"),
+        ])],
+        SIG_NODE_SRC: [_mock_source_type_lookup({
             str(TICKET_1_NODE): ("linear_ticket", "Ticket", "CON-1"),
             str(PERSON_NODE): (None, "Person", "Alice"),
             str(notion_node): ("notion_page", "NotionPage", "Design Doc"),  # Notion not connected -> filtered
-        }),
-        _mock_edge_result([
+        })],
+        SIG_EDGE: [_mock_edge_result([
             _mock_edge(TICKET_1_NODE, PERSON_NODE, "mentions"),
-        ]),
-    ]
+        ])],
+    })
 
-    with patch("src.services.linear_oauth.get_valid_access_token", new_callable=AsyncMock, return_value="fake-token"), \
-         patch("src.services.linear_graphql.LinearGraphQLClient") as mock_cls:
+    with patch("src.routers.graph.get_valid_access_token", new_callable=AsyncMock, return_value="fake-token"), \
+         patch("src.routers.graph.LinearGraphQLClient") as mock_cls:
         mock_linear = AsyncMock()
         mock_linear.query.return_value = {
             "data": {"viewer": {"assignedIssues": {"nodes": [{"identifier": "CON-1"}]}}}

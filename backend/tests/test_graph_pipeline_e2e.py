@@ -96,6 +96,75 @@ def _mock_traverse(rows: list[tuple]) -> MagicMock:
     return mock
 
 
+def _make_bulk_traverse_row(
+    start_node_id: uuid.UUID,
+    node_id: uuid.UUID,
+    entity_type: str,
+    name: str,
+    depth: int,
+    properties: dict | None = None,
+    edge_relationship_type: str | None = None,
+) -> tuple:
+    """Row for the bulk unnest+LATERAL traverse query.
+
+    src/routers/graph.py: the SELECT prefixes each traverse_graph row with
+    ``t.start_id::text`` and the code does ``start_id = row[0]`` then
+    ``traversal_row = row[1:]`` -- so mocked rows need the originating
+    ticket node id (str) prepended to the 7-col traverse tuple.
+    """
+    return (
+        str(start_node_id),
+        node_id,
+        entity_type,
+        name,
+        properties or {},
+        edge_relationship_type,
+        depth,
+        [str(node_id)],
+    )
+
+
+def _stmt_signature(stmt) -> str:
+    """(entity name : selected-column count) | "TEXT" for raw text()."""
+    from tests.conftest import _stmt_entity_name
+
+    name = _stmt_entity_name(stmt)
+    if name is None:
+        return "TEXT"
+    try:
+        ncols = len(stmt.column_descriptions)
+    except Exception:
+        ncols = 0
+    return f"{name}:{ncols}"
+
+
+def _signature_router(handlers: dict[str, list]):
+    """session.execute side-effect routed by statement signature.
+
+    Same rationale as test_graph_lens_api._LensRouter: the lens path now
+    runs ONE bulk traverse query plus a trailing _inject_user_decisions()
+    pass. Returns a plain async closure so AsyncMock auto-awaits it.
+    """
+    queues = {k: list(v) for k, v in handlers.items()}
+
+    def _empty():
+        m = MagicMock()
+        m.scalars.return_value.all.return_value = []
+        m.scalar_one_or_none.return_value = None
+        m.scalar_one.return_value = 0
+        m.fetchall.return_value = []
+        m.__iter__ = lambda self: iter([])
+        return m
+
+    async def _execute(stmt, *args, **kwargs):
+        queue = queues.get(_stmt_signature(stmt))
+        if not queue:
+            return _empty()
+        return queue.pop(0) if len(queue) > 1 else queue[0]
+
+    return _execute
+
+
 def _mock_source_type_lookup(
     id_to_info: dict[str, tuple[str | None, str, str]],
 ) -> MagicMock:
@@ -305,40 +374,36 @@ def test_build_ticket_clusters_deduplicates_nodes(
     """When two ticket clusters share a Person node, the shared node should
     appear only once in all_nodes (deduplicated)."""
 
-    mock_session.execute.side_effect = [
-        _mock_membership(),
-        _mock_provider_query(["linear"]),
-        # _build_ticket_clusters:
-        # validate identifiers
-        _mock_ticket_validation(["CON-1", "CON-2"]),
-        # fingerprint lookup
-        _mock_fingerprint_nodes({"CON-1": TICKET_A, "CON-2": TICKET_B}),
-        # traverse CON-1: ticket + shared person
-        _mock_traverse([
-            _make_traverse_row(TICKET_A, "Ticket", "CON-1", 0),
-            _make_traverse_row(PERSON_NODE, "Person", "Alice", 1, edge_relationship_type="mentions"),
-        ]),
-        # traverse CON-2: ticket + same shared person
-        _mock_traverse([
-            _make_traverse_row(TICKET_B, "Ticket", "CON-2", 0),
-            _make_traverse_row(PERSON_NODE, "Person", "Alice", 1, edge_relationship_type="mentions"),
-        ]),
-        # bulk source_type lookup
-        _mock_source_type_lookup({
+    # Signature-routed (not order-based): _build_ticket_clusters now does
+    # ONE bulk traverse_graph query (start_ids=[CON-1 node, CON-2 node])
+    # and the my-work endpoint appends a _inject_user_decisions() pass --
+    # the router serves an inert empty result for that (unregistered)
+    # IdentityMapping query so it can't raise.
+    mock_session.execute.side_effect = _signature_router({
+        "WorkspaceMember:1": [_mock_membership()],
+        "WorkspaceIntegration:1": [_mock_provider_query(["linear"])],
+        "LinearTicket:1": [_mock_ticket_validation(["CON-1", "CON-2"])],
+        "GraphNode:1": [_mock_fingerprint_nodes({"CON-1": TICKET_A, "CON-2": TICKET_B})],
+        "TEXT": [_mock_traverse([
+            _make_bulk_traverse_row(TICKET_A, TICKET_A, "Ticket", "CON-1", 0),
+            _make_bulk_traverse_row(TICKET_A, PERSON_NODE, "Person", "Alice", 1, edge_relationship_type="mentions"),
+            _make_bulk_traverse_row(TICKET_B, TICKET_B, "Ticket", "CON-2", 0),
+            _make_bulk_traverse_row(TICKET_B, PERSON_NODE, "Person", "Alice", 1, edge_relationship_type="mentions"),
+        ])],
+        "GraphNode:4": [_mock_source_type_lookup({
             str(TICKET_A): ("linear_ticket", "Ticket", "CON-1"),
             str(TICKET_B): ("linear_ticket", "Ticket", "CON-2"),
             str(PERSON_NODE): (None, "Person", "Alice"),
-        }),
-        # edges for cluster 1
-        _mock_edge_result([_mock_edge(TICKET_A, PERSON_NODE, "mentions")]),
-        # edges for cluster 2
-        _mock_edge_result([_mock_edge(TICKET_B, PERSON_NODE, "mentions")]),
-    ]
+        })],
+        "GraphEdge:1": [
+            _mock_edge_result([_mock_edge(TICKET_A, PERSON_NODE, "mentions")]),
+            _mock_edge_result([_mock_edge(TICKET_B, PERSON_NODE, "mentions")]),
+        ],
+    })
 
-    # Patch at both source and usage sites to handle import caching
-    with patch("src.services.linear_oauth.get_valid_access_token", new_callable=AsyncMock, return_value="t"), \
-         patch("src.routers.graph.get_valid_access_token", new_callable=AsyncMock, return_value="t"), \
-         patch("src.services.linear_graphql.LinearGraphQLClient") as _, \
+    # LinearGraphQLClient + get_valid_access_token are bound into
+    # src.routers.graph at import time -> patch there.
+    with patch("src.routers.graph.get_valid_access_token", new_callable=AsyncMock, return_value="t"), \
          patch("src.routers.graph.LinearGraphQLClient") as mock_cls:
         mock_linear = AsyncMock()
         mock_linear.query.return_value = {
