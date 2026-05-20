@@ -61,7 +61,7 @@ export function SyncIndicator({ state, onOpenDrawer }: SyncIndicatorProps) {
       <button
         type="button"
         onClick={onOpenDrawer}
-        className="w-[240px] rounded-md px-2 py-1 text-left transition-colors duration-160 hover:bg-white/[0.025]"
+        className="w-[240px] rounded-md px-2 py-1 text-left transition-colors duration-[160ms] hover:bg-white/[0.025]"
         aria-label="sync status unknown"
       >
         <span
@@ -87,7 +87,7 @@ export function SyncIndicator({ state, onOpenDrawer }: SyncIndicatorProps) {
       <button
         type="button"
         onClick={onOpenDrawer}
-        className="w-[240px] rounded-md px-2 py-1 text-left transition-colors duration-160 hover:bg-white/[0.025]"
+        className="w-[240px] rounded-md px-2 py-1 text-left transition-colors duration-[160ms] hover:bg-white/[0.025]"
         aria-label={`syncing ${state.provider}${state.progress == null ? '' : ` ${progressPercent}%`}`}
       >
         <span
@@ -124,7 +124,7 @@ export function SyncIndicator({ state, onOpenDrawer }: SyncIndicatorProps) {
       <button
         type="button"
         onClick={onOpenDrawer}
-        className="w-[240px] rounded-md px-2 py-1 text-left transition-colors duration-160 hover:bg-white/[0.025]"
+        className="w-[240px] rounded-md px-2 py-1 text-left transition-colors duration-[160ms] hover:bg-white/[0.025]"
         aria-label={`${state.provider} sync paused reconnect`}
         title={state.message}
       >
@@ -148,7 +148,7 @@ export function SyncIndicator({ state, onOpenDrawer }: SyncIndicatorProps) {
     <button
       type="button"
       onClick={onOpenDrawer}
-      className="w-[240px] rounded-md px-2 py-1 text-left transition-colors duration-160 hover:bg-white/[0.025]"
+      className="w-[240px] rounded-md px-2 py-1 text-left transition-colors duration-[160ms] hover:bg-white/[0.025]"
       aria-label={`last synced ${formatShortRelativeSyncTime(state.lastSyncedAt)}`}
     >
       <span

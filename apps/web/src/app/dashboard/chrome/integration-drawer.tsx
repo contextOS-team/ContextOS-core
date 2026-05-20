@@ -60,7 +60,7 @@ export function IntegrationDrawer({ open, onOpenChange, workspaceId }: Integrati
 
           <button
             type="button"
-            className="mt-6 h-9 rounded-md bg-white/10 px-3 text-sm text-[#ece9e3] transition-colors duration-160 hover:bg-white/[0.14]"
+            className="mt-6 h-9 rounded-md bg-white/10 px-3 text-sm text-[#ece9e3] transition-colors duration-[160ms] hover:bg-white/[0.14]"
             onClick={() => toast.message('Manual sync queued')}
           >
             Sync all
