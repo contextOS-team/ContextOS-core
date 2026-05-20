@@ -53,6 +53,17 @@ Requirements for the live intelligence milestone. Each maps to roadmap phases.
 - [x] **TG-06**: Group/supergroup chats are bound to a workspace via a single-use, ~15-min TTL pairing code. Mapping is sticky — first claim wins; no cross-workspace re-claim. Soft-deleted on `kicked`/`left`/`banned` `my_chat_member` events; `telegram_messages` history retained.
 - [x] **TG-07**: A single global webhook `/api/telegram/webhook` routes all updates by `chat_id` lookup against `telegram_chat_workspace`; messages are ingested through the existing filter + upsert + graph pipeline; `/start@bot <code>` claim path is detected and routed BEFORE the ingestion path so pairing commands never pollute `telegram_messages`.
 
+### Dashboard Pulse (Phase 41 — post-v1.3)
+
+Phase 41 sits chronologically after the v1.3 milestone closed at Phase 40. These requirements were added during planning (2026-05-20) to give the redesign explicit traceability.
+
+- [ ] **DASH-01**: Dashboard home replaces the six-equal-section layout with a pulse layout: serif Instrument Serif headline (computed from since-last-visit delta) above Recent decisions (lead, 2-3× weight, 2 visible above the fold) → Active context (top 3 typographic list) → Needs you (hidden when empty). Recent Activity, graph thumbnail, This Week sparkline, sprint badge, integration dots, and the greeting line are removed from home. Warm-dark palette + Geist Sans/Mono + Instrument Serif scoped to `.pulse-surface` (home route only).
+- [ ] **DASH-02**: Per-(user, workspace) `last_visited_at` timestamp persists to a new `dashboard_user_state` table and advances only after 5 min of page-level inactivity OR explicit dismissal — never on tab-flip. A `useLastVisitedAt` React hook reads on mount, debounces writes through Supabase, and exposes a stable per-session value to the headline generator and new-item markers (Pitfall 5 — mount-time read only).
+- [ ] **DASH-03**: Rules-based pure-function headline generator (`computeHeadline`) selects between three templates from the activity delta since `last_visited_at`: (a) single-item-dominant "X is waiting on Y since Z." (any needs-you item assigned to current user wins), (b) bucket-aggregate "N decisions and M sources of new context since you last looked.", (c) zero-new fallback "Quiet day." with subtext "Nothing new since you last looked, (T) ago." LLM-generated headlines deferred.
+- [ ] **DASH-04**: Top-nav adds a right-aligned chrome cluster (sync state text + 1px real-tick progress bar + integration-health click target opening a Radix slide-over + restyled avatar puck) replacing the avatar-only chrome. Three states: idle (once-per-minute opacity dip), syncing (no CSS interpolation — real-tick width updates), error (`<provider> sync paused · reconnect`). Driven by Supabase Realtime subscription on `activity_events`. Mint color reserved for wordmark + active nav-link only.
+- [ ] **DASH-05**: Unseen items carry a 1px × 14px dim-amber (`#c4a050`) vertical marker in the left gutter when `activity_events.created_at > last_visited_at`. Marker persists for the entire session it was seen in (no mid-visit decay) via a ref-based `useSessionSeenItems` set; decays only when `last_visited_at` advances after the 5-min inactivity hysteresis fires.
+- [ ] **DASH-06**: Each Recent-decision card renders a one-line provenance quote in italics + tertiary-color attribution line (`— Name in #channel, 18h ago`) when the Decision node's `properties.source_quote` is present; the card gracefully renders title + people + channels when absent. No backend backfill in this phase — `source_quote` is already populated by `llm_extractor.py` since v1.2.
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -110,11 +121,19 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TG-06 | Phase 40 | Complete |
 | TG-07 | Phase 40 | Complete |
 
+| DASH-01 | Phase 41 | Pending |
+| DASH-02 | Phase 41 | Pending |
+| DASH-03 | Phase 41 | Pending |
+| DASH-04 | Phase 41 | Pending |
+| DASH-05 | Phase 41 | Pending |
+| DASH-06 | Phase 41 | Pending |
+
 **Coverage:**
 - v1.3 requirements: 22 total
 - Mapped to phases: 22
 - Unmapped: 0
+- Phase 41 (post-v1.3) requirements: 6 total — all mapped
 
 ---
 *Requirements defined: 2026-03-15*
-*Last updated: 2026-05-03 — added TG-05, TG-06, TG-07 for Phase 40 (Telegram Shared-Bot Migration)*
+*Last updated: 2026-05-20 — added DASH-01..DASH-06 for Phase 41 (Dashboard Pulse Redesign)*

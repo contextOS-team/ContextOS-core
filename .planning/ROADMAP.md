@@ -212,10 +212,19 @@ Plans:
 
 ### Phase 41: Dashboard Pulse Redesign
 
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 40
-**Plans:** 0 plans
+**Goal:** The dashboard home becomes a pulse surface — a single computed serif headline answers "did anything I care about happen since I last looked?" in under 4 seconds, with Recent decisions (provenance-quoted) leading the page, Active context tight, and Needs-you compact-or-hidden. Six legacy widgets removed; warm-dark palette + Instrument Serif / Geist Sans+Mono fonts scoped to `.pulse-surface`; per-workspace `last_visited_at` persisted with 5-minute inactivity hysteresis; rules-based headline generator (LLM upgrade deferred). Chrome cluster (sync indicator + integration drawer + restyled avatar) replaces the avatar-only top-right.
+**Depends on:** Phase 40 (no code dependency; sits chronologically after v1.3)
+**Requirements**: DASH-01, DASH-02, DASH-03, DASH-04, DASH-05, DASH-06
+**Success Criteria** (what must be TRUE):
+  1. /dashboard renders exactly four stacked sections in CONTEXT §2 order (Headline → Recent decisions → Active context → Needs you) with the four-pass design critique's typography, palette, and motion discipline applied via a `.pulse-surface` class scoped to the home route.
+  2. The headline copy is computed by a pure rules engine against the activity delta since `last_visited_at`; the three template patterns (single-item-dominant, bucket-aggregate, "Quiet day.") cover every real case.
+  3. `last_visited_at` persists per-(user, workspace) in `dashboard_user_state`, advances only after 5 minutes of inactivity, and drives both the headline subtext and the 1px × 14px new-item markers (session-stable per CONTEXT §9).
+  4. Each Recent-decision card renders an italics `source_quote` + tertiary attribution line when the data is present, and degrades gracefully (title + people + channels only) when it isn't — no backend backfill required.
+  5. The chrome cluster (sync indicator three states + Radix slide-over + neutral-bg avatar) replaces the existing avatar-only top-right; mint is used only on the wordmark and active nav link.
+  6. Sibling dashboard subroutes (/context, /settings, /activity, /graph) remain visually unchanged.
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 41 to break down)
+- [ ] 41-01-PLAN.md — Data + state foundation: fonts loaded, warm-dark palette scoped to `.pulse-surface`, `dashboard_user_state` table + RLS, `useLastVisitedAt` hysteresis hook, `useSessionSeenItems` ref store, pure `computeHeadline` rules engine with unit tests, `fetchActivityDelta` + `bucketDelta` helpers (wave 1, autonomous)
+- [ ] 41-02-PLAN.md — Pulse surface: rewrite `dashboard/page.tsx` as orchestrator, build `pulse/{headline,recent-decisions,active-context,needs-you,new-item-marker,use-dashboard-data}.tsx`, render provenance quotes when `source_quote` exists on Decision nodes, delete 9 legacy widget files, human-verify checkpoint (wave 2, depends on 41-01)
+- [ ] 41-03-PLAN.md — Chrome cluster: `chrome/{chrome-nav,sync-indicator,use-sync-state,avatar-puck,integration-drawer}.tsx`, three-state sync indicator with Realtime subscription on `activity_events`, Radix slide-over drawer, sidebar.tsx becomes thin shim, mint discipline enforced, human-verify checkpoint (wave 1, autonomous — independent of pulse layout, runs parallel with 41-01)
