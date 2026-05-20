@@ -28,6 +28,8 @@ export function bucketDelta(
   needsYouItems: ReadonlyArray<NeedsYouItem>,
   currentUserId: string
 ): Delta {
+  void currentUserId
+
   const decisions = rows
     .filter((row) => DECISION_EVENT_TYPES.includes(row.event_type as (typeof DECISION_EVENT_TYPES)[number]))
     .map((row) => ({ id: row.id, createdAt: row.created_at }))
