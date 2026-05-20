@@ -16,6 +16,8 @@ type SyncEventRow = {
 }
 
 const SYNC_EVENT_TYPES = ['sync_completed', 'sync_started'] as const
+const INITIAL_SYNC_EVENT_LIMIT = 12
+const ACTIVE_SYNC_STARTED_WINDOW_MS = 15 * 60_000
 
 function metadataString(metadata: Record<string, unknown> | null, key: string): string | null {
   const value = metadata?.[key]
@@ -58,13 +60,34 @@ function stateFromSyncRow(row: SyncEventRow): SyncState | null {
   return null
 }
 
+function isFreshStartedRow(row: SyncEventRow, nowMs: number): boolean {
+  const createdAtMs = new Date(row.created_at).getTime()
+  return Number.isFinite(createdAtMs) && nowMs - createdAtMs <= ACTIVE_SYNC_STARTED_WINDOW_MS
+}
+
+function initialStateFromSyncRows(rows: SyncEventRow[], nowMs = Date.now()): SyncState | null {
+  for (const row of rows) {
+    if (row.event_type === 'sync_started' && !isFreshStartedRow(row, nowMs)) {
+      continue
+    }
+
+    const next = stateFromSyncRow(row)
+    if (next) return next
+  }
+
+  return null
+}
+
 /**
  * Dashboard chrome sync state.
  *
  * CONTEXT.md §8 defines the three-state chrome cluster. Error detection is
  * intentionally derived from `metadata.error` on `sync_completed` rows because
  * migrations 00031 and 00033 define the complete activity_events event set.
- * The cleanup closes over the local channel variable for StrictMode safety.
+ * Initial load ignores stale `sync_started` rows so old interrupted syncs do not
+ * make the chrome claim it is actively syncing forever; fresh Realtime starts
+ * still move the cluster into syncing immediately. The cleanup closes over the
+ * local channel variable for StrictMode safety.
  */
 export function useSyncState(workspaceId: string | null): SyncState {
   const [state, setState] = useState<SyncState>({ kind: 'unknown' })
@@ -85,12 +108,12 @@ export function useSyncState(workspaceId: string | null): SyncState {
         .eq('workspace_id', workspaceId)
         .in('event_type', [...SYNC_EVENT_TYPES])
         .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+        .limit(INITIAL_SYNC_EVENT_LIMIT)
 
       if (cancelled || !data) return
 
-      const next = stateFromSyncRow(data as SyncEventRow)
+      const rows = Array.isArray(data) ? (data as SyncEventRow[]) : []
+      const next = initialStateFromSyncRows(rows)
       if (next) setState(next)
     }
 

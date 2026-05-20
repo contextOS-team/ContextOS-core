@@ -96,7 +96,9 @@ describe('IntegrationDrawer', () => {
     }))
 
     expect(document.body.contains(await screen.findByRole('dialog'))).toBe(true)
+    expect(document.body.contains(screen.getByText('Source status'))).toBe(true)
     expect(document.body.contains(screen.getByRole('button', { name: /sync all/i }))).toBe(true)
+    expect(screen.queryByText(/coming soon/i)).toBeNull()
     expect(document.body.contains(screen.getByText('slack'))).toBe(true)
   })
 })

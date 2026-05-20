@@ -35,13 +35,12 @@ vi.mock('@/lib/supabase/client', () => ({
         eq: vi.fn(() => query),
         in: vi.fn(() => query),
         order: vi.fn(() => query),
-        limit: vi.fn(() => query),
-        maybeSingle: vi.fn(async () => ({
-          data: {
+        limit: vi.fn(async () => ({
+          data: [{
             event_type: 'sync_completed',
             created_at: '2026-05-20T12:00:00Z',
             metadata: { integration: 'slack' },
-          },
+          }],
           error: null,
         })),
       }
