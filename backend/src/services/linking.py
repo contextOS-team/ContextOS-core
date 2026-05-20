@@ -9,6 +9,7 @@ Combines three signals with weighted scores to find and rank related content:
   with exponential depth-decay scoring
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -32,6 +33,7 @@ from src.models.ticket import LinearComment, LinearTicket
 from src.services.embedding import generate_embedding
 from src.services.graph_ops import compute_fingerprint
 from src.services.llm_client import get_llm_client
+from src.services.slack_events import slack_archive_url
 
 logger = logging.getLogger(__name__)
 
@@ -263,15 +265,71 @@ async def _find_explicit_refs(
         # or delegate to the hybrid_search() function which already uses the
         # embeddings GIN index.  Deferred from this hardening phase to avoid
         # schema churn — tracked for a future migration.
-        slack_stmt = select(SlackMessage).where(
-            SlackMessage.workspace_id == workspace_id,
-            SlackMessage.text.ilike(f"%{ticket.identifier}%"),  # type: ignore[union-attr]
-            SlackMessage.deleted_at.is_(None),  # type: ignore[union-attr]
+        # Cap fan-out: every match below also triggers a chat.getPermalink
+        # call (Tier 4, ~100/min). A popular ticket identifier could
+        # otherwise issue hundreds of concurrent Slack API calls and risk
+        # 429s. Newest-first so we keep the most relevant matches.
+        slack_stmt = (
+            select(SlackMessage)
+            .where(
+                SlackMessage.workspace_id == workspace_id,
+                SlackMessage.text.ilike(f"%{ticket.identifier}%"),  # type: ignore[union-attr]
+                SlackMessage.deleted_at.is_(None),  # type: ignore[union-attr]
+            )
+            .order_by(SlackMessage.slack_created_at.desc().nullslast())  # type: ignore[union-attr]
+            .limit(HYBRID_SEARCH_LIMIT)
         )
         slack_result = await session.execute(slack_stmt)
-        for msg in slack_result.scalars().all():
+        slack_msgs = slack_result.scalars().all()
+
+        # Resolve canonical workspace permalinks via chat.getPermalink. A
+        # hand-built https://slack.com/archives/... URL opens whichever
+        # workspace the viewer is signed into, not the message's workspace.
+        #
+        # Read the bot token once here and pass it down, rather than letting
+        # each resolve_slack_permalink() fetch it: that would add one Vault
+        # read per Slack message to this hot path. If there's no token (Slack
+        # not connected / revoked) we skip resolution entirely and every
+        # message falls back to the bare URL.
+        bot_token: str | None = None
+        if slack_msgs:
+            from src.services.slack_oauth import SlackOAuthError, get_bot_token
+
+            try:
+                bot_token = await get_bot_token(session, workspace_id)
+            except SlackOAuthError:
+                logger.debug(
+                    "No Slack bot token for workspace %s; "
+                    "Slack permalinks will use bare URLs",
+                    workspace_id,
+                )
+
+        from src.services.slack_events import resolve_slack_permalink
+
+        # Concurrent + cached + fail-silent, so a page with many Slack
+        # sources doesn't serialize N chat.getPermalink round-trips.
+        permalinks = await asyncio.gather(
+            *(
+                resolve_slack_permalink(
+                    session,
+                    workspace_id,
+                    msg.channel_id,
+                    msg.slack_ts,
+                    token=bot_token,
+                )
+                for msg in slack_msgs
+            ),
+            return_exceptions=True,
+        ) if bot_token else [None] * len(slack_msgs)
+
+        for msg, resolved in zip(slack_msgs, permalinks):
             key = ("slack_message", msg.id)
-            slack_permalink = f"https://slack.com/archives/{msg.channel_id}/p{msg.slack_ts.replace('.', '')}" if msg.channel_id and msg.slack_ts else None
+            # Fall back to the bare URL when resolution fails; still better
+            # than no link, and correct for single-workspace viewers.
+            fallback = slack_archive_url(msg.channel_id, msg.slack_ts)
+            slack_permalink = (
+                resolved if isinstance(resolved, str) and resolved else fallback
+            )
             items[key] = LinkedItem(
                 source_type="slack_message",
                 source_id=msg.id,
@@ -465,7 +523,7 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple] = {
             f"Slack by {r.user_name or 'Unknown'} in #{r.channel_name or 'unknown'}",
             r.text[:200],
         ),
-        lambda r: f"https://slack.com/archives/{r.channel_id}/p{r.slack_ts.replace('.', '')}" if r.channel_id and r.slack_ts else None,
+        lambda r: slack_archive_url(r.channel_id, r.slack_ts),
     ),
     "meeting_transcript": (
         MeetingTranscript,

@@ -42,6 +42,9 @@ _SLACK_API_BASE = "https://slack.com/api"
 # rarely change and cache hits dominate after the first message per channel/user.
 _CHANNEL_NAME_CACHE: dict[tuple[UUID, str], str] = {}
 _USER_NAME_CACHE: dict[tuple[UUID, str], str] = {}
+# Permalinks are immutable for a given (channel, ts), so cache aggressively.
+# Keyed by (workspace_id, channel_id, slack_ts).
+_PERMALINK_CACHE: dict[tuple[UUID, str, str], str] = {}
 _CACHE_MAX_ENTRIES = 5000  # bounded to keep memory predictable
 
 # Subtypes that are system messages (filtered out)
@@ -538,9 +541,91 @@ async def _resolve_user_name(
                     if name:
                         _cache_set_bounded(_USER_NAME_CACHE, key, name)
                     return name
+                # ok:false is a configuration/auth problem (missing_scope,
+                # invalid_auth, token_revoked, ...), not a nameless user.
+                # This persists as a NULL user_name -> "Unknown" in the UI
+                # forever, so make it diagnosable instead of silent.
+                logger.warning(
+                    "users.info failed for %s: error=%s — Slack author will "
+                    "show as 'Unknown' until token/scope is fixed",
+                    user_id, data.get("error", "unknown"),
+                )
+            else:
+                logger.warning(
+                    "users.info HTTP %s for %s (non-blocking)",
+                    response.status_code, user_id,
+                )
     except Exception:
         logger.debug(
             "Failed to resolve user name for %s (non-blocking)",
             user_id, exc_info=True,
+        )
+    return None
+
+
+def slack_archive_url(channel_id: str | None, slack_ts: str | None) -> str | None:
+    """Hand-built ``https://slack.com/archives/<ch>/p<ts>`` URL, or None.
+
+    This is the *fallback* link shape — workspace-ambiguous (the bare host
+    resolves against whichever workspace the viewer is signed into). Prefer
+    :func:`resolve_slack_permalink` to get the canonical
+    ``https://<team>.slack.com/archives/...`` URL; use this only when
+    permalink resolution is unavailable (e.g. no bot token, embedding-time
+    URL build with no async session in scope).
+    """
+    if not channel_id or not slack_ts:
+        return None
+    return f"https://slack.com/archives/{channel_id}/p{slack_ts.replace('.', '')}"
+
+
+async def resolve_slack_permalink(
+    session: AsyncSession,
+    workspace_id: UUID,
+    channel_id: str,
+    slack_ts: str,
+    token: str | None = None,
+) -> str | None:
+    """Resolve a Slack message to its canonical workspace permalink.
+
+    Slack's ``chat.getPermalink`` returns a URL on the *message's own*
+    workspace domain (``https://<team>.slack.com/archives/...``), unlike
+    :func:`slack_archive_url` which opens whichever workspace the viewer
+    is signed into.
+
+    Cached per (workspace, channel, ts) since permalinks never change.
+    Fail-silent — callers fall back to ``slack_archive_url`` on ``None``.
+    """
+    if not channel_id or not slack_ts:
+        return None
+    key = (workspace_id, channel_id, slack_ts)
+    cached = _PERMALINK_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    try:
+        if token is None:
+            from src.services.slack_oauth import get_bot_token
+
+            token = await get_bot_token(session, workspace_id)
+        if not token:
+            return None
+
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{_SLACK_API_BASE}/chat.getPermalink",
+                params={"channel": channel_id, "message_ts": slack_ts},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("ok"):
+                    permalink = data.get("permalink") or None
+                    if permalink:
+                        _cache_set_bounded(_PERMALINK_CACHE, key, permalink)
+                    return permalink
+    except Exception:
+        logger.debug(
+            "Failed to resolve Slack permalink for %s/%s (non-blocking)",
+            channel_id, slack_ts, exc_info=True,
         )
     return None

@@ -120,6 +120,17 @@ SOURCE_TYPE_MAP: dict[str, tuple[type, callable]] = {
     ),
 }
 
+def _slack_archive_url(channel_id: str | None, slack_ts: str | None) -> str | None:
+    """Indirection to ``slack_events.slack_archive_url``.
+
+    Inlined here to avoid a top-level import cycle (slack_events imports
+    this module to enqueue embeddings on ingest).
+    """
+    from src.services.slack_events import slack_archive_url
+
+    return slack_archive_url(channel_id, slack_ts)
+
+
 # Map source_type to (title_extractor, snippet_extractor, url_extractor) for privacy-safe
 # metadata storage. Stored in embedding metadata so raw source content can be deleted.
 _SUMMARY_EXTRACT_MAP: dict[str, tuple] = {
@@ -136,7 +147,7 @@ _SUMMARY_EXTRACT_MAP: dict[str, tuple] = {
     "slack_message": (
         lambda r: f"Slack by {r.user_name or 'Unknown'} in #{r.channel_name or 'unknown'}",
         lambda r: r.text[:300],
-        lambda r: f"https://slack.com/archives/{r.channel_id}/p{r.slack_ts.replace('.', '')}" if r.channel_id and r.slack_ts else None,
+        lambda r: _slack_archive_url(r.channel_id, r.slack_ts),
     ),
     "meeting_transcript": (
         lambda r: f"Meeting: {r.title or 'Untitled'}",
