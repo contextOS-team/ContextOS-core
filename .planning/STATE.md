@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Live Intelligence
-current_plan: 3
-status: completed
-stopped_at: Completed 40-03-PLAN.md (Phase 40 complete; v1.3 milestone closed)
-last_updated: "2026-05-20T15:30:37.074Z"
-last_activity: 2026-05-04 -- Plan 40-03 complete (Phase-26 surface deleted; onboarding wired to TelegramPairingProgress; Vault purge script + DEPLOY_RUNBOOK.md shipped; 5 inline deviations covering re-pair, multi-engineer guard, REPLICA IDENTITY FULL, dashboard URL, StrictMode)
+current_plan: 2
+status: executing
+stopped_at: Completed 41-01-PLAN.md
+last_updated: "2026-05-20T19:00:36.004Z"
+last_activity: 2026-05-20
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 3
-  total_plans: 12
-  completed_plans: 12
-  percent: 100
+  total_plans: 15
+  completed_plans: 13
+  percent: 30
 ---
 
 # Project State
@@ -22,18 +22,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 40 (Telegram Shared-Bot Migration) complete. v1.3 Live Intelligence milestone closed; ready for next milestone planning.
+**Current focus:** Phase 41 — dashboard-pulse-redesign
 
 ## Current Position
 
 Milestone: v1.3 Live Intelligence
-Phase: 40 of 8 (Telegram Shared-Bot Migration) -- COMPLETE
-Current Plan: 3
-Total Plans in Phase: 3 (all complete)
-Status: All 3 plans complete (40-01 backend, 40-02 frontend pairing UI, 40-03 cutover/cleanup)
-Last activity: 2026-05-04 -- Plan 40-03 complete (Phase-26 surface deleted; onboarding wired to TelegramPairingProgress; Vault purge script + DEPLOY_RUNBOOK.md shipped; 5 inline deviations covering re-pair, multi-engineer guard, REPLICA IDENTITY FULL, dashboard URL, StrictMode)
+Phase: 41 (dashboard-pulse-redesign) — EXECUTING
+Plan: 2 of 3
+Current Plan: 2
+Total Plans in Phase: 3
+Status: Ready to execute
+Last activity: 2026-05-20
 
-Progress: [██████████] 100%
+Progress: [█████████░] 87%
 
 ## Accumulated Context
 
@@ -92,10 +93,13 @@ Progress: [██████████] 100%
 - [Phase 40]: [40-03] StrictMode auto-mint guard via useRef(mintedRef) -- StrictMode dev double-fire posted /pairing-code twice; each mint wipes the prior code so the user pasted an already-burned code
 - [Phase 40]: [40-03] Settings disconnect button is intentionally a toast hint pointing at the in-Telegram remove flow; Phase 40 has no workspace-level disconnect endpoint by design (bot's my_chat_member handler soft-deletes per chat)
 - [Phase 40]: [40-03] Vault purge uses SQL LIKE prefilter + strict regex re-validation + per-row exception isolation -- defense in depth so an unrelated 'oauth_telegram_'-prefixed secret can't be deleted, and one permission glitch can't abort the whole run
+- [Phase 41]: Phase 41 dashboard last-visited state is server-side per user/workspace — CONTEXT.md defines since-last-visit as a first-class persistent concept; server-side state keeps multi-device behavior coherent.
+- [Phase 41]: Pulse warm-dark palette is opt-in via .pulse-surface on dashboard home only — dashboard/layout.tsx is shared by sibling routes; scoping the palette prevents bleed into context, settings, activity, and graph.
 
 ### Roadmap Evolution
 
 v1.3 roadmap created with 7 phases (32-38) covering 19 requirements across activity events, graph visualization, onboarding, chrome extension, landing page, privacy research, and RAG.
+
 - Phase 39 added: Slack User Token Migration & DM Support
 - Phase 40 added: Telegram Shared-Bot Migration -- replace bring-your-own-bot with single shared @ContextOSBot via deep-link pairing
 
@@ -115,9 +119,10 @@ None.
 | 40    | 01   | 12min    | 3     | 8     | 2026-05-03  |
 | 40    | 02   | 30min active (~19h incl. operator setup) | 3 | 7 | 2026-05-04 |
 | 40    | 03   | ~4h (incl. human-verify gate + 5 deviation fixes) | 4 | 16 | 2026-05-04 |
+| Phase 41 P01 | 38min | 3 tasks | 12 files |
 
 ## Session Continuity
 
-Last session: 2026-05-04T11:07:08.263Z
-Stopped at: Completed 40-03-PLAN.md (Phase 40 complete; v1.3 milestone closed)
+Last session: 2026-05-20T19:00:35.932Z
+Stopped at: Completed 41-01-PLAN.md
 Resume file: None
