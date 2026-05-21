@@ -330,10 +330,11 @@ export function StepContext({ onComplete, onMarkComplete, ticketProvider }: Step
           placeholder="Search tickets..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
+          className="dashboard-input"
           autoFocus
         />
 
-        <div className="max-h-[280px] overflow-y-auto space-y-1.5">
+        <div className="dashboard-list-panel max-h-[280px] p-1">
           {loadingTickets ? (
             <div className="space-y-2 py-2">
               {[...Array(4)].map((_, i) => (
@@ -353,7 +354,7 @@ export function StepContext({ onComplete, onMarkComplete, ticketProvider }: Step
                 <button
                   key={ticket.id}
                   onClick={() => generateForTicket(ticket)}
-                  className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+                  className="dashboard-list-row flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left"
                 >
                   <span className="shrink-0 font-mono text-xs font-medium text-primary mt-0.5">
                     {ticket.identifier}

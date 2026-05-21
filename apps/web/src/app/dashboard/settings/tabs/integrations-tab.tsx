@@ -62,7 +62,7 @@ export function IntegrationsTab() {
     return (
       <div className="grid gap-3 md:grid-cols-2 items-start">
         {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="rounded-2xl border border-border p-4 space-y-3">
+          <div key={i} className="dashboard-panel p-4 space-y-3">
             <div className="flex items-center gap-3">
               <Skeleton className="h-5 w-5 rounded shrink-0" />
               <Skeleton className="h-5 w-24" />

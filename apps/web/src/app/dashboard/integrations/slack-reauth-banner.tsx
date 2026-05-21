@@ -40,7 +40,7 @@ export function SlackReauthBanner({ onReconnectStarted }: Props) {
 
   return (
     <div
-      className="flex items-start gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3"
+      className="flex items-start gap-3 rounded-lg bg-amber-500/10 p-3 shadow-[0_0_0_1px_rgba(245,158,11,0.32)]"
       role="status"
       aria-live="polite"
     >

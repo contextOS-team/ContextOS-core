@@ -191,7 +191,7 @@ export function NotionSyncSection({
                 aria-label="Notion sync progress"
               >
                 <div
-                  className="h-full rounded-full bg-primary transition-all duration-700 ease-out relative overflow-hidden"
+                  className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out relative overflow-hidden"
                   style={{ width: `${Math.max(ns.percent, 2)}%` }}
                 >
                   <div className="absolute inset-0 animate-[sync-shimmer_1.5s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent" />

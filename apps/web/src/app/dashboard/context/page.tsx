@@ -636,21 +636,18 @@ export default function ContextFeedPage() {
       </div>
 
       {/* Status filter pills */}
-      <div className="flex gap-4">
+      <div className="dashboard-segmented">
         {FILTER_OPTIONS.map((option) => (
           <button
             key={option}
             onClick={() => setStatusFilter(option)}
-            className={`relative pb-1.5 text-sm font-medium transition-colors duration-150 ${
+            className={`dashboard-segmented-item ${
               statusFilter === option
-                ? 'text-primary'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'dashboard-segmented-item--active'
+                : ''
             }`}
           >
             {option.charAt(0).toUpperCase() + option.slice(1)}
-            {statusFilter === option && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
-            )}
           </button>
         ))}
       </div>
@@ -663,14 +660,14 @@ export default function ContextFeedPage() {
             placeholder="Filter by title or ticket ID..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
+            className="dashboard-input pl-9"
           />
         </div>
       </div>
 
       {/* Feed list */}
       {filteredPages.length > 0 ? (
-        <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border stagger-children">
+        <div className="dashboard-panel overflow-hidden divide-y divide-border stagger-children">
           {filteredPages.map((page) => (
             <FeedRow
               key={page.id}
@@ -681,7 +678,7 @@ export default function ContextFeedPage() {
         </div>
       ) : hasActiveFilters ? (
         /* Filtered empty state */
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <div className="dashboard-panel overflow-hidden">
           <div className="flex flex-col items-center gap-3 py-12 px-4 text-center">
             <p className="text-sm text-muted-foreground">
               No pages match your filters
@@ -693,7 +690,7 @@ export default function ContextFeedPage() {
         </div>
       ) : (
         /* True empty state */
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <div className="dashboard-panel overflow-hidden">
           <div className="flex flex-col items-center gap-3 py-16 px-4 text-center">
             <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center mb-2">
               <Zap className="h-5 w-5 text-primary" />

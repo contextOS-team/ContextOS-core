@@ -136,7 +136,7 @@ export default function GraphPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            className="w-full rounded-lg border bg-card pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="dashboard-input w-full rounded-lg border pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/35"
           />
         </div>
       </div>
@@ -169,7 +169,7 @@ export default function GraphPage() {
       </div>
 
       {/* Graph canvas — takes remaining height */}
-      <div className="flex-1 mt-3 rounded-xl border border-border overflow-hidden min-h-0 relative">
+      <div className="dashboard-panel flex-1 mt-3 overflow-hidden min-h-0 relative">
         <GraphExplorer
           key={graphKey}
           lens={lens}

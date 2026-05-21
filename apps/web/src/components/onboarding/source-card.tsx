@@ -1,6 +1,7 @@
 'use client'
 
 import { Check } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface SourceCardProps {
   name: string
@@ -17,14 +18,10 @@ export function SourceCard({ name, logo, connected, onClick, disabled, disabledH
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`
-        relative flex flex-col items-center justify-center gap-1.5 rounded-lg border p-4
-        transition-colors duration-150
-        ${connected
-          ? 'border-primary/30 bg-primary/5 cursor-default'
-          : 'border-border hover:border-primary/50 hover:bg-card disabled:opacity-50 disabled:cursor-not-allowed'
-        }
-      `}
+      className={cn(
+        'dashboard-choice-card relative flex flex-col items-center justify-center gap-1.5 rounded-lg p-4',
+        connected && 'dashboard-choice-card--connected'
+      )}
     >
       <div className="h-8 w-8 text-foreground">{logo}</div>
       <span className="text-sm font-medium">{name}</span>

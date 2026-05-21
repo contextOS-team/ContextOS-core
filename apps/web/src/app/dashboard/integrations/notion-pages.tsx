@@ -76,7 +76,7 @@ export function NotionPages({ refreshKey }: NotionPagesProps) {
       )}
 
       {/* Page list */}
-      <div className="space-y-0.5 rounded-md border bg-background">
+      <div className="dashboard-list-panel space-y-0.5 overflow-hidden">
         {pages.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
             No pages synced yet
@@ -85,7 +85,7 @@ export function NotionPages({ refreshKey }: NotionPagesProps) {
           pages.map((page) => (
             <div
               key={page.id}
-              className="flex items-center gap-3 px-3 py-2 hover:bg-muted/50"
+              className="dashboard-list-row flex items-center gap-3 px-3 py-2"
             >
               {page.page_type === 'database_entry' ? (
                 <Database className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />

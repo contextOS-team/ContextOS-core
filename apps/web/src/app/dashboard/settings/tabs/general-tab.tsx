@@ -37,7 +37,7 @@ export function GeneralTab({ workspace, onUpdate }: GeneralTabProps) {
   }
 
   return (
-    <div className="rounded-xl border bg-card p-6">
+    <div className="dashboard-panel p-6">
       <div className="flex flex-col gap-4 max-w-sm">
         <Label htmlFor="workspace-name" className="text-sm font-medium">
           Workspace name
@@ -48,6 +48,7 @@ export function GeneralTab({ workspace, onUpdate }: GeneralTabProps) {
             value={workspaceName}
             onChange={(e) => setWorkspaceName(e.target.value)}
             placeholder="My workspace"
+            className="dashboard-input"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && nameChanged && !isSaving) handleSave()
             }}

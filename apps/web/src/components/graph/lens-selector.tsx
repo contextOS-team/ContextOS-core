@@ -24,7 +24,7 @@ export function LensSelector({
   sprintTooltip,
 }: LensSelectorProps) {
   return (
-    <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-1">
+    <div className="dashboard-segmented">
       {LENSES.map(({ id, label }) => {
         const isActive = activeLens === id
         const isDisabled = id === 'sprint' && sprintDisabled
@@ -36,10 +36,10 @@ export function LensSelector({
             disabled={isDisabled}
             title={isDisabled ? sprintTooltip : undefined}
             className={cn(
-              'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+              'dashboard-segmented-item',
               isActive
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted',
+                ? 'dashboard-segmented-item--active'
+                : '',
               isDisabled && 'cursor-not-allowed opacity-40',
             )}
           >

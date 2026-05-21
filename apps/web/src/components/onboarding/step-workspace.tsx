@@ -84,6 +84,7 @@ export function StepWorkspace({ onNext, defaultName = '' }: StepWorkspaceProps) 
           placeholder="My Workspace"
           autoFocus
           maxLength={50}
+          className="dashboard-input"
         />
         {error && (
           <p className="text-xs text-destructive">{error}</p>

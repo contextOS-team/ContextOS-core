@@ -101,7 +101,7 @@ export function ApiKeysTab() {
           value={newKeyName}
           onChange={(e) => setNewKeyName(e.target.value)}
           placeholder="Key name, e.g. MCP Server"
-          className="max-w-sm"
+          className="dashboard-input max-w-sm"
           onKeyDown={(e) => {
             if (e.key === 'Enter' && newKeyName.trim() && !isCreating) handleCreate()
           }}
@@ -113,7 +113,7 @@ export function ApiKeysTab() {
       </div>
 
       {createdKey && (
-        <div className="rounded-xl border border-primary/20 bg-primary/[0.03] p-4 space-y-3 animate-scale-in">
+        <div className="dashboard-panel p-4 space-y-3 animate-scale-in">
           <div className="flex items-start gap-2">
             <Key className="h-4 w-4 mt-0.5 text-primary shrink-0" />
             <p className="font-mono text-sm break-all flex-1 text-foreground">
@@ -144,7 +144,7 @@ export function ApiKeysTab() {
       )}
 
       {apiKeys.length === 0 ? (
-        <div className="rounded-xl border bg-card p-8 text-center">
+        <div className="dashboard-panel p-8 text-center">
           <div className="mx-auto w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3">
             <Terminal className="h-5 w-5 text-muted-foreground" />
           </div>
@@ -155,7 +155,7 @@ export function ApiKeysTab() {
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border">
+        <div className="dashboard-panel overflow-hidden divide-y divide-border">
           {apiKeys.map((apiKey) => (
             <div key={apiKey.id} className="flex items-center gap-3 px-4 py-3">
               <span className="font-medium text-sm">{apiKey.name}</span>

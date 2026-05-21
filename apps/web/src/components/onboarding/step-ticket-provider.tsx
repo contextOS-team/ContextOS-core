@@ -61,7 +61,7 @@ export function StepTicketProvider({ onNext, isLinearConnected, isJiraConnected,
           </p>
         </div>
         <div className="space-y-4">
-          <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
+          <div className="dashboard-panel flex items-center gap-2 px-4 py-3">
             <Check className="h-4 w-4 text-primary" strokeWidth={3} />
             <span className="text-sm font-medium">{providerName} connected</span>
           </div>
@@ -87,7 +87,7 @@ export function StepTicketProvider({ onNext, isLinearConnected, isJiraConnected,
         <button
           onClick={() => handleConnect('linear')}
           disabled={connecting !== null}
-          className="flex flex-col items-center gap-2.5 rounded-lg border border-border p-5 transition-colors hover:border-primary/50 hover:bg-card disabled:opacity-50 disabled:cursor-not-allowed"
+          className="dashboard-choice-card flex flex-col items-center gap-2.5 rounded-lg p-5"
         >
           <LinearLogo width={36} height={36} />
           <span className="text-sm font-medium">Linear</span>
@@ -95,7 +95,7 @@ export function StepTicketProvider({ onNext, isLinearConnected, isJiraConnected,
         <button
           onClick={() => handleConnect('jira')}
           disabled={connecting !== null}
-          className="flex flex-col items-center gap-2.5 rounded-lg border border-border p-5 transition-colors hover:border-primary/50 hover:bg-card disabled:opacity-50 disabled:cursor-not-allowed"
+          className="dashboard-choice-card flex flex-col items-center gap-2.5 rounded-lg p-5"
         >
           <JiraLogo width={36} height={36} />
           <span className="text-sm font-medium">Jira</span>

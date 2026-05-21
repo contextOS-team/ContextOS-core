@@ -55,7 +55,7 @@ export function FathomConnect({ onConnected }: FathomConnectProps) {
             setApiKey(e.target.value)
             setError(null)
           }}
-          className="h-8 text-xs"
+          className="dashboard-input h-8 text-xs"
           autoComplete="off"
         />
         <p className="text-xs text-muted-foreground">

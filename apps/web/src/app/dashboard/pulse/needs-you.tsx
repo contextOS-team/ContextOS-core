@@ -21,10 +21,10 @@ function NeedsYouRow({ item, lastVisitedAt }: { item: NeedsYouItem; lastVisitedA
   }, [item.id, isNew, seen])
 
   return (
-    <div className="relative px-5 py-3.5">
+    <div className="pulse-row relative px-4 py-3.5">
       {showMarker && <NewItemMarker />}
-      <div className="flex items-baseline gap-3">
-        <span className="shrink-0 text-xs text-[var(--pulse-muted)]" style={{ fontFamily: 'var(--font-geist-mono)' }}>
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-baseline gap-3">
+        <span className="pulse-mono shrink-0 text-xs text-[var(--pulse-muted)]">
           {item.ticketId}
         </span>
         <span className="min-w-0 flex-1 truncate text-sm text-[var(--pulse-foreground)]">
@@ -44,7 +44,7 @@ export function NeedsYou({ items, lastVisitedAt }: NeedsYouProps) {
   return (
     <section className="space-y-3">
       <h2 className="pulse-section-label">Needs you</h2>
-      <div className="pulse-card divide-y divide-border/70 overflow-hidden">
+      <div className="pulse-list-panel">
         {items.map((item) => (
           <NeedsYouRow key={item.id} item={item} lastVisitedAt={lastVisitedAt} />
         ))}

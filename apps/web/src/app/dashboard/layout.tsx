@@ -17,13 +17,13 @@ export default async function DashboardLayout({
   // Supabase query here removes one round-trip from every dashboard navigation.
 
   return (
-    <div className="relative flex flex-col min-h-screen bg-background dashboard-grain">
+    <div className="relative flex flex-col min-h-screen bg-background">
       <Sidebar
         userEmail={user.email ?? ''}
         userFullName={user.user_metadata?.full_name}
       />
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-6 py-10 lg:px-10">
+        <div className="mx-auto max-w-6xl px-5 py-12 sm:px-8 lg:px-12">
           {children}
         </div>
       </main>

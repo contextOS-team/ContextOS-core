@@ -288,7 +288,7 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
 
       {/* Telegram inline pairing block (Phase 40 shared-bot model) */}
       {expandedSource === 'telegram' && !telegramConnected && workspaceId && (
-        <div className="rounded-lg border border-border p-4">
+        <div className="dashboard-panel p-4">
           <TelegramPairingProgress
             workspaceId={workspaceId}
             onConnected={() => {
@@ -303,7 +303,7 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
 
       {/* Fathom inline form */}
       {showFathomForm && !fathomConnected && (
-        <form onSubmit={handleFathomSubmit} className="space-y-3 rounded-lg border border-border p-4">
+        <form onSubmit={handleFathomSubmit} className="dashboard-panel space-y-3 p-4">
           <div className="space-y-1.5">
             <label htmlFor="fathom-api-key-onboarding" className="text-xs font-medium">
               Fathom API Key
@@ -314,7 +314,7 @@ export function StepSources({ onComplete, integrations, onSourceConnected }: Ste
               placeholder="Enter your Fathom API key"
               value={fathomKey}
               onChange={(e) => setFathomKey(e.target.value)}
-              className="h-8 text-xs"
+              className="dashboard-input h-8 text-xs"
               autoComplete="off"
               autoFocus
             />
@@ -497,7 +497,7 @@ function OnboardingRepoPicker({ provider }: { provider: 'github' | 'gitlab' }) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center rounded-lg border border-border py-6 text-xs text-muted-foreground">
+      <div className="dashboard-panel flex items-center justify-center py-6 text-xs text-muted-foreground">
         <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />
         {isRefreshing ? `Fetching from ${provider === 'github' ? 'GitHub' : 'GitLab'}...` : 'Loading repos...'}
       </div>
@@ -505,7 +505,7 @@ function OnboardingRepoPicker({ provider }: { provider: 'github' | 'gitlab' }) {
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-border p-4">
+    <div className="dashboard-panel space-y-3 p-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-foreground">
           Select repos to index
@@ -522,12 +522,12 @@ function OnboardingRepoPicker({ provider }: { provider: 'github' | 'gitlab' }) {
             placeholder="Filter repos..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 pl-8 text-xs"
+            className="dashboard-input h-8 pl-8 text-xs"
           />
         </div>
       )}
 
-      <div className="max-h-[200px] space-y-0.5 overflow-y-auto rounded-md border bg-background">
+      <div className="dashboard-list-panel max-h-[200px] space-y-0.5">
         {filtered.length === 0 ? (
           <p className="px-3 py-4 text-center text-xs text-muted-foreground">
             {searchQuery ? 'No repos match' : 'No repos found'}
@@ -535,7 +535,7 @@ function OnboardingRepoPicker({ provider }: { provider: 'github' | 'gitlab' }) {
         ) : (
           <>
             {filtered.length > 2 && (
-              <label className="flex cursor-pointer items-center gap-3 border-b px-3 py-2 hover:bg-muted/50">
+              <label className="dashboard-list-row dashboard-list-row--bordered flex cursor-pointer items-center gap-3 px-3 py-2">
                 <input
                   type="checkbox"
                   checked={filtered.length > 0 && selectedKeys.size === filtered.length}
@@ -548,7 +548,7 @@ function OnboardingRepoPicker({ provider }: { provider: 'github' | 'gitlab' }) {
             {filtered.map(repo => (
               <label
                 key={getKey(repo)}
-                className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-muted/50"
+                className="dashboard-list-row flex cursor-pointer items-center gap-3 px-3 py-2"
               >
                 <input
                   type="checkbox"
@@ -667,7 +667,7 @@ function OnboardingNotionSync() {
   }, [pollStatus])
 
   return (
-    <div className="rounded-lg border border-border p-4">
+    <div className="dashboard-panel p-4">
       <div className="flex items-center gap-2">
         {syncing ? (
           <>
@@ -704,7 +704,7 @@ function OnboardingNotionSync() {
 
 function OnboardingSlackDms() {
   return (
-    <div className="rounded-lg border border-border p-4 space-y-2">
+    <div className="dashboard-panel space-y-2 p-4">
       <p className="text-xs font-medium text-foreground">Direct messages</p>
       <SlackDmToggle />
       <p

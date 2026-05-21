@@ -32,3 +32,7 @@ export interface HeadlineCopy {
   headline: string
   subtext: string
 }
+
+export interface WorkspaceFreshness {
+  lastUpdatedAt: Date | null
+}

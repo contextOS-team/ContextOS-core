@@ -236,7 +236,7 @@ export function ActivityTimeline({
           <div className="section-label sticky top-0 z-10 bg-background/95 backdrop-blur-sm pt-6 pb-3 transition-[border] duration-150">
             {group.label}
           </div>
-          <div className="rounded-xl border border-border/70 bg-card overflow-hidden divide-y divide-border/40">
+          <div className="dashboard-panel overflow-hidden divide-y divide-border/40">
             {group.events.map((event) => (
               <EventRow
                 key={event.id}
@@ -254,7 +254,7 @@ export function ActivityTimeline({
       {/* Loading more indicator */}
       {isLoadingMore && (
         <div className="mt-4">
-          <div className="rounded-xl border border-border/50 bg-card overflow-hidden divide-y divide-border/30">
+          <div className="dashboard-panel overflow-hidden divide-y divide-border/30">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={`sk-${i}`} className="flex items-center gap-3 px-4 py-3">
                 <Skeleton className="h-7 w-7 rounded-lg shrink-0" />

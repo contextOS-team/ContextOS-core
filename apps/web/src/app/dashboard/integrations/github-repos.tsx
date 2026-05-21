@@ -245,7 +245,7 @@ export function GithubRepos({ onSaved }: GithubReposProps) {
             placeholder="Filter repos..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 pl-8 text-xs"
+            className="dashboard-input h-8 pl-8 text-xs"
           />
         </div>
       )}
@@ -263,7 +263,7 @@ export function GithubRepos({ onSaved }: GithubReposProps) {
       </p>
 
       {/* Repo list */}
-      <div className="max-h-[320px] space-y-0.5 overflow-y-auto rounded-md border bg-background">
+      <div className="dashboard-list-panel max-h-[320px] space-y-0.5">
         {filteredRepos.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
             {searchQuery ? 'No repos match your search' : 'No repos found'}
@@ -272,7 +272,7 @@ export function GithubRepos({ onSaved }: GithubReposProps) {
           <>
             {/* Select all row */}
             {filteredRepos.length > 2 && (
-              <label className="flex cursor-pointer items-center gap-3 border-b px-3 py-2 hover:bg-muted/50">
+              <label className="dashboard-list-row dashboard-list-row--bordered flex cursor-pointer items-center gap-3 px-3 py-2">
                 <input
                   type="checkbox"
                   checked={
@@ -291,7 +291,7 @@ export function GithubRepos({ onSaved }: GithubReposProps) {
             {filteredRepos.map((repo) => (
               <label
                 key={repo.full_name}
-                className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-muted/50"
+                className="dashboard-list-row flex cursor-pointer items-center gap-3 px-3 py-2"
               >
                 <input
                   type="checkbox"

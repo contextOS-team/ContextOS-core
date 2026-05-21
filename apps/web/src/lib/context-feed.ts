@@ -35,9 +35,9 @@ export interface ContextPageRow {
 // ---------------------------------------------------------------------------
 
 export const STATUS_COLORS: Record<string, { dot: string; border: string }> = {
-  ready: { dot: 'bg-emerald-500', border: 'border-l-emerald-500' },
+  ready: { dot: 'bg-primary', border: 'border-l-primary' },
   generating: { dot: 'bg-amber-500', border: 'border-l-amber-500' },
-  stale: { dot: 'bg-orange-500', border: 'border-l-orange-500' },
+  stale: { dot: 'bg-amber-600', border: 'border-l-amber-600' },
   error: { dot: 'bg-red-500', border: 'border-l-red-500' },
   draft: { dot: 'bg-muted-foreground/30', border: 'border-l-transparent' },
 }

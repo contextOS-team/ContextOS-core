@@ -103,12 +103,17 @@ function DashboardSections({
 
   return (
     <>
-      <Headline delta={delta} lastVisitedAt={lastVisitedAt} />
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.85fr)]">
+      <Headline
+        delta={delta}
+        lastVisitedAt={lastVisitedAt}
+      />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.32fr)_minmax(320px,0.68fr)]">
         <RecentDecisions data={decisions} lastVisitedAt={lastVisitedAt} />
-        <ActiveContext items={contextItems} lastVisitedAt={lastVisitedAt} />
+        <div className="space-y-6">
+          <ActiveContext items={contextItems} lastVisitedAt={lastVisitedAt} />
+          <NeedsYou items={needsYouItems} lastVisitedAt={lastVisitedAt} />
+        </div>
       </div>
-      <NeedsYou items={needsYouItems} lastVisitedAt={lastVisitedAt} />
     </>
   )
 }

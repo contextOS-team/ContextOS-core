@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LensGraphResponse } from '@/components/graph/types'
 import { Headline } from '../headline'
 import { ActiveContext } from '../active-context'
@@ -48,13 +48,18 @@ function renderWithSeenProvider(ui: React.ReactElement) {
 }
 
 describe('pulse components', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.clearAllMocks()
+  })
+
   it('flows full weekday names through the headline template', () => {
     render(<Headline delta={deltaWithTuesdayNeed} lastVisitedAt={new Date('2026-05-20T00:00:00Z')} />)
 
     const headline = screen.getByRole('heading', { level: 1 }).textContent ?? ''
     expect(headline).toContain('has been waiting on')
     expect(headline).toContain('since Tuesday')
-    expect(screen.queryByText(/Since your last visit/i)).toBeNull()
+    expect(screen.getByText(/source update since your last visit/i)).toBeTruthy()
   })
 
   it('hides Needs you when there are no items', () => {
@@ -78,11 +83,11 @@ describe('pulse components', () => {
     expect(screen.getAllByText(/#dev-room/).length).toBeGreaterThan(0)
     expect(screen.getByRole('link', { name: /Use old estimate/ }).getAttribute('href'))
       .toBe('/dashboard/decisions/decision-1')
-    expect(screen.getByRole('link', { name: /all decisions/i }).getAttribute('href'))
+    expect(screen.getByRole('link', { name: /view all/i }).getAttribute('href'))
       .toBe('/dashboard/decisions')
   })
 
-  it('renders Active context as a typographic list with bracket prefix support', () => {
+  it('renders Active context as an artifact card with bracket tags', () => {
     renderWithSeenProvider(
       <ActiveContext
         lastVisitedAt={new Date('2026-05-19T00:00:00Z')}
@@ -101,9 +106,72 @@ describe('pulse components', () => {
     )
 
     expect(screen.getByText('Active context')).toBeTruthy()
-    expect(screen.getByText('[ClientApp][iOS]')).toBeTruthy()
+    expect(screen.getByText('ClientApp')).toBeTruthy()
+    expect(screen.getByText('iOS')).toBeTruthy()
     expect(screen.getByText('Pickup point')).toBeTruthy()
     expect(screen.getByText('1 source')).toBeTruthy()
+  })
+
+  it('demotes old context rows instead of labeling them active', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-21T12:00:00Z'))
+
+    renderWithSeenProvider(
+      <ActiveContext
+        lastVisitedAt={new Date('2026-05-19T00:00:00Z')}
+        items={[
+          {
+            id: 'ctx-1',
+            title: '[ClientApp][iOS] Classification setup',
+            ticket_identifier: 'RD-781',
+            status: 'ready',
+            sources: [{ type: 'slack_message', id: 'm1', title: 'source', relevance_score: 1 }],
+            updated_at: '2026-04-28T10:00:00Z',
+            generated_at: '2026-04-28T10:00:00Z',
+          },
+        ]}
+      />
+    )
+
+    expect(screen.queryByText('Active context')).toBeNull()
+    expect(screen.getByText('Context to revisit')).toBeTruthy()
+    expect(screen.getByText('dormant')).toBeTruthy()
+  })
+
+  it('keeps dormant rows out of Active context when fresher context exists', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-21T12:00:00Z'))
+
+    renderWithSeenProvider(
+      <ActiveContext
+        lastVisitedAt={new Date('2026-05-19T00:00:00Z')}
+        items={[
+          {
+            id: 'ctx-1',
+            title: '[ClientApp][iOS] Fresh classification setup',
+            ticket_identifier: 'RD-781',
+            status: 'ready',
+            sources: [{ type: 'slack_message', id: 'm1', title: 'source', relevance_score: 1 }],
+            updated_at: '2026-05-20T10:00:00Z',
+            generated_at: '2026-05-20T10:00:00Z',
+          },
+          {
+            id: 'ctx-2',
+            title: '[ClientApp][iOS] Dormant pickup point',
+            ticket_identifier: 'RD-302',
+            status: 'ready',
+            sources: [{ type: 'slack_message', id: 'm2', title: 'source', relevance_score: 1 }],
+            updated_at: '2026-04-28T10:00:00Z',
+            generated_at: '2026-04-28T10:00:00Z',
+          },
+        ]}
+      />
+    )
+
+    expect(screen.getByText('Active context')).toBeTruthy()
+    expect(screen.getByText('Fresh classification setup')).toBeTruthy()
+    expect(screen.queryByText('Dormant pickup point')).toBeNull()
+    expect(screen.getByText('1 older context item hidden')).toBeTruthy()
   })
 
   it('renders compact Needs you rows with the supplied sinceDay string', () => {

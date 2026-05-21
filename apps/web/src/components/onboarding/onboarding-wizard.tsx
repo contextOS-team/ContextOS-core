@@ -148,12 +148,12 @@ export function OnboardingWizard() {
   // Loading skeleton
   if (wizardState === 'loading') {
     return (
-      <div className="dashboard-grain relative flex min-h-screen items-center justify-center">
+      <div className="relative flex min-h-screen items-center justify-center bg-background">
         <div className="w-full max-w-[480px] px-4">
           <div className="mb-6 text-center">
             <Skeleton className="mx-auto h-5 w-24" />
           </div>
-          <div className="rounded-xl border border-border bg-card p-8">
+          <div className="dashboard-panel p-8">
             <div className="mb-6 flex justify-center gap-2">
               <Skeleton className="h-2 w-2 rounded-full" />
               <Skeleton className="h-2 w-2 rounded-full" />
@@ -170,7 +170,7 @@ export function OnboardingWizard() {
   }
 
   return (
-    <div className="dashboard-grain relative flex min-h-screen items-center justify-center">
+    <div className="relative flex min-h-screen items-center justify-center bg-background">
       <div className="w-full max-w-[480px] px-4">
         {/* ContextOS wordmark */}
         <div className="mb-6 text-center">
@@ -180,7 +180,7 @@ export function OnboardingWizard() {
         </div>
 
         {/* Card */}
-        <div className="rounded-xl border border-border bg-card p-8">
+        <div className="dashboard-panel p-8">
           {/* Step indicator */}
           <div className="mb-6">
             <StepIndicator currentStep={step} />

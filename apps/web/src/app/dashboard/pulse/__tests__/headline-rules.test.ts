@@ -140,6 +140,21 @@ describe('computeHeadline', () => {
     })
   })
 
+  it('keeps the headline about activity even when source freshness is stale', () => {
+    setNow()
+    expect(
+      computeHeadline(
+        delta(),
+        new Date('2026-05-20T12:00:00Z'),
+        new Date('2026-05-20T14:00:00Z'),
+        { lastUpdatedAt: new Date('2026-05-20T00:30:00Z') }
+      )
+    ).toEqual({
+      headline: 'No new activity.',
+      subtext: 'Nothing new since your last visit, 2 hours ago.',
+    })
+  })
+
   it('uses first visit when lastVisitedAt is missing', () => {
     setNow()
     expect(computeHeadline(delta(), null)).toEqual({

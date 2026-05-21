@@ -12,6 +12,25 @@ export interface DecisionNodeView {
   confidence: number | null
 }
 
+export function formatDecisionChannels(value: string | null): string[] {
+  if (!value) return []
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => `#${item.replace(/^#+/, '')}`)
+}
+
+export function getDecisionPeople(decision: Pick<DecisionNodeView, 'participants' | 'authorName'>): string[] {
+  const names = decision.participants.length > 0
+    ? decision.participants
+    : decision.authorName
+      ? [decision.authorName]
+      : []
+
+  return Array.from(new Set(names.map((name) => name.trim()).filter(Boolean)))
+}
+
 function asString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null
 }
@@ -22,7 +41,9 @@ function asNumber(value: unknown): number | null {
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    ? value
+      .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      .map((item) => item.trim())
     : []
 }
 

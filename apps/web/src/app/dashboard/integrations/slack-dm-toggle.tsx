@@ -73,14 +73,14 @@ export function SlackDmToggle({ initialIncludeDms }: Props) {
   if (loading) {
     return (
       <div
-        className="h-[72px] w-full animate-pulse rounded-md bg-muted/40"
+        className="dashboard-panel h-[72px] w-full animate-pulse"
         aria-hidden="true"
       />
     )
   }
 
   return (
-    <div className="space-y-1.5 rounded-md border border-border bg-background p-3">
+    <div className="dashboard-panel space-y-1.5 p-3">
       {/*
         The Label's htmlFor wires clicks on the text to the Switch and gives
         the label+switch pair a >=40px hit area (min-h-10). The Switch itself

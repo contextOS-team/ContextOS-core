@@ -25,7 +25,7 @@ const SettingsSkeleton = () => (
   <div className="space-y-6 animate-fade-in-up">
     <Skeleton className="h-8 w-32" />
     <div className="flex gap-1">{[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-8 w-24 rounded-lg" />)}</div>
-    <div className="rounded-xl border bg-card p-6 space-y-4">
+    <div className="dashboard-panel p-6 space-y-4">
       <Skeleton className="h-4 w-40" />
       <Skeleton className="h-9 w-full max-w-sm" />
       <Skeleton className="h-9 w-20" />
@@ -95,21 +95,18 @@ export default function SettingsPage() {
     <div className="space-y-6 animate-fade-in-up">
       <h2 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">Settings</h2>
 
-      <nav className="flex gap-1 border-b border-border pb-0 mb-2">
+      <nav className="dashboard-segmented">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`relative px-3 py-2 text-sm font-medium transition-colors duration-150 ${
+            className={`dashboard-segmented-item ${
               activeTab === tab.id
-                ? 'text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'dashboard-segmented-item--active'
+                : ''
             }`}
           >
             {tab.label}
-            {activeTab === tab.id && (
-              <span className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full bg-primary" />
-            )}
           </button>
         ))}
       </nav>

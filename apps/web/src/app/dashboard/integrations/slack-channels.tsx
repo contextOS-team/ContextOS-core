@@ -152,7 +152,7 @@ export function SlackChannels({ onSaved }: SlackChannelsProps) {
           placeholder="Filter channels..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="h-8 pl-8 text-xs"
+          className="dashboard-input h-8 pl-8 text-xs"
         />
       </div>
 
@@ -164,7 +164,7 @@ export function SlackChannels({ onSaved }: SlackChannelsProps) {
       )}
 
       {/* Channel list */}
-      <div className="max-h-[320px] space-y-0.5 overflow-y-auto rounded-md border bg-background">
+      <div className="dashboard-list-panel max-h-[320px] space-y-0.5">
         {filteredChannels.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
             {searchQuery ? 'No channels match your search' : 'No channels found'}
@@ -172,7 +172,7 @@ export function SlackChannels({ onSaved }: SlackChannelsProps) {
         ) : (
           <>
             {/* Select all row */}
-            <label className="flex cursor-pointer items-center gap-3 border-b px-3 py-2 hover:bg-muted/50">
+            <label className="dashboard-list-row dashboard-list-row--bordered flex cursor-pointer items-center gap-3 px-3 py-2">
               <input
                 type="checkbox"
                 checked={
@@ -190,7 +190,7 @@ export function SlackChannels({ onSaved }: SlackChannelsProps) {
             {filteredChannels.map((channel) => (
               <label
                 key={channel.id}
-                className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-muted/50"
+                className="dashboard-list-row flex cursor-pointer items-center gap-3 px-3 py-2"
               >
                 <input
                   type="checkbox"

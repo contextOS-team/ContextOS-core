@@ -45,15 +45,15 @@ export function AvatarPuck({ userEmail, userFullName }: AvatarPuckProps) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-elevated text-xs font-semibold text-foreground outline-none ring-1 ring-border transition-transform duration-150 ease-out hover:scale-[1.04] active:scale-[0.96]"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-elevated text-[13px] font-semibold leading-none text-foreground outline-none ring-1 ring-white/[0.08] transition-transform duration-150 ease-out hover:scale-[1.04] active:scale-[0.96]"
           title={userFullName ?? userEmail}
           data-testid="avatar-puck"
         >
           {initials}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <div className="px-2 py-1.5">
+      <DropdownMenuContent align="end" className="w-64">
+        <div className="px-3 py-2.5">
           <p className="truncate text-sm font-medium text-foreground">
             {userFullName ?? userEmail}
           </p>
@@ -63,16 +63,16 @@ export function AvatarPuck({ userEmail, userFullName }: AvatarPuckProps) {
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => router.push('/dashboard/settings')}>
-          <UserCircle className="mr-2 h-4 w-4" />
+          <UserCircle className="h-4 w-4" />
           Profile
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => router.push('/dashboard/settings?tab=general')}>
-          <Settings className="mr-2 h-4 w-4" />
+          <Settings className="h-4 w-4" />
           Settings
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut}>
-          <LogOut className="mr-2 h-4 w-4" />
+          <LogOut className="h-4 w-4" />
           Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>

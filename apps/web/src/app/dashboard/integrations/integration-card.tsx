@@ -116,7 +116,7 @@ export function IntegrationCard({
   const displayedName = displayName(externalName)
 
   return (
-    <Card className="gap-0 py-0 overflow-hidden transition-shadow duration-200 hover:shadow-lg hover:shadow-black/[0.03] dark:hover:shadow-black/20 group">
+    <Card className="dashboard-panel dashboard-panel--interactive gap-0 overflow-hidden border-0 py-0 shadow-none group">
       <div className="flex flex-row items-center justify-between gap-3 px-5 pt-5 pb-2">
         <div className="flex items-center gap-3 min-w-0">
           <div className="shrink-0">
@@ -162,7 +162,7 @@ export function IntegrationCard({
             aria-label={`${name} sync progress`}
           >
             <div
-              className="h-full rounded-full bg-primary transition-all duration-700 ease-out relative overflow-hidden"
+              className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out relative overflow-hidden"
               style={{ width: `${Math.max(clampedPercent, 2)}%` }}
             >
               <div className="absolute inset-0 animate-[sync-shimmer_1.5s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent" />
@@ -244,7 +244,7 @@ export function IntegrationCard({
 
         {/* Inline connect form */}
         {connectForm && status !== 'connected' && showConnectForm && (
-          <div className="mt-4 rounded-xl border bg-muted/30 p-4">
+          <div className="dashboard-panel mt-4 p-4">
             {connectForm}
           </div>
         )}
@@ -252,7 +252,7 @@ export function IntegrationCard({
 
       {/* Expandable content */}
       {children && status === 'connected' && isExpanded && (
-        <div className="border-t bg-muted/20 px-5 py-5">{children}</div>
+        <div className="border-t border-white/[0.06] bg-white/[0.025] px-5 py-5">{children}</div>
       )}
     </Card>
   )

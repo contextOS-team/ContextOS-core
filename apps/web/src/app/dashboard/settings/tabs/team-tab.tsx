@@ -28,7 +28,7 @@ export function TeamTab() {
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border">
+      <div className="dashboard-panel overflow-hidden divide-y divide-border">
         {[1, 2].map((i) => (
           <div key={i} className="flex items-center gap-3 px-4 py-3">
             <Skeleton className="h-8 w-8 rounded-full" />
@@ -47,7 +47,7 @@ export function TeamTab() {
       <p className="text-xs text-muted-foreground mb-3">
         {members.length} member{members.length !== 1 ? 's' : ''} in this workspace
       </p>
-      <div className="rounded-xl border bg-card overflow-hidden divide-y divide-border">
+      <div className="dashboard-panel overflow-hidden divide-y divide-border">
         {members.map((member) => {
           const name = member.full_name || member.email
           const initials = getInitials(name)

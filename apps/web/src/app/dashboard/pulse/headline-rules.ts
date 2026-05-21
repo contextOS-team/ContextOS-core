@@ -1,5 +1,7 @@
 import { formatLongRelativeTime } from '@/lib/utils'
-import type { Delta, HeadlineCopy } from './types'
+import type { Delta, HeadlineCopy, WorkspaceFreshness } from './types'
+
+export { STALE_WORKSPACE_UPDATE_MS, isWorkspaceUpdateStale } from '../sync-freshness'
 
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return count === 1 ? singular : plural
@@ -26,10 +28,9 @@ function bucketSummary(decisions: number, sources: number): string {
 export function computeHeadline(
   delta: Delta,
   lastVisitedAt: Date | null,
-  now: Date = new Date()
+  now: Date = new Date(),
+  freshness?: WorkspaceFreshness
 ): HeadlineCopy {
-  void now
-
   const since = lastVisitedAt ? formatLongRelativeTime(lastVisitedAt.toISOString()) : 'first visit'
 
   if (delta.decisions.count === 0 && delta.sources.count === 0) {

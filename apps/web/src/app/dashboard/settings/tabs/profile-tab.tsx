@@ -65,7 +65,7 @@ export function ProfileTab({ userEmail, userFullName }: ProfileTabProps) {
   return (
     <div className="space-y-6">
       {/* Personal Information */}
-      <div className="rounded-xl border border-border bg-card p-6">
+      <div className="dashboard-panel p-6">
         <div className="flex items-center gap-2 mb-4">
           <User className="h-4 w-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold text-foreground">Personal Information</h3>
@@ -83,12 +83,12 @@ export function ProfileTab({ userEmail, userFullName }: ProfileTabProps) {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="Your name"
-                className="h-9 w-full max-w-sm rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                className="dashboard-input h-9 w-full max-w-sm rounded-lg border px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/35"
               />
               <button
                 onClick={handleSaveDisplayName}
                 disabled={isSavingName || !hasNameChanged || !displayName.trim()}
-                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-[background-color,color,transform] active:scale-[0.96] flex items-center gap-2"
               >
                 {nameSaved ? (
                   <>
@@ -112,7 +112,7 @@ export function ProfileTab({ userEmail, userFullName }: ProfileTabProps) {
             <label className="block text-xs font-medium text-muted-foreground mb-1.5">
               Email address
             </label>
-            <div className="flex items-center gap-2 h-9 w-full max-w-sm rounded-lg border border-border bg-muted/30 px-3">
+            <div className="dashboard-input flex items-center gap-2 h-9 w-full max-w-sm rounded-lg border px-3">
               <Mail className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">{userEmail}</span>
             </div>
@@ -124,7 +124,7 @@ export function ProfileTab({ userEmail, userFullName }: ProfileTabProps) {
       </div>
 
       {/* Security */}
-      <div className="rounded-xl border border-border bg-card p-6">
+      <div className="dashboard-panel p-6">
         <div className="flex items-center gap-2 mb-4">
           <Shield className="h-4 w-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold text-foreground">Security</h3>
@@ -142,7 +142,7 @@ export function ProfileTab({ userEmail, userFullName }: ProfileTabProps) {
             <button
               onClick={handleResetPassword}
               disabled={isResetting || resetSent}
-              className="h-9 px-4 rounded-lg border border-border bg-background text-sm font-medium text-foreground hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+              className="dashboard-input h-9 px-4 rounded-lg border text-sm font-medium text-foreground hover:bg-white/[0.055] disabled:opacity-50 disabled:cursor-not-allowed transition-[background-color,color,transform] active:scale-[0.96] flex items-center gap-2"
             >
               <Lock className="h-3.5 w-3.5" />
               {resetSent
@@ -169,7 +169,7 @@ export function ProfileTab({ userEmail, userFullName }: ProfileTabProps) {
       </div>
 
       {/* Danger Zone */}
-      <div className="rounded-xl border border-destructive/20 bg-card p-6">
+      <div className="dashboard-panel p-6">
         <h3 className="text-sm font-semibold text-destructive mb-2">Danger zone</h3>
         <p className="text-xs text-muted-foreground mb-3">
           Permanently delete your account and all associated data. This action cannot be undone.
