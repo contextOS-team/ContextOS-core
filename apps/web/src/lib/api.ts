@@ -92,10 +92,11 @@ export interface IntegrationStatusResponse {
   jira: ProviderStatus
 }
 
-export const getIntegrationStatus = cache(
-  (): Promise<IntegrationStatusResponse> =>
-    apiFetch<IntegrationStatusResponse>('/api/integrations/status')
-)
+export function fetchIntegrationStatus(): Promise<IntegrationStatusResponse> {
+  return apiFetch<IntegrationStatusResponse>('/api/integrations/status')
+}
+
+export const getIntegrationStatus = cache(fetchIntegrationStatus)
 
 // ---------------------------------------------------------------------------
 // Linear
@@ -130,6 +131,29 @@ export type LinearTicketSearchResponse = {
   has_next_page: boolean
   end_cursor: string | null
 }
+
+export function triggerLinearSync(
+  teamIds: string[]
+): Promise<{ status: string; team_ids: string[] }> {
+  return apiFetch<{ status: string; team_ids: string[] }>('/api/linear/sync', {
+    method: 'POST',
+    body: JSON.stringify({ team_ids: teamIds }),
+  })
+}
+
+export interface LinearSyncStatus {
+  synced_teams: string[]
+  sync_status: string | null
+  tickets_synced: number
+  last_sync_at: string | null
+  tickets_count: number
+}
+
+export function fetchLinearSyncStatus(): Promise<LinearSyncStatus> {
+  return apiFetch<LinearSyncStatus>('/api/linear/sync/status')
+}
+
+export const getLinearSyncStatus = cache(fetchLinearSyncStatus)
 
 export const searchLinearTickets = cache(
   (
@@ -305,6 +329,26 @@ export function triggerGithubIndex(): Promise<{ status: string }> {
   })
 }
 
+export function triggerGithubSync(): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/api/github/sync', {
+    method: 'POST',
+  })
+}
+
+export interface GithubSyncStatus {
+  repo_sync_status: Record<
+    string,
+    { status: string; synced: number; total: number }
+  >
+  last_sync_at: string | null
+}
+
+export function fetchGithubSyncStatus(): Promise<GithubSyncStatus> {
+  return apiFetch<GithubSyncStatus>('/api/github/sync/status')
+}
+
+export const getGithubSyncStatus = cache(fetchGithubSyncStatus)
+
 export interface GithubIndexStatus {
   status: string
   last_indexed_at: string | null
@@ -401,12 +445,14 @@ export interface GitlabSyncStatus {
   total_mrs: number
   total_reviews: number
   is_syncing: boolean
+  last_sync_at: string | null
 }
 
-export const getGitlabSyncStatus = cache(
-  (): Promise<GitlabSyncStatus> =>
-    apiFetch<GitlabSyncStatus>('/api/gitlab/sync/status')
-)
+export function fetchGitlabSyncStatus(): Promise<GitlabSyncStatus> {
+  return apiFetch<GitlabSyncStatus>('/api/gitlab/sync/status')
+}
+
+export const getGitlabSyncStatus = cache(fetchGitlabSyncStatus)
 
 // ---------------------------------------------------------------------------
 // Notion
@@ -446,10 +492,11 @@ export interface NotionSyncStatus {
   last_sync_at: string | null
 }
 
-export const getNotionSyncStatus = cache(
-  (): Promise<NotionSyncStatus> =>
-    apiFetch<NotionSyncStatus>('/api/notion/status')
-)
+export function fetchNotionSyncStatus(): Promise<NotionSyncStatus> {
+  return apiFetch<NotionSyncStatus>('/api/notion/status')
+}
+
+export const getNotionSyncStatus = cache(fetchNotionSyncStatus)
 
 export interface NotionPageInfo {
   id: string
@@ -546,6 +593,28 @@ export function disconnectJira(): Promise<{ status: string }> {
     method: 'POST',
   })
 }
+
+export function triggerJiraSync(
+  jql?: string | null
+): Promise<{ status: string; jql: string | null }> {
+  return apiFetch<{ status: string; jql: string | null }>('/api/jira/sync', {
+    method: 'POST',
+    body: JSON.stringify({ jql: jql ?? null }),
+  })
+}
+
+export interface JiraSyncStatus {
+  sync_status: string | null
+  issues_synced: number
+  last_sync_at: string | null
+  issues_count: number
+}
+
+export function fetchJiraSyncStatus(): Promise<JiraSyncStatus> {
+  return apiFetch<JiraSyncStatus>('/api/jira/sync/status')
+}
+
+export const getJiraSyncStatus = cache(fetchJiraSyncStatus)
 
 export interface JiraIssueSearchResult {
   jira_id: string

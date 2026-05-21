@@ -516,6 +516,8 @@ async def _update_repo_sync_status(
             "total": total,
         }
         config["repo_sync_status"] = repo_sync
+        if status == "synced":
+            config["last_sync_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         integration.config = config
         flag_modified(integration, "config")
         await session.flush()

@@ -311,10 +311,11 @@ async def get_sync_status(
     integration = result.scalar_one_or_none()
 
     if not integration or not integration.config:
-        return {"repo_sync_status": {}}
+        return {"repo_sync_status": {}, "last_sync_at": None}
 
     return {
-        "repo_sync_status": integration.config.get("repo_sync_status", {})
+        "repo_sync_status": integration.config.get("repo_sync_status", {}),
+        "last_sync_at": integration.config.get("last_sync_at"),
     }
 
 

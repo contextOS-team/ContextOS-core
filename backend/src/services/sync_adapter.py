@@ -8,13 +8,14 @@ import contextvars
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol, runtime_checkable
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from src.models.integration import WorkspaceIntegration
 from src.models.sync import SyncCursor
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,16 @@ class SyncAdapter(Protocol):
 def generate_sync_run_id() -> str:
     """Generate a unique sync run ID for log correlation."""
     return str(uuid.uuid4())
+
+
+def mark_sync_requested(
+    integration: WorkspaceIntegration,
+    progress_key: str,
+) -> None:
+    config = dict(integration.config) if integration.config else {}
+    config["sync_status"] = "in_progress"
+    config[progress_key] = 0
+    integration.config = config
 
 
 async def get_or_create_cursor(
@@ -123,7 +134,7 @@ async def update_cursor_status(
         cursor.cursor_value = cursor_value
 
     if sync_status == "complete":
-        cursor.last_sync_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        cursor.last_sync_at = datetime.now(UTC).replace(tzinfo=None)
         cursor.error_message = None
     elif sync_status == "error":
         cursor.error_message = error_message
@@ -148,8 +159,11 @@ async def emit_activity(
         async with session.begin_nested():
             await session.execute(
                 text(
-                    "INSERT INTO activity_events (workspace_id, actor_id, event_type, metadata)"
-                    " VALUES (:workspace_id, :actor_id, :event_type, CAST(:metadata AS jsonb))"
+                    "INSERT INTO activity_events "
+                    "(workspace_id, actor_id, event_type, metadata) "
+                    "VALUES "
+                    "(:workspace_id, :actor_id, :event_type, "
+                    "CAST(:metadata AS jsonb))"
                 ),
                 {
                     "workspace_id": workspace_id,
@@ -196,7 +210,9 @@ async def get_cursor_status(
     return {
         "sync_status": cursor.sync_status,
         "records_synced": cursor.records_synced,
-        "last_sync_at": cursor.last_sync_at.isoformat() if cursor.last_sync_at else None,
+        "last_sync_at": (
+            cursor.last_sync_at.isoformat() if cursor.last_sync_at else None
+        ),
         "error_message": cursor.error_message,
         "cursor_value": cursor.cursor_value,
     }

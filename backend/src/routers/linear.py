@@ -28,7 +28,7 @@ from src.services.linear_oauth import (
 from src.services.oauth_common import sign_oauth_state, verify_state_or_raise, is_user_onboarding
 from src.services.linear_graphql import LinearAPIError, LinearGraphQLClient
 from src.services.linear_sync import fetch_teams, sync_tickets_for_teams
-from src.services.sync_adapter import emit_activity
+from src.services.sync_adapter import emit_activity, mark_sync_requested
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +301,15 @@ async def start_sync(
             detail="Linear integration is not connected. Complete OAuth flow first.",
         )
 
+    mark_sync_requested(integration, "tickets_synced")
+    await emit_activity(
+        session,
+        user.workspace_id,
+        "sync_started",
+        metadata={"integration": "linear"},
+        actor_id=user.user_id,
+    )
+
     # Start sync in background with its own session
     # (request session closes when response is sent, before background task runs)
     async def _run_sync():
@@ -355,6 +364,7 @@ async def get_sync_status(
     return {
         "synced_teams": config.get("synced_teams", []),
         "sync_status": config.get("sync_status"),
+        "tickets_synced": config.get("tickets_synced", 0),
         "last_sync_at": config.get("last_sync_at"),
         "tickets_count": tickets_count,
     }

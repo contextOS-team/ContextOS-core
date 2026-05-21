@@ -538,6 +538,8 @@ async def _update_project_sync_status(
             "total": total,
         }
         config["project_sync_status"] = project_sync
+        if status == "synced":
+            config["last_sync_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         integration.config = config
         flag_modified(integration, "config")
         await session.flush()

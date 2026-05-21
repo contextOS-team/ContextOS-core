@@ -7,7 +7,7 @@ import { Activity, Home, Layers, Network } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { AvatarPuck } from './avatar-puck'
 import { SyncIndicator } from './sync-indicator'
-import { useSyncState } from './use-sync-state'
+import { useSourceSyncState } from './use-source-sync-state'
 
 interface ChromeNavProps {
   userEmail: string
@@ -24,7 +24,7 @@ const navItems = [
 export function ChromeNav({ userEmail, userFullName }: ChromeNavProps) {
   const pathname = usePathname()
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
-  const syncState = useSyncState(workspaceId)
+  const { state: syncState, notifySyncRequested } = useSourceSyncState(workspaceId)
 
   useEffect(() => {
     let cancelled = false
@@ -63,43 +63,30 @@ export function ChromeNav({ userEmail, userFullName }: ChromeNavProps) {
   }
 
   return (
-    <nav className="sticky top-0 z-40 flex h-14 items-center border-b border-border bg-background/80 px-6 backdrop-blur-sm">
-      <Link
-        href="/dashboard"
-        className="text-[15px] font-semibold"
-      >
-        <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-          ContextOS
-        </span>
+    <nav className="dashboard-chrome">
+      <Link href="/dashboard" className="dashboard-brand">
+        ContextOS
       </Link>
 
-      <div className="ml-6 h-4 w-px bg-border" />
-
-      <div className="ml-4 flex items-center gap-0.5">
+      <div className="dashboard-nav-list">
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = isActive(href)
           return (
             <Link
               key={href}
               href={href}
-              className={`relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors duration-150 ${
-                active
-                  ? 'bg-primary/10 text-foreground'
-                  : 'text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground'
-              }`}
+              className={`dashboard-nav-item ${active ? 'dashboard-nav-item--active' : ''}`}
+              aria-label={label}
             >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-              {active && (
-                <span className="absolute bottom-0 left-2 right-2 h-[2px] translate-y-[9px] rounded-full bg-primary" />
-              )}
+              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="dashboard-nav-label">{label}</span>
             </Link>
           )
         })}
       </div>
 
-      <div className="ml-auto flex items-center gap-4">
-        <SyncIndicator state={syncState} />
+      <div className="ml-auto flex items-center gap-3">
+        <SyncIndicator state={syncState} onSyncRequested={notifySyncRequested} />
         <AvatarPuck userEmail={userEmail} userFullName={userFullName} />
       </div>
     </nav>

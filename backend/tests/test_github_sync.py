@@ -538,6 +538,7 @@ class TestSyncRepoProgress:
         updated_config = mock_integration.config
         assert "repo_sync_status" in updated_config
         assert updated_config["repo_sync_status"]["org/repo"]["status"] == "synced"
+        assert updated_config["last_sync_at"] is not None
 
 
 # ---------- link_pr_to_ticket ----------

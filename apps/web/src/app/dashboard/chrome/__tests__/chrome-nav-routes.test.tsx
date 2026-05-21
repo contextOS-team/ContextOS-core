@@ -2,6 +2,7 @@
 
 import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fetchIntegrationStatus } from '@/lib/api'
 import { Sidebar } from '../../sidebar'
 
 let pathname = '/dashboard'
@@ -57,9 +58,33 @@ vi.mock('@/lib/supabase/client', () => ({
   }),
 }))
 
+vi.mock('@/lib/api', () => ({
+  fetchIntegrationStatus: vi.fn(),
+  fetchGithubSyncStatus: vi.fn(),
+  fetchGitlabSyncStatus: vi.fn(),
+  fetchNotionSyncStatus: vi.fn(),
+  fetchJiraSyncStatus: vi.fn(),
+  fetchLinearSyncStatus: vi.fn(),
+  resyncNotion: vi.fn(),
+  triggerGithubSync: vi.fn(),
+  triggerGitlabSync: vi.fn(),
+  triggerJiraSync: vi.fn(),
+  triggerLinearSync: vi.fn(),
+}))
+
 describe('ChromeNav route coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(fetchIntegrationStatus).mockResolvedValue({
+      linear: { status: 'disconnected', external_name: null, connected_at: null },
+      slack: { status: 'disconnected', external_name: null, connected_at: null },
+      fathom: { status: 'disconnected', external_name: null, connected_at: null },
+      github: { status: 'disconnected', external_name: null, connected_at: null },
+      gitlab: { status: 'disconnected', external_name: null, connected_at: null },
+      notion: { status: 'disconnected', external_name: null, connected_at: null },
+      telegram: { status: 'disconnected', external_name: null, connected_at: null },
+      jira: { status: 'disconnected', external_name: null, connected_at: null },
+    })
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: vi.fn().mockReturnValue({ matches: false }),
@@ -73,7 +98,8 @@ describe('ChromeNav route coverage', () => {
       render(<Sidebar userEmail="daulet@example.com" userFullName="Daulet Ashikbayev" />)
 
       expect(screen.getByText('ContextOS')).toBeTruthy()
-      await waitFor(() => expect(screen.getByText(/updated/i)).toBeTruthy())
+      await waitFor(() => expect(screen.getByText(/sources current|needs sync/i)).toBeTruthy())
+      expect(screen.queryByText(/updated/i)).toBeNull()
       expect(screen.getByTestId('avatar-puck')).toBeTruthy()
       expect(screen.getByRole('navigation').className).not.toContain('pulse-surface')
     })

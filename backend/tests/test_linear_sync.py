@@ -12,6 +12,7 @@ from tests.conftest import (
     TEST_JWT_SECRET,
     TEST_USER_ID,
     TEST_WORKSPACE_ID,
+    make_entity_execute,
 )
 
 # Test Linear OAuth config values (same as test_linear_oauth.py)
@@ -397,19 +398,18 @@ class TestSyncEndpoint:
         # Mock integration lookup (connected)
         mock_integration = MagicMock()
         mock_integration.status = "connected"
+        mock_integration.config = {"sync_status": "complete", "tickets_synced": 8}
         mock_integration_result = MagicMock()
         mock_integration_result.scalar_one_or_none.return_value = mock_integration
 
-        call_count = 0
-
-        def side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return mock_workspace_result
-            return mock_integration_result
-
-        mock_session.execute = AsyncMock(side_effect=side_effect)
+        mock_session.execute = AsyncMock(
+            side_effect=make_entity_execute(
+                results={
+                    "WorkspaceMember": mock_workspace_result,
+                    "WorkspaceIntegration": mock_integration_result,
+                },
+            )
+        )
 
         # Patch sync_tickets_for_teams to prevent actual execution
         with patch(
@@ -426,6 +426,8 @@ class TestSyncEndpoint:
         data = response.json()
         assert data["status"] == "sync_started"
         assert data["team_ids"] == ["team-1", "team-2"]
+        assert mock_integration.config["sync_status"] == "in_progress"
+        assert mock_integration.config["tickets_synced"] == 0
 
     def test_sync_endpoint_validates_connected_integration(
         self, linear_client, mock_session, linear_settings

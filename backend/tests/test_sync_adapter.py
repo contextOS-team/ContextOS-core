@@ -20,6 +20,7 @@ from src.services.sync_adapter import (
     SyncRunLogger,
     get_cursor_status,
     get_or_create_cursor,
+    mark_sync_requested,
     update_cursor_status,
 )
 
@@ -83,6 +84,26 @@ class TestGetOrCreateCursor:
 
 
 # ---------- update_cursor_status ----------
+
+
+class TestMarkSyncRequested:
+    """Tests for integration config sync-request state."""
+
+    def test_sets_in_progress_and_resets_progress_counter(self):
+        integration = MagicMock()
+        integration.config = {
+            "sync_status": "complete",
+            "tickets_synced": 12,
+            "synced_teams": ["team-1"],
+        }
+
+        mark_sync_requested(integration, "tickets_synced")
+
+        assert integration.config == {
+            "sync_status": "in_progress",
+            "tickets_synced": 0,
+            "synced_teams": ["team-1"],
+        }
 
 
 class TestUpdateCursorStatus:

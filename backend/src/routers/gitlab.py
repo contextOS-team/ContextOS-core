@@ -336,6 +336,7 @@ async def get_sync_status(
         "total_mrs": total_mrs,
         "total_reviews": total_reviews,
         "is_syncing": is_syncing,
+        "last_sync_at": integration.config.get("last_sync_at") if integration and integration.config else None,
     }
 
 

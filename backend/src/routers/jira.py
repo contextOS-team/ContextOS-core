@@ -26,7 +26,7 @@ from src.services.jira_oauth import (
     get_valid_token,
 )
 from src.services.oauth_common import sign_oauth_state, verify_state_or_raise, is_user_onboarding
-from src.services.sync_adapter import emit_activity
+from src.services.sync_adapter import emit_activity, mark_sync_requested
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +230,15 @@ async def start_sync(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Jira integration is not connected. Complete OAuth flow first.",
         )
+
+    mark_sync_requested(integration, "issues_synced")
+    await emit_activity(
+        session,
+        user.workspace_id,
+        "sync_started",
+        metadata={"integration": "jira"},
+        actor_id=user.user_id,
+    )
 
     # Start sync in background with its own session
     async def _run_sync():

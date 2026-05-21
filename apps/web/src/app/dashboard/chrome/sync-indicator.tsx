@@ -1,10 +1,37 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import type { SyncState } from './use-sync-state'
+import { useEffect, useId, useRef, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
+import {
+  sourceSyncSummary,
+  triggerStaleSourceSyncs,
+  type SourceSyncProgress,
+} from '../source-sync-actions'
+import {
+  formatProviderName,
+  type ChromeSourceState,
+  type SourceHealth,
+  type SourceRow,
+} from './source-sync-state'
 
 interface SyncIndicatorProps {
-  state: SyncState
+  state: ChromeSourceState
+  onSyncRequested?: () => void
+}
+
+type ManualSyncState = {
+  status: 'idle' | 'syncing' | 'success' | 'error'
+  message: string | null
+  progress: number | null
+}
+
+const HEALTH_COPY: Record<SourceHealth, string> = {
+  current: 'Current',
+  needs_sync: 'Needs sync',
+  syncing: 'Syncing',
+  attention: 'Needs attention',
+  live: 'Live',
+  not_configured: 'Not configured',
 }
 
 function prefersReducedMotion(): boolean {
@@ -13,20 +40,137 @@ function prefersReducedMotion(): boolean {
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-export function formatShortRelativeSyncTime(date: Date, now: Date = new Date()): string {
-  const diffMs = Math.max(0, now.getTime() - date.getTime())
-  const diffMin = Math.floor(diffMs / 60_000)
-  const diffHours = Math.floor(diffMin / 60)
-  const diffDays = Math.floor(diffHours / 24)
-
-  if (diffDays > 0) return `${diffDays}d ago`
-  if (diffHours > 0) return `${diffHours}h ago`
-  return `${diffMin}m ago`
+function formatSyncProgressLabel(provider: string): string {
+  return `Syncing ${formatProviderName(provider)}`
 }
 
-export function SyncIndicator({ state }: SyncIndicatorProps) {
+function progressPercent(progress: number | null): number | null {
+  return progress == null
+    ? null
+    : Math.max(0, Math.min(100, Math.round(progress * 100)))
+}
+
+function stateLabel(state: ChromeSourceState): string {
+  switch (state.kind) {
+    case 'checking':
+      return 'Checking sources'
+    case 'current':
+      return 'Sources current'
+    case 'needs_sync':
+      return 'Needs sync'
+    case 'attention':
+      return 'Needs attention'
+    case 'syncing':
+      return formatSyncProgressLabel(state.provider)
+  }
+}
+
+function stateClass(state: ChromeSourceState, manualSync: ManualSyncState): string {
+  if (manualSync.status === 'syncing' || state.kind === 'syncing') {
+    return ''
+  }
+
+  if (state.kind === 'current') return 'chrome-sync-status--fresh'
+  if (state.kind === 'needs_sync') return 'chrome-sync-status--stale'
+  if (state.kind === 'attention') return 'chrome-sync-status--error'
+  return 'chrome-sync-status--unknown'
+}
+
+function stateAriaLabel(state: ChromeSourceState, manualSync: ManualSyncState): string {
+  if (manualSync.status === 'syncing') {
+    const percent = progressPercent(manualSync.progress)
+    return `syncing sources${percent == null ? '' : ` ${percent}%`}`
+  }
+
+  switch (state.kind) {
+    case 'checking':
+      return 'checking workspace source status'
+    case 'current':
+      return 'workspace sources current'
+    case 'needs_sync':
+      return 'workspace sources need sync'
+    case 'attention':
+      return 'workspace sources need attention'
+    case 'syncing': {
+      const percent = progressPercent(state.progress)
+      return `syncing ${state.provider}${percent == null ? '' : ` ${percent}%`}`
+    }
+  }
+}
+
+function SourceRowItem({ row }: { row: SourceRow }) {
+  return (
+    <div className="chrome-sync-source-row">
+      <span className={`chrome-sync-source-dot chrome-sync-source-dot--${row.health}`} aria-hidden="true" />
+      <span className="chrome-sync-source-main">
+        <span className="chrome-sync-source-label">{row.label}</span>
+        <span className="chrome-sync-source-detail">{row.detail}</span>
+      </span>
+      <span className="chrome-sync-source-health">
+        {row.health === 'syncing' && row.progress != null
+          ? `${progressPercent(row.progress)}%`
+          : HEALTH_COPY[row.health]}
+      </span>
+    </div>
+  )
+}
+
+function SyncProgress({
+  label,
+  progress,
+}: {
+  label: string
+  progress: number | null
+}) {
+  const percent = progressPercent(progress)
+
+  return (
+    <>
+      <span className="chrome-sync-label">
+        <span>{label}</span>
+        {percent != null && <span>{percent}%</span>}
+      </span>
+      <span
+        className="chrome-sync-track"
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={percent == null ? undefined : 0}
+        aria-valuemax={percent == null ? undefined : 100}
+        aria-valuenow={percent ?? undefined}
+      >
+        <span
+          data-testid="sync-progress-fill"
+          className={`chrome-sync-fill ${percent == null ? 'chrome-sync-fill--indeterminate' : ''}`}
+          style={percent == null ? undefined : { width: `${percent}%` }}
+        />
+      </span>
+    </>
+  )
+}
+
+export function SyncIndicator({ state, onSyncRequested }: SyncIndicatorProps) {
+  const menuId = useId()
+  const rootRef = useRef<HTMLDivElement>(null)
   const labelRef = useRef<HTMLSpanElement>(null)
   const previousProviderRef = useRef<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const [manualSync, setManualSync] = useState<ManualSyncState>({
+    status: 'idle',
+    message: null,
+    progress: null,
+  })
+
+  const visibleSyncing = manualSync.status === 'syncing' || state.kind === 'syncing'
+  const visibleLabel = manualSync.status === 'syncing'
+    ? 'Syncing sources'
+    : stateLabel(state)
+  const visibleProgress = manualSync.status === 'syncing'
+    ? manualSync.progress
+    : state.kind === 'syncing' ? state.progress : null
+  const sources = state.sources
+  const canSync = state.kind === 'needs_sync'
+    && manualSync.status !== 'syncing'
+    && manualSync.status !== 'success'
 
   useEffect(() => {
     if (prefersReducedMotion()) return
@@ -55,106 +199,162 @@ export function SyncIndicator({ state }: SyncIndicatorProps) {
     }
   }, [state])
 
-  if (state.kind === 'unknown') {
-    return (
-      <span
-        className="min-w-[104px] text-right"
-        aria-label="sync status unknown"
-        aria-live="polite"
-      >
-        <span
-          data-testid="sync-indicator-label"
-          className="block text-[12px] font-medium leading-none text-muted-foreground"
-          style={{
-            fontFamily: 'var(--font-geist-sans)',
-            fontVariantNumeric: 'tabular-nums',
-            fontWeight: 450,
-          }}
-        >
-          updated —
-        </span>
-      </span>
-    )
-  }
+  useEffect(() => {
+    if (manualSync.status !== 'syncing') return
 
-  if (state.kind === 'syncing') {
-    const progressPercent = state.progress == null ? 0 : Math.round(state.progress * 100)
+    if (state.kind === 'syncing') {
+      setManualSync({ status: 'idle', message: null, progress: null })
+    } else if (state.kind === 'current') {
+      setManualSync({ status: 'success', message: 'Sources current.', progress: 1 })
+    } else if (state.kind === 'attention') {
+      setManualSync({ status: 'error', message: state.message, progress: null })
+    }
+  }, [manualSync.status, state])
 
-    return (
-      <span
-        className="min-w-[132px] text-right"
-        aria-label={`syncing ${state.provider}${state.progress == null ? '' : ` ${progressPercent}%`}`}
-        aria-live="polite"
-      >
-        <span
-          ref={labelRef}
-          data-testid="sync-indicator-label"
-          className="block text-[12px] font-medium leading-none text-foreground"
-          style={{
-            fontFamily: 'var(--font-geist-sans)',
-            fontVariantNumeric: 'tabular-nums',
-            fontWeight: 450,
-          }}
-        >
-          syncing {state.provider}
-          {state.progress == null ? '' : ` · ${progressPercent}%`}
-        </span>
-        <span className="mt-1 block h-px w-full bg-border/40" aria-hidden="true">
-          <span
-            data-testid="sync-progress-fill"
-            className="block h-px bg-primary/60"
-            style={{
-              width: `${progressPercent}%`,
-              // Real progress ticks should step, not interpolate and imply fake movement.
-              transition: 'none',
-            }}
-          />
-        </span>
-      </span>
-    )
-  }
+  useEffect(() => {
+    if (!open) return
 
-  if (state.kind === 'error') {
-    return (
-      <span
-        className="min-w-[132px] text-right"
-        aria-label={`${state.provider} sync paused`}
-        aria-live="polite"
-        title={state.message}
-      >
-        <span
-          data-testid="sync-indicator-label"
-          className="block text-[12px] font-medium leading-none text-destructive"
-          style={{
-            fontFamily: 'var(--font-geist-sans)',
-            fontVariantNumeric: 'tabular-nums',
-            fontWeight: 450,
-          }}
-        >
-          {state.provider} sync paused
-        </span>
-      </span>
-    )
+    function handlePointerDown(event: PointerEvent) {
+      if (rootRef.current?.contains(event.target as Node)) return
+      setOpen(false)
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
+  async function handleSyncSources() {
+    if (manualSync.status === 'syncing') return
+
+    setOpen(true)
+    setManualSync({
+      status: 'syncing',
+      message: 'Checking connected sources',
+      progress: 0.08,
+    })
+
+    try {
+      const { started } = await triggerStaleSourceSyncs((progress: SourceSyncProgress) => {
+        setManualSync({
+          status: 'syncing',
+          message: progress.message,
+          progress: progress.progress,
+        })
+      })
+
+      if (started.length === 0) {
+        setManualSync({
+          status: 'success',
+          message: sourceSyncSummary(started),
+          progress: 1,
+        })
+        return
+      }
+
+      onSyncRequested?.()
+      setManualSync({
+        status: 'syncing',
+        message: sourceSyncSummary(started),
+        progress: null,
+      })
+    } catch (error) {
+      setManualSync({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Could not start source sync.',
+        progress: null,
+      })
+    }
   }
 
   return (
-    <span
-      className="min-w-[104px] text-right"
-      aria-label={`updated ${formatShortRelativeSyncTime(state.lastUpdatedAt)}`}
-      aria-live="polite"
-    >
-      <span
-        ref={labelRef}
-        data-testid="sync-indicator-label"
-        className="block text-[12px] font-medium leading-none text-muted-foreground"
-        style={{
-          fontFamily: 'var(--font-geist-sans)',
-          fontVariantNumeric: 'tabular-nums',
-          fontWeight: 450,
-        }}
+    <div ref={rootRef} className="chrome-sync-wrap">
+      <button
+        type="button"
+        className={`chrome-sync-status ${visibleSyncing ? '' : 'chrome-sync-status--idle'} ${stateClass(state, manualSync)}`}
+        aria-controls={open ? menuId : undefined}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-label={stateAriaLabel(state, manualSync)}
+        aria-live="polite"
+        onClick={() => setOpen((current) => !current)}
       >
-        updated {formatShortRelativeSyncTime(state.lastUpdatedAt)}
-      </span>
-    </span>
+        {visibleSyncing ? (
+          <SyncProgress
+            label={visibleLabel}
+            progress={visibleProgress}
+          />
+        ) : (
+          <span
+            ref={labelRef}
+            data-testid="sync-indicator-label"
+            className="chrome-sync-inline"
+          >
+            <span className="chrome-sync-dot" aria-hidden="true" />
+            {visibleLabel}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
+          id={menuId}
+          role="dialog"
+          aria-label="Source sync status"
+          className="chrome-sync-menu"
+        >
+          <div className="chrome-sync-menu-title">Sources</div>
+          {sources.length > 0 ? (
+            <div className="chrome-sync-source-list">
+              {sources.map((row) => (
+                <SourceRowItem key={row.provider} row={row} />
+              ))}
+            </div>
+          ) : (
+            <p className="chrome-sync-menu-empty">
+              {state.kind === 'checking' ? 'Checking connected sources.' : 'No connected sources.'}
+            </p>
+          )}
+
+          {(canSync || manualSync.status !== 'idle') && (
+            <div className="chrome-sync-menu-footer">
+              {manualSync.status === 'syncing' && (
+                <div className="chrome-sync-menu-progress">
+                  <SyncProgress
+                    label={manualSync.message ?? 'Syncing sources'}
+                    progress={manualSync.progress}
+                  />
+                </div>
+              )}
+              {manualSync.message && manualSync.status !== 'syncing' && (
+                <p className={`chrome-sync-menu-message chrome-sync-menu-message--${manualSync.status}`}>
+                  {manualSync.message}
+                </p>
+              )}
+              {canSync && (
+                <button
+                  type="button"
+                  className="chrome-sync-menu-action"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    void handleSyncSources()
+                  }}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                  Sync stale sources
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

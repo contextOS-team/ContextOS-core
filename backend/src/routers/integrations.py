@@ -51,11 +51,13 @@ def _build_provider_status(integration: WorkspaceIntegration) -> dict:
         config = integration.config or {}
         selected = config.get("selected_repos", [])
         result["selected_repos_count"] = len(selected) if isinstance(selected, list) else 0
+        result["last_sync_at"] = config.get("last_sync_at")
 
     # For GitLab, include selected_repos_count from config
     if integration.provider == Provider.GITLAB:
         selected = config.get("selected_projects", [])
         result["selected_repos_count"] = len(selected) if isinstance(selected, list) else 0
+        result["last_sync_at"] = config.get("last_sync_at")
 
     # For Notion, include pages_synced count and last_sync_at from config
     if integration.provider == Provider.NOTION:
