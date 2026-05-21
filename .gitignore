@@ -45,6 +45,7 @@ supabase/.branches/
 coverage/
 .pytest_cache/
 htmlcov/
+.openlogs/
 
 # Python tooling caches
 .mypy_cache/

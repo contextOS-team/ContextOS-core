@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono, Instrument_Serif, Inter, JetBrains_Mono } from 'next/font/google'
 import { SentryInit } from '@/lib/sentry-init'
+import { ClientErrorLogger } from '@/lib/client-error-logger'
 import { DarkModeApplier } from '@/components/dashboard/dark-mode-applier'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
@@ -79,6 +80,7 @@ export default function RootLayout({
       <head />
       <body className="font-sans antialiased" suppressHydrationWarning>
         <SentryInit />
+        <ClientErrorLogger />
         <DarkModeApplier />
         <Toaster />
         {children}
