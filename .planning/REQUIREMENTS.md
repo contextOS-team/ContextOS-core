@@ -60,7 +60,7 @@ Phase 41 sits chronologically after the v1.3 milestone closed at Phase 40. These
 - [ ] **DASH-01**: Dashboard home replaces the six-equal-section layout with a pulse layout: serif Instrument Serif headline (computed from since-last-visit delta) above Recent decisions (lead, 2-3× weight, 2 visible above the fold) → Active context (top 3 typographic list) → Needs you (hidden when empty). Recent Activity, graph thumbnail, This Week sparkline, sprint badge, integration dots, and the greeting line are removed from home. Warm-dark palette + Geist Sans/Mono + Instrument Serif scoped to `.pulse-surface` (home route only).
 - [x] **DASH-02**: Per-(user, workspace) `last_visited_at` timestamp persists to a new `dashboard_user_state` table and advances only after 5 min of page-level inactivity OR explicit dismissal — never on tab-flip. A `useLastVisitedAt` React hook reads on mount, debounces writes through Supabase, and exposes a stable per-session value to the headline generator and new-item markers (Pitfall 5 — mount-time read only).
 - [x] **DASH-03**: Rules-based pure-function headline generator (`computeHeadline`) selects between three templates from the activity delta since `last_visited_at`: (a) single-item-dominant "X is waiting on Y since Z." (any needs-you item assigned to current user wins), (b) bucket-aggregate "N decisions and M sources of new context since you last looked.", (c) zero-new fallback "Quiet day." with subtext "Nothing new since you last looked, (T) ago." LLM-generated headlines deferred.
-- [ ] **DASH-04**: Top-nav adds a right-aligned chrome cluster (sync state text + 1px real-tick progress bar + integration-health click target opening a Radix slide-over + restyled avatar puck) replacing the avatar-only chrome. Three states: idle (once-per-minute opacity dip), syncing (no CSS interpolation — real-tick width updates), error (`<provider> sync paused · reconnect`). Driven by Supabase Realtime subscription on `activity_events`. Mint color reserved for wordmark + active nav-link only.
+- [x] **DASH-04**: Top-nav adds a right-aligned chrome cluster (source activity/sync state text + 1px real-tick progress bar + restyled avatar puck) replacing the avatar-only chrome. Driven by Supabase Realtime subscription on `activity_events`. Mint color reserved for wordmark + active nav-link only. Human checkpoint deviation: the integration-health click target, Radix slide-over, `Sync all`, and reconnect CTA were removed after review; source freshness risks are tracked in `41-SOURCE-FRESHNESS-RISKS.md`.
 - [ ] **DASH-05**: Unseen items carry a 1px × 14px dim-amber (`#c4a050`) vertical marker in the left gutter when `activity_events.created_at > last_visited_at`. Marker persists for the entire session it was seen in (no mid-visit decay) via a ref-based `useSessionSeenItems` set; decays only when `last_visited_at` advances after the 5-min inactivity hysteresis fires.
 - [ ] **DASH-06**: Each Recent-decision card renders a one-line provenance quote in italics + tertiary-color attribution line (`— Name in #channel, 18h ago`) when the Decision node's `properties.source_quote` is present; the card gracefully renders title + people + channels when absent. No backend backfill in this phase — `source_quote` is already populated by `llm_extractor.py` since v1.2.
 
@@ -124,7 +124,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DASH-01 | Phase 41 | Pending |
 | DASH-02 | Phase 41 | Complete |
 | DASH-03 | Phase 41 | Complete |
-| DASH-04 | Phase 41 | Pending |
+| DASH-04 | Phase 41 | Complete |
 | DASH-05 | Phase 41 | Pending |
 | DASH-06 | Phase 41 | Pending |
 
@@ -136,4 +136,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-03-15*
-*Last updated: 2026-05-20 — added DASH-01..DASH-06 for Phase 41 (Dashboard Pulse Redesign)*
+*Last updated: 2026-05-21 - completed DASH-04 with human-checkpoint chrome deviation documented*

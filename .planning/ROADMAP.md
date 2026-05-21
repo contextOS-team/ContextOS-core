@@ -212,7 +212,7 @@ Plans:
 
 ### Phase 41: Dashboard Pulse Redesign
 
-**Goal:** The dashboard home becomes a pulse surface — a single computed serif headline answers "did anything I care about happen since I last looked?" in under 4 seconds, with Recent decisions (provenance-quoted) leading the page, Active context tight, and Needs-you compact-or-hidden. Six legacy widgets removed; warm-dark palette + Instrument Serif / Geist Sans+Mono fonts scoped to `.pulse-surface`; per-workspace `last_visited_at` persisted with 5-minute inactivity hysteresis; rules-based headline generator (LLM upgrade deferred). Chrome cluster (sync indicator + integration drawer + restyled avatar) replaces the avatar-only top-right.
+**Goal:** The dashboard home becomes a pulse surface — a single computed serif headline answers "did anything I care about happen since I last looked?" in under 4 seconds, with Recent decisions (provenance-quoted) leading the page, Active context tight, and Needs-you compact-or-hidden. Six legacy widgets removed; warm-dark palette + Instrument Serif / Geist Sans+Mono fonts scoped to `.pulse-surface`; per-workspace `last_visited_at` persisted with 5-minute inactivity hysteresis; rules-based headline generator (LLM upgrade deferred). Chrome cluster (passive source activity/sync indicator + restyled avatar) replaces the avatar-only top-right.
 **Depends on:** Phase 40 (no code dependency; sits chronologically after v1.3)
 **Requirements**: DASH-01, DASH-02, DASH-03, DASH-04, DASH-05, DASH-06
 **Success Criteria** (what must be TRUE):
@@ -220,11 +220,11 @@ Plans:
   2. The headline copy is computed by a pure rules engine against the activity delta since `last_visited_at`; the three template patterns (single-item-dominant, bucket-aggregate, "Quiet day.") cover every real case.
   3. `last_visited_at` persists per-(user, workspace) in `dashboard_user_state`, advances only after 5 minutes of inactivity, and drives both the headline subtext and the 1px × 14px new-item markers (session-stable per CONTEXT §9).
   4. Each Recent-decision card renders an italics `source_quote` + tertiary attribution line when the data is present, and degrades gracefully (title + people + channels only) when it isn't — no backend backfill required.
-  5. The chrome cluster (sync indicator three states + Radix slide-over + neutral-bg avatar) replaces the existing avatar-only top-right; mint is used only on the wordmark and active nav link.
+  5. The chrome cluster (passive source activity/sync indicator + neutral-bg avatar) replaces the existing avatar-only top-right; mint is used only on the wordmark and active nav link. The originally planned drawer/reconnect affordance was removed at the human checkpoint.
   6. Sibling dashboard subroutes (/context, /settings, /activity, /graph) remain visually unchanged.
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [x] 41-01-PLAN.md — Data + state foundation: fonts loaded, warm-dark palette scoped to `.pulse-surface`, `dashboard_user_state` table + RLS, `useLastVisitedAt` hysteresis hook, `useSessionSeenItems` ref store, pure `computeHeadline` rules engine with unit tests, `fetchActivityDelta` + `bucketDelta` helpers (wave 1, autonomous)
 - [ ] 41-02-PLAN.md — Pulse surface: rewrite `dashboard/page.tsx` as orchestrator, build `pulse/{headline,recent-decisions,active-context,needs-you,new-item-marker,use-dashboard-data}.tsx`, render provenance quotes when `source_quote` exists on Decision nodes, delete 9 legacy widget files, human-verify checkpoint (wave 2, depends on 41-01)
-- [ ] 41-03-PLAN.md — Chrome cluster: `chrome/{chrome-nav,sync-indicator,use-sync-state,avatar-puck,integration-drawer}.tsx`, three-state sync indicator with Realtime subscription on `activity_events`, Radix slide-over drawer, sidebar.tsx becomes thin shim, mint discipline enforced, human-verify checkpoint (wave 1, autonomous — independent of pulse layout, runs parallel with 41-01)
+- [x] 41-03-PLAN.md — Chrome cluster: `chrome/{chrome-nav,sync-indicator,use-sync-state,avatar-puck}.tsx`, passive source activity/sync indicator with Realtime subscription on `activity_events`, sidebar.tsx becomes thin shim, mint discipline enforced. Human checkpoint removed the planned drawer, `Sync all`, and reconnect CTA; see `41-03-SUMMARY.md` and `41-SOURCE-FRESHNESS-RISKS.md`.

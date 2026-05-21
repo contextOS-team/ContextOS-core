@@ -4,14 +4,14 @@ milestone: v1.3
 milestone_name: Live Intelligence
 current_plan: 2
 status: executing
-stopped_at: Completed 41-01-PLAN.md
-last_updated: "2026-05-20T19:00:36.004Z"
-last_activity: 2026-05-20
+stopped_at: Completed 41-03-PLAN.md; next execute 41-02-PLAN.md
+last_updated: "2026-05-21T12:45:00.000Z"
+last_activity: 2026-05-21
 progress:
   total_phases: 10
   completed_phases: 3
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
   percent: 30
 ---
 
@@ -31,8 +31,8 @@ Phase: 41 (dashboard-pulse-redesign) — EXECUTING
 Plan: 2 of 3
 Current Plan: 2
 Total Plans in Phase: 3
-Status: Ready to execute
-Last activity: 2026-05-20
+Status: Ready to execute 41-02
+Last activity: 2026-05-21
 
 Progress: [█████████░] 87%
 
@@ -95,6 +95,8 @@ Progress: [█████████░] 87%
 - [Phase 40]: [40-03] Vault purge uses SQL LIKE prefilter + strict regex re-validation + per-row exception isolation -- defense in depth so an unrelated 'oauth_telegram_'-prefixed secret can't be deleted, and one permission glitch can't abort the whole run
 - [Phase 41]: Phase 41 dashboard last-visited state is server-side per user/workspace — CONTEXT.md defines since-last-visit as a first-class persistent concept; server-side state keeps multi-device behavior coherent.
 - [Phase 41]: Pulse warm-dark palette is opt-in via .pulse-surface on dashboard home only — dashboard/layout.tsx is shared by sibling routes; scoping the palette prevents bleed into context, settings, activity, and graph.
+- [Phase 41]: Chrome source freshness indicator is passive after human checkpoint — no drawer, no Sync all button, no reconnect CTA. The label is `updated ...`, not `last synced ...`, because per-provider health is not yet modeled.
+- [Phase 41]: Source freshness is a launch risk for the first startup pilot. The current chrome can show ambient source activity recency, but broad "everything is up to date" claims require a provider-level health model; see 41-SOURCE-FRESHNESS-RISKS.md.
 
 ### Roadmap Evolution
 
@@ -120,9 +122,10 @@ None.
 | 40    | 02   | 30min active (~19h incl. operator setup) | 3 | 7 | 2026-05-04 |
 | 40    | 03   | ~4h (incl. human-verify gate + 5 deviation fixes) | 4 | 16 | 2026-05-04 |
 | Phase 41 P01 | 38min | 3 tasks | 12 files |
+| Phase 41 P03 | checkpointed 2026-05-21 | 3 tasks + human visual fixes | 15 files |
 
 ## Session Continuity
 
-Last session: 2026-05-20T19:00:35.932Z
-Stopped at: Completed 41-01-PLAN.md
+Last session: 2026-05-21T12:45:00.000Z
+Stopped at: Completed 41-03-PLAN.md; proceeding to 41-02-PLAN.md
 Resume file: None
