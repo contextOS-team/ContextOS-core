@@ -16,14 +16,14 @@ export default function ProductDemo() {
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse 60% 50% at 50% 50%, rgba(0,212,170,0.05) 0%, transparent 60%)",
+            "radial-gradient(ellipse 60% 50% at 50% 50%, rgba(var(--color-teal-rgb),0.05) 0%, transparent 60%)",
         }}
       />
 
       <div className="max-w-4xl mx-auto relative z-10">
         {/* Label */}
         <div
-          className={`flex justify-center mb-4 transition-all duration-600 ${
+          className={`flex justify-center mb-4 transition-[opacity,transform] duration-[600ms] ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
           }`}
         >
@@ -32,7 +32,7 @@ export default function ProductDemo() {
 
         {/* Headline */}
         <h2
-          className={`text-4xl md:text-5xl font-bold text-center text-white mb-4 tracking-tight transition-all duration-600 ${
+          className={`text-4xl md:text-5xl font-bold text-center text-white mb-4 tracking-tight transition-[opacity,transform] duration-[600ms] ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "100ms" }}
@@ -41,7 +41,7 @@ export default function ProductDemo() {
         </h2>
 
         <p
-          className={`text-center text-[#6B7280] mb-12 transition-all duration-600 ${
+          className={`text-center text-[#6B7280] mb-12 transition-[opacity,transform] duration-[600ms] ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "150ms" }}
@@ -51,7 +51,7 @@ export default function ProductDemo() {
 
         {/* Video frame */}
         <div
-          className={`relative transition-all duration-700 ${
+          className={`relative transition-[opacity,transform] duration-700 ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
           style={{ transitionDelay: "250ms" }}
@@ -61,7 +61,7 @@ export default function ProductDemo() {
             className="absolute -inset-8 pointer-events-none"
             style={{
               background:
-                "radial-gradient(ellipse at center, rgba(0,212,170,0.1) 0%, transparent 65%)",
+                "radial-gradient(ellipse at center, rgba(var(--color-teal-rgb),0.1) 0%, transparent 65%)",
               filter: "blur(20px)",
             }}
           />
@@ -72,7 +72,7 @@ export default function ProductDemo() {
             style={{
               border: "1px solid rgba(255,255,255,0.08)",
               boxShadow:
-                "0 40px 80px rgba(0,0,0,0.5), 0 0 40px rgba(0,212,170,0.06)",
+                "0 40px 80px rgba(0,0,0,0.5), 0 0 40px rgba(var(--color-teal-rgb),0.06)",
             }}
           >
             {/* Browser chrome */}
@@ -120,7 +120,7 @@ export default function ProductDemo() {
                     width="20"
                     height="20"
                     viewBox="0 0 20 20"
-                    fill="#00D4AA"
+                    fill="var(--color-teal)"
                     style={{ marginLeft: "3px" }}
                   >
                     <path d="M4 3l14 7-14 7V3z" />
@@ -144,7 +144,7 @@ export default function ProductDemo() {
                 >
                   <div
                     className="h-full rounded-full w-1/3"
-                    style={{ background: "rgba(0,212,170,0.4)" }}
+                    style={{ background: "rgba(var(--color-teal-rgb),0.4)" }}
                   />
                 </div>
                 <span className="text-[10px] text-[#4B5563] font-mono">0:28</span>
@@ -155,7 +155,7 @@ export default function ProductDemo() {
 
         {/* Caption */}
         <p
-          className={`text-center text-xs text-[#4B5563] mt-4 font-mono transition-all duration-600 ${
+          className={`text-center text-xs text-[#4B5563] mt-4 font-mono transition-[opacity,transform] duration-[600ms] ${
             inView ? "opacity-100" : "opacity-0"
           }`}
           style={{ transitionDelay: "500ms" }}

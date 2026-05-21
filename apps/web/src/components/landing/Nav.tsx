@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePostHog } from "posthog-js/react";
+import { BOOKING_CTA_LABEL, BOOKING_SECTION_HREF } from "./booking";
 
 export default function Nav() {
+  const posthog = usePostHog();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -18,9 +21,17 @@ export default function Nav() {
     { label: "Integrations", href: "#integrations" },
   ];
 
+  const captureBookCallClick = () => {
+    try {
+      posthog?.capture("cta_nav_book_call_click");
+    } catch {
+      /* silent */
+    }
+  };
+
   return (
     <nav
-      className="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
+      className="fixed top-0 left-0 right-0 z-50 transition-[background-color,border-color] duration-300"
       style={{
         background: scrolled
           ? "rgba(10,10,15,0.9)"
@@ -37,26 +48,26 @@ export default function Nav() {
           <a href="#" className="flex items-center gap-2 group">
             <div
               className="w-7 h-7 rounded-md flex items-center justify-center"
-              style={{ background: "rgba(0,212,170,0.15)", border: "1px solid rgba(0,212,170,0.3)" }}
+              style={{ background: "rgba(var(--color-teal-rgb),0.15)", border: "1px solid rgba(var(--color-teal-rgb),0.3)" }}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path
                   d="M2 7C2 4.24 4.24 2 7 2C8.38 2 9.63 2.56 10.54 3.46"
-                  stroke="#00D4AA"
+                  stroke="var(--color-teal)"
                   strokeWidth="1.5"
                   strokeLinecap="round"
                 />
                 <path
                   d="M12 7C12 9.76 9.76 12 7 12C5.62 12 4.37 11.44 3.46 10.54"
-                  stroke="#00D4AA"
+                  stroke="var(--color-teal)"
                   strokeWidth="1.5"
                   strokeLinecap="round"
                 />
-                <circle cx="7" cy="7" r="1.5" fill="#00D4AA" />
+                <circle cx="7" cy="7" r="1.5" fill="var(--color-teal)" />
               </svg>
             </div>
             <span
-              className="text-[15px] font-semibold tracking-tight text-white group-hover:text-[#00D4AA] transition-colors"
+              className="text-[15px] font-semibold tracking-tight text-white group-hover:text-[var(--color-teal)] transition-colors"
             >
               ContextOS
             </span>
@@ -78,10 +89,11 @@ export default function Nav() {
           {/* CTA */}
           <div className="hidden md:flex items-center gap-3">
             <a
-              href="#waitlist"
+              href={BOOKING_SECTION_HREF}
               className="btn-primary text-sm font-medium px-4 py-2 rounded-lg"
+              onClick={captureBookCallClick}
             >
-              Get Early Access
+              {BOOKING_CTA_LABEL}
             </a>
           </div>
 
@@ -131,12 +143,15 @@ export default function Nav() {
               </a>
             ))}
             <a
-              href="#waitlist"
+              href={BOOKING_SECTION_HREF}
               className="text-sm font-medium px-4 py-2 rounded-lg text-center mt-2"
-              style={{ background: "#00D4AA", color: "#0A0A0F" }}
-              onClick={() => setMenuOpen(false)}
+              style={{ background: "var(--color-teal)", color: "#0A0A0F" }}
+              onClick={() => {
+                captureBookCallClick();
+                setMenuOpen(false);
+              }}
             >
-              Get Early Access
+              {BOOKING_CTA_LABEL}
             </a>
           </div>
         </div>

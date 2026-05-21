@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { usePostHog } from "posthog-js/react";
 import dynamic from "next/dynamic";
+import { BOOKING_CTA_LABEL, BOOKING_SECTION_HREF } from "./booking";
 
 const RemotionHeroPlayer = dynamic(
   () =>
@@ -76,7 +77,7 @@ export default function Hero() {
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,212,170,0.08) 0%, transparent 60%)",
+            "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(var(--color-teal-rgb),0.08) 0%, transparent 60%)",
         }}
       />
 
@@ -94,27 +95,27 @@ export default function Hero() {
       <div className="relative z-10 max-w-4xl mx-auto text-center">
         {/* Badge */}
         <div
-          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs mb-8 transition-all duration-700 ${
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs mb-8 transition-[opacity,transform] duration-700 ${
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
           }`}
           style={{
-            background: "rgba(0,212,170,0.08)",
-            border: "1px solid rgba(0,212,170,0.2)",
-            color: "#00D4AA",
+            background: "rgba(var(--color-teal-rgb),0.08)",
+            border: "1px solid rgba(var(--color-teal-rgb),0.2)",
+            color: "var(--color-teal)",
             fontFamily: "monospace",
             transitionDelay: "0ms",
           }}
         >
           <span
             className="w-1.5 h-1.5 rounded-full animate-pulse"
-            style={{ background: "#00D4AA" }}
+            style={{ background: "var(--color-teal)" }}
           />
           Now in early access
         </div>
 
         {/* Headline */}
         <h1
-          className={`text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white mb-6 leading-[1.05] transition-all duration-700 ${
+          className={`text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white mb-6 leading-[1.05] transition-[opacity,transform] duration-700 ${
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "100ms" }}
@@ -130,7 +131,7 @@ export default function Hero() {
 
         {/* Subheadline */}
         <p
-          className={`text-lg md:text-xl text-[#9CA3AF] max-w-2xl mx-auto mb-10 leading-relaxed transition-all duration-700 ${
+          className={`text-lg md:text-xl text-[#9CA3AF] max-w-2xl mx-auto mb-10 leading-relaxed transition-[opacity,transform] duration-700 ${
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "200ms" }}
@@ -142,23 +143,23 @@ export default function Hero() {
 
         {/* CTAs */}
         <div
-          className={`flex flex-col sm:flex-row items-center justify-center gap-3 mb-10 transition-all duration-700 ${
+          className={`flex flex-col sm:flex-row items-center justify-center gap-3 mb-10 transition-[opacity,transform] duration-700 ${
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "300ms" }}
         >
           <a
-            href="#waitlist"
+            href={BOOKING_SECTION_HREF}
             className="btn-primary px-6 py-3 rounded-lg text-sm font-semibold"
             onClick={() => {
               try {
-                posthog?.capture("cta_hero_click");
+                posthog?.capture("cta_hero_book_call_click");
               } catch {
                 /* silent */
               }
             }}
           >
-            Get Early Access
+            {BOOKING_CTA_LABEL}
           </a>
           <a
             href="#how-it-works"
@@ -177,7 +178,7 @@ export default function Hero() {
 
         {/* Demo video in perspective */}
         <div
-          className={`transition-all duration-700 ${
+          className={`transition-[opacity,transform] duration-700 ${
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
           }`}
           style={{ transitionDelay: "450ms" }}
@@ -191,7 +192,7 @@ export default function Hero() {
               className="absolute -inset-8 pointer-events-none"
               style={{
                 background:
-                  "radial-gradient(ellipse at center, rgba(0,212,170,0.22) 0%, transparent 65%)",
+                  "radial-gradient(ellipse at center, rgba(var(--color-teal-rgb),0.22) 0%, transparent 65%)",
                 filter: "blur(30px)",
               }}
             />
@@ -207,7 +208,7 @@ export default function Hero() {
                 className="overflow-hidden rounded-2xl"
                 style={{
                   boxShadow:
-                    "0 40px 80px rgba(0,0,0,0.6), 0 0 60px rgba(0,212,170,0.12)",
+                    "0 40px 80px rgba(0,0,0,0.6), 0 0 60px rgba(var(--color-teal-rgb),0.12)",
                   border: "1px solid rgba(255,255,255,0.10)",
                 }}
               >
@@ -290,7 +291,7 @@ export default function Hero() {
                   <span
                     className="flex items-center gap-2"
                     style={{
-                      color: isActive ? "#00D4AA" : "#6B7280",
+                      color: isActive ? "var(--color-teal)" : "#6B7280",
                       fontWeight: isActive ? 600 : 400,
                       transition: "color 0.3s, font-weight 0.3s",
                     }}

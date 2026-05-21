@@ -24,24 +24,24 @@ export default function Footer() {
               <div
                 className="w-7 h-7 rounded-md flex items-center justify-center"
                 style={{
-                  background: "rgba(0,212,170,0.15)",
-                  border: "1px solid rgba(0,212,170,0.3)",
+                  background: "rgba(var(--color-teal-rgb),0.15)",
+                  border: "1px solid rgba(var(--color-teal-rgb),0.3)",
                 }}
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                   <path
                     d="M2 7C2 4.24 4.24 2 7 2C8.38 2 9.63 2.56 10.54 3.46"
-                    stroke="#00D4AA"
+                    stroke="var(--color-teal)"
                     strokeWidth="1.5"
                     strokeLinecap="round"
                   />
                   <path
                     d="M12 7C12 9.76 9.76 12 7 12C5.62 12 4.37 11.44 3.46 10.54"
-                    stroke="#00D4AA"
+                    stroke="var(--color-teal)"
                     strokeWidth="1.5"
                     strokeLinecap="round"
                   />
-                  <circle cx="7" cy="7" r="1.5" fill="#00D4AA" />
+                  <circle cx="7" cy="7" r="1.5" fill="var(--color-teal)" />
                 </svg>
               </div>
               <span className="text-[15px] font-semibold tracking-tight text-white">ContextOS</span>

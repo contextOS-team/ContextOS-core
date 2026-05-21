@@ -8,9 +8,10 @@
 /* ===== Brand color variables (scoped to landing context) ===== */
 .landing-theme {
   /* ContextOS brand colors */
-  --color-teal: #00D4AA;
-  --color-teal-dark: #00A882;
-  --color-teal-light: #33DCBB;
+  --color-teal: #49d6b5;
+  --color-teal-rgb: 73,214,181;
+  --color-teal-dark: #31b99b;
+  --color-teal-light: #72e3ca;
   --color-navy: #0A0A0F;
   --color-surface: #0F0F18;
   --color-surface-2: #141420;
@@ -28,7 +29,7 @@
   --card-foreground: #F0F0F5;
   --popover: #141420;
   --popover-foreground: #F0F0F5;
-  --primary: #00D4AA;
+  --primary: var(--color-teal);
   --primary-foreground: #0A0A0F;
   --secondary: #141420;
   --secondary-foreground: #F0F0F5;
@@ -39,7 +40,7 @@
   --destructive: oklch(0.577 0.245 27.325);
   --border: rgba(255, 255, 255, 0.07);
   --input: rgba(255, 255, 255, 0.1);
-  --ring: #00D4AA;
+  --ring: var(--color-teal);
 }
 
 /* ===== Landing base styles (scoped) ===== */
@@ -79,20 +80,20 @@
   border-radius: 3px;
 }
 .landing-theme ::-webkit-scrollbar-thumb:hover {
-  background: #00D4AA33;
+  background: rgba(var(--color-teal-rgb), 0.2);
 }
 
 /* ===== Teal glow utilities ===== */
 .teal-glow {
-  box-shadow: 0 0 40px rgba(0, 212, 170, 0.15), 0 0 80px rgba(0, 212, 170, 0.05);
+  box-shadow: 0 0 40px rgba(var(--color-teal-rgb), 0.15), 0 0 80px rgba(var(--color-teal-rgb), 0.05);
 }
 
 .teal-glow-sm {
-  box-shadow: 0 0 20px rgba(0, 212, 170, 0.12);
+  box-shadow: 0 0 20px rgba(var(--color-teal-rgb), 0.12);
 }
 
 .teal-glow-text {
-  text-shadow: 0 0 30px rgba(0, 212, 170, 0.4);
+  text-shadow: 0 0 30px rgba(var(--color-teal-rgb), 0.4);
 }
 
 /* ===== Radial glow behind elements ===== */
@@ -103,7 +104,7 @@
   content: '';
   position: absolute;
   inset: -60px;
-  background: radial-gradient(ellipse at center, rgba(0, 212, 170, 0.08) 0%, transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(var(--color-teal-rgb), 0.08) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -114,7 +115,7 @@
   font-size: 0.7rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: #00D4AA;
+  color: var(--color-teal);
 }
 
 /* ===== Subtle dot grid background pattern ===== */
@@ -134,13 +135,13 @@
   position: absolute;
   inset: -1px;
   border-radius: 13px;
-  background: linear-gradient(135deg, rgba(0, 212, 170, 0.4), rgba(0, 212, 170, 0.1), rgba(0, 212, 170, 0.05));
+  background: linear-gradient(135deg, rgba(var(--color-teal-rgb), 0.32), rgba(var(--color-teal-rgb), 0.1), rgba(var(--color-teal-rgb), 0.05));
   z-index: -1;
 }
 
 /* ===== Teal gradient text ===== */
 .teal-gradient-text {
-  background: linear-gradient(135deg, #00D4AA, #33DCBB, #00A882);
+  background: linear-gradient(135deg, var(--color-teal), var(--color-teal-light), var(--color-teal-dark));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -152,19 +153,19 @@
 }
 .card-hover:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(0, 212, 170, 0.1);
+  box-shadow: 0 8px 32px rgba(var(--color-teal-rgb), 0.1);
 }
 
 /* ===== Button variants (unified hover) ===== */
 .btn-primary {
-  background: #00D4AA;
+  background: var(--color-teal);
   color: #0A0A0F;
-  box-shadow: 0 0 0 rgba(0, 212, 170, 0);
+  box-shadow: 0 0 0 rgba(var(--color-teal-rgb), 0);
   transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 .btn-primary:hover {
-  background: #33DCBB;
-  box-shadow: 0 0 25px rgba(0, 212, 170, 0.5);
+  background: var(--color-teal-light);
+  box-shadow: 0 0 25px rgba(var(--color-teal-rgb), 0.5);
 }
 
 .btn-ghost {
@@ -174,18 +175,18 @@
   transition: border-color 0.2s ease, color 0.2s ease;
 }
 .btn-ghost:hover {
-  border-color: rgba(0, 212, 170, 0.3);
-  color: #00D4AA;
+  border-color: rgba(var(--color-teal-rgb), 0.26);
+  color: var(--color-teal);
 }
 
 .btn-play {
-  background: rgba(0, 212, 170, 0.15);
-  border: 1px solid rgba(0, 212, 170, 0.3);
+  background: rgba(var(--color-teal-rgb), 0.15);
+  border: 1px solid rgba(var(--color-teal-rgb), 0.3);
   transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 .btn-play:hover {
-  background: rgba(0, 212, 170, 0.25);
-  box-shadow: 0 0 30px rgba(0, 212, 170, 0.3);
+  background: rgba(var(--color-teal-rgb), 0.25);
+  box-shadow: 0 0 30px rgba(var(--color-teal-rgb), 0.3);
 }
 
 /* ===== Input focus (unified) ===== */
@@ -195,9 +196,30 @@
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .input-landing:focus {
-  border-color: rgba(0, 212, 170, 0.4);
-  box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.08);
+  border-color: rgba(var(--color-teal-rgb), 0.4);
+  box-shadow: 0 0 0 3px rgba(var(--color-teal-rgb), 0.08);
   outline: none;
+}
+
+/* ===== Cal.com booking embed ===== */
+.cal-booking-shell {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.cal-booking-frame {
+  height: 720px;
+  min-height: 680px;
+}
+
+.cal-booking-frame iframe {
+  background: #0D0D17;
+}
+
+@media (max-width: 640px) {
+  .cal-booking-frame {
+    height: 680px;
+  }
 }
 
 /* ===== Animation keyframes ===== */
@@ -223,8 +245,8 @@
 }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px rgba(0, 212, 170, 0.15); }
-  50% { box-shadow: 0 0 40px rgba(0, 212, 170, 0.3); }
+  0%, 100% { box-shadow: 0 0 20px rgba(var(--color-teal-rgb), 0.15); }
+  50% { box-shadow: 0 0 40px rgba(var(--color-teal-rgb), 0.3); }
 }
 
 @keyframes shimmer {

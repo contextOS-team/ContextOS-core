@@ -62,7 +62,7 @@ export default function ProblemSection() {
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse 60% 50% at 30% 50%, rgba(0,212,170,0.04) 0%, transparent 60%)",
+            "radial-gradient(ellipse 60% 50% at 30% 50%, rgba(var(--color-teal-rgb),0.04) 0%, transparent 60%)",
         }}
       />
 
@@ -72,7 +72,7 @@ export default function ProblemSection() {
           {/* Left column — sticky text */}
           <div className="lg:col-span-4 lg:sticky lg:top-32">
             <div
-              className={`transition-all duration-600 ${
+              className={`transition-[opacity,transform] duration-[600ms] ${
                 inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
               }`}
             >
@@ -80,7 +80,7 @@ export default function ProblemSection() {
             </div>
 
             <h2
-              className={`text-4xl md:text-5xl font-bold text-white mt-4 mb-6 tracking-tight transition-all duration-600 ${
+              className={`text-4xl md:text-5xl font-bold text-white mt-4 mb-6 tracking-tight transition-[opacity,transform] duration-[600ms] ${
                 inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
               }`}
               style={{ transitionDelay: "100ms" }}
@@ -91,7 +91,7 @@ export default function ProblemSection() {
             </h2>
 
             <p
-              className={`text-[#6B7280] leading-relaxed transition-all duration-600 ${
+              className={`text-[#6B7280] leading-relaxed transition-[opacity,transform] duration-[600ms] ${
                 inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
               }`}
               style={{ transitionDelay: "150ms" }}
@@ -103,7 +103,7 @@ export default function ProblemSection() {
 
           {/* Right column — before/after cards stacked */}
           <div
-            className={`lg:col-span-8 flex flex-col items-center transition-all duration-700 ${
+            className={`lg:col-span-8 flex flex-col items-center transition-[opacity,transform] duration-700 ${
               inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
             }`}
             style={{ transitionDelay: "250ms" }}
@@ -209,16 +209,16 @@ export default function ProblemSection() {
             <div
               className="rounded-2xl p-6 relative overflow-hidden w-full max-w-xl"
               style={{
-                border: "1px solid rgba(0,212,170,0.12)",
+                border: "1px solid rgba(var(--color-teal-rgb),0.12)",
                 background: "rgba(255,255,255,0.02)",
-                boxShadow: "inset 0 0 80px rgba(0,212,170,0.06), 0 0 60px rgba(0,212,170,0.04)",
+                boxShadow: "inset 0 0 80px rgba(var(--color-teal-rgb),0.06), 0 0 60px rgba(var(--color-teal-rgb),0.04)",
               }}
             >
               {/* Green ambient glow */}
               <div
                 className="absolute inset-0 pointer-events-none"
                 style={{
-                  background: "radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,212,170,0.06) 0%, transparent 70%)",
+                  background: "radial-gradient(ellipse 70% 60% at 50% 50%, rgba(var(--color-teal-rgb),0.06) 0%, transparent 70%)",
                 }}
               />
               <h3 className="text-lg font-bold text-white mb-5 relative z-10">
@@ -236,8 +236,8 @@ export default function ProblemSection() {
                 >
                   <div className="flex items-center gap-2 mb-3">
                     <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
-                      <rect x="1" y="1" width="16" height="16" rx="3" stroke="#00D4AA" strokeWidth="1.5" />
-                      <path d="M5 9L8 12L13 6" stroke="#00D4AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      <rect x="1" y="1" width="16" height="16" rx="3" stroke="var(--color-teal)" strokeWidth="1.5" />
+                      <path d="M5 9L8 12L13 6" stroke="var(--color-teal)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     <span className="text-white font-mono text-sm font-medium">
                       Context ready
@@ -262,15 +262,15 @@ export default function ProblemSection() {
                 <div
                   className="w-10 h-10 rounded-full flex items-center justify-center"
                   style={{
-                    background: "rgba(0,212,170,0.08)",
-                    border: "1px solid rgba(0,212,170,0.2)",
+                    background: "rgba(var(--color-teal-rgb),0.08)",
+                    border: "1px solid rgba(var(--color-teal-rgb),0.2)",
                   }}
                 >
                   <svg width="20" height="20" viewBox="0 0 22 22" fill="none">
-                    <circle cx="11" cy="11" r="10" stroke="#00D4AA" strokeWidth="1.5" />
-                    <circle cx="8" cy="9" r="1.2" fill="#00D4AA" />
-                    <circle cx="14" cy="9" r="1.2" fill="#00D4AA" />
-                    <path d="M8 13C8 13 9.5 15 11 15C12.5 15 14 13 14 13" stroke="#00D4AA" strokeWidth="1.5" strokeLinecap="round" />
+                    <circle cx="11" cy="11" r="10" stroke="var(--color-teal)" strokeWidth="1.5" />
+                    <circle cx="8" cy="9" r="1.2" fill="var(--color-teal)" />
+                    <circle cx="14" cy="9" r="1.2" fill="var(--color-teal)" />
+                    <path d="M8 13C8 13 9.5 15 11 15C12.5 15 14 13 14 13" stroke="var(--color-teal)" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
                 </div>
               </div>
@@ -279,7 +279,7 @@ export default function ProblemSection() {
               <div className="text-center relative z-10">
                 <div
                   className="text-xl md:text-2xl font-bold font-mono mb-1"
-                  style={{ color: "#00D4AA" }}
+                  style={{ color: "var(--color-teal)" }}
                 >
                   2 minutes
                 </div>

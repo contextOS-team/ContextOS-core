@@ -29,12 +29,12 @@ const steps = [
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
         <path
           d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"
-          stroke="#00D4AA"
+          stroke="var(--color-teal)"
           strokeWidth="1.5"
         />
         <path
           d="M8 12h8M12 8l4 4-4 4"
-          stroke="#00D4AA"
+          stroke="var(--color-teal)"
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -48,8 +48,8 @@ const steps = [
             key={tool.name}
             className="flex items-center gap-2 px-3 py-2 rounded-lg"
             style={{
-              background: "rgba(0,212,170,0.04)",
-              border: "1px solid rgba(0,212,170,0.1)",
+              background: "rgba(var(--color-teal-rgb),0.04)",
+              border: "1px solid rgba(var(--color-teal-rgb),0.1)",
             }}
           >
             <div
@@ -65,7 +65,7 @@ const steps = [
             <span className="text-xs text-[#9CA3AF]">{tool.name}</span>
             <div
               className="ml-auto w-1.5 h-1.5 rounded-full"
-              style={{ background: "#00D4AA" }}
+              style={{ background: "var(--color-teal)" }}
             />
           </div>
         ))}
@@ -81,7 +81,7 @@ const steps = [
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
         <path
           d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
-          stroke="#00D4AA"
+          stroke="var(--color-teal)"
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -116,9 +116,9 @@ const steps = [
           </div>
         ))}
         <div className="flex items-center justify-center gap-1 pt-1">
-          <div className="h-px flex-1" style={{ background: "rgba(0,212,170,0.15)" }} />
-          <span className="text-[10px] font-mono text-[#00D4AA] px-2">AI synthesis complete</span>
-          <div className="h-px flex-1" style={{ background: "rgba(0,212,170,0.15)" }} />
+          <div className="h-px flex-1" style={{ background: "rgba(var(--color-teal-rgb),0.15)" }} />
+          <span className="text-[10px] font-mono text-[var(--color-teal)] px-2">AI synthesis complete</span>
+          <div className="h-px flex-1" style={{ background: "rgba(var(--color-teal-rgb),0.15)" }} />
         </div>
       </div>
     ),
@@ -132,14 +132,14 @@ const steps = [
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
         <polyline
           points="16 18 22 12 16 6"
-          stroke="#00D4AA"
+          stroke="var(--color-teal)"
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
         <polyline
           points="8 6 2 12 8 18"
-          stroke="#00D4AA"
+          stroke="var(--color-teal)"
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -159,18 +159,18 @@ const steps = [
           className="flex items-center gap-2 px-3 py-2"
           style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", background: "#0F0F18" }}
         >
-          <span className="text-[#00D4AA] font-mono">ENG-421</span>
+          <span className="text-[var(--color-teal)] font-mono">ENG-421</span>
           <span className="text-[#4B5563]">&#183;</span>
           <span className="text-[#6B7280]">Context Page</span>
           <div className="ml-auto flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#00D4AA" }} />
-            <span className="text-[9px] text-[#00D4AA] font-mono">Ready</span>
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--color-teal)" }} />
+            <span className="text-[9px] text-[var(--color-teal)] font-mono">Ready</span>
           </div>
         </div>
         {/* Mini context summary */}
         <div className="p-3 space-y-2">
           <div className="flex items-center gap-2">
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(0,212,170,0.1)", color: "#00D4AA" }}>4 decisions</span>
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(var(--color-teal-rgb),0.1)", color: "var(--color-teal)" }}>4 decisions</span>
             <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(94,106,210,0.1)", color: "#5E6AD2" }}>6 sources</span>
             <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.04)", color: "#6B7280" }}>2 action items</span>
           </div>
@@ -199,7 +199,7 @@ export default function HowItWorks() {
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse 80% 40% at 50% 50%, rgba(0,212,170,0.03) 0%, transparent 70%)",
+            "radial-gradient(ellipse 80% 40% at 50% 50%, rgba(var(--color-teal-rgb),0.03) 0%, transparent 70%)",
         }}
       />
 
@@ -207,7 +207,7 @@ export default function HowItWorks() {
         {/* Header — left-aligned on desktop */}
         <div className="max-w-lg mb-16">
           <div
-            className={`mb-4 transition-all duration-600 ${
+            className={`mb-4 transition-[opacity,transform] duration-[600ms] ${
               inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
             }`}
           >
@@ -215,7 +215,7 @@ export default function HowItWorks() {
           </div>
 
           <h2
-            className={`text-4xl md:text-5xl font-bold text-white tracking-tight transition-all duration-600 ${
+            className={`text-4xl md:text-5xl font-bold text-white tracking-tight transition-[opacity,transform] duration-[600ms] ${
               inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
             }`}
             style={{ transitionDelay: "100ms" }}
@@ -231,7 +231,7 @@ export default function HowItWorks() {
             className="hidden md:block absolute left-1/2 top-8 bottom-8 w-px -translate-x-1/2"
             style={{
               background:
-                "linear-gradient(180deg, rgba(0,212,170,0.3), rgba(0,212,170,0.08), rgba(0,212,170,0.3))",
+                "linear-gradient(180deg, rgba(var(--color-teal-rgb),0.3), rgba(var(--color-teal-rgb),0.08), rgba(var(--color-teal-rgb),0.3))",
             }}
           />
 
@@ -240,7 +240,7 @@ export default function HowItWorks() {
             return (
               <div
                 key={step.number}
-                className={`md:grid md:grid-cols-2 md:gap-12 items-center md:py-8 transition-all duration-700 ${
+                className={`md:grid md:grid-cols-2 md:gap-12 items-center md:py-8 transition-[opacity,transform] duration-700 ${
                   inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
                 }`}
                 style={{ transitionDelay: `${200 + i * 150}ms` }}
@@ -256,15 +256,15 @@ export default function HowItWorks() {
                     <div
                       className="w-10 h-10 rounded-xl flex items-center justify-center"
                       style={{
-                        background: "rgba(0,212,170,0.08)",
-                        border: "1px solid rgba(0,212,170,0.15)",
+                        background: "rgba(var(--color-teal-rgb),0.08)",
+                        border: "1px solid rgba(var(--color-teal-rgb),0.15)",
                       }}
                     >
                       {step.icon}
                     </div>
                     <span
                       className="text-2xl font-bold tracking-tighter font-mono"
-                      style={{ color: "rgba(0,212,170,0.15)" }}
+                      style={{ color: "rgba(var(--color-teal-rgb),0.15)" }}
                     >
                       {step.number}
                     </span>
@@ -288,7 +288,7 @@ export default function HowItWorks() {
                     className="absolute top-0 left-6 right-6 h-px"
                     style={{
                       background:
-                        "linear-gradient(90deg, transparent, rgba(0,212,170,0.4), transparent)",
+                        "linear-gradient(90deg, transparent, rgba(var(--color-teal-rgb),0.4), transparent)",
                     }}
                   />
                   {step.visual}
@@ -302,8 +302,8 @@ export default function HowItWorks() {
                   <div
                     className="w-3 h-3 rounded-full"
                     style={{
-                      background: "#00D4AA",
-                      boxShadow: "0 0 8px rgba(0,212,170,0.4)",
+                      background: "var(--color-teal)",
+                      boxShadow: "0 0 8px rgba(var(--color-teal-rgb),0.4)",
                     }}
                   />
                 </div>

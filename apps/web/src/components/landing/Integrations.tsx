@@ -44,14 +44,14 @@ export default function Integrations() {
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse 60% 40% at 30% 60%, rgba(0,212,170,0.04) 0%, transparent 60%)",
+            "radial-gradient(ellipse 60% 40% at 30% 60%, rgba(var(--color-teal-rgb),0.04) 0%, transparent 60%)",
         }}
       />
 
       <div className="max-w-5xl mx-auto relative z-10">
         {/* Label */}
         <div
-          className={`flex justify-center mb-4 transition-all duration-600 ${
+          className={`flex justify-center mb-4 transition-[opacity,transform] duration-[600ms] ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
           }`}
         >
@@ -60,7 +60,7 @@ export default function Integrations() {
 
         {/* Headline */}
         <h2
-          className={`text-4xl md:text-5xl font-bold text-center text-white mb-4 tracking-tight transition-all duration-600 ${
+          className={`text-4xl md:text-5xl font-bold text-center text-white mb-4 tracking-tight transition-[opacity,transform] duration-[600ms] ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "100ms" }}
@@ -69,7 +69,7 @@ export default function Integrations() {
         </h2>
 
         <p
-          className={`text-center text-[#6B7280] mb-14 max-w-lg mx-auto transition-all duration-600 ${
+          className={`text-center text-[#6B7280] mb-14 max-w-lg mx-auto transition-[opacity,transform] duration-[600ms] ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "150ms" }}
@@ -79,7 +79,7 @@ export default function Integrations() {
 
         {/* Grid */}
         <div
-          className={`grid grid-cols-2 md:grid-cols-4 gap-4 transition-all duration-700 ${
+          className={`grid grid-cols-2 md:grid-cols-4 gap-4 transition-[opacity,transform] duration-700 ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
           style={{ transitionDelay: "250ms" }}
@@ -98,7 +98,7 @@ export default function Integrations() {
                 className="absolute top-0 left-0 right-0 h-px"
                 style={{
                   background:
-                    "linear-gradient(90deg, transparent, rgba(0,212,170,0.3), transparent)",
+                    "linear-gradient(90deg, transparent, rgba(var(--color-teal-rgb),0.3), transparent)",
                 }}
               />
 
@@ -115,11 +115,11 @@ export default function Integrations() {
                 </div>
                 <div
                   className="flex items-center gap-1 text-[9px] font-mono"
-                  style={{ color: "#00D4AA" }}
+                  style={{ color: "var(--color-teal)" }}
                 >
                   <div
                     className="w-1.5 h-1.5 rounded-full"
-                    style={{ background: "#00D4AA" }}
+                    style={{ background: "var(--color-teal)" }}
                   />
                   Live
                 </div>

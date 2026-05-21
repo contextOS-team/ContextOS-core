@@ -18,7 +18,7 @@ function LargeCardMockup() {
         className="flex items-center gap-2 px-3 py-2"
         style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", background: "#0F0F18" }}
       >
-        <span className="text-[#00D4AA]">ENG-421</span>
+        <span className="text-[var(--color-teal)]">ENG-421</span>
         <span className="text-[#4B5563]">&#183;</span>
         <span className="text-[#6B7280]">Unified Context</span>
         <div className="ml-auto flex gap-1">
@@ -26,7 +26,7 @@ function LargeCardMockup() {
             <div
               key={i}
               className="w-1.5 h-1.5 rounded-full"
-              style={{ background: `rgba(0,212,170,${0.4 - i * 0.1})` }}
+              style={{ background: `rgba(var(--color-teal-rgb),${0.4 - i * 0.1})` }}
             />
           ))}
         </div>
@@ -72,29 +72,29 @@ function GraphMockup() {
     <div className="mt-4 relative" style={{ height: 120 }}>
       <svg width="100%" height="100%" viewBox="0 0 240 120" fill="none" aria-hidden="true">
         {/* Edges */}
-        <line x1="120" y1="30" x2="50" y2="80" stroke="rgba(0,212,170,0.2)" strokeWidth="1" />
-        <line x1="120" y1="30" x2="190" y2="80" stroke="rgba(0,212,170,0.2)" strokeWidth="1" />
-        <line x1="120" y1="30" x2="120" y2="100" stroke="rgba(0,212,170,0.15)" strokeWidth="1" />
+        <line x1="120" y1="30" x2="50" y2="80" stroke="rgba(var(--color-teal-rgb),0.2)" strokeWidth="1" />
+        <line x1="120" y1="30" x2="190" y2="80" stroke="rgba(var(--color-teal-rgb),0.2)" strokeWidth="1" />
+        <line x1="120" y1="30" x2="120" y2="100" stroke="rgba(var(--color-teal-rgb),0.15)" strokeWidth="1" />
         <line x1="50" y1="80" x2="120" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
         <line x1="190" y1="80" x2="120" y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
 
         {/* Decision node (diamond) */}
         <g transform="translate(120, 30)">
-          <rect x="-10" y="-10" width="20" height="20" rx="3" transform="rotate(45)" fill="rgba(0,212,170,0.15)" stroke="#00D4AA" strokeWidth="1" />
+          <rect x="-10" y="-10" width="20" height="20" rx="3" transform="rotate(45)" fill="rgba(var(--color-teal-rgb),0.15)" stroke="var(--color-teal)" strokeWidth="1" />
           <text x="18" y="4" fill="#9CA3AF" fontSize="8" fontFamily="monospace">Decision</text>
         </g>
 
         {/* Person node */}
         <g transform="translate(50, 80)">
-          <circle r="10" fill="rgba(0,212,170,0.08)" stroke="rgba(0,212,170,0.3)" strokeWidth="1" />
-          <text x="0" y="3" fill="#00D4AA" fontSize="8" textAnchor="middle" fontFamily="monospace">A</text>
+          <circle r="10" fill="rgba(var(--color-teal-rgb),0.08)" stroke="rgba(var(--color-teal-rgb),0.3)" strokeWidth="1" />
+          <text x="0" y="3" fill="var(--color-teal)" fontSize="8" textAnchor="middle" fontFamily="monospace">A</text>
           <text x="16" y="3" fill="#6B7280" fontSize="8" fontFamily="monospace">Alex</text>
         </g>
 
         {/* Person node */}
         <g transform="translate(190, 80)">
-          <circle r="10" fill="rgba(0,212,170,0.08)" stroke="rgba(0,212,170,0.3)" strokeWidth="1" />
-          <text x="0" y="3" fill="#00D4AA" fontSize="8" textAnchor="middle" fontFamily="monospace">S</text>
+          <circle r="10" fill="rgba(var(--color-teal-rgb),0.08)" stroke="rgba(var(--color-teal-rgb),0.3)" strokeWidth="1" />
+          <text x="0" y="3" fill="var(--color-teal)" fontSize="8" textAnchor="middle" fontFamily="monospace">S</text>
           <text x="-28" y="3" fill="#6B7280" fontSize="8" textAnchor="end" fontFamily="monospace">Sara</text>
         </g>
 
@@ -117,10 +117,10 @@ function DecisionMockup() {
       <div className="flex items-center gap-2 mb-2">
         <div
           className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
-          style={{ background: "rgba(0,212,170,0.15)", border: "1px solid rgba(0,212,170,0.3)" }}
+          style={{ background: "rgba(var(--color-teal-rgb),0.15)", border: "1px solid rgba(var(--color-teal-rgb),0.3)" }}
         >
           <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-            <path d="M2 4l1.5 1.5L6 3" stroke="#00D4AA" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M2 4l1.5 1.5L6 3" stroke="var(--color-teal)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
         <span className="text-[10px] text-[#9CA3AF]">Use WebSockets for real-time sync</span>
@@ -131,7 +131,7 @@ function DecisionMockup() {
             <div
               key={initial}
               className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-bold"
-              style={{ background: "rgba(0,212,170,0.12)", border: "1px solid #0A0A0F", color: "#00D4AA" }}
+              style={{ background: "rgba(var(--color-teal-rgb),0.12)", border: "1px solid #0A0A0F", color: "var(--color-teal)" }}
             >
               {initial}
             </div>
@@ -158,8 +158,8 @@ const features = [
       "Pulls from Slack, Telegram, Jira, Notion, and meeting transcripts into a unified timeline",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M2 8h12M8 2v12" stroke="#00D4AA" strokeWidth="1.5" strokeLinecap="round" />
-        <circle cx="8" cy="8" r="2" fill="#00D4AA" fillOpacity="0.3" />
+        <path d="M2 8h12M8 2v12" stroke="var(--color-teal)" strokeWidth="1.5" strokeLinecap="round" />
+        <circle cx="8" cy="8" r="2" fill="var(--color-teal)" fillOpacity="0.3" />
       </svg>
     ),
     visual: <LargeCardMockup />,
@@ -172,10 +172,10 @@ const features = [
       "See how people, decisions, tickets, and conversations connect across your team",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <circle cx="4" cy="4" r="2" stroke="#00D4AA" strokeWidth="1.5" />
-        <circle cx="12" cy="4" r="2" stroke="#00D4AA" strokeWidth="1.5" />
-        <circle cx="8" cy="13" r="2" stroke="#00D4AA" strokeWidth="1.5" />
-        <path d="M6 4h4M5 5.5l2 5.5M11 5.5l-2 5.5" stroke="#00D4AA" strokeWidth="1" strokeLinecap="round" opacity="0.5" />
+        <circle cx="4" cy="4" r="2" stroke="var(--color-teal)" strokeWidth="1.5" />
+        <circle cx="12" cy="4" r="2" stroke="var(--color-teal)" strokeWidth="1.5" />
+        <circle cx="8" cy="13" r="2" stroke="var(--color-teal)" strokeWidth="1.5" />
+        <path d="M6 4h4M5 5.5l2 5.5M11 5.5l-2 5.5" stroke="var(--color-teal)" strokeWidth="1" strokeLinecap="round" opacity="0.5" />
       </svg>
     ),
     visual: <GraphMockup />,
@@ -190,12 +190,12 @@ const features = [
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path
           d="M2 4h12M2 8h8M2 12h5"
-          stroke="#00D4AA"
+          stroke="var(--color-teal)"
           strokeWidth="1.5"
           strokeLinecap="round"
         />
-        <circle cx="13" cy="12" r="2" stroke="#00D4AA" strokeWidth="1.5" />
-        <path d="M12 12l.8.8L14.5 11" stroke="#00D4AA" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="13" cy="12" r="2" stroke="var(--color-teal)" strokeWidth="1.5" />
+        <path d="M12 12l.8.8L14.5 11" stroke="var(--color-teal)" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
     visual: <DecisionMockup />,
@@ -210,7 +210,7 @@ const features = [
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path
           d="M2 8h2l2-4 4 8 2-4h2"
-          stroke="#00D4AA"
+          stroke="var(--color-teal)"
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -227,8 +227,8 @@ const features = [
       "AI-generated daily summaries of decisions, actions, and topics from team chats",
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <rect x="2" y="2" width="12" height="12" rx="2" stroke="#00D4AA" strokeWidth="1.5" />
-        <path d="M5 6h6M5 8.5h4M5 11h2" stroke="#00D4AA" strokeWidth="1.2" strokeLinecap="round" />
+        <rect x="2" y="2" width="12" height="12" rx="2" stroke="var(--color-teal)" strokeWidth="1.5" />
+        <path d="M5 6h6M5 8.5h4M5 11h2" stroke="var(--color-teal)" strokeWidth="1.2" strokeLinecap="round" />
       </svg>
     ),
     visual: null,
@@ -242,11 +242,11 @@ const features = [
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path
           d="M8 2L3 4v4c0 3 2.3 5.3 5 6 2.7-.7 5-3 5-6V4L8 2z"
-          stroke="#00D4AA"
+          stroke="var(--color-teal)"
           strokeWidth="1.5"
           strokeLinejoin="round"
         />
-        <path d="M6 8l1.5 1.5L10 6.5" stroke="#00D4AA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M6 8l1.5 1.5L10 6.5" stroke="var(--color-teal)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
     visual: null,
@@ -266,14 +266,14 @@ export default function Features() {
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse 70% 50% at 20% 50%, rgba(0,212,170,0.04) 0%, transparent 60%)",
+            "radial-gradient(ellipse 70% 50% at 20% 50%, rgba(var(--color-teal-rgb),0.04) 0%, transparent 60%)",
         }}
       />
 
       <div className="max-w-6xl mx-auto relative z-10">
         {/* Label */}
         <div
-          className={`flex justify-center mb-4 transition-all duration-600 ${
+          className={`flex justify-center mb-4 transition-[opacity,transform] duration-[600ms] ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
           }`}
         >
@@ -282,7 +282,7 @@ export default function Features() {
 
         {/* Headline */}
         <h2
-          className={`text-4xl md:text-5xl font-bold text-center text-white mb-4 tracking-tight transition-all duration-600 ${
+          className={`text-4xl md:text-5xl font-bold text-center text-white mb-4 tracking-tight transition-[opacity,transform] duration-[600ms] ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "100ms" }}
@@ -293,7 +293,7 @@ export default function Features() {
         </h2>
 
         <p
-          className={`text-center text-[#6B7280] mb-14 max-w-xl mx-auto transition-all duration-600 ${
+          className={`text-center text-[#6B7280] mb-14 max-w-xl mx-auto transition-[opacity,transform] duration-[600ms] ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "150ms" }}
@@ -303,7 +303,7 @@ export default function Features() {
 
         {/* Bento Grid */}
         <div
-          className={`grid grid-cols-1 md:grid-cols-3 gap-4 transition-all duration-700 ${
+          className={`grid grid-cols-1 md:grid-cols-3 gap-4 transition-[opacity,transform] duration-700 ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
           style={{ transitionDelay: "250ms" }}
@@ -319,13 +319,13 @@ export default function Features() {
             <div
               className="absolute top-0 left-0 right-0 h-px"
               style={{
-                background: "linear-gradient(90deg, transparent, rgba(0,212,170,0.5), transparent)",
+                background: "linear-gradient(90deg, transparent, rgba(var(--color-teal-rgb),0.5), transparent)",
               }}
             />
             <div className="flex items-start gap-3 mb-1">
               <div
                 className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{ background: "rgba(0,212,170,0.08)", border: "1px solid rgba(0,212,170,0.15)" }}
+                style={{ background: "rgba(var(--color-teal-rgb),0.08)", border: "1px solid rgba(var(--color-teal-rgb),0.15)" }}
               >
                 {features[0].icon}
               </div>
@@ -355,12 +355,12 @@ export default function Features() {
                 className="absolute top-0 left-0 right-0 h-px"
                 style={{
                   background:
-                    "linear-gradient(90deg, transparent, rgba(0,212,170,0.3), transparent)",
+                    "linear-gradient(90deg, transparent, rgba(var(--color-teal-rgb),0.3), transparent)",
                 }}
               />
               <div
                 className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
-                style={{ background: "rgba(0,212,170,0.08)", border: "1px solid rgba(0,212,170,0.15)" }}
+                style={{ background: "rgba(var(--color-teal-rgb),0.08)", border: "1px solid rgba(var(--color-teal-rgb),0.15)" }}
               >
                 {feature.icon}
               </div>
@@ -382,11 +382,11 @@ export default function Features() {
             >
               <div
                 className="absolute left-0 top-4 bottom-4 w-px"
-                style={{ background: "rgba(0,212,170,0.3)" }}
+                style={{ background: "rgba(var(--color-teal-rgb),0.3)" }}
               />
               <div
                 className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
-                style={{ background: "rgba(0,212,170,0.08)", border: "1px solid rgba(0,212,170,0.15)" }}
+                style={{ background: "rgba(var(--color-teal-rgb),0.08)", border: "1px solid rgba(var(--color-teal-rgb),0.15)" }}
               >
                 {feature.icon}
               </div>
