@@ -217,7 +217,7 @@ Plans:
 **Requirements**: DASH-01, DASH-02, DASH-03, DASH-04, DASH-05, DASH-06
 **Success Criteria** (what must be TRUE):
   1. /dashboard renders exactly four stacked sections in CONTEXT §2 order (Headline → Recent decisions → Active context → Needs you) with the four-pass design critique's typography, palette, and motion discipline applied via a `.pulse-surface` class scoped to the home route.
-  2. The headline copy is computed by a pure rules engine against the activity delta since `last_visited_at`; the three template patterns (single-item-dominant, bucket-aggregate, "No new activity since your last visit.") cover every real case.
+  2. The headline copy is computed by a pure rules engine against the activity delta since `last_visited_at`; the three template patterns (single-item-dominant, bucket-aggregate, "No new activity.") cover every real case.
   3. `last_visited_at` persists per-(user, workspace) in `dashboard_user_state`, advances only after 5 minutes of inactivity, and drives the headline plus 1px × 14px new-item markers (session-stable per CONTEXT §9).
   4. Each Recent-decision card renders an italics `source_quote` + tertiary attribution line when the data is present, and degrades gracefully (title + people + channels only) when it isn't — no backend backfill required.
   5. The chrome cluster (passive source activity/sync indicator + neutral-bg avatar) replaces the existing avatar-only top-right; mint is used only on the wordmark and active nav link. The originally planned drawer/reconnect affordance was removed at the human checkpoint.

@@ -78,7 +78,7 @@ describe('pulse components', () => {
     expect(screen.getAllByText(/#dev-room/).length).toBeGreaterThan(0)
     expect(screen.getByRole('link', { name: /Use old estimate/ }).getAttribute('href'))
       .toBe('/dashboard/decisions/decision-1')
-    expect(screen.getByRole('link', { name: /view all/i }).getAttribute('href'))
+    expect(screen.getByRole('link', { name: /all decisions/i }).getAttribute('href'))
       .toBe('/dashboard/decisions')
   })
 

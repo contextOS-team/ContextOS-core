@@ -12,11 +12,11 @@ export function Headline({ delta, lastVisitedAt }: HeadlineProps) {
   const { headline } = computeHeadline(delta, lastVisitedAt)
 
   return (
-    <section className="max-w-3xl pt-2">
+    <section className="max-w-3xl pt-1">
       <h1
-        className="text-[26px] font-semibold leading-tight md:text-[30px]"
+        className="text-[25px] font-semibold leading-tight md:text-[29px]"
         style={{
-          color: 'var(--foreground)',
+          color: 'var(--pulse-foreground)',
           fontFamily: 'var(--font-geist-sans)',
           fontFeatureSettings: '"kern" 1, "liga" 1',
           textWrap: 'balance',

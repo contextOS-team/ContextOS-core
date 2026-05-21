@@ -35,23 +35,23 @@ function ContextRow({ item, lastVisitedAt }: { item: ContextPageRow; lastVisited
   return (
     <Link
       href={`/dashboard/context/${item.id}`}
-      className="relative block px-5 py-3.5 transition-colors hover:bg-elevated/50"
+      className="pulse-row relative block px-5 py-3.5 transition-colors"
     >
       {showMarker && <NewItemMarker />}
       <div className="flex items-baseline gap-3">
         {item.ticket_identifier && (
-          <span className="shrink-0 text-xs text-muted-foreground" style={{ fontFamily: 'var(--font-geist-mono)' }}>
+          <span className="shrink-0 text-xs text-[var(--pulse-muted)]" style={{ fontFamily: 'var(--font-geist-mono)' }}>
             {item.ticket_identifier}
           </span>
         )}
-        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-          {prefix && <span className="text-muted-foreground">{prefix} </span>}
+        <span className="min-w-0 flex-1 truncate text-sm text-[var(--pulse-foreground)]">
+          {prefix && <span className="text-[var(--pulse-muted)]">{prefix} </span>}
           {rest}
         </span>
-        <span className="shrink-0 text-xs text-muted-foreground">
+        <span className="shrink-0 text-xs text-[var(--pulse-muted)]">
           {item.sources?.length ?? 0} source{(item.sources?.length ?? 0) === 1 ? '' : 's'}
         </span>
-        <span className="shrink-0 text-xs text-muted-foreground">
+        <span className="shrink-0 text-xs text-[var(--pulse-muted)]">
           {formatRelativeTime(item.updated_at)}
         </span>
       </div>
@@ -67,8 +67,8 @@ export function ActiveContext({ items, lastVisitedAt }: ActiveContextProps) {
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="pulse-section-label">Active context</h2>
-        <Link href="/dashboard/context" className="text-xs text-muted-foreground transition-colors hover:text-foreground">
-          view all &rarr;
+        <Link href="/dashboard/context" className="text-xs text-[var(--pulse-muted)] transition-colors hover:text-[var(--pulse-foreground)]">
+          All context
         </Link>
       </div>
       <div className="pulse-card divide-y divide-border/70 overflow-hidden">

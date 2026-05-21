@@ -22,6 +22,14 @@ interface RecentDecisionsProps {
   lastVisitedAt: Date | null
 }
 
+function decisionMeta(decision: DecisionDisplay): string[] {
+  return [
+    ...decision.participants.slice(0, 2),
+    decision.sourceChannel,
+    decision.createdAt ? formatRelativeTime(decision.createdAt) : null,
+  ].filter((item): item is string => Boolean(item))
+}
+
 function asString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null
 }
@@ -61,36 +69,35 @@ function DecisionCard({
     if (isNew) seen.markSeen(decision.id)
   }, [decision.id, isNew, seen])
 
+  const meta = decisionMeta(decision)
+
   return (
     <Link
       href={`/dashboard/decisions/${encodeURIComponent(decision.id)}`}
-      className="group relative block px-5 py-4 transition-colors hover:bg-elevated/50"
+      className="pulse-row group relative block px-5 py-4 transition-colors"
     >
       {showMarker && <NewItemMarker />}
-      <h3 className="text-[15px] font-medium leading-snug text-foreground group-hover:underline decoration-1 underline-offset-[0.2em]">
+      <h3 className="text-[15px] font-medium leading-snug text-[var(--pulse-foreground)]">
         {decision.title}
       </h3>
 
-      {(decision.participants.length > 0 || decision.sourceChannel || decision.createdAt) && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          {decision.participants.slice(0, 3).map((name) => (
-            <span key={name} className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
-              {name}
+      {meta.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--pulse-muted)]">
+          {meta.map((item, index) => (
+            <span key={`${item}-${index}`} className={item.startsWith('#') ? 'font-mono' : undefined}>
+              {index > 0 && <span className="mr-2 text-[var(--pulse-subtle)]">/</span>}
+              {item}
             </span>
           ))}
-          {decision.sourceChannel && (
-            <span style={{ fontFamily: 'var(--font-geist-mono)' }}>{decision.sourceChannel}</span>
-          )}
-          {decision.createdAt && <span>{formatRelativeTime(decision.createdAt)}</span>}
         </div>
       )}
 
       {decision.sourceQuote && (
         <blockquote className="pulse-quote">
-          <p className="line-clamp-2 text-sm italic leading-relaxed text-foreground">
+          <p className="line-clamp-2 text-sm italic leading-relaxed text-[var(--pulse-foreground)]">
             &ldquo;{decision.sourceQuote}&rdquo;
           </p>
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-2 text-xs text-[var(--pulse-muted)]">
             &mdash; {decision.authorName ?? 'someone'}
             {decision.sourceChannel && (
               <>
@@ -125,8 +132,8 @@ export function RecentDecisions({ data, lastVisitedAt }: RecentDecisionsProps) {
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="pulse-section-label">Recent decisions</h2>
-        <Link href="/dashboard/decisions" className="text-xs text-muted-foreground transition-colors hover:text-foreground">
-          view all &rarr;
+        <Link href="/dashboard/decisions" className="text-xs text-[var(--pulse-muted)] transition-colors hover:text-[var(--pulse-foreground)]">
+          All decisions
         </Link>
       </div>
       <div className="pulse-card divide-y divide-border/70 overflow-hidden">

@@ -52,7 +52,7 @@ export default function DashboardPage() {
 
   return (
     <SeenItemsProvider>
-      <div className="pulse-surface space-y-10">
+      <div className="pulse-surface space-y-8">
         <DashboardSections
           workspaceId={workspaceId}
           lastVisitedAt={lastVisitedAt}
@@ -104,8 +104,10 @@ function DashboardSections({
   return (
     <>
       <Headline delta={delta} lastVisitedAt={lastVisitedAt} />
-      <RecentDecisions data={decisions} lastVisitedAt={lastVisitedAt} />
-      <ActiveContext items={contextItems} lastVisitedAt={lastVisitedAt} />
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.85fr)]">
+        <RecentDecisions data={decisions} lastVisitedAt={lastVisitedAt} />
+        <ActiveContext items={contextItems} lastVisitedAt={lastVisitedAt} />
+      </div>
       <NeedsYou items={needsYouItems} lastVisitedAt={lastVisitedAt} />
     </>
   )

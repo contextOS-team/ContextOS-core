@@ -70,8 +70,8 @@ The single most-crafted element on the page. Always present. Falls back to ackno
 
 Headline names the single most important new thing since `lastVisitedAt`:
 - *"Vasiliy has been waiting on RD-786 since Tuesday."*
-- *"3 decisions and 30 source updates since your last visit."* (when no single thing dominates)
-- *"No new activity since your last visit."* (when nothing new — see fallback below)
+- *"3 decisions and 30 source updates."* (when no single thing dominates)
+- *"No new activity."* (when nothing new — see fallback below)
 
 The rules engine may still return a subtext string for tests and future surfaces, but the home page does **not** render a visible subtext line. The headline must carry the status by itself.
 
@@ -199,7 +199,7 @@ A pulse dashboard is opened tens of times per day. **Frequency × animation = an
 ## 12. Empty states
 
 - **Needs you with zero items:** section structurally absent. If layout demands a placeholder, single line *"nothing needs you"* in tertiary color, lowercase, no period.
-- **Headline with nothing new:** `"No new activity since your last visit."` — see §4 fallback.
+- **Headline with nothing new:** `"No new activity."` — see §4 fallback.
 - **Recent decisions with nothing in date range:** show the oldest available decision with a subtle "from <date>" timestamp. Never show "All caught up!" or a checkmark.
 
 ## 13. What we explicitly rejected (and why)
@@ -216,7 +216,7 @@ A pulse dashboard is opened tens of times per day. **Frequency × animation = an
 
 ## 14. The one piece of uncommon care
 
-The **headline-complete**: a compact Geist status sentence computed from `lastVisitedAt` delta, with the `"No new activity since your last visit."` fallback when nothing changed. The care is not decorative voice; it is accurate recency, stable session semantics, and removing everything that makes the user assemble the answer manually.
+The **headline-complete**: a compact Geist status sentence computed from `lastVisitedAt` delta, with the `"No new activity."` fallback when nothing changed. The care is not decorative voice; it is accurate recency, stable session semantics, and removing everything that makes the user assemble the answer manually.
 
 ## 15. Out of scope for this redesign
 
@@ -324,8 +324,8 @@ Legend (visual aid, not part of design):
 
 
 
-        No new activity since your last visit.       ← Geist Sans, compact,
-                                                       no visible subtext
+        No new activity.                         ← Geist Sans, compact,
+                                                   no visible subtext
 
 
 

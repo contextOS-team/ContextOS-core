@@ -24,13 +24,13 @@ function NeedsYouRow({ item, lastVisitedAt }: { item: NeedsYouItem; lastVisitedA
     <div className="relative px-5 py-3.5">
       {showMarker && <NewItemMarker />}
       <div className="flex items-baseline gap-3">
-        <span className="shrink-0 text-xs text-muted-foreground" style={{ fontFamily: 'var(--font-geist-mono)' }}>
+        <span className="shrink-0 text-xs text-[var(--pulse-muted)]" style={{ fontFamily: 'var(--font-geist-mono)' }}>
           {item.ticketId}
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+        <span className="min-w-0 flex-1 truncate text-sm text-[var(--pulse-foreground)]">
           {item.person} asked {item.sinceDay}
         </span>
-        <span className="shrink-0 text-xs text-muted-foreground">
+        <span className="shrink-0 text-xs text-[var(--pulse-muted)]">
           {Math.max(0, Math.floor(item.ageMs / 86_400_000))}d
         </span>
       </div>

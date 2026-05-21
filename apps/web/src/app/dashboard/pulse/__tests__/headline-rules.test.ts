@@ -114,7 +114,7 @@ describe('computeHeadline', () => {
     )
 
     expect(result).toEqual({
-      headline: '3 decisions and 30 source updates since your last visit.',
+      headline: '3 decisions and 30 source updates.',
       subtext: 'Since your last visit, 14 hours ago.',
     })
   })
@@ -129,13 +129,13 @@ describe('computeHeadline', () => {
       new Date('2026-05-20T00:00:00Z')
     )
 
-    expect(result.headline).toBe('1 decision and 1 source update since your last visit.')
+    expect(result.headline).toBe('1 decision and 1 source update.')
   })
 
   it('uses an explicit empty headline when nothing is new', () => {
     setNow()
     expect(computeHeadline(delta(), new Date('2026-05-20T12:00:00Z'))).toEqual({
-      headline: 'No new activity since your last visit.',
+      headline: 'No new activity.',
       subtext: 'Nothing new since your last visit, 2 hours ago.',
     })
   })
@@ -143,7 +143,7 @@ describe('computeHeadline', () => {
   it('uses first visit when lastVisitedAt is missing', () => {
     setNow()
     expect(computeHeadline(delta(), null)).toEqual({
-      headline: 'No new activity since your last visit.',
+      headline: 'No new activity.',
       subtext: 'Nothing new since your last visit, first visit.',
     })
   })
@@ -159,7 +159,7 @@ describe('computeHeadline', () => {
         }),
         new Date('2026-05-20T00:00:00Z')
       ).headline
-    ).toBe('1 source update since your last visit.')
+    ).toBe('1 source update.')
 
     expect(
       computeHeadline(

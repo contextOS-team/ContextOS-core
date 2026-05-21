@@ -34,7 +34,7 @@ export function computeHeadline(
 
   if (delta.decisions.count === 0 && delta.sources.count === 0) {
     return {
-      headline: 'No new activity since your last visit.',
+      headline: 'No new activity.',
       subtext: `Nothing new since your last visit, ${since}.`,
     }
   }
@@ -55,7 +55,7 @@ export function computeHeadline(
   const summary = bucketSummary(delta.decisions.count, delta.sources.count)
 
   return {
-    headline: `${summary} since your last visit.`,
+    headline: `${summary}.`,
     subtext: `Since your last visit, ${since}.`,
   }
 }
