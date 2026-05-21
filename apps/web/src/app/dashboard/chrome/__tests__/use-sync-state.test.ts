@@ -87,11 +87,44 @@ describe('useSyncState', () => {
     await waitFor(() => expect(result.current.kind).toBe('idle'))
     expect(result.current).toEqual({
       kind: 'idle',
-      lastSyncedAt: new Date('2026-05-20T12:00:00Z'),
+      lastUpdatedAt: new Date('2026-05-20T12:00:00Z'),
     })
     expect(supabase.from).toHaveBeenCalledWith('activity_events')
-    expect(supabase.query.in).toHaveBeenCalledWith('event_type', ['sync_completed', 'sync_started'])
+    expect(supabase.query.in).toHaveBeenCalledWith('event_type', [
+      'sync_completed',
+      'sync_started',
+      'context_generated',
+      'messages_digest',
+      'ticket_created',
+      'pr_merged',
+      'meeting_recorded',
+      'page_created',
+    ])
     expect(supabase.query.limit).toHaveBeenCalledWith(12)
+  })
+
+  it('uses newer source activity instead of an older sync lifecycle row for idle recency', async () => {
+    const supabase = makeSupabaseMock([
+      {
+        event_type: 'messages_digest',
+        created_at: '2026-05-20T12:00:00Z',
+        metadata: { integration: 'slack' },
+      },
+      {
+        event_type: 'sync_completed',
+        created_at: '2026-05-17T12:00:00Z',
+        metadata: { integration: 'jira' },
+      },
+    ])
+    createClientMock.mockReturnValue(supabase)
+
+    const { result } = renderHook(() => useSyncState('workspace-1'))
+
+    await waitFor(() => expect(result.current.kind).toBe('idle'))
+    expect(result.current).toEqual({
+      kind: 'idle',
+      lastUpdatedAt: new Date('2026-05-20T12:00:00Z'),
+    })
   })
 
   it('loads a fresh sync_started event as syncing on initial load', async () => {
@@ -133,7 +166,7 @@ describe('useSyncState', () => {
     await waitFor(() => expect(result.current.kind).toBe('idle'))
     expect(result.current).toEqual({
       kind: 'idle',
-      lastSyncedAt: new Date('2026-05-20T11:58:00Z'),
+      lastUpdatedAt: new Date('2026-05-20T11:58:00Z'),
     })
     nowSpy.mockRestore()
   })
@@ -178,7 +211,28 @@ describe('useSyncState', () => {
 
     expect(result.current).toEqual({
       kind: 'idle',
-      lastSyncedAt: new Date('2026-05-20T12:01:00Z'),
+      lastUpdatedAt: new Date('2026-05-20T12:01:00Z'),
+    })
+  })
+
+  it('transitions to idle recency on source activity realtime payloads', async () => {
+    const supabase = makeSupabaseMock()
+    createClientMock.mockReturnValue(supabase)
+
+    const { result } = renderHook(() => useSyncState('workspace-1'))
+    await waitFor(() => expect(supabase.channel).toHaveBeenCalled())
+
+    act(() => {
+      supabase.emit({
+        event_type: 'messages_digest',
+        created_at: '2026-05-20T12:05:00Z',
+        metadata: { integration: 'slack' },
+      })
+    })
+
+    expect(result.current).toEqual({
+      kind: 'idle',
+      lastUpdatedAt: new Date('2026-05-20T12:05:00Z'),
     })
   })
 

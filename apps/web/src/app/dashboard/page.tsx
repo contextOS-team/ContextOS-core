@@ -24,7 +24,6 @@ import { fetchContextPages, type ContextPageRow, STATUS_COLORS } from '@/lib/con
 import { NeedsAttention } from './widgets/needs-attention'
 import { ThisWeek } from './widgets/this-week'
 import { SprintBadge } from './widgets/sprint-badge'
-import { IntegrationDots } from './widgets/integration-dots'
 import { EmptyState } from './widgets/empty-state'
 import { ActivityFeedMini } from './widgets/activity-feed-mini'
 import { GraphThumbnail } from './widgets/graph-thumbnail'
@@ -291,8 +290,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Integration dots footer - full width */}
-          {statuses && <IntegrationDots statuses={statuses} />}
           <div className="border-t border-border/30 mt-2" />
         </>
       )}

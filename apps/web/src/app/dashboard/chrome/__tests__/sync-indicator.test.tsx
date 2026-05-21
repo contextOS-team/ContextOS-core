@@ -19,13 +19,13 @@ describe('SyncIndicator', () => {
     vi.useRealTimers()
   })
 
-  it('renders idle state as short tabular last-synced copy', () => {
+  it('renders idle state as short tabular updated copy', () => {
     render(createElement(SyncIndicator, {
-      state: { kind: 'idle', lastSyncedAt: new Date('2026-05-20T12:00:00Z') },
+      state: { kind: 'idle', lastUpdatedAt: new Date('2026-05-20T12:00:00Z') },
     }))
 
-    expect(screen.queryByRole('button', { name: /last synced/i })).toBeNull()
-    expect(screen.getByText('last synced 4m ago').textContent).toMatch(/^last synced 4m ago$/)
+    expect(screen.queryByRole('button', { name: /updated/i })).toBeNull()
+    expect(screen.getByText('updated 4m ago').textContent).toMatch(/^updated 4m ago$/)
     expect(screen.getByTestId('sync-indicator-label').style.fontVariantNumeric).toBe('tabular-nums')
   })
 

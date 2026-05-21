@@ -72,7 +72,7 @@ export function SyncIndicator({ state }: SyncIndicatorProps) {
             fontWeight: 450,
           }}
         >
-          last synced —
+          updated —
         </span>
       </span>
     )
@@ -143,7 +143,7 @@ export function SyncIndicator({ state }: SyncIndicatorProps) {
   return (
     <span
       className="min-w-[104px] text-right"
-      aria-label={`last synced ${formatShortRelativeSyncTime(state.lastSyncedAt)}`}
+      aria-label={`updated ${formatShortRelativeSyncTime(state.lastUpdatedAt)}`}
       aria-live="polite"
     >
       <span
@@ -157,7 +157,7 @@ export function SyncIndicator({ state }: SyncIndicatorProps) {
           fontWeight: 450,
         }}
       >
-        last synced {formatShortRelativeSyncTime(state.lastSyncedAt)}
+        updated {formatShortRelativeSyncTime(state.lastUpdatedAt)}
       </span>
     </span>
   )

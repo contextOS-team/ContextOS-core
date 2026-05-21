@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 
 export type SyncState =
   | { kind: 'unknown' }
-  | { kind: 'idle'; lastSyncedAt: Date }
+  | { kind: 'idle'; lastUpdatedAt: Date }
   | { kind: 'syncing'; provider: string; progress: number | null }
   | { kind: 'error'; provider: string; message: string }
 
@@ -15,7 +15,16 @@ type SyncEventRow = {
   metadata: Record<string, unknown> | null
 }
 
+const SOURCE_ACTIVITY_EVENT_TYPES = [
+  'context_generated',
+  'messages_digest',
+  'ticket_created',
+  'pr_merged',
+  'meeting_recorded',
+  'page_created',
+] as const
 const SYNC_EVENT_TYPES = ['sync_completed', 'sync_started'] as const
+const CHROME_STATUS_EVENT_TYPES = [...SYNC_EVENT_TYPES, ...SOURCE_ACTIVITY_EVENT_TYPES] as const
 const INITIAL_SYNC_EVENT_LIMIT = 12
 const ACTIVE_SYNC_STARTED_WINDOW_MS = 15 * 60_000
 
@@ -53,7 +62,14 @@ function stateFromSyncRow(row: SyncEventRow): SyncState | null {
 
     return {
       kind: 'idle',
-      lastSyncedAt: new Date(row.created_at),
+      lastUpdatedAt: new Date(row.created_at),
+    }
+  }
+
+  if ((SOURCE_ACTIVITY_EVENT_TYPES as readonly string[]).includes(row.event_type)) {
+    return {
+      kind: 'idle',
+      lastUpdatedAt: new Date(row.created_at),
     }
   }
 
@@ -79,15 +95,18 @@ function initialStateFromSyncRows(rows: SyncEventRow[], nowMs = Date.now()): Syn
 }
 
 /**
- * Dashboard chrome sync state.
+ * Dashboard chrome status state.
  *
- * CONTEXT.md §8 defines the three-state chrome cluster. Error detection is
- * intentionally derived from `metadata.error` on `sync_completed` rows because
- * migrations 00031 and 00033 define the complete activity_events event set.
- * Initial load ignores stale `sync_started` rows so old interrupted syncs do not
- * make the chrome claim it is actively syncing forever; fresh Realtime starts
- * still move the cluster into syncing immediately. The cleanup closes over the
- * local channel variable for StrictMode safety.
+ * CONTEXT.md §8 defines the three-state chrome cluster. The idle timestamp uses
+ * recent source activity, not only `sync_completed`, because Slack digests and
+ * webhook events can bring in fresh workspace data without a full sync lifecycle
+ * row. Error detection stays intentionally derived from `metadata.error` on
+ * `sync_completed` rows because migrations 00031 and 00033 define the complete
+ * activity_events event set. Initial load ignores stale `sync_started` rows so
+ * old interrupted syncs do not make the chrome claim it is actively syncing
+ * forever; fresh Realtime starts still move the cluster into syncing
+ * immediately. The cleanup closes over the local channel variable for
+ * StrictMode safety.
  */
 export function useSyncState(workspaceId: string | null): SyncState {
   const [state, setState] = useState<SyncState>({ kind: 'unknown' })
@@ -106,7 +125,7 @@ export function useSyncState(workspaceId: string | null): SyncState {
         .from('activity_events')
         .select('event_type, created_at, metadata')
         .eq('workspace_id', workspaceId)
-        .in('event_type', [...SYNC_EVENT_TYPES])
+        .in('event_type', [...CHROME_STATUS_EVENT_TYPES])
         .order('created_at', { ascending: false })
         .limit(INITIAL_SYNC_EVENT_LIMIT)
 

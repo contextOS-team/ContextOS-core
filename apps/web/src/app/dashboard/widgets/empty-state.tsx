@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { ArrowRight, Zap, Layers } from 'lucide-react'
 import type { IntegrationStatusResponse } from '@/lib/api'
-import { IntegrationDots } from './integration-dots'
 
 interface EmptyStateProps {
   statuses: IntegrationStatusResponse | null
@@ -46,8 +45,6 @@ export function EmptyState({ statuses }: EmptyStateProps) {
         </div>
       </div>
 
-      {/* Same IntegrationDots component used in active state */}
-      {statuses && <IntegrationDots statuses={statuses} />}
     </div>
   )
 }

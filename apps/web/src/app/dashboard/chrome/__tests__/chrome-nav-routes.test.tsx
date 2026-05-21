@@ -73,7 +73,7 @@ describe('ChromeNav route coverage', () => {
       render(<Sidebar userEmail="daulet@example.com" userFullName="Daulet Ashikbayev" />)
 
       expect(screen.getByText('ContextOS')).toBeTruthy()
-      await waitFor(() => expect(screen.getByText(/last synced/i)).toBeTruthy())
+      await waitFor(() => expect(screen.getByText(/updated/i)).toBeTruthy())
       expect(screen.getByTestId('avatar-puck')).toBeTruthy()
       expect(screen.getByRole('navigation').className).not.toContain('pulse-surface')
     })
