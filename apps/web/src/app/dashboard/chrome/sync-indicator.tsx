@@ -5,7 +5,6 @@ import type { SyncState } from './use-sync-state'
 
 interface SyncIndicatorProps {
   state: SyncState
-  onOpenDrawer: () => void
 }
 
 function prefersReducedMotion(): boolean {
@@ -25,7 +24,7 @@ export function formatShortRelativeSyncTime(date: Date, now: Date = new Date()):
   return `${diffMin}m ago`
 }
 
-export function SyncIndicator({ state, onOpenDrawer }: SyncIndicatorProps) {
+export function SyncIndicator({ state }: SyncIndicatorProps) {
   const labelRef = useRef<HTMLSpanElement>(null)
   const previousProviderRef = useRef<string | null>(null)
 
@@ -58,15 +57,14 @@ export function SyncIndicator({ state, onOpenDrawer }: SyncIndicatorProps) {
 
   if (state.kind === 'unknown') {
     return (
-      <button
-        type="button"
-        onClick={onOpenDrawer}
-        className="w-[240px] rounded-md px-2 py-1 text-left transition-colors duration-[160ms] hover:bg-white/[0.025]"
+      <span
+        className="min-w-[104px] text-right"
         aria-label="sync status unknown"
+        aria-live="polite"
       >
         <span
           data-testid="sync-indicator-label"
-          className="block text-[12px] font-medium"
+          className="block text-[12px] font-medium leading-none"
           style={{
             color: '#6e6b66',
             fontFamily: 'var(--font-geist-sans)',
@@ -76,7 +74,7 @@ export function SyncIndicator({ state, onOpenDrawer }: SyncIndicatorProps) {
         >
           last synced —
         </span>
-      </button>
+      </span>
     )
   }
 
@@ -84,16 +82,15 @@ export function SyncIndicator({ state, onOpenDrawer }: SyncIndicatorProps) {
     const progressPercent = state.progress == null ? 0 : Math.round(state.progress * 100)
 
     return (
-      <button
-        type="button"
-        onClick={onOpenDrawer}
-        className="w-[240px] rounded-md px-2 py-1 text-left transition-colors duration-[160ms] hover:bg-white/[0.025]"
+      <span
+        className="min-w-[132px] text-right"
         aria-label={`syncing ${state.provider}${state.progress == null ? '' : ` ${progressPercent}%`}`}
+        aria-live="polite"
       >
         <span
           ref={labelRef}
           data-testid="sync-indicator-label"
-          className="block text-[12px] font-medium"
+          className="block text-[12px] font-medium leading-none"
           style={{
             color: '#a8a59f',
             fontFamily: 'var(--font-geist-sans)',
@@ -104,7 +101,7 @@ export function SyncIndicator({ state, onOpenDrawer }: SyncIndicatorProps) {
           syncing {state.provider}
           {state.progress == null ? '' : ` · ${progressPercent}%`}
         </span>
-        <span className="mt-1 block h-px w-full bg-white/[0.04]">
+        <span className="mt-1 block h-px w-full bg-white/[0.04]" aria-hidden="true">
           <span
             data-testid="sync-progress-fill"
             className="block h-px bg-white/[0.18]"
@@ -115,22 +112,21 @@ export function SyncIndicator({ state, onOpenDrawer }: SyncIndicatorProps) {
             }}
           />
         </span>
-      </button>
+      </span>
     )
   }
 
   if (state.kind === 'error') {
     return (
-      <button
-        type="button"
-        onClick={onOpenDrawer}
-        className="w-[240px] rounded-md px-2 py-1 text-left transition-colors duration-[160ms] hover:bg-white/[0.025]"
-        aria-label={`${state.provider} sync paused reconnect`}
+      <span
+        className="min-w-[132px] text-right"
+        aria-label={`${state.provider} sync paused`}
+        aria-live="polite"
         title={state.message}
       >
         <span
           data-testid="sync-indicator-label"
-          className="block text-[12px] font-medium"
+          className="block text-[12px] font-medium leading-none"
           style={{
             color: '#c4a050',
             fontFamily: 'var(--font-geist-sans)',
@@ -138,23 +134,22 @@ export function SyncIndicator({ state, onOpenDrawer }: SyncIndicatorProps) {
             fontWeight: 450,
           }}
         >
-          {state.provider} sync paused · <span className="underline-offset-2 hover:underline">reconnect</span>
+          {state.provider} sync paused
         </span>
-      </button>
+      </span>
     )
   }
 
   return (
-    <button
-      type="button"
-      onClick={onOpenDrawer}
-      className="w-[240px] rounded-md px-2 py-1 text-left transition-colors duration-[160ms] hover:bg-white/[0.025]"
+    <span
+      className="min-w-[104px] text-right"
       aria-label={`last synced ${formatShortRelativeSyncTime(state.lastSyncedAt)}`}
+      aria-live="polite"
     >
       <span
         ref={labelRef}
         data-testid="sync-indicator-label"
-        className="block text-[12px] font-medium"
+        className="block text-[12px] font-medium leading-none"
         style={{
           color: '#6e6b66',
           fontFamily: 'var(--font-geist-sans)',
@@ -164,6 +159,6 @@ export function SyncIndicator({ state, onOpenDrawer }: SyncIndicatorProps) {
       >
         last synced {formatShortRelativeSyncTime(state.lastSyncedAt)}
       </span>
-    </button>
+    </span>
   )
 }

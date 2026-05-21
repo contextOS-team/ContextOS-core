@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation'
 import { Activity, Home, Layers, Network } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { AvatarPuck } from './avatar-puck'
-import { IntegrationDrawer } from './integration-drawer'
 import { SyncIndicator } from './sync-indicator'
 import { useSyncState } from './use-sync-state'
 
@@ -25,7 +24,6 @@ const navItems = [
 export function ChromeNav({ userEmail, userFullName }: ChromeNavProps) {
   const pathname = usePathname()
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const syncState = useSyncState(workspaceId)
 
   useEffect(() => {
@@ -101,15 +99,9 @@ export function ChromeNav({ userEmail, userFullName }: ChromeNavProps) {
       </div>
 
       <div className="ml-auto flex items-center gap-4">
-        <SyncIndicator state={syncState} onOpenDrawer={() => setDrawerOpen(true)} />
+        <SyncIndicator state={syncState} />
         <AvatarPuck userEmail={userEmail} userFullName={userFullName} />
       </div>
-
-      <IntegrationDrawer
-        open={drawerOpen}
-        onOpenChange={setDrawerOpen}
-        workspaceId={workspaceId}
-      />
     </nav>
   )
 }
