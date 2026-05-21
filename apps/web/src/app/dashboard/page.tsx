@@ -53,7 +53,7 @@ export default function DashboardPage() {
   return (
     <SeenItemsProvider>
       <main className="pulse-surface relative left-1/2 min-h-[calc(100vh-116px)] w-screen -translate-x-1/2 -my-10">
-        <div className="mx-auto max-w-5xl space-y-24 px-6 py-16 lg:px-10">
+        <div className="mx-auto max-w-5xl space-y-16 px-6 py-12 lg:px-10">
           <DashboardSections
             workspaceId={workspaceId}
             lastVisitedAt={lastVisitedAt}

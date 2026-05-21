@@ -5,6 +5,18 @@ function pluralize(count: number, singular: string, plural = `${singular}s`): st
   return count === 1 ? singular : plural
 }
 
+function joinParts(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] ?? ''
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+}
+
+function bucketSummary(decisions: number, sources: number): string {
+  const parts: string[] = []
+  if (decisions > 0) parts.push(`${decisions} ${pluralize(decisions, 'decision')}`)
+  if (sources > 0) parts.push(`${sources} source ${pluralize(sources, 'update')}`)
+  return joinParts(parts)
+}
+
 /**
  * Pure headline copy rules for the Phase 41 dashboard pulse surface.
  *
@@ -30,19 +42,20 @@ export function computeHeadline(
   if (delta.needsYou.topUrgentItem) {
     const { person, ticketId, sinceDay } = delta.needsYou.topUrgentItem
     const decisionRemainder = Math.max(0, delta.decisions.count - 1)
-    const sourceText = `${delta.sources.count} new ${pluralize(delta.sources.count, 'source')}`
+    const remainingSummary = bucketSummary(decisionRemainder, delta.sources.count)
 
     return {
-      headline: `${person} is waiting on ${ticketId} since ${sinceDay}.`,
-      subtext:
-        decisionRemainder > 0
-          ? `${decisionRemainder} more ${pluralize(decisionRemainder, 'decision')} and ${sourceText} since you last looked, ${since}.`
-          : `${sourceText} since you last looked, ${since}.`,
+      headline: `${person} has been waiting on ${ticketId} since ${sinceDay}.`,
+      subtext: remainingSummary
+        ? `${remainingSummary} since you last looked, ${since}.`
+        : `New activity since you last looked, ${since}.`,
     }
   }
 
+  const summary = bucketSummary(delta.decisions.count, delta.sources.count)
+
   return {
-    headline: `${delta.decisions.count} ${pluralize(delta.decisions.count, 'decision')} and ${delta.sources.count} ${pluralize(delta.sources.count, 'source')} of new context since you last looked.`,
+    headline: `${summary} since you last looked.`,
     subtext: `Since you last looked, ${since}.`,
   }
 }

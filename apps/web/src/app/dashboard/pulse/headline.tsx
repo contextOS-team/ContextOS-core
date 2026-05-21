@@ -9,33 +9,22 @@ interface HeadlineProps {
 }
 
 export function Headline({ delta, lastVisitedAt }: HeadlineProps) {
-  const { headline, subtext } = computeHeadline(delta, lastVisitedAt)
+  const { headline } = computeHeadline(delta, lastVisitedAt)
 
   return (
-    <section className="max-w-3xl">
+    <section className="max-w-2xl">
       <h1
-        className="font-serif text-5xl leading-[1.1]"
+        className="text-[30px] font-medium leading-[1.18] md:text-[34px]"
         style={{
-          color: '#ece9e3',
-          letterSpacing: '-0.025em',
-          fontVariationSettings: '"opsz" 32, "wght" 400',
+          color: 'var(--foreground)',
+          fontFamily: 'var(--font-geist-sans)',
           fontFeatureSettings: '"kern" 1, "liga" 1',
-          hangingPunctuation: 'last',
+          letterSpacing: '-0.018em',
           textWrap: 'balance',
         }}
       >
         {headline}
       </h1>
-      <p
-        className="mt-6 text-sm"
-        style={{
-          color: '#a8a59f',
-          fontFamily: 'var(--font-geist-sans)',
-          fontFeatureSettings: '"tnum" 1',
-        }}
-      >
-        {subtext}
-      </p>
     </section>
   )
 }

@@ -52,8 +52,9 @@ describe('pulse components', () => {
     render(<Headline delta={deltaWithTuesdayNeed} lastVisitedAt={new Date('2026-05-20T00:00:00Z')} />)
 
     const headline = screen.getByRole('heading', { level: 1 }).textContent ?? ''
-    expect(headline).toContain('is waiting on')
+    expect(headline).toContain('has been waiting on')
     expect(headline).toContain('since Tuesday')
+    expect(screen.queryByText(/Since you last looked/i)).toBeNull()
   })
 
   it('hides Needs you when there are no items', () => {
@@ -75,6 +76,10 @@ describe('pulse components', () => {
     expect(screen.getByText(/Use old estimate for now/)).toBeTruthy()
     expect(screen.getAllByText(/Daulet/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/#dev-room/).length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: /Use old estimate/ }).getAttribute('href'))
+      .toBe('/dashboard/decisions/decision-1')
+    expect(screen.getByRole('link', { name: /view all/i }).getAttribute('href'))
+      .toBe('/dashboard/decisions')
   })
 
   it('renders Active context as a typographic list with bracket prefix support', () => {

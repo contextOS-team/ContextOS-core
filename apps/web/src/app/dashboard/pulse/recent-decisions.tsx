@@ -62,7 +62,10 @@ function DecisionCard({
   }, [decision.id, isNew, seen])
 
   return (
-    <article className="pulse-card group relative">
+    <Link
+      href={`/dashboard/decisions/${encodeURIComponent(decision.id)}`}
+      className="pulse-card group relative block"
+    >
       {showMarker && <NewItemMarker />}
       <h3 className="text-lg leading-snug text-[#ece9e3] group-hover:underline decoration-1 underline-offset-[0.2em]">
         {decision.title}
@@ -98,7 +101,7 @@ function DecisionCard({
           </p>
         </blockquote>
       )}
-    </article>
+    </Link>
   )
 }
 
@@ -122,7 +125,7 @@ export function RecentDecisions({ data, lastVisitedAt }: RecentDecisionsProps) {
     <section className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="pulse-section-label">Recent decisions</h2>
-        <Link href="/dashboard/activity" className="text-xs text-[#6e6b66] transition-colors hover:text-[#a8a59f]">
+        <Link href="/dashboard/decisions" className="text-xs text-[#6e6b66] transition-colors hover:text-[#a8a59f]">
           view all &rarr;
         </Link>
       </div>

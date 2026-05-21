@@ -45,8 +45,8 @@ describe('computeHeadline', () => {
 
     expect(result.headline).toContain('since Tuesday')
     expect(result).toEqual({
-      headline: 'Vasiliy is waiting on RD-786 since Tuesday.',
-      subtext: '0 new sources since you last looked, 14 hours ago.',
+      headline: 'Vasiliy has been waiting on RD-786 since Tuesday.',
+      subtext: 'New activity since you last looked, 14 hours ago.',
     })
   })
 
@@ -56,11 +56,11 @@ describe('computeHeadline', () => {
     expect(
       computeHeadline(deltaWithTopUrgent({ sinceDay: 'Wednesday' }), new Date('2026-05-20T00:00:00Z'))
         .headline
-    ).toBe('Vasiliy is waiting on RD-786 since Wednesday.')
+    ).toBe('Vasiliy has been waiting on RD-786 since Wednesday.')
     expect(
       computeHeadline(deltaWithTopUrgent({ sinceDay: 'May 12' }), new Date('2026-05-20T00:00:00Z'))
         .headline
-    ).toBe('Vasiliy is waiting on RD-786 since May 12.')
+    ).toBe('Vasiliy has been waiting on RD-786 since May 12.')
   })
 
   it('subtracts the dominant item from decision remainder copy', () => {
@@ -78,8 +78,8 @@ describe('computeHeadline', () => {
     )
 
     expect(result).toEqual({
-      headline: 'Vasiliy is waiting on RD-786 since Tuesday.',
-      subtext: '4 more decisions and 30 new sources since you last looked, 14 hours ago.',
+      headline: 'Vasiliy has been waiting on RD-786 since Tuesday.',
+      subtext: '4 decisions and 30 source updates since you last looked, 14 hours ago.',
     })
   })
 
@@ -98,8 +98,8 @@ describe('computeHeadline', () => {
     )
 
     expect(result).toEqual({
-      headline: 'Vasiliy is waiting on RD-786 since Tuesday.',
-      subtext: '12 new sources since you last looked, 14 hours ago.',
+      headline: 'Vasiliy has been waiting on RD-786 since Tuesday.',
+      subtext: '12 source updates since you last looked, 14 hours ago.',
     })
   })
 
@@ -114,7 +114,7 @@ describe('computeHeadline', () => {
     )
 
     expect(result).toEqual({
-      headline: '3 decisions and 30 sources of new context since you last looked.',
+      headline: '3 decisions and 30 source updates since you last looked.',
       subtext: 'Since you last looked, 14 hours ago.',
     })
   })
@@ -129,7 +129,7 @@ describe('computeHeadline', () => {
       new Date('2026-05-20T00:00:00Z')
     )
 
-    expect(result.headline).toBe('1 decision and 1 source of new context since you last looked.')
+    expect(result.headline).toBe('1 decision and 1 source update since you last looked.')
   })
 
   it('uses Quiet day when nothing is new', () => {
@@ -159,7 +159,7 @@ describe('computeHeadline', () => {
         }),
         new Date('2026-05-20T00:00:00Z')
       ).headline
-    ).toBe('0 decisions and 1 source of new context since you last looked.')
+    ).toBe('1 source update since you last looked.')
 
     expect(
       computeHeadline(
@@ -173,6 +173,6 @@ describe('computeHeadline', () => {
         }),
         new Date('2026-05-20T00:00:00Z')
       ).subtext
-    ).toBe('1 more decision and 1 new source since you last looked, 14 hours ago.')
+    ).toBe('1 decision and 1 source update since you last looked, 14 hours ago.')
   })
 })
