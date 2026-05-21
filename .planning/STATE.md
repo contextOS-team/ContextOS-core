@@ -94,7 +94,7 @@ Progress: [█████████░] 87%
 - [Phase 40]: [40-03] Settings disconnect button is intentionally a toast hint pointing at the in-Telegram remove flow; Phase 40 has no workspace-level disconnect endpoint by design (bot's my_chat_member handler soft-deletes per chat)
 - [Phase 40]: [40-03] Vault purge uses SQL LIKE prefilter + strict regex re-validation + per-row exception isolation -- defense in depth so an unrelated 'oauth_telegram_'-prefixed secret can't be deleted, and one permission glitch can't abort the whole run
 - [Phase 41]: Phase 41 dashboard last-visited state is server-side per user/workspace — CONTEXT.md defines since-last-visit as a first-class persistent concept; server-side state keeps multi-device behavior coherent.
-- [Phase 41]: Pulse warm-dark palette is opt-in via .pulse-surface on dashboard home only — dashboard/layout.tsx is shared by sibling routes; scoping the palette prevents bleed into context, settings, activity, and graph.
+- [Phase 41]: Human checkpoint rejected the warm/serif pulse direction. `.pulse-surface` remains scoped to dashboard home, but now follows the existing global dashboard dark tokens and only adds pulse-specific affordances, preventing color drift from context/settings/activity/graph.
 - [Phase 41]: Chrome source freshness indicator is passive after human checkpoint — no drawer, no Sync all button, no reconnect CTA. The label is `updated ...`, not `last synced ...`, because per-provider health is not yet modeled.
 - [Phase 41]: Source freshness is a launch risk for the first startup pilot. The current chrome can show ambient source activity recency, but broad "everything is up to date" claims require a provider-level health model; see 41-SOURCE-FRESHNESS-RISKS.md.
 

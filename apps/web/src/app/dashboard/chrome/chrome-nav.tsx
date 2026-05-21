@@ -57,7 +57,7 @@ export function ChromeNav({ userEmail, userFullName }: ChromeNavProps) {
 
   function isActive(href: string): boolean {
     if (href === '/dashboard') {
-      return pathname === '/dashboard'
+      return pathname === '/dashboard' || pathname.startsWith('/dashboard/decisions')
     }
     return pathname.startsWith(href)
   }
@@ -66,7 +66,7 @@ export function ChromeNav({ userEmail, userFullName }: ChromeNavProps) {
     <nav className="sticky top-0 z-40 flex h-14 items-center border-b border-border bg-background/80 px-6 backdrop-blur-sm">
       <Link
         href="/dashboard"
-        className="text-[15px] font-semibold tracking-[-0.02em]"
+        className="text-[15px] font-semibold"
       >
         <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
           ContextOS

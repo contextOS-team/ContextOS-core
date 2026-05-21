@@ -66,7 +66,7 @@ describe('ChromeNav route coverage', () => {
     })
   })
 
-  for (const route of ['/dashboard', '/dashboard/context', '/dashboard/settings', '/dashboard/activity', '/dashboard/graph']) {
+  for (const route of ['/dashboard', '/dashboard/decisions', '/dashboard/decisions/decision-1', '/dashboard/context', '/dashboard/settings', '/dashboard/activity', '/dashboard/graph']) {
     it(`renders global chrome on ${route}`, async () => {
       pathname = route
 

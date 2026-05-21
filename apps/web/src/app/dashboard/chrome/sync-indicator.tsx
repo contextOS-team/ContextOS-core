@@ -64,9 +64,8 @@ export function SyncIndicator({ state }: SyncIndicatorProps) {
       >
         <span
           data-testid="sync-indicator-label"
-          className="block text-[12px] font-medium leading-none"
+          className="block text-[12px] font-medium leading-none text-muted-foreground"
           style={{
-            color: '#6e6b66',
             fontFamily: 'var(--font-geist-sans)',
             fontVariantNumeric: 'tabular-nums',
             fontWeight: 450,
@@ -90,9 +89,8 @@ export function SyncIndicator({ state }: SyncIndicatorProps) {
         <span
           ref={labelRef}
           data-testid="sync-indicator-label"
-          className="block text-[12px] font-medium leading-none"
+          className="block text-[12px] font-medium leading-none text-foreground"
           style={{
-            color: '#a8a59f',
             fontFamily: 'var(--font-geist-sans)',
             fontVariantNumeric: 'tabular-nums',
             fontWeight: 450,
@@ -101,10 +99,10 @@ export function SyncIndicator({ state }: SyncIndicatorProps) {
           syncing {state.provider}
           {state.progress == null ? '' : ` · ${progressPercent}%`}
         </span>
-        <span className="mt-1 block h-px w-full bg-white/[0.04]" aria-hidden="true">
+        <span className="mt-1 block h-px w-full bg-border/40" aria-hidden="true">
           <span
             data-testid="sync-progress-fill"
-            className="block h-px bg-white/[0.18]"
+            className="block h-px bg-primary/60"
             style={{
               width: `${progressPercent}%`,
               // Real progress ticks should step, not interpolate and imply fake movement.
@@ -126,9 +124,8 @@ export function SyncIndicator({ state }: SyncIndicatorProps) {
       >
         <span
           data-testid="sync-indicator-label"
-          className="block text-[12px] font-medium leading-none"
+          className="block text-[12px] font-medium leading-none text-destructive"
           style={{
-            color: '#c4a050',
             fontFamily: 'var(--font-geist-sans)',
             fontVariantNumeric: 'tabular-nums',
             fontWeight: 450,
@@ -149,9 +146,8 @@ export function SyncIndicator({ state }: SyncIndicatorProps) {
       <span
         ref={labelRef}
         data-testid="sync-indicator-label"
-        className="block text-[12px] font-medium leading-none"
+        className="block text-[12px] font-medium leading-none text-muted-foreground"
         style={{
-          color: '#6e6b66',
           fontFamily: 'var(--font-geist-sans)',
           fontVariantNumeric: 'tabular-nums',
           fontWeight: 450,

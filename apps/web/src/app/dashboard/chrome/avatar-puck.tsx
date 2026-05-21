@@ -45,7 +45,7 @@ export function AvatarPuck({ userEmail, userFullName }: AvatarPuckProps) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-semibold text-[#ece9e3] outline-none transition-transform duration-150 ease-out hover:scale-[1.04] active:scale-[0.96]"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-elevated text-xs font-semibold text-foreground outline-none ring-1 ring-border transition-transform duration-150 ease-out hover:scale-[1.04] active:scale-[0.96]"
           title={userFullName ?? userEmail}
           data-testid="avatar-puck"
         >

@@ -21,7 +21,7 @@ function bucketSummary(decisions: number, sources: number): string {
  * Pure headline copy rules for the Phase 41 dashboard pulse surface.
  *
  * Branch C intentionally runs before the needs-you branch: a stale assigned
- * item cannot override the "Quiet day." headline when there are no new events.
+ * item cannot override the all-caught-up headline when there are no new events.
  */
 export function computeHeadline(
   delta: Delta,
@@ -34,8 +34,8 @@ export function computeHeadline(
 
   if (delta.decisions.count === 0 && delta.sources.count === 0) {
     return {
-      headline: 'Quiet day.',
-      subtext: `Nothing new since you last looked, ${since}.`,
+      headline: 'No new activity since your last visit.',
+      subtext: `Nothing new since your last visit, ${since}.`,
     }
   }
 
@@ -47,15 +47,15 @@ export function computeHeadline(
     return {
       headline: `${person} has been waiting on ${ticketId} since ${sinceDay}.`,
       subtext: remainingSummary
-        ? `${remainingSummary} since you last looked, ${since}.`
-        : `New activity since you last looked, ${since}.`,
+        ? `${remainingSummary} since your last visit, ${since}.`
+        : `New activity since your last visit, ${since}.`,
     }
   }
 
   const summary = bucketSummary(delta.decisions.count, delta.sources.count)
 
   return {
-    headline: `${summary} since you last looked.`,
-    subtext: `Since you last looked, ${since}.`,
+    headline: `${summary} since your last visit.`,
+    subtext: `Since your last visit, ${since}.`,
   }
 }

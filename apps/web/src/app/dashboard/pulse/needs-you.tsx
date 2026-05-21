@@ -21,16 +21,16 @@ function NeedsYouRow({ item, lastVisitedAt }: { item: NeedsYouItem; lastVisitedA
   }, [item.id, isNew, seen])
 
   return (
-    <div className="relative py-3">
+    <div className="relative px-5 py-3.5">
       {showMarker && <NewItemMarker />}
       <div className="flex items-baseline gap-3">
-        <span className="shrink-0 text-xs text-[#6e6b66]" style={{ fontFamily: 'var(--font-geist-mono)' }}>
+        <span className="shrink-0 text-xs text-muted-foreground" style={{ fontFamily: 'var(--font-geist-mono)' }}>
           {item.ticketId}
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm text-[#ece9e3]">
+        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
           {item.person} asked {item.sinceDay}
         </span>
-        <span className="shrink-0 text-xs text-[#6e6b66]">
+        <span className="shrink-0 text-xs text-muted-foreground">
           {Math.max(0, Math.floor(item.ageMs / 86_400_000))}d
         </span>
       </div>
@@ -42,9 +42,9 @@ export function NeedsYou({ items, lastVisitedAt }: NeedsYouProps) {
   if (items.length === 0) return null
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       <h2 className="pulse-section-label">Needs you</h2>
-      <div className="divide-y divide-white/[0.04]">
+      <div className="pulse-card divide-y divide-border/70 overflow-hidden">
         {items.map((item) => (
           <NeedsYouRow key={item.id} item={item} lastVisitedAt={lastVisitedAt} />
         ))}

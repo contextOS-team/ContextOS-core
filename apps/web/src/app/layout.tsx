@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono, Instrument_Serif, Inter, JetBrains_Mono } from 'next/font/google'
+import { Geist, Geist_Mono, Inter, JetBrains_Mono } from 'next/font/google'
 import { SentryInit } from '@/lib/sentry-init'
 import { ClientErrorLogger } from '@/lib/client-error-logger'
 import { DarkModeApplier } from '@/components/dashboard/dark-mode-applier'
@@ -27,14 +27,6 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   subsets: ['latin'],
   variable: '--font-geist-mono',
-  display: 'swap',
-})
-
-const instrumentSerif = Instrument_Serif({
-  weight: '400',
-  style: ['normal', 'italic'],
-  subsets: ['latin'],
-  variable: '--font-serif',
   display: 'swap',
 })
 
@@ -75,7 +67,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable} ${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} dark`}
+      className={`${inter.variable} ${jetbrainsMono.variable} ${geistSans.variable} ${geistMono.variable} dark`}
     >
       <head />
       <body className="font-sans antialiased" suppressHydrationWarning>

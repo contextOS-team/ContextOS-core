@@ -45,7 +45,7 @@ export default function DecisionsPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-5">
+      <div className="mx-auto max-w-4xl space-y-5">
         <Skeleton className="h-7 w-40" />
         <Skeleton className="h-20 w-full rounded-xl" />
         <Skeleton className="h-20 w-full rounded-xl" />
@@ -54,12 +54,17 @@ export default function DecisionsPage() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in-up">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">Decisions</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Explicit team decisions extracted from connected sources.
-        </p>
+    <div className="mx-auto max-w-4xl space-y-6 animate-fade-in-up">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Decisions</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {decisions.length} decision{decisions.length === 1 ? '' : 's'} from connected sources
+          </p>
+        </div>
+        <Link href="/dashboard" className="text-sm text-muted-foreground transition-colors hover:text-foreground">
+          Home
+        </Link>
       </div>
 
       {error && (
@@ -74,16 +79,16 @@ export default function DecisionsPage() {
         </p>
       )}
 
-      <div className="divide-y divide-border overflow-hidden rounded-xl bg-card">
+      <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card/80">
         {decisions.map((decision) => (
           <Link
             key={decision.id}
             href={`/dashboard/decisions/${encodeURIComponent(decision.id)}`}
-            className="block px-4 py-4 transition-colors duration-150 hover:bg-muted/40"
+            className="block px-5 py-4 transition-colors duration-150 hover:bg-elevated/70"
           >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <h2 className="truncate text-sm font-medium text-foreground">
+                <h2 className="truncate text-[15px] font-medium text-foreground">
                   {decision.title}
                 </h2>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

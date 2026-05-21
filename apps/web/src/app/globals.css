@@ -30,7 +30,6 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
     "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
-  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
   --font-geist-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-geist-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
 }
@@ -114,7 +113,6 @@
   --color-elevated-foreground: var(--card-foreground);
   --color-overlay: var(--overlay);
   --color-overlay-foreground: var(--card-foreground);
-  --font-serif: var(--font-serif);
   --font-geist-sans: var(--font-geist-sans);
   --font-geist-mono: var(--font-geist-mono);
 }
@@ -266,33 +264,30 @@
 }
 
 /* ---------------------------------------------------------------------- */
-/* Phase 41: Pulse-surface palette + utility classes                       */
-/* Scoped via .pulse-surface to contain blast-radius. .pulse-surface is    */
-/* applied by Plan 41-02 on apps/web/src/app/dashboard/page.tsx ONLY       */
-/* (NOT on dashboard/layout.tsx) — sibling routes (/context, /settings,    */
-/* /activity, /graph) share dashboard/layout.tsx and therefore inherit     */
-/* the existing cool palette unchanged.                                    */
+/* Phase 41: dashboard pulse utilities. The surface now follows the global */
+/* dashboard tokens; .pulse-surface only scopes small pulse-specific       */
+/* affordances so the home page cannot drift into a separate color system. */
 /* ---------------------------------------------------------------------- */
 .dark .pulse-surface {
-  --tertiary-foreground: oklch(0.46 0.018 260);
-  --pulse-attention: #c4a050;
-  --pulse-stale: #b06863;
-  --pulse-fresh: #6d8c6d;
+  --tertiary-foreground: color-mix(in oklch, var(--muted-foreground) 72%, var(--background));
+  --pulse-attention: var(--primary);
+  --pulse-stale: var(--destructive);
+  --pulse-fresh: var(--primary);
 
   background-color: transparent;
   color: var(--foreground);
 }
 
 .pulse-surface .pulse-card {
-  background-color: color-mix(in oklch, var(--card) 88%, transparent);
-  border-radius: 12px;
-  padding: 24px;
+  background-color: color-mix(in oklch, var(--card) 84%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: 8px;
   transition: background-color 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .pulse-surface .pulse-card:hover {
-    background-color: color-mix(in oklch, var(--elevated) 92%, transparent);
+    background-color: color-mix(in oklch, var(--elevated) 90%, transparent);
   }
 }
 
@@ -304,7 +299,7 @@
 .pulse-surface .pulse-section-label {
   color: var(--foreground);
   font-family: var(--font-geist-sans);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
@@ -322,13 +317,13 @@
 }
 
 .pulse-surface .pulse-quote {
-  margin-top: 16px;
-  padding-left: 12px;
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 10px;
+  padding-left: 10px;
+  border-left: 1px solid color-mix(in oklch, var(--border) 78%, transparent);
 }
 
 :focus-visible {
-  outline: 1px solid rgba(232, 230, 225, 0.4);
+  outline: 1px solid color-mix(in oklch, var(--ring) 55%, transparent);
   outline-offset: 2px;
   border-radius: 4px;
   transition: outline-offset 100ms ease-out;

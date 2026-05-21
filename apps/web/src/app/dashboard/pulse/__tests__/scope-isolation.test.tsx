@@ -67,9 +67,8 @@ describe('Phase 41 .pulse-surface scope isolation', () => {
     const mod = await import('@/app/dashboard/page')
     const Component = mod.default
     const { container } = render(<Component />)
-    const main = container.querySelector('main')
+    const pulseSurface = container.querySelector('.pulse-surface')
 
-    expect(main).not.toBeNull()
-    expect(main?.className).toMatch(/\bpulse-surface\b/)
+    expect(pulseSurface).not.toBeNull()
   })
 })

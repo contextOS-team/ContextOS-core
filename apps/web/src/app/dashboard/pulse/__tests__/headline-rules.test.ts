@@ -46,7 +46,7 @@ describe('computeHeadline', () => {
     expect(result.headline).toContain('since Tuesday')
     expect(result).toEqual({
       headline: 'Vasiliy has been waiting on RD-786 since Tuesday.',
-      subtext: 'New activity since you last looked, 14 hours ago.',
+      subtext: 'New activity since your last visit, 14 hours ago.',
     })
   })
 
@@ -79,7 +79,7 @@ describe('computeHeadline', () => {
 
     expect(result).toEqual({
       headline: 'Vasiliy has been waiting on RD-786 since Tuesday.',
-      subtext: '4 decisions and 30 source updates since you last looked, 14 hours ago.',
+      subtext: '4 decisions and 30 source updates since your last visit, 14 hours ago.',
     })
   })
 
@@ -99,7 +99,7 @@ describe('computeHeadline', () => {
 
     expect(result).toEqual({
       headline: 'Vasiliy has been waiting on RD-786 since Tuesday.',
-      subtext: '12 source updates since you last looked, 14 hours ago.',
+      subtext: '12 source updates since your last visit, 14 hours ago.',
     })
   })
 
@@ -114,8 +114,8 @@ describe('computeHeadline', () => {
     )
 
     expect(result).toEqual({
-      headline: '3 decisions and 30 source updates since you last looked.',
-      subtext: 'Since you last looked, 14 hours ago.',
+      headline: '3 decisions and 30 source updates since your last visit.',
+      subtext: 'Since your last visit, 14 hours ago.',
     })
   })
 
@@ -129,22 +129,22 @@ describe('computeHeadline', () => {
       new Date('2026-05-20T00:00:00Z')
     )
 
-    expect(result.headline).toBe('1 decision and 1 source update since you last looked.')
+    expect(result.headline).toBe('1 decision and 1 source update since your last visit.')
   })
 
-  it('uses Quiet day when nothing is new', () => {
+  it('uses an explicit empty headline when nothing is new', () => {
     setNow()
     expect(computeHeadline(delta(), new Date('2026-05-20T12:00:00Z'))).toEqual({
-      headline: 'Quiet day.',
-      subtext: 'Nothing new since you last looked, 2 hours ago.',
+      headline: 'No new activity since your last visit.',
+      subtext: 'Nothing new since your last visit, 2 hours ago.',
     })
   })
 
   it('uses first visit when lastVisitedAt is missing', () => {
     setNow()
     expect(computeHeadline(delta(), null)).toEqual({
-      headline: 'Quiet day.',
-      subtext: 'Nothing new since you last looked, first visit.',
+      headline: 'No new activity since your last visit.',
+      subtext: 'Nothing new since your last visit, first visit.',
     })
   })
 
@@ -159,7 +159,7 @@ describe('computeHeadline', () => {
         }),
         new Date('2026-05-20T00:00:00Z')
       ).headline
-    ).toBe('1 source update since you last looked.')
+    ).toBe('1 source update since your last visit.')
 
     expect(
       computeHeadline(
@@ -173,6 +173,6 @@ describe('computeHeadline', () => {
         }),
         new Date('2026-05-20T00:00:00Z')
       ).subtext
-    ).toBe('1 decision and 1 source update since you last looked, 14 hours ago.')
+    ).toBe('1 decision and 1 source update since your last visit, 14 hours ago.')
   })
 })

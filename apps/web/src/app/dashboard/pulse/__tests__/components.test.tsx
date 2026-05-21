@@ -54,7 +54,7 @@ describe('pulse components', () => {
     const headline = screen.getByRole('heading', { level: 1 }).textContent ?? ''
     expect(headline).toContain('has been waiting on')
     expect(headline).toContain('since Tuesday')
-    expect(screen.queryByText(/Since you last looked/i)).toBeNull()
+    expect(screen.queryByText(/Since your last visit/i)).toBeNull()
   })
 
   it('hides Needs you when there are no items', () => {

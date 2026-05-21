@@ -35,23 +35,23 @@ function ContextRow({ item, lastVisitedAt }: { item: ContextPageRow; lastVisited
   return (
     <Link
       href={`/dashboard/context/${item.id}`}
-      className="relative block py-4 transition-colors hover:bg-white/[0.02]"
+      className="relative block px-5 py-3.5 transition-colors hover:bg-elevated/50"
     >
       {showMarker && <NewItemMarker />}
       <div className="flex items-baseline gap-3">
         {item.ticket_identifier && (
-          <span className="shrink-0 text-xs text-[#6e6b66]" style={{ fontFamily: 'var(--font-geist-mono)' }}>
+          <span className="shrink-0 text-xs text-muted-foreground" style={{ fontFamily: 'var(--font-geist-mono)' }}>
             {item.ticket_identifier}
           </span>
         )}
-        <span className="min-w-0 flex-1 truncate text-sm text-[#ece9e3]">
-          {prefix && <span className="text-[#a8a59f]">{prefix} </span>}
+        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+          {prefix && <span className="text-muted-foreground">{prefix} </span>}
           {rest}
         </span>
-        <span className="shrink-0 text-xs text-[#6e6b66]">
+        <span className="shrink-0 text-xs text-muted-foreground">
           {item.sources?.length ?? 0} source{(item.sources?.length ?? 0) === 1 ? '' : 's'}
         </span>
-        <span className="shrink-0 text-xs text-[#6e6b66]">
+        <span className="shrink-0 text-xs text-muted-foreground">
           {formatRelativeTime(item.updated_at)}
         </span>
       </div>
@@ -64,14 +64,14 @@ export function ActiveContext({ items, lastVisitedAt }: ActiveContextProps) {
   if (topItems.length === 0) return null
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="pulse-section-label">Active context</h2>
-        <Link href="/dashboard/context" className="text-xs text-[#6e6b66] transition-colors hover:text-[#a8a59f]">
+        <Link href="/dashboard/context" className="text-xs text-muted-foreground transition-colors hover:text-foreground">
           view all &rarr;
         </Link>
       </div>
-      <div className="divide-y divide-white/[0.04]">
+      <div className="pulse-card divide-y divide-border/70 overflow-hidden">
         {topItems.map((item) => (
           <ContextRow key={item.id} item={item} lastVisitedAt={lastVisitedAt} />
         ))}

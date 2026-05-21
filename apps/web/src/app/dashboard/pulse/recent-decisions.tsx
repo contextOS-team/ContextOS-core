@@ -64,17 +64,17 @@ function DecisionCard({
   return (
     <Link
       href={`/dashboard/decisions/${encodeURIComponent(decision.id)}`}
-      className="pulse-card group relative block"
+      className="group relative block px-5 py-4 transition-colors hover:bg-elevated/50"
     >
       {showMarker && <NewItemMarker />}
-      <h3 className="text-lg leading-snug text-[#ece9e3] group-hover:underline decoration-1 underline-offset-[0.2em]">
+      <h3 className="text-[15px] font-medium leading-snug text-foreground group-hover:underline decoration-1 underline-offset-[0.2em]">
         {decision.title}
       </h3>
 
       {(decision.participants.length > 0 || decision.sourceChannel || decision.createdAt) && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" style={{ color: '#6e6b66' }}>
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           {decision.participants.slice(0, 3).map((name) => (
-            <span key={name} className="rounded-full bg-white/[0.04] px-2 py-0.5 text-[#a8a59f]">
+            <span key={name} className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
               {name}
             </span>
           ))}
@@ -87,10 +87,10 @@ function DecisionCard({
 
       {decision.sourceQuote && (
         <blockquote className="pulse-quote">
-          <p className="text-sm italic leading-relaxed text-[#ece9e3]">
+          <p className="line-clamp-2 text-sm italic leading-relaxed text-foreground">
             &ldquo;{decision.sourceQuote}&rdquo;
           </p>
-          <p className="mt-2 text-xs" style={{ color: '#6e6b66' }}>
+          <p className="mt-2 text-xs text-muted-foreground">
             &mdash; {decision.authorName ?? 'someone'}
             {decision.sourceChannel && (
               <>
@@ -122,14 +122,14 @@ export function RecentDecisions({ data, lastVisitedAt }: RecentDecisionsProps) {
   if (decisions.length === 0) return null
 
   return (
-    <section className="space-y-5">
+    <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="pulse-section-label">Recent decisions</h2>
-        <Link href="/dashboard/decisions" className="text-xs text-[#6e6b66] transition-colors hover:text-[#a8a59f]">
+        <Link href="/dashboard/decisions" className="text-xs text-muted-foreground transition-colors hover:text-foreground">
           view all &rarr;
         </Link>
       </div>
-      <div className="space-y-4">
+      <div className="pulse-card divide-y divide-border/70 overflow-hidden">
         {decisions.map((decision) => (
           <DecisionCard key={decision.id} decision={decision} lastVisitedAt={lastVisitedAt} />
         ))}
