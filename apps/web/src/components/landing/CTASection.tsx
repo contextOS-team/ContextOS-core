@@ -26,100 +26,52 @@ export default function CTASection() {
   return (
     <section
       id={BOOKING_SECTION_ID}
-      className="relative py-24 px-6 overflow-hidden"
+      className="relative overflow-hidden px-6 py-20"
       ref={ref as React.RefObject<HTMLElement>}
     >
-      <div className="max-w-5xl mx-auto relative z-10">
-        {/* Card with gradient border */}
+      <div className="relative z-10 mx-auto max-w-5xl">
         <div
-          className={`relative rounded-3xl p-px transition-[opacity,transform] duration-700 ${
-            inView ? "opacity-100 scale-100" : "opacity-0 scale-95"
+          className={`mb-8 transition-[opacity,transform] duration-700 ${
+            inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
+          }`}
+        >
+          <span className="section-label">Book a walkthrough</span>
+          <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-normal text-white md:text-4xl">
+            See your decision graph from your own workspace.
+          </h2>
+          <p className="mt-4 max-w-2xl text-sm leading-6 text-[#9CA3AF] md:text-base">
+            {LANDING_CTA.bookingSectionCopy}
+          </p>
+        </div>
+
+        <div
+          className={`cal-booking-shell text-left transition-[opacity,transform] duration-700 ${
+            inView ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
           }`}
           style={{
-            background: "linear-gradient(135deg, rgba(var(--color-teal-rgb),0.4), rgba(var(--color-teal-rgb),0.1), rgba(var(--color-teal-rgb),0.05), rgba(var(--color-teal-rgb),0.2))",
+            background: "rgba(255,255,255,0.03)",
+            border: "1px solid rgba(255,255,255,0.10)",
           }}
         >
-          <div
-            className="relative rounded-3xl p-10 md:p-14 overflow-hidden"
-            style={{ background: "#0D0D17" }}
-          >
-            {/* Background glow */}
-            <div
-              className="absolute inset-0 pointer-events-none"
+          <div className="cal-booking-frame">
+            <Cal
+              calLink={CAL_BOOKING_LINK}
+              config={{
+                layout: CAL_BOOKING_LAYOUT,
+                theme: "dark",
+              }}
               style={{
-                background:
-                  "radial-gradient(ellipse 80% 60% at 50% 0%, rgba(var(--color-teal-rgb),0.08) 0%, transparent 60%)",
+                width: "100%",
+                height: "100%",
+                overflow: "scroll",
               }}
             />
-
-            {/* Dot grid */}
-            <div
-              className="absolute inset-0 pointer-events-none opacity-30"
-              style={{
-                backgroundImage:
-                  "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)",
-                backgroundSize: "24px 24px",
-              }}
-            />
-
-            <div className="relative z-10 text-center">
-              {/* Badge */}
-              <div
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs mb-8"
-                style={{
-                  background: "rgba(var(--color-teal-rgb),0.08)",
-                  border: "1px solid rgba(var(--color-teal-rgb),0.2)",
-                  color: "var(--color-teal)",
-                  fontFamily: "monospace",
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full animate-pulse"
-                  style={{ background: "var(--color-teal)" }}
-                />
-                See your graph
-              </div>
-
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
-                See your decision graph from your own workspace.
-              </h2>
-
-              <p className="text-[#9CA3AF] mb-10 text-sm leading-relaxed max-w-2xl mx-auto">
-                {LANDING_CTA.bookingSectionCopy} The booking flow stays on this
-                page, so you can schedule without leaving ContextOS.
-              </p>
-
-              <div
-                className="cal-booking-shell text-left"
-                style={{
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  boxShadow:
-                    "0 24px 70px rgba(0,0,0,0.42), 0 0 50px rgba(var(--color-teal-rgb),0.08)",
-                }}
-              >
-                <div className="cal-booking-frame">
-                  <Cal
-                    calLink={CAL_BOOKING_LINK}
-                    config={{
-                      layout: CAL_BOOKING_LAYOUT,
-                      theme: "dark",
-                    }}
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      overflow: "scroll",
-                    }}
-                  />
-                </div>
-              </div>
-
-              <p className="text-xs text-[#3D4450] mt-5 font-mono">
-                Powered by Cal.com - no redirect required
-              </p>
-            </div>
           </div>
         </div>
+
+        <p className="mt-5 font-mono text-xs text-[#3D4450]">
+          Powered by Cal.com - no redirect required
+        </p>
       </div>
     </section>
   );

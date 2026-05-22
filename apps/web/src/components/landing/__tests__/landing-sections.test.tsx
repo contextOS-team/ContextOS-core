@@ -3,13 +3,9 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import CTASection from '../CTASection'
-import Features from '../Features'
 import Footer from '../Footer'
-import HowItWorks from '../HowItWorks'
 import Integrations from '../Integrations'
-import ProblemSection from '../ProblemSection'
 import ProductDemo from '../ProductDemo'
-import TrustBar from '../TrustBar'
 
 vi.mock('posthog-js/react', () => ({
   usePostHog: () => ({
@@ -42,51 +38,29 @@ vi.mock('@calcom/embed-react', () => ({
 }))
 
 describe('landing section rewrite', () => {
-  it('renders the lost-decision problem and source-backed workflow copy', () => {
-    render(
-      <>
-        <ProblemSection />
-        <HowItWorks />
-        <ProductDemo />
-      </>
-    )
+  it('renders the demo-first product proof without the old explainer stack', () => {
+    render(<ProductDemo />)
 
-    for (const question of [
-      'Why was this built this way?',
-      'Who decided it?',
-      'What alternatives were rejected?',
-      'Is it still true?',
-      'Where is the source?',
-    ]) {
-      expect(screen.getByText(question)).toBeTruthy()
-    }
-
-    expect(screen.getByText('Connect your sources')).toBeTruthy()
-    expect(screen.getByText('ContextOS detects decisions')).toBeTruthy()
-    expect(screen.getByText('Use the decision graph where work happens')).toBeTruthy()
-    expect(screen.getByText('Every decision comes with receipts.')).toBeTruthy()
-    expect(screen.getAllByText('Original sources').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('People involved').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Affected systems').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Related work').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Verified').length).toBeGreaterThan(0)
+    expect(screen.getByText('Ask why a ticket exists. Get the decision trail.')).toBeTruthy()
+    expect(screen.getByText('Ask a decision question')).toBeTruthy()
+    expect(screen.getByText('Why are we keeping source ingestion workspace-scoped?')).toBeTruthy()
+    expect(screen.getByText(/keep ingestion workspace-scoped so source evidence/i)).toBeTruthy()
+    expect(screen.getByText('Ticket context')).toBeTruthy()
+    expect(screen.getByText('PR context')).toBeTruthy()
+    expect(screen.getByText('Source-backed decisions')).toBeTruthy()
+    expect(screen.getByText('Review-ready PR context')).toBeTruthy()
   })
 
-  it('renders MVP capability, integration, booking, and footer copy', () => {
+  it('renders compact source, booking, and footer copy', () => {
     render(
       <>
-        <Features />
         <Integrations />
-        <TrustBar />
         <CTASection />
         <Footer />
       </>
     )
 
-    expect(screen.getByText('Source-backed decisions')).toBeTruthy()
-    expect(screen.getByText('Decision graph')).toBeTruthy()
-    expect(screen.getByText('Context pages')).toBeTruthy()
-    expect(screen.getByText(/Next: close the loop with task creation/i)).toBeTruthy()
+    expect(screen.getByText('Connect the places where decisions already happen.')).toBeTruthy()
     expect(screen.getAllByText('GitLab').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Fathom').length).toBeGreaterThan(0)
     expect(document.getElementById('booking')).toBeTruthy()

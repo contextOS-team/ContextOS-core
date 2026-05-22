@@ -8,11 +8,11 @@ export const LANDING_HERO = {
   badge: "Early access for engineering teams",
   h1: "Know why your company works the way it does.",
   subheadline:
-    "ContextOS finds decisions buried across Slack, meetings, GitHub/GitLab, docs, and tickets, then maps what was decided, who was involved, why it was decided, and the original source.",
+    "A source-backed decision trail for every ticket and PR: what changed, why, who decided it, and the evidence from Slack, meetings, code review, docs, and issues.",
   categoryProofLine:
-    "Decision memory for engineering teams shipping through Slack, GitHub/GitLab, Jira/Linear, Notion, Telegram, and meetings.",
-  primaryCta: "See your decision graph",
-  secondaryCta: "View a sample trail",
+    "Sample workspace: Slack, Fathom, GitHub/GitLab, Linear/Jira, Notion, and Telegram.",
+  primaryCta: "View product demo",
+  secondaryCta: "See your decision graph",
 } as const;
 
 export const LANDING_CTA = {

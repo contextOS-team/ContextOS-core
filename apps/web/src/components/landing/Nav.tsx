@@ -16,9 +16,8 @@ export default function Nav() {
   }, []);
 
   const links = [
-    { label: "Features", href: "#features" },
-    { label: "How It Works", href: "#how-it-works" },
-    { label: "Integrations", href: "#integrations" },
+    { label: "Demo", href: "#demo" },
+    { label: "Sources", href: "#integrations" },
   ];
 
   const captureBookCallClick = () => {

@@ -37,50 +37,40 @@ export default function Integrations() {
   return (
     <section
       id="integrations"
-      className="relative py-24 px-6 overflow-hidden"
+      className="relative overflow-hidden px-6 py-16"
       ref={ref as React.RefObject<HTMLElement>}
     >
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background:
-            "radial-gradient(ellipse 60% 40% at 30% 60%, rgba(var(--color-teal-rgb),0.04) 0%, transparent 60%)",
-        }}
-      />
-
       <div className="max-w-5xl mx-auto relative z-10">
-        {/* Label */}
         <div
-          className={`flex justify-center mb-4 transition-[opacity,transform] duration-[600ms] ${
+          className={`mb-4 transition-[opacity,transform] duration-[600ms] ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
           }`}
         >
-          <span className="section-label">Integrations</span>
+          <span className="section-label">Sources</span>
         </div>
 
-        {/* Headline */}
         <h2
-          className={`text-4xl md:text-5xl font-bold text-center text-white mb-4 tracking-tight transition-[opacity,transform] duration-[600ms] ${
+          className={`mb-4 max-w-2xl text-3xl font-semibold tracking-normal text-white transition-[opacity,transform] duration-[600ms] md:text-4xl ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "100ms" }}
         >
-          Works with your existing stack
+          Connect the places where decisions already happen.
         </h2>
 
         <p
-          className={`text-center text-[#6B7280] mb-14 max-w-lg mx-auto transition-[opacity,transform] duration-[600ms] ${
+          className={`mb-8 max-w-2xl text-sm leading-6 text-[#9CA3AF] transition-[opacity,transform] duration-[600ms] md:text-base ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "150ms" }}
         >
-          Connect the tools where engineering decisions happen, then keep
-          source-backed decisions attached to the work they explain.
+          ContextOS reads the source tools your team already uses, then keeps
+          the evidence attached to the ticket, PR, doc, or onboarding trail it
+          explains.
         </p>
 
-        {/* Grid */}
         <div
-          className={`grid grid-cols-2 md:grid-cols-4 gap-4 transition-[opacity,transform] duration-700 ${
+          className={`flex flex-wrap gap-3 transition-[opacity,transform] duration-700 ${
             inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
           style={{ transitionDelay: "250ms" }}
@@ -88,46 +78,30 @@ export default function Integrations() {
           {integrations.map((integration, i) => (
             <div
               key={integration.name}
-              className="rounded-xl p-4 relative overflow-hidden card-hover"
+              className="flex items-center gap-3 rounded-full border border-white/[0.08] bg-white/[0.025] px-3 py-2"
               style={{
-                background: "#0F0F18",
-                border: "1px solid rgba(255,255,255,0.07)",
                 transitionDelay: `${i * 50}ms`,
               }}
             >
               <div
-                className="absolute top-0 left-0 right-0 h-px"
-                style={{
-                  background:
-                    "linear-gradient(90deg, transparent, rgba(var(--color-teal-rgb),0.3), transparent)",
-                }}
-              />
-
-              <div className="flex items-start justify-between mb-3">
-                <div
-                  className="w-9 h-9 rounded-lg flex items-center justify-center text-white"
-                  style={{ background: integration.color }}
-                >
-                  {integration.name === "Slack" ? (
-                    <integration.Logo width={16} height={16} color="currentColor" />
-                  ) : (
-                    <integration.Logo width={16} height={16} fill="currentColor" />
-                  )}
-                </div>
-                <div
-                  className="flex items-center gap-1 text-[9px] font-mono"
-                  style={{ color: "var(--color-teal)" }}
-                >
-                  <div
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ background: "var(--color-teal)" }}
-                  />
-                  Live
-                </div>
+                className="flex h-8 w-8 items-center justify-center rounded-full text-white"
+                style={{ background: integration.color }}
+              >
+                {integration.name === "Slack" ? (
+                  <integration.Logo width={15} height={15} color="currentColor" />
+                ) : (
+                  <integration.Logo width={15} height={15} fill="currentColor" />
+                )}
               </div>
 
-              <div className="text-sm font-medium text-white">{integration.name}</div>
-              <div className="text-xs text-[#4B5563] mt-0.5">{integration.description}</div>
+              <div>
+                <div className="text-sm font-medium text-white">
+                  {integration.name}
+                </div>
+                <div className="text-xs text-[#6B7280]">
+                  {integration.description}
+                </div>
+              </div>
             </div>
           ))}
         </div>

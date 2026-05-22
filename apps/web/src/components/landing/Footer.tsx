@@ -1,13 +1,9 @@
 export default function Footer() {
   const links = {
     product: [
-      { label: "Features", href: "#features" },
-      { label: "How It Works", href: "#how-it-works" },
-      { label: "Integrations", href: "#integrations" },
-    ],
-    company: [
-      { label: "Twitter / X", href: "#" },
-      { label: "GitHub", href: "#" },
+      { label: "Demo", href: "#demo" },
+      { label: "Sources", href: "#integrations" },
+      { label: "Book", href: "#booking" },
     ],
   };
 
@@ -17,9 +13,8 @@ export default function Footer() {
       style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
     >
       <div className="max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
-          {/* Brand */}
-          <div className="md:col-span-2">
+        <div className="mb-10 flex flex-col justify-between gap-8 md:flex-row md:items-start">
+          <div>
             <div className="flex items-center gap-2 mb-4">
               <div
                 className="w-7 h-7 rounded-md flex items-center justify-center"
@@ -49,51 +44,21 @@ export default function Footer() {
             <p className="text-sm text-[#4B5563] leading-relaxed max-w-xs">
               Source-backed decision memory for engineering and product teams.
             </p>
-            <p className="text-xs text-[#3D4450] mt-4">
-              Built with love in KZ
-            </p>
           </div>
 
-          {/* Product */}
-          <div>
-            <div className="text-xs font-mono uppercase tracking-widest text-[#3D4450] mb-4">
-              Product
-            </div>
-            <ul className="space-y-2.5">
+          <div className="flex flex-wrap gap-5">
               {links.product.map((link) => (
-                <li key={link.label}>
                   <a
+                    key={link.label}
                     href={link.href}
                     className="text-sm text-[#4B5563] hover:text-[#9CA3AF] transition-colors duration-200"
                   >
                     {link.label}
                   </a>
-                </li>
               ))}
-            </ul>
-          </div>
-
-          {/* Company */}
-          <div>
-            <div className="text-xs font-mono uppercase tracking-widest text-[#3D4450] mb-4">
-              Company
-            </div>
-            <ul className="space-y-2.5">
-              {links.company.map((link) => (
-                <li key={link.label}>
-                  <a
-                    href={link.href}
-                    className="text-sm text-[#4B5563] hover:text-[#9CA3AF] transition-colors duration-200"
-                  >
-                    {link.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
           </div>
         </div>
 
-        {/* Bottom row */}
         <div
           className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-8"
           style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}

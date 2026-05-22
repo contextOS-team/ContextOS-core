@@ -22,50 +22,32 @@ describe('landing hero', () => {
     ).toBeTruthy()
     expect(
       screen.getByText(
-        'ContextOS finds decisions buried across Slack, meetings, GitHub/GitLab, docs, and tickets, then maps what was decided, who was involved, why it was decided, and the original source.'
+        'A source-backed decision trail for every ticket and PR: what changed, why, who decided it, and the evidence from Slack, meetings, code review, docs, and issues.'
       )
     ).toBeTruthy()
     expect(
       screen.getByText(
-        'Decision memory for engineering teams shipping through Slack, GitHub/GitLab, Jira/Linear, Notion, Telegram, and meetings.'
+        'Sample workspace: Slack, Fathom, GitHub/GitLab, Linear/Jira, Notion, and Telegram.'
       )
     ).toBeTruthy()
 
     const primaryLink = screen.getByRole('link', {
-      name: 'See your decision graph',
+      name: 'View product demo',
     })
-    expect(primaryLink.getAttribute('href')).toBe('#booking')
+    expect(primaryLink.getAttribute('href')).toBe('#demo')
 
     const secondaryLink = screen.getByRole('link', {
-      name: 'View a sample trail',
+      name: 'See your decision graph',
     })
-    expect(secondaryLink.getAttribute('href')).toBe('#decision-trail')
+    expect(secondaryLink.getAttribute('href')).toBe('#booking')
   })
 
-  it('renders the source-backed Decision Receipt proof fields', () => {
+  it('keeps the hero minimal and leaves product proof to the demo section', () => {
     render(<Hero />)
 
-    expect(screen.getByText('Decision Receipt')).toBeTruthy()
-    expect(screen.getByText('Verified')).toBeTruthy()
-    expect(screen.getByText('Why')).toBeTruthy()
-    expect(screen.getByText('People involved')).toBeTruthy()
-    expect(screen.getByText('Original sources')).toBeTruthy()
-    expect(screen.getByText('Affected systems')).toBeTruthy()
-    expect(screen.getByText('Related work')).toBeTruthy()
-
-    for (const source of [
-      'Slack thread - 14 messages',
-      'Fathom meeting - 32 min',
-      'GitHub PR #418',
-      'Linear ENG-421',
-      'Architecture doc',
-    ]) {
-      expect(screen.getAllByText(source).length).toBeGreaterThan(0)
-    }
-
-    for (const system of ['Sync engine', 'Decision graph', 'Onboarding']) {
-      expect(screen.getAllByText(system).length).toBeGreaterThan(0)
-    }
+    expect(screen.queryByText('Decision Receipt')).toBeNull()
+    expect(screen.queryByText('Original sources')).toBeNull()
+    expect(screen.queryByText('Affected systems')).toBeNull()
   })
 
   it('does not render the previous ticket-first hero language', () => {

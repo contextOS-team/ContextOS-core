@@ -62,10 +62,11 @@ describe('landing booking CTA', () => {
       name: /see your decision graph/i,
     })
 
-    expect(bookingLinks.length).toBeGreaterThanOrEqual(2)
+    expect(bookingLinks.length).toBeGreaterThanOrEqual(1)
     for (const link of bookingLinks) {
       expect(link.getAttribute('href')).toBe('#booking')
     }
+    expect(screen.getByRole('link', { name: /view product demo/i }).getAttribute('href')).toBe('#demo')
     expect(screen.queryAllByRole('link', { name: /get early access/i })).toHaveLength(0)
   })
 
