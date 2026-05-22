@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Live Intelligence
 current_plan: 3
-status: executing
-stopped_at: Completed 42-02-PLAN.md
-last_updated: "2026-05-22T17:08:18.395Z"
+status: verifying
+stopped_at: Completed 42-03-PLAN.md
+last_updated: "2026-05-22T17:37:02.452Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 11
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 18
-  completed_plans: 16
-  percent: 27
+  completed_plans: 17
+  percent: 36
 ---
 
 # Project State
@@ -31,10 +31,10 @@ Phase: 42 (landing-positioning-and-seo-launch-rewrite) — EXECUTING
 Plan: 3 of 3
 Current Plan: 3
 Total Plans in Phase: 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-22
 
-Progress: [█████████░] 89%
+Progress: [█████████░] 94%
 
 ## Accumulated Context
 
@@ -99,9 +99,10 @@ Progress: [█████████░] 89%
 - [Phase 41]: Source freshness is a launch risk for the first startup pilot. The current chrome can show ambient source activity recency, but broad "everything is up to date" claims require a provider-level health model; see 41-SOURCE-FRESHNESS-RISKS.md.
 - [Phase 42]: LANDING_SEO is the source of truth for public homepage title and description — Centralizing approved launch metadata prevents drift between SEO and later landing components.
 - [Phase 42]: Primary landing CTA label is See your decision graph while href remains #booking — The label sells the launch outcome while preserving the existing booking-call flow.
-- [Phase 42]: Decision Receipt is now the hero product-proof primitive — Replaces ticket-first Remotion proof with a crawlable source-backed artifact while leaving Remotion files untouched.
-- [Phase 42]: Hero copy reads from LANDING_HERO and keeps #booking — Centralized copy stays aligned with Plan 42-01 while preserving the existing booking conversion flow and adding #decision-trail for the sample trail.
+- [Phase 42]: Decision Receipt is now the landing product-proof primitive — Replaces ticket-first Remotion proof with a crawlable source-backed artifact while leaving Remotion files untouched.
+- [Phase 42]: Hero copy reads from LANDING_HERO and leads to #demo first — Centralized copy stays aligned with Plan 42-01 while preserving the booking conversion flow through See your decision graph -> #booking.
 - [Phase 42]: Decision Receipt sample data is fictional — Satisfies the plan threat model by avoiding any implication of real customer workspace data.
+- [Phase 42]: Landing page now prioritizes hero -> product demo -> sources -> booking -> footer — User feedback found the plan-compliant version too noisy, so problem/how/features/trust bands were removed from the rendered page order.
 
 ### Roadmap Evolution
 
@@ -131,9 +132,10 @@ None.
 | Phase 41 P03 | checkpointed 2026-05-21 | 3 tasks + human visual fixes | 15 files |
 | Phase 42 P01 | 4min | 3 tasks | 5 files |
 | Phase 42 P02 | 4min | 3 tasks | 3 files |
+| Phase 42 P03 | 24min | 4 tasks | 12 files |
 
 ## Session Continuity
 
-Last session: 2026-05-22T17:08:18.390Z
-Stopped at: Completed 42-02-PLAN.md
+Last session: 2026-05-22T17:36:56.440Z
+Stopped at: Completed 42-03-PLAN.md
 Resume file: None
