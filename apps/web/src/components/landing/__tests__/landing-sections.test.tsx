@@ -2,6 +2,7 @@
 
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import LandingPage from '@/app/(landing)/page'
 import CTASection from '../CTASection'
 import Footer from '../Footer'
 import Integrations from '../Integrations'
@@ -38,6 +39,17 @@ vi.mock('@calcom/embed-react', () => ({
 }))
 
 describe('landing section rewrite', () => {
+  it('renders the simplified demo-first page composition', () => {
+    render(<LandingPage />)
+
+    expect(document.getElementById('demo')).toBeTruthy()
+    expect(document.getElementById('integrations')).toBeTruthy()
+    expect(document.getElementById('booking')).toBeTruthy()
+    expect(screen.queryByText('The Problem')).toBeNull()
+    expect(screen.queryByText('How It Works')).toBeNull()
+    expect(screen.queryByText('Features')).toBeNull()
+  })
+
   it('renders the demo-first product proof without the old explainer stack', () => {
     render(<ProductDemo />)
 

@@ -5,8 +5,23 @@ import { PostHogProvider, PostHogPageView } from '@/lib/posthog'
 import '../landing.css'
 
 export const metadata: Metadata = {
-  title: LANDING_SEO.title,
+  title: {
+    absolute: LANDING_SEO.title,
+  },
   description: LANDING_SEO.description,
+  openGraph: {
+    title: LANDING_SEO.title,
+    description: LANDING_SEO.description,
+    url: 'https://contextos.pro',
+    siteName: 'ContextOS',
+    locale: 'en_US',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: LANDING_SEO.title,
+    description: LANDING_SEO.description,
+  },
 }
 
 export default function LandingLayout({

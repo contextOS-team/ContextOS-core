@@ -64,17 +64,6 @@ export default function Footer() {
           style={{ borderTop: "1px solid rgba(255,255,255,0.04)" }}
         >
           <p className="text-xs text-[#3D4450]">&copy; 2026 ContextOS. All rights reserved.</p>
-          <div className="flex items-center gap-4">
-            {["Privacy", "Terms", "Security"].map((item) => (
-              <a
-                key={item}
-                href="#"
-                className="text-xs text-[#3D4450] hover:text-[#6B7280] transition-colors"
-              >
-                {item}
-              </a>
-            ))}
-          </div>
         </div>
       </div>
     </footer>
