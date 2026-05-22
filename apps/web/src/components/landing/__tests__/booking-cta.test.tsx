@@ -73,7 +73,9 @@ describe('landing booking CTA', () => {
     render(<CTASection />)
 
     expect(document.getElementById('booking')).toBeTruthy()
-    expect(screen.getByRole('heading', { name: /book a call/i })).toBeTruthy()
+    expect(screen.getByRole('heading', {
+      name: /see your decision graph from your own workspace/i,
+    })).toBeTruthy()
     expect(screen.queryByPlaceholderText(/you@company\.com/i)).toBeNull()
     expect(screen.getByTestId('cal-inline').getAttribute('data-cal-link')).toBe('daulet')
     expect(screen.getByTestId('cal-inline').getAttribute('data-layout')).toBe('month_view')
