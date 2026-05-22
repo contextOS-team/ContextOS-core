@@ -228,3 +228,22 @@ Plans:
 - [x] 41-01-PLAN.md — Data + state foundation: fonts loaded, initial palette scope added, `dashboard_user_state` table + RLS, `useLastVisitedAt` hysteresis hook, `useSessionSeenItems` ref store, pure `computeHeadline` rules engine with unit tests, `fetchActivityDelta` + `bucketDelta` helpers. Human checkpoint later superseded warm/serif styling in favor of global dashboard tokens.
 - [ ] 41-02-PLAN.md — Pulse surface: rewrite `dashboard/page.tsx` as orchestrator, build `pulse/{headline,recent-decisions,active-context,needs-you,new-item-marker,use-dashboard-data}.tsx`, render provenance quotes when `source_quote` exists on Decision nodes, delete 9 legacy widget files, human-verify checkpoint (wave 2, depends on 41-01)
 - [x] 41-03-PLAN.md — Chrome cluster: `chrome/{chrome-nav,sync-indicator,use-sync-state,avatar-puck}.tsx`, passive source activity/sync indicator with Realtime subscription on `activity_events`, sidebar.tsx becomes thin shim, mint discipline enforced. Human checkpoint removed the planned drawer, `Sync all`, and reconnect CTA; see `41-03-SUMMARY.md` and `41-SOURCE-FRESHNESS-RISKS.md`.
+
+### Phase 42: Landing Positioning and SEO Launch Rewrite
+
+**Goal:** Reposition the landing page for launch around source-backed decision memory, with SEO metadata, conversion copy, and Decision Receipt visuals that make ContextOS legible as a source-backed decision graph for engineering/product teams
+**Depends on:** Nothing (launch copy can ship independently of Phase 41)
+**Requirements**: LAND-04, LAND-05, LAND-06, LAND-07, LAND-08
+**Success Criteria** (what must be TRUE):
+  1. The hero explains what ContextOS is, who it is for, and why it is useful within the first viewport without vague "AI-native OS" language
+  2. The page foregrounds current MVP capabilities only: detected decisions, source links, decision graph/context pages, and source-backed decision receipts
+  3. SEO title, description, H1, section headings, and visible body copy target the decision-memory wedge while still capturing adjacent search intent around AI knowledge management, enterprise search, and engineering knowledge graphs
+  4. The page includes a low-risk action-layer teaser without promising autonomous task/doc/Slack actions before they exist
+  5. Unsupported trust claims are removed or softened unless verified in the codebase/company materials
+  6. The hero/product-proof visuals make Decision Receipt the central product primitive, with source chips, people involved, affected systems, and verification state visible in the mock UI
+**Plans:** 1/3 plans executed
+
+Plans:
+- [x] 42-01-PLAN.md -- SEO metadata, shared launch copy constants, booking CTA label, metadata/CTA regression tests
+- [ ] 42-02-PLAN.md -- Hero rewrite plus source-backed Decision Receipt visual with source chips, people, affected systems, related work, and verification state
+- [ ] 42-03-PLAN.md -- Problem/workflow/features/product-proof/booking/trust/footer copy rewrite, claim guards, and desktop/mobile visual verification

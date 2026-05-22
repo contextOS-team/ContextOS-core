@@ -4,15 +4,15 @@ milestone: v1.3
 milestone_name: Live Intelligence
 current_plan: 2
 status: executing
-stopped_at: Completed 41-03-PLAN.md; next execute 41-02-PLAN.md
-last_updated: "2026-05-21T12:45:00.000Z"
-last_activity: 2026-05-21
+stopped_at: Completed 42-01-PLAN.md
+last_updated: "2026-05-22T16:59:39.881Z"
+last_activity: 2026-05-22
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 3
-  total_plans: 15
-  completed_plans: 14
-  percent: 30
+  total_plans: 18
+  completed_plans: 15
+  percent: 27
 ---
 
 # Project State
@@ -22,19 +22,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 41 — dashboard-pulse-redesign
+**Current focus:** Phase 42 — landing-positioning-and-seo-launch-rewrite
 
 ## Current Position
 
 Milestone: v1.3 Live Intelligence
-Phase: 41 (dashboard-pulse-redesign) — EXECUTING
+Phase: 42 (landing-positioning-and-seo-launch-rewrite) — EXECUTING
 Plan: 2 of 3
 Current Plan: 2
 Total Plans in Phase: 3
-Status: Ready to execute 41-02
-Last activity: 2026-05-21
+Status: Ready to execute
+Last activity: 2026-05-22
 
-Progress: [█████████░] 87%
+Progress: [████████░░] 83%
 
 ## Accumulated Context
 
@@ -97,6 +97,8 @@ Progress: [█████████░] 87%
 - [Phase 41]: Human checkpoint rejected the warm/serif pulse direction. `.pulse-surface` remains scoped to dashboard home, but now follows the existing global dashboard dark tokens and only adds pulse-specific affordances, preventing color drift from context/settings/activity/graph.
 - [Phase 41]: Chrome source freshness indicator is passive after human checkpoint — no drawer, no Sync all button, no reconnect CTA. The label is `updated ...`, not `last synced ...`, because per-provider health is not yet modeled.
 - [Phase 41]: Source freshness is a launch risk for the first startup pilot. The current chrome can show ambient source activity recency, but broad "everything is up to date" claims require a provider-level health model; see 41-SOURCE-FRESHNESS-RISKS.md.
+- [Phase 42]: LANDING_SEO is the source of truth for public homepage title and description — Centralizing approved launch metadata prevents drift between SEO and later landing components.
+- [Phase 42]: Primary landing CTA label is See your decision graph while href remains #booking — The label sells the launch outcome while preserving the existing booking-call flow.
 
 ### Roadmap Evolution
 
@@ -104,6 +106,7 @@ v1.3 roadmap created with 7 phases (32-38) covering 19 requirements across activ
 
 - Phase 39 added: Slack User Token Migration & DM Support
 - Phase 40 added: Telegram Shared-Bot Migration -- replace bring-your-own-bot with single shared @ContextOSBot via deep-link pairing
+- Phase 42 added: Landing Positioning and SEO Launch Rewrite -- launch-focused landing copy, SEO research, and Decision Receipt visual direction around source-backed decision memory
 
 ### Pending Todos
 
@@ -123,9 +126,10 @@ None.
 | 40    | 03   | ~4h (incl. human-verify gate + 5 deviation fixes) | 4 | 16 | 2026-05-04 |
 | Phase 41 P01 | 38min | 3 tasks | 12 files |
 | Phase 41 P03 | checkpointed 2026-05-21 | 3 tasks + human visual fixes | 15 files |
+| Phase 42 P01 | 4min | 3 tasks | 5 files |
 
 ## Session Continuity
 
-Last session: 2026-05-21T12:45:00.000Z
-Stopped at: Completed 41-03-PLAN.md; proceeding to 41-02-PLAN.md
+Last session: 2026-05-22T16:59:39.877Z
+Stopped at: Completed 42-01-PLAN.md
 Resume file: None

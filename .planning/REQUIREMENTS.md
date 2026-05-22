@@ -33,6 +33,11 @@ Requirements for the live intelligence milestone. Each maps to roadmap phases.
 - [ ] **LAND-01**: Integrations section updated to show all 9 integrations (add GitLab, Jira, Telegram, Slack Huddles)
 - [ ] **LAND-02**: General typography, spacing, and animation polish
 - [ ] **LAND-03**: Privacy/trust section added highlighting data ownership
+- [x] **LAND-04**: Landing hero and first viewport reposition ContextOS around source-backed decision memory for engineering teams, not generic context gathering or AI search
+- [x] **LAND-05**: SEO title, description, H1, and visible headings target the decision-memory wedge while naturally covering adjacent intent around AI knowledge management, enterprise search, and engineering knowledge graphs
+- [ ] **LAND-06**: Landing copy foregrounds current MVP capabilities only: detected decisions, source links, graph/context pages, and generated ticket/PR context
+- [x] **LAND-07**: Action-layer copy is clearly framed as coming next unless implemented, and unsupported trust/compliance claims are removed or softened
+- [ ] **LAND-08**: Landing visuals introduce Decision Receipt as the primary product primitive, showing decision, rationale, people involved, original sources, affected systems, and verification status instead of generic AI glow or ticket-only context
 
 ### Onboarding
 
@@ -115,6 +120,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LAND-01 | Phase 36 | Pending |
 | LAND-02 | Phase 36 | Pending |
 | LAND-03 | Phase 36 | Pending |
+| LAND-04 | Phase 42 | Complete |
+| LAND-05 | Phase 42 | Complete |
+| LAND-06 | Phase 42 | Pending |
+| LAND-07 | Phase 42 | Complete |
+| LAND-08 | Phase 42 | Pending |
 | PRIV-01 | Phase 37 | Pending |
 | RAG-01 | Phase 38 | Pending |
 | TG-05 | Phase 40 | Complete |
@@ -129,11 +139,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DASH-06 | Phase 41 | Pending |
 
 **Coverage:**
-- v1.3 requirements: 22 total
-- Mapped to phases: 22
+- v1.3 core requirements: 22 total
+- Phase 41/42 post-v1.3 requirements: 11 total
+- Total active requirements: 33
+- Mapped to phases: 33
 - Unmapped: 0
-- Phase 41 (post-v1.3) requirements: 6 total — all mapped
+- Post-v1.3 launch/dashboard requirements: Phase 41 has 6 dashboard requirements, Phase 42 has 5 landing requirements -- all mapped
 
 ---
 *Requirements defined: 2026-03-15*
-*Last updated: 2026-05-21 - completed DASH-04 with human-checkpoint chrome deviation documented*
+*Last updated: 2026-05-22 - added Phase 42 launch positioning, SEO, and Decision Receipt visual requirements*
