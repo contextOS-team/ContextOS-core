@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Live Intelligence
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 42-01-PLAN.md
-last_updated: "2026-05-22T16:59:39.881Z"
+stopped_at: Completed 42-02-PLAN.md
+last_updated: "2026-05-22T17:08:18.395Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 18
-  completed_plans: 15
+  completed_plans: 16
   percent: 27
 ---
 
@@ -28,13 +28,13 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 
 Milestone: v1.3 Live Intelligence
 Phase: 42 (landing-positioning-and-seo-launch-rewrite) — EXECUTING
-Plan: 2 of 3
-Current Plan: 2
+Plan: 3 of 3
+Current Plan: 3
 Total Plans in Phase: 3
 Status: Ready to execute
 Last activity: 2026-05-22
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 89%
 
 ## Accumulated Context
 
@@ -99,6 +99,9 @@ Progress: [████████░░] 83%
 - [Phase 41]: Source freshness is a launch risk for the first startup pilot. The current chrome can show ambient source activity recency, but broad "everything is up to date" claims require a provider-level health model; see 41-SOURCE-FRESHNESS-RISKS.md.
 - [Phase 42]: LANDING_SEO is the source of truth for public homepage title and description — Centralizing approved launch metadata prevents drift between SEO and later landing components.
 - [Phase 42]: Primary landing CTA label is See your decision graph while href remains #booking — The label sells the launch outcome while preserving the existing booking-call flow.
+- [Phase 42]: Decision Receipt is now the hero product-proof primitive — Replaces ticket-first Remotion proof with a crawlable source-backed artifact while leaving Remotion files untouched.
+- [Phase 42]: Hero copy reads from LANDING_HERO and keeps #booking — Centralized copy stays aligned with Plan 42-01 while preserving the existing booking conversion flow and adding #decision-trail for the sample trail.
+- [Phase 42]: Decision Receipt sample data is fictional — Satisfies the plan threat model by avoiding any implication of real customer workspace data.
 
 ### Roadmap Evolution
 
@@ -127,9 +130,10 @@ None.
 | Phase 41 P01 | 38min | 3 tasks | 12 files |
 | Phase 41 P03 | checkpointed 2026-05-21 | 3 tasks + human visual fixes | 15 files |
 | Phase 42 P01 | 4min | 3 tasks | 5 files |
+| Phase 42 P02 | 4min | 3 tasks | 3 files |
 
 ## Session Continuity
 
-Last session: 2026-05-22T16:59:39.877Z
-Stopped at: Completed 42-01-PLAN.md
+Last session: 2026-05-22T17:08:18.390Z
+Stopped at: Completed 42-02-PLAN.md
 Resume file: None

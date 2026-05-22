@@ -37,7 +37,7 @@ Requirements for the live intelligence milestone. Each maps to roadmap phases.
 - [x] **LAND-05**: SEO title, description, H1, and visible headings target the decision-memory wedge while naturally covering adjacent intent around AI knowledge management, enterprise search, and engineering knowledge graphs
 - [ ] **LAND-06**: Landing copy foregrounds current MVP capabilities only: detected decisions, source links, graph/context pages, and generated ticket/PR context
 - [x] **LAND-07**: Action-layer copy is clearly framed as coming next unless implemented, and unsupported trust/compliance claims are removed or softened
-- [ ] **LAND-08**: Landing visuals introduce Decision Receipt as the primary product primitive, showing decision, rationale, people involved, original sources, affected systems, and verification status instead of generic AI glow or ticket-only context
+- [x] **LAND-08**: Landing visuals introduce Decision Receipt as the primary product primitive, showing decision, rationale, people involved, original sources, affected systems, and verification status instead of generic AI glow or ticket-only context
 
 ### Onboarding
 
@@ -124,7 +124,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LAND-05 | Phase 42 | Complete |
 | LAND-06 | Phase 42 | Pending |
 | LAND-07 | Phase 42 | Complete |
-| LAND-08 | Phase 42 | Pending |
+| LAND-08 | Phase 42 | Complete |
 | PRIV-01 | Phase 37 | Pending |
 | RAG-01 | Phase 38 | Pending |
 | TG-05 | Phase 40 | Complete |

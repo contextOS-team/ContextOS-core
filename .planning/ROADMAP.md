@@ -241,9 +241,9 @@ Plans:
   4. The page includes a low-risk action-layer teaser without promising autonomous task/doc/Slack actions before they exist
   5. Unsupported trust claims are removed or softened unless verified in the codebase/company materials
   6. The hero/product-proof visuals make Decision Receipt the central product primitive, with source chips, people involved, affected systems, and verification state visible in the mock UI
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [x] 42-01-PLAN.md -- SEO metadata, shared launch copy constants, booking CTA label, metadata/CTA regression tests
-- [ ] 42-02-PLAN.md -- Hero rewrite plus source-backed Decision Receipt visual with source chips, people, affected systems, related work, and verification state
+- [x] 42-02-PLAN.md -- Hero rewrite plus source-backed Decision Receipt visual with source chips, people, affected systems, related work, and verification state
 - [ ] 42-03-PLAN.md -- Problem/workflow/features/product-proof/booking/trust/footer copy rewrite, claim guards, and desktop/mobile visual verification
