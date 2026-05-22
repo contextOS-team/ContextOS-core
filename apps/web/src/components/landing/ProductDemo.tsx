@@ -1,17 +1,27 @@
 "use client";
 
 import { useInView } from "@/hooks/useInView";
+import { DecisionReceiptVisual } from "./DecisionReceiptVisual";
+
+const trailFields = [
+  ["Decision", "Use workspace-scoped source ingestion"],
+  ["Why", "The team chose tenant-aware source collection so Slack, meeting, and PR evidence never crosses workspace boundaries."],
+  ["Original sources", "Slack thread, Fathom meeting, GitHub PR #418, Linear ENG-421, Architecture doc"],
+  ["People involved", "Daulet, Alex, Sara"],
+  ["Affected systems", "Sync engine, Decision graph, Onboarding"],
+  ["Related work", "ENG-421, PR #418, Architecture doc"],
+  ["Verification state", "Verified"],
+] as const;
 
 export default function ProductDemo() {
   const { ref, inView } = useInView();
 
   return (
     <section
-      id="demo"
-      className="relative py-24 px-6 overflow-hidden"
+      id="sample-decision-trail"
+      className="relative overflow-hidden px-6 py-24"
       ref={ref as React.RefObject<HTMLElement>}
     >
-      {/* Background */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
@@ -20,148 +30,72 @@ export default function ProductDemo() {
         }}
       />
 
-      <div className="max-w-4xl mx-auto relative z-10">
-        {/* Label */}
-        <div
-          className={`flex justify-center mb-4 transition-[opacity,transform] duration-[600ms] ${
-            inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-          }`}
-        >
-          <span className="section-label">See It In Action</span>
+      <div className="relative z-10 mx-auto max-w-6xl">
+        <div className="mx-auto mb-12 max-w-3xl text-center">
+          <div
+            className={`mb-4 transition-[opacity,transform] duration-[600ms] ${
+              inView ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+            }`}
+          >
+            <span className="section-label">Sample Trail</span>
+          </div>
+
+          <h2
+            className={`mb-4 text-4xl font-bold tracking-tight text-white transition-[opacity,transform] duration-[600ms] md:text-5xl ${
+              inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
+            }`}
+            style={{ transitionDelay: "100ms" }}
+          >
+            Every decision comes with receipts.
+          </h2>
+
+          <p
+            className={`text-sm leading-6 text-[#9CA3AF] transition-[opacity,transform] duration-[600ms] md:text-base ${
+              inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
+            }`}
+            style={{ transitionDelay: "150ms" }}
+          >
+            A source-backed decision receipt is crawlable React text, not a video
+            placeholder. It gives search engines and teammates the same product
+            proof: decision memory, source-backed decisions, engineering knowledge
+            management, company knowledge graph, ticket context, and PR context.
+          </p>
         </div>
 
-        {/* Headline */}
-        <h2
-          className={`text-4xl md:text-5xl font-bold text-center text-white mb-4 tracking-tight transition-[opacity,transform] duration-[600ms] ${
-            inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
-          }`}
-          style={{ transitionDelay: "100ms" }}
-        >
-          Watch a context page build itself
-        </h2>
-
-        <p
-          className={`text-center text-[#6B7280] mb-12 transition-[opacity,transform] duration-[600ms] ${
-            inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
-          }`}
-          style={{ transitionDelay: "150ms" }}
-        >
-          Real context page generated from a Linear ticket in under 30 seconds
-        </p>
-
-        {/* Video frame */}
         <div
-          className={`relative transition-[opacity,transform] duration-700 ${
-            inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+          className={`grid gap-6 transition-[opacity,transform] duration-700 lg:grid-cols-[0.8fr_1.2fr] ${
+            inView ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
           }`}
           style={{ transitionDelay: "250ms" }}
         >
-          {/* Glow */}
           <div
-            className="absolute -inset-8 pointer-events-none"
+            className="rounded-xl p-5"
             style={{
-              background:
-                "radial-gradient(ellipse at center, rgba(var(--color-teal-rgb),0.1) 0%, transparent 65%)",
-              filter: "blur(20px)",
-            }}
-          />
-
-          {/* Browser mockup */}
-          <div
-            className="relative rounded-2xl overflow-hidden"
-            style={{
-              border: "1px solid rgba(255,255,255,0.08)",
-              boxShadow:
-                "0 40px 80px rgba(0,0,0,0.5), 0 0 40px rgba(var(--color-teal-rgb),0.06)",
+              background: "#0F0F18",
+              border: "1px solid rgba(255,255,255,0.07)",
             }}
           >
-            {/* Browser chrome */}
-            <div
-              className="flex items-center gap-2 px-4 py-3"
-              style={{
-                background: "#141420",
-                borderBottom: "1px solid rgba(255,255,255,0.06)",
-              }}
-            >
-              <div className="flex gap-1.5">
-                <div className="w-3 h-3 rounded-full" style={{ background: "#FF5F57" }} />
-                <div className="w-3 h-3 rounded-full" style={{ background: "#FFBD2E" }} />
-                <div className="w-3 h-3 rounded-full" style={{ background: "#28CA41" }} />
-              </div>
-              <div
-                className="flex-1 mx-4 rounded-md px-3 py-1 text-xs text-[#6B7280]"
-                style={{ background: "#0A0A0F" }}
-              >
-                app.contextos.dev/demo
-              </div>
-            </div>
-
-            {/* Video placeholder */}
-            <div
-              className="relative flex items-center justify-center"
-              style={{ background: "#0A0A0F", aspectRatio: "16/9" }}
-            >
-              {/* Animated background */}
-              <div
-                className="absolute inset-0"
-                style={{
-                  backgroundImage:
-                    "radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px)",
-                  backgroundSize: "24px 24px",
-                }}
-              />
-
-              {/* Play button */}
-              <div className="relative flex flex-col items-center gap-4 z-10">
-                <button
-                  className="btn-play w-16 h-16 rounded-full flex items-center justify-center"
-                >
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 20 20"
-                    fill="var(--color-teal)"
-                    style={{ marginLeft: "3px" }}
-                  >
-                    <path d="M4 3l14 7-14 7V3z" />
-                  </svg>
-                </button>
-                <div className="text-center">
-                  <p className="text-sm text-[#9CA3AF] font-medium">Demo video coming soon</p>
-                  <p className="text-xs text-[#4B5563] mt-1">
-                    Add your Screen Studio recording here
-                  </p>
-                </div>
-              </div>
-
-              {/* Decorative elements */}
-              <div
-                className="absolute bottom-4 left-4 right-4 flex items-center gap-2"
-              >
+            <div className="space-y-3">
+              {trailFields.map(([label, value]) => (
                 <div
-                  className="h-1 rounded-full flex-1"
-                  style={{ background: "rgba(255,255,255,0.05)" }}
+                  key={label}
+                  className="rounded-lg px-4 py-3"
+                  style={{
+                    background: "rgba(255,255,255,0.025)",
+                    border: "1px solid rgba(255,255,255,0.06)",
+                  }}
                 >
-                  <div
-                    className="h-full rounded-full w-1/3"
-                    style={{ background: "rgba(var(--color-teal-rgb),0.4)" }}
-                  />
+                  <p className="mb-1 font-mono text-[11px] uppercase tracking-[0.14em] text-[#6B7280]">
+                    {label}
+                  </p>
+                  <p className="text-sm leading-6 text-[#D7DCE2]">{value}</p>
                 </div>
-                <span className="text-[10px] text-[#4B5563] font-mono">0:28</span>
-              </div>
+              ))}
             </div>
           </div>
-        </div>
 
-        {/* Caption */}
-        <p
-          className={`text-center text-xs text-[#4B5563] mt-4 font-mono transition-[opacity,transform] duration-[600ms] ${
-            inView ? "opacity-100" : "opacity-0"
-          }`}
-          style={{ transitionDelay: "500ms" }}
-        >
-          Real context page generated from a Linear ticket in under 30 seconds
-        </p>
+          <DecisionReceiptVisual />
+        </div>
       </div>
     </section>
   );
