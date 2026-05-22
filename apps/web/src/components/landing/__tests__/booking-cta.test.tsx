@@ -58,10 +58,12 @@ describe('landing booking CTA', () => {
       </>
     )
 
-    const bookCallLinks = screen.getAllByRole('link', { name: /book a call/i })
+    const bookingLinks = screen.getAllByRole('link', {
+      name: /see your decision graph/i,
+    })
 
-    expect(bookCallLinks.length).toBeGreaterThanOrEqual(2)
-    for (const link of bookCallLinks) {
+    expect(bookingLinks.length).toBeGreaterThanOrEqual(2)
+    for (const link of bookingLinks) {
       expect(link.getAttribute('href')).toBe('#booking')
     }
     expect(screen.queryAllByRole('link', { name: /get early access/i })).toHaveLength(0)
