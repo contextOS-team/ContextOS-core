@@ -103,6 +103,7 @@ Progress: [█████████░] 94%
 - [Phase 42]: Hero copy reads from LANDING_HERO and leads to #demo first — Centralized copy stays aligned with Plan 42-01 while preserving the booking conversion flow through See your decision graph -> #booking.
 - [Phase 42]: Decision Receipt sample data is fictional — Satisfies the plan threat model by avoiding any implication of real customer workspace data.
 - [Phase 42]: Landing page now prioritizes hero -> product demo -> sources -> booking -> footer — User feedback found the plan-compliant version too noisy, so problem/how/features/trust bands were removed from the rendered page order.
+- [Phase 42]: Landing route owns social metadata — Absolute title, OpenGraph, Twitter, and landing-scoped OG image copy prevent old ticket-first root metadata from leaking into launch previews.
 
 ### Roadmap Evolution
 

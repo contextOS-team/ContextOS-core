@@ -25,6 +25,8 @@ key-files:
     - apps/web/src/components/landing/__tests__/landing-claims.test.tsx
   modified:
     - apps/web/src/app/(landing)/page.tsx
+    - apps/web/src/app/(landing)/layout.tsx
+    - apps/web/src/app/(landing)/opengraph-image.tsx
     - apps/web/src/components/landing/Hero.tsx
     - apps/web/src/components/landing/Nav.tsx
     - apps/web/src/components/landing/ProductDemo.tsx
@@ -32,6 +34,7 @@ key-files:
     - apps/web/src/components/landing/CTASection.tsx
     - apps/web/src/components/landing/Footer.tsx
     - apps/web/src/components/landing/landing-copy.ts
+    - apps/web/src/components/landing/__tests__/landing-metadata.test.ts
     - apps/web/src/components/landing/__tests__/landing-hero.test.tsx
     - apps/web/src/components/landing/__tests__/landing-sections.test.tsx
     - apps/web/src/components/landing/__tests__/booking-cta.test.tsx
@@ -41,6 +44,7 @@ key-decisions:
   - "Problem, workflow, trust, and feature bands were removed from the rendered page order after user feedback that the landing was too noisy."
   - "The primary hero CTA now jumps to #demo, while See your decision graph remains the booking conversion path."
   - "Remotion video remains untouched; the launch proof stays crawlable React text and product UI, not a video placeholder."
+  - "Landing route owns absolute title plus OpenGraph, Twitter, and route-scoped OG image copy so social previews do not inherit the old ticket-first positioning."
 
 patterns-established:
   - "Use product-shaped sample states for landing proof: decision question, answer, evidence chips, decision receipt, ticket context, and PR context."
@@ -60,7 +64,7 @@ completed: 2026-05-22
 
 - **Duration:** 24 min
 - **Started:** 2026-05-22T17:12:50Z
-- **Completed:** 2026-05-22T17:36:07Z
+- **Completed:** 2026-05-22T17:45:20Z
 - **Tasks:** 4 planned tasks plus 1 user-directed pivot
 - **Files modified:** 12 landing code/test files, 1 planning summary
 
@@ -71,6 +75,7 @@ completed: 2026-05-22
 - Tightened hero copy and CTA routing so `View product demo` jumps to the demo, while `See your decision graph` preserves the inline booking conversion flow.
 - Reworked sources, booking, footer, and nav into compact supporting sections instead of separate dense marketing surfaces.
 - Added and updated regression tests for the demo-first flow, booking anchors, minimal hero, and unsupported-claim guardrails.
+- Fixed post-review SEO/social metadata drift by adding absolute title metadata, landing OpenGraph/Twitter values, and a landing-scoped OG image.
 
 ## Task Commits
 
@@ -80,10 +85,13 @@ Each task was committed atomically:
 2. **Task 2: Align capabilities and booking copy** - `5d51736` (feat)
 3. **Task 3: Guard landing section claims** - `ea046e0` (test)
 4. **User-directed pivot: simplify landing around product demos** - `fbb5610` (feat)
+5. **Code-review remediation: align landing social metadata** - `9d32038` (fix)
 
 ## Files Created/Modified
 
 - `apps/web/src/app/(landing)/page.tsx` - Renders the minimal demo-first page order and removes the noisy problem/how/features/trust stack from the page.
+- `apps/web/src/app/(landing)/layout.tsx` - Owns absolute landing title, description, OpenGraph, and Twitter metadata.
+- `apps/web/src/app/(landing)/opengraph-image.tsx` - Landing-scoped social image with decision-memory positioning.
 - `apps/web/src/components/landing/Hero.tsx` - Removes the repeated receipt visual, shortens copy, routes primary CTA to `#demo`, and leaves the demo heading visible in the first viewport.
 - `apps/web/src/components/landing/ProductDemo.tsx` - Provides the main product proof with decision question, answer, sources, receipt fields, ticket context, and PR context.
 - `apps/web/src/components/landing/Integrations.tsx` - Converts the integration grid into a compact source strip.
@@ -91,6 +99,7 @@ Each task was committed atomically:
 - `apps/web/src/components/landing/Nav.tsx` and `Footer.tsx` - Reduce navigation to Demo, Sources, and booking.
 - `apps/web/src/components/landing/landing-copy.ts` - Updates hero copy and CTA labels for the demo-first direction.
 - `apps/web/src/components/landing/__tests__/landing-hero.test.tsx` - Updates hero coverage for the quieter CTA layout.
+- `apps/web/src/components/landing/__tests__/landing-metadata.test.ts` - Covers absolute title, OpenGraph, Twitter metadata, and landing OG image alt text.
 - `apps/web/src/components/landing/__tests__/landing-sections.test.tsx` - Covers the demo-first section, compact source strip, booking section, and footer.
 - `apps/web/src/components/landing/__tests__/landing-claims.test.tsx` - Guards unsupported claims and banned generic AI language.
 - `apps/web/src/components/landing/__tests__/booking-cta.test.tsx` - Updates CTA expectations for `#demo` plus preserved `#booking` routing.
@@ -101,6 +110,7 @@ Each task was committed atomically:
 - `ProductDemo` is the primary landing proof below the hero; `DecisionReceiptVisual` remains in the codebase but is no longer duplicated in the first viewport.
 - The rendered landing should avoid unsupported future-action claims entirely rather than preserving a roadmap teaser.
 - The source integration surface should be scannable and compact; the page no longer needs a full card grid to prove integrations.
+- Landing social metadata should be route-scoped so launch previews match the decision-memory wedge rather than old ticket-context copy.
 
 ## Deviations from Plan
 
@@ -124,6 +134,7 @@ Each task was committed atomically:
 - Playwright browser binaries were not installed, so screenshot-based mobile verification could not run without downloading browsers.
 - An AppleScript attempt to resize Arc for mobile failed because Arc did not allow setting front-window bounds. Desktop Arc inspection passed; mobile visual verification remains lower-confidence.
 - `npm run lint` exits successfully but reports unrelated existing warnings in dashboard, graph, and onboarding files.
+- Code review found that landing social metadata still inherited old root OpenGraph/Twitter and OG image positioning. Fixed in `9d32038`.
 
 ## User Setup Required
 
@@ -137,7 +148,7 @@ None - no external service configuration required.
 
 ## Verification
 
-- `cd apps/web && npx vitest run src/components/landing/__tests__` - passed, 6 files and 12 tests.
+- `cd apps/web && npx vitest run src/components/landing/__tests__` - passed, 6 files and 13 tests.
 - `cd apps/web && npm run typecheck` - passed.
 - `cd apps/web && npm run lint` - passed with unrelated existing warnings.
 - Arc desktop inspection of `http://127.0.0.1:3000` - passed for the hero, demo section, source strip, and booking section; the demo heading is visible in the first viewport.
