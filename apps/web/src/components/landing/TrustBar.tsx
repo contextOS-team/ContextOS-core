@@ -1,4 +1,6 @@
 import {
+  FathomLogo,
+  GitLabLogo,
   LinearLogo,
   SlackLogo,
   GitHubLogo,
@@ -11,9 +13,11 @@ const logos = [
   { name: "Linear", Logo: LinearLogo },
   { name: "Slack", Logo: SlackLogo },
   { name: "GitHub", Logo: GitHubLogo },
+  { name: "GitLab", Logo: GitLabLogo },
   { name: "Notion", Logo: NotionLogo },
   { name: "Jira", Logo: JiraLogo },
   { name: "Telegram", Logo: TelegramLogo },
+  { name: "Fathom", Logo: FathomLogo },
 ];
 
 export default function TrustBar() {
@@ -25,7 +29,7 @@ export default function TrustBar() {
       <div className="max-w-5xl mx-auto">
         <div className="flex flex-col items-center gap-5">
           <p className="text-xs text-[#4B5563] uppercase tracking-widest font-mono">
-            Integrates with
+            Source evidence from
           </p>
           <div className="flex flex-wrap items-center justify-center gap-8 md:gap-12">
             {logos.map((logo) => (

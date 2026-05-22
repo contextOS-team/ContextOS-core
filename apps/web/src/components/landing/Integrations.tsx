@@ -21,14 +21,14 @@ type Integration = {
 };
 
 const integrations: Integration[] = [
-  { name: "Linear", description: "Tickets & projects", color: "#5E6AD2", Logo: LinearLogo },
-  { name: "Slack", description: "Threads & decisions", color: "#4A154B", Logo: SlackLogo },
-  { name: "GitHub", description: "PRs, commits & reviews", color: "#1e1e1e", Logo: GitHubLogo },
-  { name: "Notion", description: "Docs & knowledge base", color: "#2a2a2a", Logo: NotionLogo },
-  { name: "Telegram", description: "Group discussions", color: "#2AABEE", Logo: TelegramLogo },
-  { name: "Jira", description: "Epics, sprints & boards", color: "#0052CC", Logo: JiraLogo },
-  { name: "GitLab", description: "MRs & pipelines", color: "#FC6D26", Logo: GitLabLogo },
-  { name: "Fathom", description: "Meeting transcripts", color: "#1a3a4a", Logo: FathomLogo },
+  { name: "Linear", description: "Ticket context", color: "#5E6AD2", Logo: LinearLogo },
+  { name: "Slack", description: "Decision threads", color: "#4A154B", Logo: SlackLogo },
+  { name: "GitHub", description: "PR context", color: "#1e1e1e", Logo: GitHubLogo },
+  { name: "Notion", description: "Docs and rationale", color: "#2a2a2a", Logo: NotionLogo },
+  { name: "Telegram", description: "Group decisions", color: "#2AABEE", Logo: TelegramLogo },
+  { name: "Jira", description: "Issue context", color: "#0052CC", Logo: JiraLogo },
+  { name: "GitLab", description: "MR context", color: "#FC6D26", Logo: GitLabLogo },
+  { name: "Fathom", description: "Meeting evidence", color: "#1a3a4a", Logo: FathomLogo },
 ];
 
 export default function Integrations() {
@@ -74,7 +74,8 @@ export default function Integrations() {
           }`}
           style={{ transitionDelay: "150ms" }}
         >
-          Connect your tools in one click. More integrations shipping every sprint.
+          Connect the tools where engineering decisions happen, then keep
+          source-backed decisions attached to the work they explain.
         </p>
 
         {/* Grid */}

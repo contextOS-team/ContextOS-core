@@ -47,8 +47,7 @@ export default function Footer() {
               <span className="text-[15px] font-semibold tracking-tight text-white">ContextOS</span>
             </div>
             <p className="text-sm text-[#4B5563] leading-relaxed max-w-xs">
-              Auto-generate context pages for engineering tickets. Stop gathering
-              context, start shipping code.
+              Source-backed decision memory for engineering and product teams.
             </p>
             <p className="text-xs text-[#3D4450] mt-4">
               Built with love in KZ

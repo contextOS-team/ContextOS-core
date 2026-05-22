@@ -5,6 +5,7 @@ import Cal from "@calcom/embed-react";
 import { usePostHog } from "posthog-js/react";
 import { useInView } from "@/hooks/useInView";
 import { BOOKING_SECTION_ID, CAL_BOOKING_LAYOUT, CAL_BOOKING_LINK } from "./booking";
+import { LANDING_CTA } from "./landing-copy";
 
 export default function CTASection() {
   const { ref, inView } = useInView();
@@ -76,16 +77,15 @@ export default function CTASection() {
                   className="w-1.5 h-1.5 rounded-full animate-pulse"
                   style={{ background: "var(--color-teal)" }}
                 />
-                Book a call
+                See your graph
               </div>
 
               <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
-                Book a call to see{" "}
-                <span className="teal-gradient-text">ContextOS in action.</span>
+                See your decision graph from your own workspace.
               </h2>
 
               <p className="text-[#9CA3AF] mb-10 text-sm leading-relaxed max-w-2xl mx-auto">
-                Pick a time that works for you. The booking flow stays on this
+                {LANDING_CTA.bookingSectionCopy} The booking flow stays on this
                 page, so you can schedule without leaving ContextOS.
               </p>
 
