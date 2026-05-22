@@ -1,12 +1,12 @@
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
+import { LANDING_SEO } from '@/components/landing/landing-copy'
 import { PostHogProvider, PostHogPageView } from '@/lib/posthog'
 import '../landing.css'
 
 export const metadata: Metadata = {
-  title: 'ContextOS — Stop gathering context. Start shipping code.',
-  description:
-    'Engineers waste 2-6 hours per ticket hunting through Slack, Notion, and meeting notes. ContextOS auto-generates everything you need to know — before you write a single line.',
+  title: LANDING_SEO.title,
+  description: LANDING_SEO.description,
 }
 
 export default function LandingLayout({
