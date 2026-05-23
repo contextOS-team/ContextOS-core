@@ -316,15 +316,24 @@ function SourcePuck({
 }) {
   const active = isSourceActive(stage, item);
   const absorbed = stage >= item.resolveStage;
+  const leadIdle = index === 0 && stage < item.feedStage;
 
   return (
     <motion.div
       aria-label={`${item.source} feeds ${item.resolves}`}
       className={`relative flex flex-col items-center gap-2 text-center xl:absolute xl:w-[92px] ${item.className}`}
-      initial={reduceMotion ? false : { opacity: 0, y: SOURCE_PUCKS.offsetY, scale: 0.96 }}
+      initial={
+        reduceMotion
+          ? false
+          : {
+              opacity: leadIdle ? 0.72 : 0,
+              y: leadIdle ? 0 : SOURCE_PUCKS.offsetY,
+              scale: leadIdle ? 1 : 0.96,
+            }
+      }
       animate={{
-        opacity: stage >= STAGE.sources ? 1 : 0,
-        y: stage >= STAGE.sources ? 0 : SOURCE_PUCKS.offsetY,
+        opacity: stage >= STAGE.sources ? 1 : leadIdle ? 0.72 : 0,
+        y: stage >= STAGE.sources || leadIdle ? 0 : SOURCE_PUCKS.offsetY,
         scale: active ? 1.04 : 1,
       }}
       transition={{
@@ -339,12 +348,14 @@ function SourcePuck({
             ? "rgba(73, 214, 181, 0.42)"
             : absorbed
               ? "rgba(73, 214, 181, 0.18)"
-              : "rgba(255, 255, 255, 0.08)",
+              : leadIdle
+                ? "rgba(73, 214, 181, 0.22)"
+                : "rgba(255, 255, 255, 0.08)",
           boxShadow:
             active && !reduceMotion
               ? "0 0 34px rgba(73,214,181,0.20)"
               : "0 18px 48px rgba(0,0,0,0.24)",
-          color: active ? "#FFFFFF" : absorbed ? "#C9D3DB" : "#8E98A6",
+          color: active ? "#FFFFFF" : absorbed || leadIdle ? "#C9D3DB" : "#8E98A6",
         }}
         transition={SOURCE_PUCKS.spring}
       >
@@ -400,9 +411,10 @@ function FeedingStreams({
         fill="none"
         aria-hidden="true"
       >
-        {SOURCE_PUCKS.items.map((item) => {
+        {SOURCE_PUCKS.items.map((item, index) => {
           const active = isSourceActive(stage, item);
           const absorbed = stage >= item.resolveStage;
+          const leadIdle = index === 0 && stage < item.feedStage;
           const midX = item.point.x < 170 ? 330 : 386;
           const path = `M${item.point.x} ${item.point.y} C${midX} ${item.point.y} 402 ${GRAPH.corePoint.y} ${GRAPH.corePoint.x} ${GRAPH.corePoint.y}`;
 
@@ -410,13 +422,20 @@ function FeedingStreams({
             <g key={item.source}>
               <motion.path
                 d={path}
-                stroke="rgba(73,214,181,0.17)"
+                stroke={leadIdle ? "rgba(73,214,181,0.22)" : "rgba(73,214,181,0.17)"}
                 strokeWidth="1"
                 strokeLinecap="round"
-                initial={reduceMotion ? false : { pathLength: 0, opacity: 0 }}
+                initial={
+                  reduceMotion
+                    ? false
+                    : {
+                        pathLength: leadIdle ? 1 : 0,
+                        opacity: leadIdle ? 0.34 : 0,
+                      }
+                }
                 animate={{
-                  pathLength: absorbed || active ? 1 : 0,
-                  opacity: absorbed || active ? 0.72 : 0,
+                  pathLength: absorbed || active || leadIdle ? 1 : 0,
+                  opacity: absorbed || active ? 0.72 : leadIdle ? 0.34 : 0,
                 }}
                 transition={{
                   duration: reduceMotion ? 0 : 0.55,
