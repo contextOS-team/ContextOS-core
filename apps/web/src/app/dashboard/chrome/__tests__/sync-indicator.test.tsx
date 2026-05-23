@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { triggerStaleSourceSyncs } from '../../source-sync-actions'
@@ -40,7 +39,13 @@ describe('SyncIndicator', () => {
     expect(screen.getByTestId('sync-indicator-label').className).toContain('chrome-sync-inline')
   })
 
-  it('renders stale source state as needs sync status', () => {
+  it('auto-starts stale source state as syncing status', async () => {
+    vi.useRealTimers()
+    vi.mocked(triggerStaleSourceSyncs).mockImplementation((onProgress) => {
+      onProgress({ message: 'Checking connected sources', progress: 0.08 })
+      return new Promise(() => {})
+    })
+
     render(createElement(SyncIndicator, {
       state: {
         kind: 'needs_sync',
@@ -62,8 +67,9 @@ describe('SyncIndicator', () => {
     }))
 
     expect(screen.queryByText(/updated/i)).toBeNull()
-    expect(screen.getByText('Needs sync')).toBeTruthy()
-    expect(screen.getByLabelText(/workspace sources need sync/i)).toBeTruthy()
+    expect(await screen.findByText('Syncing sources')).toBeTruthy()
+    expect(screen.getByLabelText(/syncing sources 8%/i)).toBeTruthy()
+    expect(triggerStaleSourceSyncs).toHaveBeenCalledTimes(1)
   })
 
   it('renders syncing progress as compact chrome status with percent', () => {
@@ -106,9 +112,8 @@ describe('SyncIndicator', () => {
     expect(screen.queryByText('reconnect')).toBeNull()
   })
 
-  it('keeps visible feedback when stale source sync is requested', async () => {
+  it('auto-starts sync for stale sources without showing a manual action', async () => {
     vi.useRealTimers()
-    const user = userEvent.setup()
     const onSyncRequested = vi.fn()
     let finishSync!: (value: { started: string[]; failed: string[] }) => void
     vi.mocked(triggerStaleSourceSyncs).mockImplementation((onProgress) => {
@@ -118,51 +123,34 @@ describe('SyncIndicator', () => {
       })
     })
 
-    const { rerender } = render(createElement(SyncIndicator, {
+    render(createElement(SyncIndicator, {
       state: {
         kind: 'needs_sync',
         sources: [{
-          provider: 'gitlab',
-          label: 'GitLab',
+          provider: 'jira',
+          label: 'Jira',
           health: 'needs_sync',
-          detail: 'Never synced',
-          lastSyncAt: null,
+          detail: 'Last sync 8h ago',
+          lastSyncAt: new Date('2026-05-20T04:00:00Z'),
         }],
         staleSources: [{
-          provider: 'gitlab',
-          label: 'GitLab',
+          provider: 'jira',
+          label: 'Jira',
           health: 'needs_sync',
-          detail: 'Never synced',
-          lastSyncAt: null,
+          detail: 'Last sync 8h ago',
+          lastSyncAt: new Date('2026-05-20T04:00:00Z'),
         }],
       },
       onSyncRequested,
     }))
 
-    await user.click(screen.getByLabelText(/workspace sources need sync/i))
-    expect(await screen.findByRole('dialog', { name: /source sync status/i })).toBeTruthy()
-
-    await user.click(await screen.findByRole('button', { name: /sync stale sources/i }))
-
     expect(await screen.findByText('Syncing sources')).toBeTruthy()
-    expect(screen.getByText('Checking connected sources')).toBeTruthy()
-    expect(screen.getAllByText('8%')).toHaveLength(2)
-    expect(screen.getByRole('progressbar', { name: /syncing sources/i }).getAttribute('aria-valuenow'))
-      .toBe('8')
+    expect(screen.queryByRole('button', { name: /sync stale sources/i })).toBeNull()
     expect(triggerStaleSourceSyncs).toHaveBeenCalledTimes(1)
 
-    finishSync({ started: ['GitLab'], failed: [] })
-    await waitFor(() => expect(screen.getByText('GitLab sync started.')).toBeTruthy())
-    expect(onSyncRequested).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('progressbar', { name: /gitlab sync started/i }).getAttribute('aria-valuenow'))
+    finishSync({ started: ['Jira'], failed: [] })
+    await waitFor(() => expect(onSyncRequested).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('progressbar', { name: /syncing sources/i }).getAttribute('aria-valuenow'))
       .toBeNull()
-
-    rerender(createElement(SyncIndicator, {
-      state: { kind: 'syncing', provider: 'gitlab', progress: 0.35, sources: [] },
-      onSyncRequested,
-    }))
-
-    await waitFor(() => expect(screen.getByText('Syncing GitLab')).toBeTruthy())
-    expect(screen.getByText('35%')).toBeTruthy()
   })
 })

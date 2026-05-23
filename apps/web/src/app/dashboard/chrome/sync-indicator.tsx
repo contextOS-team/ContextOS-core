@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useId, useRef, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import {
   sourceSyncSummary,
   triggerStaleSourceSyncs,
@@ -153,6 +152,7 @@ export function SyncIndicator({ state, onSyncRequested }: SyncIndicatorProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const labelRef = useRef<HTMLSpanElement>(null)
   const previousProviderRef = useRef<string | null>(null)
+  const attemptedAutoSyncKeyRef = useRef<string | null>(null)
   const [open, setOpen] = useState(false)
   const [manualSync, setManualSync] = useState<ManualSyncState>({
     status: 'idle',
@@ -163,14 +163,16 @@ export function SyncIndicator({ state, onSyncRequested }: SyncIndicatorProps) {
   const visibleSyncing = manualSync.status === 'syncing' || state.kind === 'syncing'
   const visibleLabel = manualSync.status === 'syncing'
     ? 'Syncing sources'
+    : manualSync.status === 'success'
+      ? 'Sources current'
     : stateLabel(state)
   const visibleProgress = manualSync.status === 'syncing'
     ? manualSync.progress
     : state.kind === 'syncing' ? state.progress : null
   const sources = state.sources
-  const canSync = state.kind === 'needs_sync'
-    && manualSync.status !== 'syncing'
-    && manualSync.status !== 'success'
+  const staleSyncKey = state.kind === 'needs_sync'
+    ? state.staleSources.map((source) => source.provider).sort().join('|')
+    : null
 
   useEffect(() => {
     if (prefersReducedMotion()) return
@@ -232,10 +234,9 @@ export function SyncIndicator({ state, onSyncRequested }: SyncIndicatorProps) {
     }
   }, [open])
 
-  async function handleSyncSources() {
+  const startSyncSources = useCallback(async () => {
     if (manualSync.status === 'syncing') return
 
-    setOpen(true)
     setManualSync({
       status: 'syncing',
       message: 'Checking connected sources',
@@ -273,7 +274,20 @@ export function SyncIndicator({ state, onSyncRequested }: SyncIndicatorProps) {
         progress: null,
       })
     }
-  }
+  }, [manualSync.status, onSyncRequested])
+
+  useEffect(() => {
+    if (state.kind !== 'needs_sync') {
+      attemptedAutoSyncKeyRef.current = null
+      return
+    }
+
+    if (!staleSyncKey || manualSync.status !== 'idle') return
+    if (attemptedAutoSyncKeyRef.current === staleSyncKey) return
+
+    attemptedAutoSyncKeyRef.current = staleSyncKey
+    void startSyncSources()
+  }, [manualSync.status, staleSyncKey, startSyncSources, state.kind])
 
   return (
     <div ref={rootRef} className="chrome-sync-wrap">
@@ -323,7 +337,7 @@ export function SyncIndicator({ state, onSyncRequested }: SyncIndicatorProps) {
             </p>
           )}
 
-          {(canSync || manualSync.status !== 'idle') && (
+          {manualSync.status !== 'idle' && (
             <div className="chrome-sync-menu-footer">
               {manualSync.status === 'syncing' && (
                 <div className="chrome-sync-menu-progress">
@@ -337,19 +351,6 @@ export function SyncIndicator({ state, onSyncRequested }: SyncIndicatorProps) {
                 <p className={`chrome-sync-menu-message chrome-sync-menu-message--${manualSync.status}`}>
                   {manualSync.message}
                 </p>
-              )}
-              {canSync && (
-                <button
-                  type="button"
-                  className="chrome-sync-menu-action"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    void handleSyncSources()
-                  }}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-                  Sync stale sources
-                </button>
               )}
             </div>
           )}
