@@ -40,8 +40,8 @@ const comparison = [
   },
   {
     label: "With ContextOS",
-    title: "The decision record already has the evidence.",
-    body: "They open one verified record with the rationale, people, affected systems, and original sources connected.",
+    title: "A verified decision record connects the evidence.",
+    body: "They open a verified decision record with the rationale, people, systems, and original sources connected.",
   },
 ] as const;
 
@@ -51,7 +51,7 @@ export default function UseCasesSection() {
   return (
     <section
       id="use-cases"
-      className="relative overflow-hidden px-6 py-16 md:py-20"
+      className="relative overflow-hidden px-6 py-14 md:py-[72px]"
       ref={ref as RefObject<HTMLElement>}
     >
       <div className="relative z-10 mx-auto max-w-6xl">

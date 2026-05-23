@@ -1,6 +1,7 @@
 "use client";
 
 import { usePostHog } from "posthog-js/react";
+import { BOOKING_SECTION_HREF } from "./booking";
 import { LANDING_HERO } from "./landing-copy";
 
 function HeroAmbientBackground() {
@@ -53,11 +54,11 @@ export default function Hero() {
         >
           <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
             <a
-              href="#demo"
+              href={BOOKING_SECTION_HREF}
               className="btn-primary min-h-10 rounded-lg px-6 py-3 text-sm font-semibold"
               onClick={() => {
                 try {
-                  posthog?.capture("cta_hero_view_decision_graph_click");
+                  posthog?.capture("cta_hero_book_walkthrough_click");
                 } catch {
                   /* silent */
                 }
@@ -65,7 +66,23 @@ export default function Hero() {
             >
               {LANDING_HERO.primaryCta}
             </a>
+            <a
+              href="#demo"
+              className="btn-ghost min-h-10 rounded-lg px-6 py-3 text-sm font-semibold"
+              onClick={() => {
+                try {
+                  posthog?.capture("cta_hero_view_example_record_click");
+                } catch {
+                  /* silent */
+                }
+              }}
+            >
+              {LANDING_HERO.secondaryCta}
+            </a>
           </div>
+          <p className="mt-4 font-mono text-xs text-[#697482]">
+            {LANDING_HERO.microcopy}
+          </p>
         </div>
       </div>
     </section>

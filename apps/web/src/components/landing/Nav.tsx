@@ -16,7 +16,7 @@ export default function Nav() {
   }, []);
 
   const links = [
-    { label: "Decision graph", href: "#demo" },
+    { label: "How it works", href: "#demo" },
     { label: "Sources", href: "#integrations" },
     { label: "FAQ", href: "#faq" },
   ];

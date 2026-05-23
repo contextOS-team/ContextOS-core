@@ -23,12 +23,12 @@ const faqs = [
 
 export default function FAQSection() {
   return (
-    <section id="faq" className="px-6 py-16 md:py-20">
+    <section id="faq" className="px-6 py-14 md:py-[72px]">
       <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-[0.75fr_1fr]">
         <div>
           <span className="section-label">FAQ</span>
           <h2 className="mt-4 max-w-lg text-3xl font-semibold tracking-normal text-white md:text-4xl">
-            Keep your tools. Recover the decisions inside them.
+            No migration. No perfect docs. No replacement.
           </h2>
         </div>
 

@@ -50,7 +50,7 @@ export default function CTASection() {
   return (
     <section
       id={BOOKING_SECTION_ID}
-      className="relative overflow-hidden px-6 py-16 md:py-20"
+      className="relative overflow-hidden px-6 py-14 md:py-[72px]"
       ref={ref as React.RefObject<HTMLElement>}
     >
       <div className="relative z-10 mx-auto max-w-5xl">

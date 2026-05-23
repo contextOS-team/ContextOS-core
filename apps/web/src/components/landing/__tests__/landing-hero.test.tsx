@@ -11,7 +11,7 @@ vi.mock('posthog-js/react', () => ({
 }))
 
 describe('landing hero', () => {
-  it('renders the approved decision-memory hero copy, demo CTA, and native background', () => {
+  it('renders the approved decision-memory hero copy, conversion CTA pair, microcopy, and native background', () => {
     render(<Hero />)
 
     expect(screen.queryByText('Early access for engineering teams')).toBeNull()
@@ -22,15 +22,21 @@ describe('landing hero', () => {
     ).toBeTruthy()
     expect(
       screen.getByText(
-        'ContextOS finds the scattered Slack threads, PRs, meetings, docs, and tickets behind past decisions, so your team can see why something exists and what source proves it.'
+        'Decisions get made. The reasoning gets scattered. ContextOS reconstructs the trail across Slack, PRs, meetings, docs, and tickets, so your team can see why something exists and what source proves it.'
       )
     ).toBeTruthy()
     expect(screen.queryByText(/Decision memory for engineering teams/i)).toBeNull()
 
     const primaryLink = screen.getByRole('link', {
+      name: 'Book a walkthrough',
+    })
+    expect(primaryLink.getAttribute('href')).toBe('#booking')
+
+    const secondaryLink = screen.getByRole('link', {
       name: 'View example record',
     })
-    expect(primaryLink.getAttribute('href')).toBe('#demo')
+    expect(secondaryLink.getAttribute('href')).toBe('#demo')
+    expect(screen.getByText('15 minutes. Bring one messy decision.')).toBeTruthy()
 
     expect(screen.getByTestId('hero-native-background')).toBeTruthy()
     expect(screen.queryByTestId('unicorn-scene')).toBeNull()

@@ -7,15 +7,17 @@ export const LANDING_SEO = {
 export const LANDING_HERO = {
   h1: "Know why your company works the way it does.",
   subheadline:
-    "ContextOS finds the scattered Slack threads, PRs, meetings, docs, and tickets behind past decisions, so your team can see why something exists and what source proves it.",
-  primaryCta: "View example record",
+    "Decisions get made. The reasoning gets scattered. ContextOS reconstructs the trail across Slack, PRs, meetings, docs, and tickets, so your team can see why something exists and what source proves it.",
+  primaryCta: "Book a walkthrough",
+  secondaryCta: "View example record",
+  microcopy: "15 minutes. Bring one messy decision.",
 } as const;
 
 export const LANDING_CTA = {
   primary: "Book a walkthrough",
   secondary: "View example record",
   bookingSectionCopy:
-    "We will map a recent decision from your own workspace and show where the reasoning, people, sources, and affected systems connect.",
+    "We'll map a recent decision from your workspace and show how the reasoning, people, sources, and affected systems connect.",
 } as const;
 
 export const LANDING_FORBIDDEN_PHRASES = [

@@ -52,6 +52,8 @@ describe('landing section rewrite', () => {
     expect(document.getElementById('integrations')).toBeTruthy()
     expect(document.getElementById('faq')).toBeTruthy()
     expect(document.getElementById('booking')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'How it works' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Decision graph' })).toBeNull()
     expect(screen.queryByText('The Problem')).toBeNull()
     expect(screen.queryByText('How It Works')).toBeNull()
     expect(screen.queryByText('Features')).toBeNull()
@@ -130,7 +132,7 @@ describe('landing section rewrite', () => {
     expect(screen.getByText('Today')).toBeTruthy()
     expect(screen.getByText('The team searches across tools by hand.')).toBeTruthy()
     expect(screen.getByText('With ContextOS')).toBeTruthy()
-    expect(screen.getByText('The decision record already has the evidence.')).toBeTruthy()
+    expect(screen.getByText('They open a verified decision record with the rationale, people, systems, and original sources connected.')).toBeTruthy()
     expect(screen.getByText('Onboarding')).toBeTruthy()
     expect(screen.getByText('Architecture decisions')).toBeTruthy()
     expect(screen.getByText('Customer escalations')).toBeTruthy()
@@ -148,8 +150,9 @@ describe('landing section rewrite', () => {
     expect(screen.getByRole('heading', {
       name: /bring one messy decision/i,
     })).toBeTruthy()
+    expect(screen.getByText("We'll map a recent decision from your workspace and show how the reasoning, people, sources, and affected systems connect.")).toBeTruthy()
     expect(screen.getAllByText(/decision memory/i).length).toBeGreaterThan(0)
-    expect(screen.getByText('Keep your tools. Recover the decisions inside them.')).toBeTruthy()
+    expect(screen.getByText('No migration. No perfect docs. No replacement.')).toBeTruthy()
     expect(screen.getByText('Will this replace Slack, Linear, Jira, or GitHub?')).toBeTruthy()
     expect(screen.queryByTestId('cal-inline')).toBeNull()
   })
