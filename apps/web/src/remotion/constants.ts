@@ -4,13 +4,13 @@ export const FPS = 30;
 export const COMPOSITION_WIDTH = 1280;
 export const COMPOSITION_HEIGHT = 720;
 
-/** Scene durations in frames — 3 scenes, 10.5s total */
+/** Scene durations in frames */
 export const SCENE_1_DURATION = 90; // 3.0s - Ticket picker
 export const SCENE_2_DURATION = 105; // 3.5s - Sources assemble
 export const SCENE_3_DURATION = 120; // 4.0s - Context page
+export const CONTEXTOS_PRODUCT_DEMO_DURATION = 330; // 11.0s - Product decision workflow
 
-export const TOTAL_DURATION =
-  SCENE_1_DURATION + SCENE_2_DURATION + SCENE_3_DURATION; // 315 frames = 10.5s
+export const TOTAL_DURATION = CONTEXTOS_PRODUCT_DEMO_DURATION;
 
 /** Spring configs — smooth and organic */
 export const SPRING_ENTER = { damping: 16, stiffness: 80, mass: 1 };
@@ -40,8 +40,8 @@ export const COLORS = {
   border: "#252538",
   foreground: "#EAEAF0",
   muted: "#7A7A94",
-  primary: "#00D4AA",
-  primaryGlow: "rgba(0,212,170,0.3)",
+  primary: "#00D19C",
+  primaryGlow: "rgba(0,209,156,0.3)",
 
   violet: "#8B7CF6",
   amber: "#F59E0B",
