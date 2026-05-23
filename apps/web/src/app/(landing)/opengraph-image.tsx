@@ -85,8 +85,8 @@ export default async function LandingOGImage() {
             color: 'rgba(255,255,255,0.68)',
           }}
         >
-          Source-backed decision memory for engineering teams, with evidence
-          from Slack, meetings, PRs, docs, and tickets.
+          ContextOS reconstructs the reasoning behind past decisions, with evidence
+          from Slack, PRs, meetings, docs, and tickets.
         </div>
 
         <div
@@ -96,7 +96,7 @@ export default async function LandingOGImage() {
             marginTop: 52,
           }}
         >
-          {['Decision receipt', 'Ticket context', 'PR context'].map((name) => (
+          {['Decision record', 'Ticket context', 'PR context'].map((name) => (
             <div
               key={name}
               style={{

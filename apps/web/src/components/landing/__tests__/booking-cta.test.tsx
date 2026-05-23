@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CTASection from '../CTASection'
 import Hero from '../Hero'
@@ -12,12 +13,6 @@ vi.mock('posthog-js/react', () => ({
   usePostHog: () => ({
     capture: vi.fn(),
   }),
-}))
-
-vi.mock('next/dynamic', () => ({
-  default: () => function DynamicMock() {
-    return <div data-testid="hero-demo" />
-  },
 }))
 
 vi.mock('@/hooks/useInView', () => ({
@@ -59,25 +54,32 @@ describe('landing booking CTA', () => {
     )
 
     const bookingLinks = screen.getAllByRole('link', {
-      name: /see your decision graph/i,
+      name: /book a call/i,
     })
 
     expect(bookingLinks.length).toBeGreaterThanOrEqual(1)
     for (const link of bookingLinks) {
       expect(link.getAttribute('href')).toBe('#booking')
     }
-    expect(screen.getByRole('link', { name: /view product demo/i }).getAttribute('href')).toBe('#demo')
+    expect(screen.getByRole('link', { name: /view example record/i }).getAttribute('href')).toBe('#demo')
+    expect(screen.queryByRole('link', { name: /view product demo/i })).toBeNull()
     expect(screen.queryAllByRole('link', { name: /get early access/i })).toHaveLength(0)
   })
 
-  it('renders an inline Cal.com booking embed for Daulet', () => {
+  it('opens Cal.com booking slots in a modal only after intent', async () => {
+    const user = userEvent.setup()
     render(<CTASection />)
 
     expect(document.getElementById('booking')).toBeTruthy()
     expect(screen.getByRole('heading', {
-      name: /see your decision graph from your own workspace/i,
+      name: /bring one messy decision/i,
     })).toBeTruthy()
     expect(screen.queryByPlaceholderText(/you@company\.com/i)).toBeNull()
+    expect(screen.queryByTestId('cal-inline')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: /book a walkthrough/i }))
+
+    expect(screen.getByRole('dialog', { name: /book a call/i })).toBeTruthy()
     expect(screen.getByTestId('cal-inline').getAttribute('data-cal-link')).toBe('daulet')
     expect(screen.getByTestId('cal-inline').getAttribute('data-layout')).toBe('month_view')
     expect(screen.getByTestId('cal-inline').getAttribute('data-theme')).toBe('dark')
@@ -87,5 +89,6 @@ describe('landing booking CTA', () => {
     render(<CTASection />)
 
     expect(getCalApiMock).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('cal-inline')).toBeNull()
   })
 })

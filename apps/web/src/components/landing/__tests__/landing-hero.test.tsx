@@ -11,10 +11,10 @@ vi.mock('posthog-js/react', () => ({
 }))
 
 describe('landing hero', () => {
-  it('renders the approved decision-memory hero copy and anchors', () => {
+  it('renders the approved decision-memory hero copy, demo CTA, and native background', () => {
     render(<Hero />)
 
-    expect(screen.getByText('Early access for engineering teams')).toBeTruthy()
+    expect(screen.queryByText('Early access for engineering teams')).toBeNull()
     expect(
       screen.getByRole('heading', {
         name: 'Know why your company works the way it does.',
@@ -22,32 +22,27 @@ describe('landing hero', () => {
     ).toBeTruthy()
     expect(
       screen.getByText(
-        'A source-backed decision trail for every ticket and PR: what changed, why, who decided it, and the evidence from Slack, meetings, code review, docs, and issues.'
+        'ContextOS finds the scattered Slack threads, PRs, meetings, docs, and tickets behind past decisions, so your team can see why something exists and what source proves it.'
       )
     ).toBeTruthy()
-    expect(
-      screen.getByText(
-        'Sample workspace: Slack, Fathom, GitHub/GitLab, Linear/Jira, Notion, and Telegram.'
-      )
-    ).toBeTruthy()
+    expect(screen.queryByText(/Decision memory for engineering teams/i)).toBeNull()
 
     const primaryLink = screen.getByRole('link', {
-      name: 'View product demo',
+      name: 'View example record',
     })
     expect(primaryLink.getAttribute('href')).toBe('#demo')
 
-    const secondaryLink = screen.getByRole('link', {
-      name: 'See your decision graph',
-    })
-    expect(secondaryLink.getAttribute('href')).toBe('#booking')
+    expect(screen.getByTestId('hero-native-background')).toBeTruthy()
+    expect(screen.queryByTestId('unicorn-scene')).toBeNull()
+    expect(screen.queryByText(/Made with unicorn\.studio/i)).toBeNull()
   })
 
-  it('keeps the hero minimal and leaves product proof to the demo section', () => {
+  it('keeps the detailed decision graph demo out of the hero', () => {
     render(<Hero />)
 
-    expect(screen.queryByText('Decision Receipt')).toBeNull()
-    expect(screen.queryByText('Original sources')).toBeNull()
-    expect(screen.queryByText('Affected systems')).toBeNull()
+    expect(screen.queryByLabelText('DecisionGraphDemo')).toBeNull()
+    expect(screen.queryByText('Decision Record')).toBeNull()
+    expect(screen.queryByText('Source stream')).toBeNull()
   })
 
   it('does not render the previous ticket-first hero language', () => {

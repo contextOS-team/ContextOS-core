@@ -3,6 +3,7 @@ export default function Footer() {
     product: [
       { label: "Demo", href: "#demo" },
       { label: "Sources", href: "#integrations" },
+      { label: "FAQ", href: "#faq" },
       { label: "Book", href: "#booking" },
     ],
   };

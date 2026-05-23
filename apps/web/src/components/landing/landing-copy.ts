@@ -1,25 +1,21 @@
 export const LANDING_SEO = {
-  title: "ContextOS | AI Decision Tracking for Engineering Teams",
+  title: "ContextOS | Decision Memory for Engineering Teams",
   description:
-    "ContextOS captures source-backed decisions from Slack, meetings, GitHub/GitLab, Jira/Linear, Notion, and Telegram so every ticket, PR, and teammate has the missing why.",
+    "ContextOS reconstructs the reasoning behind company decisions across Slack, PRs, meetings, docs, and tickets, then turns the evidence into a verified decision record.",
 } as const;
 
 export const LANDING_HERO = {
-  badge: "Early access for engineering teams",
   h1: "Know why your company works the way it does.",
   subheadline:
-    "A source-backed decision trail for every ticket and PR: what changed, why, who decided it, and the evidence from Slack, meetings, code review, docs, and issues.",
-  categoryProofLine:
-    "Sample workspace: Slack, Fathom, GitHub/GitLab, Linear/Jira, Notion, and Telegram.",
-  primaryCta: "View product demo",
-  secondaryCta: "See your decision graph",
+    "ContextOS finds the scattered Slack threads, PRs, meetings, docs, and tickets behind past decisions, so your team can see why something exists and what source proves it.",
+  primaryCta: "View example record",
 } as const;
 
 export const LANDING_CTA = {
-  primary: "See your decision graph",
-  secondary: "View a sample trail",
+  primary: "Book a walkthrough",
+  secondary: "View example record",
   bookingSectionCopy:
-    "Connect your tools and see the decisions your team made last week, with rationale, owners, source links, and affected systems.",
+    "We will map a recent decision from your own workspace and show where the reasoning, people, sources, and affected systems connect.",
 } as const;
 
 export const LANDING_FORBIDDEN_PHRASES = [
@@ -32,4 +28,5 @@ export const LANDING_FORBIDDEN_PHRASES = [
   "2 minutes",
   "SOC 2 compliant architecture",
   "AI synthesis complete",
+  "decision trail",
 ] as const;

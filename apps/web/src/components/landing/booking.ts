@@ -1,5 +1,5 @@
 export const BOOKING_SECTION_ID = "booking";
 export const BOOKING_SECTION_HREF = `#${BOOKING_SECTION_ID}`;
-export const BOOKING_CTA_LABEL = "See your decision graph";
+export const BOOKING_CTA_LABEL = "Book a call";
 export const CAL_BOOKING_LINK = "daulet";
 export const CAL_BOOKING_LAYOUT = "month_view";

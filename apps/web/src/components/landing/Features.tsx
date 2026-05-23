@@ -24,13 +24,13 @@ const features = [
   {
     label: "Source links",
     description:
-      "Every receipt points back to concrete evidence so a teammate can verify the Slack thread, meeting note, PR, issue, or doc.",
+      "Every decision record points back to concrete evidence so a teammate can verify the Slack thread, meeting note, PR, issue, or doc.",
     detail: "Slack, Fathom, GitHub, Linear, Notion",
   },
   {
     label: "Verification state",
     description:
-      "Receipts make confidence explicit with verified and needs-review states instead of hiding uncertainty behind generic AI output.",
+      "Decision records make confidence explicit with verified and needs-review states instead of hiding uncertainty behind generic AI output.",
     detail: "Verified / Needs review",
   },
   {

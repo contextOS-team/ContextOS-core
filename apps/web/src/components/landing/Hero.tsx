@@ -1,42 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { usePostHog } from "posthog-js/react";
-import { BOOKING_SECTION_HREF } from "./booking";
 import { LANDING_HERO } from "./landing-copy";
+
+function HeroAmbientBackground() {
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="hero-native-background"
+      className="pointer-events-none absolute inset-0 overflow-hidden bg-[#07090D]"
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(64,224,208,0.10),transparent_35%),radial-gradient(circle_at_50%_60%,rgba(64,224,208,0.04),transparent_45%),linear-gradient(180deg,rgba(255,255,255,0.035)_0%,rgba(255,255,255,0)_38%,rgba(0,209,156,0.025)_100%)]" />
+      <div className="absolute inset-0 opacity-[0.13] [background-image:linear-gradient(rgba(255,255,255,0.10)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:72px_72px] [mask-image:linear-gradient(to_bottom,black_0%,black_45%,transparent_100%)]" />
+      <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-white/[0.05]" />
+      <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#07090D] to-transparent" />
+    </div>
+  );
+}
 
 export default function Hero() {
   const posthog = usePostHog();
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setVisible(true), 100);
-    return () => window.clearTimeout(timer);
-  }, []);
+  const visible = true;
 
   return (
-    <section className="relative overflow-hidden px-6 pb-12 pt-28 md:pb-16 md:pt-32">
-      <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col items-center text-center">
-        <div
-          className={`mb-7 inline-flex items-center gap-2 rounded-full px-3 py-1.5 font-mono text-xs transition-[opacity,transform] duration-700 ${
-            visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-          }`}
-          style={{
-            background: "rgba(var(--color-teal-rgb),0.08)",
-            border: "1px solid rgba(var(--color-teal-rgb),0.2)",
-            color: "var(--color-teal)",
-            transitionDelay: "0ms",
-          }}
-        >
-          <span
-            className="h-1.5 w-1.5 rounded-full animate-pulse"
-            style={{ background: "var(--color-teal)" }}
-          />
-          {LANDING_HERO.badge}
-        </div>
+    <section className="relative isolate overflow-hidden px-6 pb-10 pt-24 md:pb-12 md:pt-28">
+      <HeroAmbientBackground />
 
+      <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center text-center">
         <h1
-          className={`mb-6 max-w-4xl text-5xl font-semibold leading-[1.05] tracking-normal text-white transition-[opacity,transform] duration-700 md:text-6xl lg:text-7xl ${
+          className={`mb-6 max-w-5xl text-5xl font-semibold leading-[1.05] tracking-normal text-white transition-[opacity,transform] duration-700 md:text-6xl lg:text-[72px] ${
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "100ms" }}
@@ -54,40 +46,24 @@ export default function Hero() {
         </p>
 
         <div
-          className={`flex flex-col items-center gap-4 transition-[opacity,transform] duration-700 ${
+          className={`flex flex-col items-center transition-[opacity,transform] duration-700 ${
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "300ms" }}
         >
-          <p className="max-w-3xl font-mono text-xs leading-5 text-[#6B7280] md:text-sm">
-            {LANDING_HERO.categoryProofLine}
-          </p>
           <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
             <a
               href="#demo"
               className="btn-primary min-h-10 rounded-lg px-6 py-3 text-sm font-semibold"
               onClick={() => {
                 try {
-                  posthog?.capture("cta_hero_view_demo_click");
+                  posthog?.capture("cta_hero_view_decision_graph_click");
                 } catch {
                   /* silent */
                 }
               }}
             >
               {LANDING_HERO.primaryCta}
-            </a>
-            <a
-              href={BOOKING_SECTION_HREF}
-              className="btn-ghost min-h-10 rounded-lg px-6 py-3 text-sm font-semibold"
-              onClick={() => {
-                try {
-                  posthog?.capture("cta_hero_book_call_click");
-                } catch {
-                  /* silent */
-                }
-              }}
-            >
-              {LANDING_HERO.secondaryCta}
             </a>
           </div>
         </div>

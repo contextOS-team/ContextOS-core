@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 export function useInView(options?: IntersectionObserverInit) {
   const ref = useRef<HTMLElement>(null);
-  const [inView, setInView] = useState(false);
+  const [inView, setInView] = useState(true);
   // Stable ref so options don't need to be a dependency
   const optionsRef = useRef(options);
 

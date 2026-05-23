@@ -20,7 +20,7 @@ const graphNodes = [
   { label: "Sync engine", x: 204, y: 172, kind: "system" },
 ] as const;
 
-function ReceiptSection({
+function RecordSection({
   title,
   children,
 }: {
@@ -113,7 +113,7 @@ function GraphPreview() {
   );
 }
 
-export function DecisionReceiptVisual() {
+export function DecisionRecordVisual() {
   return (
     <div className="relative mx-auto w-full max-w-5xl">
       <div
@@ -129,10 +129,10 @@ export function DecisionReceiptVisual() {
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] pb-4">
             <div>
               <p className="font-mono text-xs font-semibold text-[#49D6B5]">
-                Decision Receipt
+                Decision Record
               </p>
               <p className="mt-1 text-xs text-[#6B7280]">
-                Source-backed trail from a fictional workspace
+                Source-backed record from a fictional workspace
               </p>
             </div>
             <span className="inline-flex items-center gap-2 rounded-full border border-[#49D6B5]/30 bg-[#49D6B5]/10 px-3 py-1 font-mono text-xs font-semibold text-[#49D6B5]">
@@ -150,17 +150,17 @@ export function DecisionReceiptVisual() {
             </h2>
           </div>
 
-          <ReceiptSection title="Why">
+          <RecordSection title="Why">
             <p className="text-sm leading-6 text-[#B8C0CA]">
               The team kept finding duplicate context across shared tools. The
               Slack thread, Fathom meeting, and PR review agreed that every
               source should resolve through workspace tenancy before it reaches
               the decision graph.
             </p>
-          </ReceiptSection>
+          </RecordSection>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <ReceiptSection title="People involved">
+            <RecordSection title="People involved">
               <div className="flex flex-wrap gap-2">
                 {people.map((person) => (
                   <span
@@ -174,9 +174,9 @@ export function DecisionReceiptVisual() {
                   </span>
                 ))}
               </div>
-            </ReceiptSection>
+            </RecordSection>
 
-            <ReceiptSection title="Affected systems">
+            <RecordSection title="Affected systems">
               <div className="flex flex-wrap gap-2">
                 {affectedSystems.map((system) => (
                   <span
@@ -187,10 +187,10 @@ export function DecisionReceiptVisual() {
                   </span>
                 ))}
               </div>
-            </ReceiptSection>
+            </RecordSection>
           </div>
 
-          <ReceiptSection title="Original sources">
+          <RecordSection title="Original sources">
             <div className="flex flex-wrap gap-2">
               {sourceChips.map((source) => (
                 <span
@@ -202,9 +202,9 @@ export function DecisionReceiptVisual() {
                 </span>
               ))}
             </div>
-          </ReceiptSection>
+          </RecordSection>
 
-          <ReceiptSection title="Related work">
+          <RecordSection title="Related work">
             <div className="flex flex-wrap gap-2">
               {relatedWork.map((item) => (
                 <span
@@ -215,7 +215,7 @@ export function DecisionReceiptVisual() {
                 </span>
               ))}
             </div>
-          </ReceiptSection>
+          </RecordSection>
         </article>
 
         <aside className="space-y-3 rounded-xl border border-white/[0.07] bg-[#0A0A0F] p-4">

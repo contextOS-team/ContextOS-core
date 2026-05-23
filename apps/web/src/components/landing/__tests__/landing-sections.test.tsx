@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import LandingPage from '@/app/(landing)/page'
 import CTASection from '../CTASection'
 import Footer from '../Footer'
+import FAQSection from '../FAQSection'
 import Integrations from '../Integrations'
-import ProductDemo from '../ProductDemo'
+import UseCasesSection from '../UseCasesSection'
 
 vi.mock('posthog-js/react', () => ({
   usePostHog: () => ({
@@ -38,48 +39,118 @@ vi.mock('@calcom/embed-react', () => ({
   ),
 }))
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('landing section rewrite', () => {
-  it('renders the simplified demo-first page composition', () => {
+  it('renders the refined page composition with a dedicated demo and FAQ', () => {
     render(<LandingPage />)
 
     expect(document.getElementById('demo')).toBeTruthy()
+    expect(document.getElementById('use-cases')).toBeTruthy()
     expect(document.getElementById('integrations')).toBeTruthy()
+    expect(document.getElementById('faq')).toBeTruthy()
     expect(document.getElementById('booking')).toBeTruthy()
     expect(screen.queryByText('The Problem')).toBeNull()
     expect(screen.queryByText('How It Works')).toBeNull()
     expect(screen.queryByText('Features')).toBeNull()
+    expect(screen.queryByText('Product demo')).toBeNull()
   })
 
-  it('renders the demo-first product proof without the old explainer stack', () => {
-    render(<ProductDemo />)
+  it('renders source icons feeding into a decision graph core', () => {
+    vi.useFakeTimers()
+    render(<LandingPage />)
 
-    expect(screen.getByText('Ask why a ticket exists. Get the decision trail.')).toBeTruthy()
-    expect(screen.getByText('Ask a decision question')).toBeTruthy()
-    expect(screen.getByText('Why are we keeping source ingestion workspace-scoped?')).toBeTruthy()
-    expect(screen.getByText(/keep ingestion workspace-scoped so source evidence/i)).toBeTruthy()
-    expect(screen.getByText('Ticket context')).toBeTruthy()
-    expect(screen.getByText('PR context')).toBeTruthy()
-    expect(screen.getByText('Source-backed decisions')).toBeTruthy()
-    expect(screen.getByText('Review-ready PR context')).toBeTruthy()
+    expect(screen.getByLabelText('DecisionGraphDemo')).toBeTruthy()
+    expect(screen.getByText('Decision reconstruction')).toBeTruthy()
+    expect(screen.getByLabelText('Sources feeding the decision graph')).toBeTruthy()
+    expect(screen.getAllByText('Decision graph').length).toBeGreaterThan(0)
+    expect(screen.getByText('Waiting for source agreement...')).toBeTruthy()
+    expect(screen.getAllByText('Slack').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Meeting').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('GitHub').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Linear/Jira').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Docs').length).toBeGreaterThan(0)
+    expect(screen.getByText('Decision Record')).toBeTruthy()
+    expect(screen.queryByText('Graph confidence')).toBeNull()
+    expect(screen.queryByText('98%')).toBeNull()
+    expect(screen.queryByText('Source icons')).toBeNull()
+    expect(screen.queryByText('5 feeds')).toBeNull()
+    expect(screen.queryByText('Source packets')).toBeNull()
+    expect(screen.queryByText('Source feed')).toBeNull()
+    expect(screen.queryByText('live inputs')).toBeNull()
+    expect(screen.queryByText('Enterprise data boundaries keep coming up in sales calls.')).toBeNull()
+
+    act(() => {
+      vi.advanceTimersByTime(6600)
+    })
+
+    expect(screen.getAllByText('5 sources matched').length).toBeGreaterThan(0)
+    expect(screen.getByText('Verified from 5 sources')).toBeTruthy()
+    expect(screen.getByText('Keep tenant isolation at database level')).toBeTruthy()
+    expect(screen.getByText('Enterprise customers need strict data boundaries')).toBeTruthy()
+    expect(screen.getByText('Ayan')).toBeTruthy()
+    expect(screen.getByText('Madina')).toBeTruthy()
+    expect(screen.getByText('Bekbol')).toBeTruthy()
+    expect(screen.getByText('Slack thread')).toBeTruthy()
+    expect(screen.getAllByText('PR #418').length).toBeGreaterThan(0)
+    expect(screen.getByText('Architecture note')).toBeTruthy()
+    expect(screen.getByText('Auth')).toBeTruthy()
+    expect(screen.getByText('Billing')).toBeTruthy()
+    expect(screen.getByText('Enterprise plan')).toBeTruthy()
+    expect(screen.getByText('Verified')).toBeTruthy()
+    expect(screen.queryByText('Evidence timeline')).toBeNull()
+    expect(screen.queryByText('Current finding')).toBeNull()
+    expect(screen.queryByText(/\/5/)).toBeNull()
+
+    act(() => {
+      vi.advanceTimersByTime(5700)
+    })
+
+    expect(screen.getByText('Waiting for source agreement...')).toBeTruthy()
+    expect(screen.queryByText('Verified from 5 sources')).toBeNull()
+    expect(screen.queryByText('Keep tenant isolation at database level')).toBeNull()
+    vi.useRealTimers()
   })
 
   it('renders compact source, booking, and footer copy', () => {
     render(
       <>
+        <UseCasesSection />
         <Integrations />
+        <FAQSection />
         <CTASection />
         <Footer />
       </>
     )
 
-    expect(screen.getByText('Connect the places where decisions already happen.')).toBeTruthy()
-    expect(screen.getAllByText('GitLab').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Fathom').length).toBeGreaterThan(0)
+    expect(screen.getByText('Source coverage')).toBeTruthy()
+    expect(screen.getByText('Recover the reasoning behind real work.')).toBeTruthy()
+    expect(screen.getByText('Today')).toBeTruthy()
+    expect(screen.getByText('The team searches across tools by hand.')).toBeTruthy()
+    expect(screen.getByText('With ContextOS')).toBeTruthy()
+    expect(screen.getByText('The decision record already has the evidence.')).toBeTruthy()
+    expect(screen.getByText('Onboarding')).toBeTruthy()
+    expect(screen.getByText('Architecture decisions')).toBeTruthy()
+    expect(screen.getByText('Customer escalations')).toBeTruthy()
+    expect(screen.getByText('Keep your tools. Connect the decisions inside them.')).toBeTruthy()
+    expect(screen.getByText('8')).toBeTruthy()
+    expect(screen.getByText('sources connected')).toBeTruthy()
+    expect(screen.getByText('verified decision')).toBeTruthy()
+    expect(screen.getByText('Connected now')).toBeTruthy()
+    expect(screen.getByText('Queued next')).toBeTruthy()
+    expect(screen.getByTitle('GitLab')).toBeTruthy()
+    expect(screen.getByTitle('Fathom')).toBeTruthy()
+    expect(screen.getByTitle('Google Docs')).toBeTruthy()
+    expect(screen.getByTitle('Granola')).toBeTruthy()
     expect(document.getElementById('booking')).toBeTruthy()
     expect(screen.getByRole('heading', {
-      name: /see your decision graph from your own workspace/i,
+      name: /bring one messy decision/i,
     })).toBeTruthy()
     expect(screen.getAllByText(/decision memory/i).length).toBeGreaterThan(0)
-    expect(screen.getByTestId('cal-inline').getAttribute('data-cal-link')).toBe('daulet')
+    expect(screen.getByText('Keep your tools. Recover the decisions inside them.')).toBeTruthy()
+    expect(screen.getByText('Will this replace Slack, Linear, Jira, or GitHub?')).toBeTruthy()
+    expect(screen.queryByTestId('cal-inline')).toBeNull()
   })
 })
