@@ -293,10 +293,21 @@ Plans:
   2. Candidate missed decisions include source evidence, confidence, people involved, and affected systems or workstreams.
   3. User can confirm, reject, or defer each candidate.
   4. Confirmed candidates become source-backed Decision Receipts or follow-up suggestions while preserving the source trail.
-**Plans:** TBD
+**Plans:** 0/5 plans executed
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 45 to break down)
+**Wave 1**
+- [ ] 45-00-PLAN.md -- Phase 44 suggestion contract checkpoint before Phase 45 implementation proceeds
+- [ ] 45-01-PLAN.md -- Missed-decision scan schema, source windows, non-blocking enqueue, and queued-run drain
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 45-02-PLAN.md -- Source-backed candidate extraction, confidence tiers, layered dedupe, and suggestion publishing
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 45-03-PLAN.md -- Review actions, candidate lifecycle transitions, evidence attachment, and Decision Receipt promotion
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 45-04-PLAN.md -- Bounded dashboard Needs review UI, typed action helpers, and component coverage
 
 ### Phase 46: Graph RAG Quality Improvements
 
@@ -368,7 +379,7 @@ Phases execute in numeric order: 43 -> 44 -> 45 -> 46 -> 47, with 48 and 49 inde
 |-------|----------------|--------|-----------|
 | 43. Multi-workspace Foundation | 0/TBD | Not started | - |
 | 44. Suggestion System and Dismissals | 0/TBD | Not started | - |
-| 45. Post-sync Missed-decision Detection | 0/TBD | Not started | - |
+| 45. Post-sync Missed-decision Detection | 0/5 | Planned    |  |
 | 46. Graph RAG Quality Improvements | 0/TBD | Not started | - |
 | 47. Confirmed Action Layer Bots | 0/TBD | Not started | - |
 | 48. Figma Decision Evidence Integration | 0/TBD | Not started | - |

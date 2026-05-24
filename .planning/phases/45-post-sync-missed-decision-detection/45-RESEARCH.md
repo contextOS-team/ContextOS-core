@@ -458,27 +458,27 @@ export async function confirmMissedDecision(candidateId: string) {
 | A4 | Decision Receipt remains represented by graph `Decision` nodes plus JSONB properties in this phase. | Architecture Patterns | If a later phase introduces a separate receipt table, promotion tasks need different persistence. |
 | A5 | FastAPI lifespan workers and DB run-state are enough for retryable/observable scanning without a new queue package. | Standard Stack | If production concurrency needs exceed current scheduler patterns, planner must add queue design work. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **What exact Phase 44 suggestion schema and endpoint contract will exist?**
    - What we know: Phase 45 is locked to use generic suggestions for user-visible review state. [CITED: .planning/phases/45-post-sync-missed-decision-detection/45-CONTEXT.md]
    - What's unclear: No Phase 44 implementation artifact exists in the repo yet. [VERIFIED: codebase grep]
-   - Recommendation: Add a Wave 0 contract task that checks Phase 44 artifacts before writing Phase 45 models/endpoints. [ASSUMED]
+   - Selected resolution: Wave 0 blocks Phase 45 implementation until the reusable Phase 44 suggestion contract exists and is approved. The contract must include workspace-scoped suggestion storage, statuses, entity reference shape, action endpoints/service helpers, and the bounded dashboard surface; Phase 45 must not create a second review queue. [CITED: .planning/phases/45-post-sync-missed-decision-detection/45-CONTEXT.md]
 
 2. **Should evidence attachment be normalized or stored as JSONB?**
    - What we know: Graph nodes already use JSONB properties, and candidate evidence needs source quote/link/rationale/person/system history. [VERIFIED: codebase grep]
    - What's unclear: Long-term evidence may need many-to-one relationships across candidates, decisions, docs, tickets, and PRs. [ASSUMED]
-   - Recommendation: Store canonical candidate/evidence rows in normalized missed-decision tables; copy a compact source trail into Decision node properties for current dashboard rendering. [ASSUMED]
+   - Selected resolution: Store canonical normalized missed-decision candidate/evidence rows as the durable source of truth, then copy a compact source trail into graph `Decision` node properties for current dashboard rendering. The compact trail should include source quote, source link or internal source reference, rationale, confidence, people, affected systems/workstreams, candidate ID, and scan run ID. [ASSUMED]
 
 3. **Which LLM path should be canonical for Phase 45?**
    - What we know: `digest.py` uses the general LLM client for daily extraction, while `llm_extractor.py` has stronger quote-validation semantics and Gemini-specific calls. [VERIFIED: codebase grep]
    - What's unclear: The project stack docs mention both OpenAI and Gemini responsibilities, and local code currently spans both. [VERIFIED: codebase grep]
-   - Recommendation: Reuse the `llm_extractor.py` schema/validation guarantees and route provider choice through the existing LLM client if possible. [ASSUMED]
+   - Selected resolution: Reuse `llm_extractor.py` schema and exact-quote validation guarantees, and route provider choice through the existing LLM client where possible. Do not add a new LLM package or standalone provider client for Phase 45. [ASSUMED]
 
 4. **How should weak/needs-review candidates be retained?**
    - What we know: User-visible MVP should be high-confidence only; "Needs review" may be hidden or internal. [CITED: .planning/phases/45-post-sync-missed-decision-detection/45-CONTEXT.md]
    - What's unclear: Whether retaining lower-confidence internal candidates is worth storage/cost in v1.4. [ASSUMED]
-   - Recommendation: Persist only high-confidence surfaced/suppressed candidates in MVP unless a scanner run needs diagnostics; log aggregate lower-confidence counts on scan runs. [ASSUMED]
+   - Selected resolution: Persist high and very-high surfaced/suppressed candidates. Do not surface `needs_review` candidates. Keep only aggregate lower-confidence diagnostics on scan runs unless a specific debugging path needs retained sample data. [CITED: .planning/phases/45-post-sync-missed-decision-detection/45-CONTEXT.md]
 
 ## Environment Availability
 
