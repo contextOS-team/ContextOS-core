@@ -1,20 +1,13 @@
 .PHONY: dev dev-frontend dev-backend dev-ngrok setup setup-backend check-prereqs setup-frontend-env db-reset lint typecheck test codegen clean
 
 dev:
-	@echo "Starting Redis..."
-	docker compose up -d
-	@echo "Redis started."
-	@echo ""
-	@echo "Run these in separate terminals:"
-	@echo "  1. make dev-frontend    # http://localhost:3000"
-	@echo "  2. make dev-backend     # http://localhost:8000/docs"
-	@echo "  3. make dev-ngrok       # OAuth callbacks & webhooks"
+	./scripts/dev.sh
 
 dev-frontend:
-	cd apps/web && pnpm dev
+	./scripts/openlog.sh frontend bash -lc 'cd apps/web && pnpm dev'
 
 dev-backend:
-	cd backend && uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+	./scripts/openlog.sh backend bash -lc 'cd backend && uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000'
 
 dev-ngrok:
 	@NGROK_DOMAIN=$$(grep '^NGROK_DOMAIN=' .env 2>/dev/null | cut -d= -f2-); \

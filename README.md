@@ -48,17 +48,11 @@ cd ContextOS-core
    ```bash
    make setup
    ```
-3. Start dev servers in three terminals:
+3. Start the local dev stack:
    ```bash
-   # Terminal 1:
-   make dev-frontend   # http://localhost:3000
-
-   # Terminal 2:
-   make dev-backend    # http://localhost:8000/docs
-
-   # Terminal 3:
-   make dev-ngrok      # OAuth callbacks & webhooks
+   make dev
    ```
+   This starts Supabase, Redis, the frontend (`http://localhost:3000`), the backend (`http://localhost:8000/docs`), and ngrok when `NGROK_DOMAIN` is set in `.env`. Frontend and backend logs are mirrored for LLM debugging at `.openlogs/frontend.txt` and `.openlogs/backend.txt`.
 
 That's it. `make setup` handles everything:
 - Checks prerequisites (node, pnpm, python3, uv, docker, supabase CLI) with install instructions if anything is missing
@@ -111,20 +105,16 @@ That's it. `make setup` handles everything:
 ### Development
 
 ```bash
-# Terminal 1 — Frontend
-make dev-frontend
-
-# Terminal 2 — Backend
-make dev-backend
-
-# Or start Redis first, then run both manually
-make dev  # starts Redis, prints instructions
+make dev
 ```
+
+For focused work, you can still run `make dev-frontend`, `make dev-backend`, or `make dev-ngrok` directly. The frontend and backend targets also mirror logs through `openlogs`.
 
 | Command | Description |
 |---------|-------------|
-| `make dev-frontend` | Start Next.js dev server (Turbopack) |
-| `make dev-backend` | Start FastAPI with hot reload |
+| `make dev` | Start Supabase, Redis, frontend, backend, and ngrok when configured |
+| `make dev-frontend` | Start Next.js dev server and write `.openlogs/frontend.txt` |
+| `make dev-backend` | Start FastAPI with hot reload and write `.openlogs/backend.txt` |
 | `make dev-ngrok` | Start ngrok tunnel for OAuth callbacks & webhooks |
 | `make test` | Run backend test suite |
 | `make lint` | Lint frontend + backend |
