@@ -5,7 +5,8 @@
 - :white_check_mark: **v1.0 Dogfood** - Phases 1-14 (shipped 2026-03-03)
 - :white_check_mark: **v1.1 Dashboard & Onboarding** - Phases 15-31 (shipped 2026-03-15)
 - :white_check_mark: **v1.2 GraphRAG** - Phases 22-27 (shipped 2026-03-08)
-- :construction: **v1.3 Live Intelligence** - Phases 32-38 (in progress)
+- :construction: **v1.3 Live Intelligence** - Phases 32-42 (in progress)
+- :clipboard: **v1.4 Product Expansion & Action Layer** - Phases 43-49 (planned)
 
 ## Phases
 
@@ -247,3 +248,128 @@ Plans:
 - [x] 42-01-PLAN.md -- SEO metadata, shared launch copy constants, booking CTA label, metadata/CTA regression tests
 - [x] 42-02-PLAN.md -- Hero rewrite plus source-backed Decision Receipt visual with source chips, people, affected systems, related work, and verification state
 - [x] 42-03-PLAN.md -- Problem/workflow/features/product-proof/booking/trust/footer copy rewrite, claim guards, and desktop/mobile visual verification
+
+### v1.4 Product Expansion & Action Layer (Phases 43-49)
+
+**Milestone Goal:** Expand ContextOS from source-backed decision memory into workspace-aware decision operations: multiple workspaces, post-sync decision gap detection, dismissible guidance, confirmed bot actions, Figma evidence, better Graph RAG, and a researched MCP/CLI developer surface.
+
+### Phase 43: Multi-workspace Foundation
+
+**Goal:** Users can create, switch, and manage multiple workspaces while all source data, graph records, suggestions, integrations, and future actions stay isolated by workspace.
+**Depends on:** Phase 42
+**Requirements**: WS-01, WS-02, WS-03, WS-04, WS-05
+**Success Criteria** (what must be TRUE):
+  1. Existing single-workspace users keep their current workspace and integrations after migration.
+  2. User can create another workspace, switch active workspace, and see dashboard/settings/graph data scoped to that workspace.
+  3. OAuth credentials, sync cursors, source records, graph nodes, suggestions, and action audit rows are workspace-scoped with no cross-workspace leakage.
+  4. Empty, archived, or misconfigured workspaces render recoverable states instead of breaking the dashboard.
+**Plans:** TBD
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 43 to break down)
+
+### Phase 44: Suggestion System and Dismissals
+
+**Goal:** ContextOS has a durable suggestion model and dashboard surface for workspace-scoped recommendations, with dismiss/snooze/resolve semantics that future decision-gap and action-layer work can reuse.
+**Depends on:** Phase 43
+**Requirements**: SUG-01, SUG-02, SUG-03, SUG-04
+**Success Criteria** (what must be TRUE):
+  1. Suggestions persist with type, source evidence, priority, status, workspace, and provenance.
+  2. User can dismiss, snooze, resolve, and reopen suggestions, and that state survives refreshes and future syncs.
+  3. Dashboard shows suggestions in a bounded surface after sync completion without displacing the Recent decisions hierarchy.
+  4. ContextOS can recommend missing source coverage such as meeting notes or Figma when evidence gaps are detected.
+**Plans:** TBD
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 44 to break down)
+
+### Phase 45: Post-sync Missed-decision Detection
+
+**Goal:** After source syncs, ContextOS detects likely decisions that were discussed but not documented or planned, then lets users confirm, reject, or defer them from the suggestion system.
+**Depends on:** Phase 44
+**Requirements**: GAP-01, GAP-02, GAP-03, GAP-04
+**Success Criteria** (what must be TRUE):
+  1. Sync completion can enqueue a missed-decision scan for recent workspace sources.
+  2. Candidate missed decisions include source evidence, confidence, people involved, and affected systems or workstreams.
+  3. User can confirm, reject, or defer each candidate.
+  4. Confirmed candidates become source-backed Decision Receipts or follow-up suggestions while preserving the source trail.
+**Plans:** TBD
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 45 to break down)
+
+### Phase 46: Graph RAG Quality Improvements
+
+**Goal:** Retrieval over the decision graph becomes measurable and more reliable, with better recall, provenance, source freshness handling, and grounding for context pages and future action suggestions.
+**Depends on:** Phase 45
+**Requirements**: GRAG-01, GRAG-02, GRAG-03, GRAG-04
+**Success Criteria** (what must be TRUE):
+  1. Retrieval can explicitly target decision receipts, source evidence, graph neighborhoods, and related work.
+  2. A repeatable evaluation set measures decision recall, source-link accuracy, stale-context avoidance, and action-suggestion grounding.
+  3. Ranking uses graph adjacency, source freshness, workspace scope, and decision verification state.
+  4. Context pages and suggestion/action generation can explain which graph/source signals supported an answer.
+**Plans:** TBD
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 46 to break down)
+
+### Phase 47: Confirmed Action Layer Bots
+
+**Goal:** Slack and Telegram bots suggest useful follow-up actions from decisions, but every write to another tool requires explicit human confirmation and keeps the decision receipt attached as evidence.
+**Depends on:** Phase 46
+**Requirements**: ACTL-01, ACTL-02, ACTL-03, ACTL-04, ACTL-05
+**Success Criteria** (what must be TRUE):
+  1. Slack and Telegram can show workspace-scoped action suggestions linked to a decision, missed-decision candidate, stale doc, or conflicting implementation signal.
+  2. User must confirm before ContextOS creates Jira/Linear tasks, posts PR comments, asks owners, or drafts doc updates.
+  3. Confirmed actions include the relevant decision receipt or source trail in the target surface.
+  4. Every suggestion and action outcome is recorded with actor, workspace, source decision, target tool, and status.
+  5. User can dismiss or snooze action suggestions from the bot or dashboard.
+**Plans:** TBD
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 47 to break down)
+
+### Phase 48: Figma Decision Evidence Integration
+
+**Goal:** Figma becomes a first-class evidence source for product and design decisions, so design-review context can appear in decision receipts, graph nodes, and source chips.
+**Depends on:** Phase 43
+**Requirements**: FIG-01, FIG-02, FIG-03, FIG-04
+**Success Criteria** (what must be TRUE):
+  1. User can connect Figma to a workspace with OAuth or an approved token flow.
+  2. User can select Figma files or projects to sync.
+  3. ContextOS ingests relevant file metadata, comments, frame references, and design-review evidence.
+  4. Figma evidence appears in Decision Receipts, graph nodes, and source chips alongside Slack, docs, tickets, and PRs.
+**Plans:** TBD
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 48 to break down)
+
+### Phase 49: MCP and CLI Surface Research
+
+**Goal:** Decide whether ContextOS should expose MCP, CLI, or both for developer and agent workflows, then define the first read-only surface contract with auth, workspace selection, local config, and audit boundaries.
+**Depends on:** Phase 43
+**Requirements**: DEV-01, DEV-02, DEV-03
+**Success Criteria** (what must be TRUE):
+  1. A research document compares MCP, CLI, and combined approaches for ContextOS user stories and security constraints.
+  2. The first developer surface is scoped to read-only decision/context operations before any write-capable tooling is planned.
+  3. The recommendation defines authentication, workspace selection, local config, token handling, and audit logging.
+  4. The output gives a concrete next build phase if MCP, CLI, or both are selected.
+**Plans:** TBD
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 49 to break down)
+
+## Product Expansion Progress
+
+**Execution Order:**
+Phases execute in numeric order: 43 -> 44 -> 45 -> 46 -> 47, with 48 and 49 independent after Phase 43.
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 43. Multi-workspace Foundation | 0/TBD | Not started | - |
+| 44. Suggestion System and Dismissals | 0/TBD | Not started | - |
+| 45. Post-sync Missed-decision Detection | 0/TBD | Not started | - |
+| 46. Graph RAG Quality Improvements | 0/TBD | Not started | - |
+| 47. Confirmed Action Layer Bots | 0/TBD | Not started | - |
+| 48. Figma Decision Evidence Integration | 0/TBD | Not started | - |
+| 49. MCP and CLI Surface Research | 0/TBD | Not started | - |

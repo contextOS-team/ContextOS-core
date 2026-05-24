@@ -19,19 +19,20 @@ First users are the founding team (dogfooding). The product is in daily use with
 **Shipped:** v1.0 Dogfood (2026-03-03), v1.1 Dashboard & Onboarding (2026-03-15), v1.2 GraphRAG (2026-03-08)
 **Tech stack:** Next.js 15, FastAPI, Supabase (Postgres + Auth + Realtime), Redis, pgvector, knowledge graph (plain PG tables + recursive CTEs)
 **Integrations:** Linear, Slack, GitHub, GitLab, Jira, Notion, Fathom, Telegram, Slack Huddles
-**Next milestone:** v1.3 Live Intelligence
+**Next milestone:** v1.4 Product Expansion & Action Layer
 
-## Current Milestone: v1.3 Live Intelligence
+## Current Milestone: v1.4 Product Expansion & Action Layer
 
-**Goal:** Make ContextOS alive -- activity feed that actually shows events, interactive graph visualization, Chrome extension published to Web Store with Linear/Jira integration, privacy-first architecture for enterprise trust, and landing page refresh.
+**Goal:** Expand ContextOS from source-backed decision memory into workspace-aware decision operations: multiple workspaces, post-sync decision gap detection, dismissible guidance, confirmed bot actions, Figma evidence, better Graph RAG, and a researched MCP/CLI developer surface.
 
 **Target features:**
-- Activity events emission from all integrations (fix dead Activity tab)
-- Context graph visualization UI (interactive node/edge explorer)
-- Chrome extension: publish to Chrome Web Store, design Linear/Jira page integration
-- Privacy/self-hosted architecture (data stays on customer infrastructure)
-- Landing page update (9 integrations + polish)
-- RAG improvements (TBD, Dulat's scope)
+- Multi-workspace creation, switching, isolation, and per-workspace integration state
+- Suggestion system with dismiss/snooze/resolve semantics
+- Post-sync missed-decision detection that proposes undocumented decisions after source syncs
+- Graph RAG quality improvements with measurable retrieval/provenance checks
+- Slack and Telegram action-layer bots that suggest actions and require confirmation before writes
+- Figma integration as a source for design/product decision evidence
+- MCP vs CLI research and first developer-surface contract
 
 ## Core Value
 
@@ -85,13 +86,13 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 
 ### Active
 
-- [ ] Activity events emitted by all integration sync services
-- [ ] Interactive graph visualization for ticket context
-- [ ] Chrome extension published to Chrome Web Store
-- [ ] Chrome extension surfaces context on Linear/Jira ticket pages
-- [ ] Privacy-first deployment option (customer data stays local)
-- [ ] Landing page updated with all 9 integrations
-- [ ] RAG quality improvements (TBD)
+- [ ] Multi-workspace support replaces the old 1:1:1 tenancy assumption for users who operate across companies, teams, or product areas
+- [ ] Workspace-scoped suggestions can be created, shown, dismissed, snoozed, resolved, and audited
+- [ ] Completed syncs can detect likely missed decisions and propose documentation or decision-receipt follow-up
+- [ ] Graph RAG retrieval improves recall, provenance, and action-suggestion grounding
+- [ ] Slack and Telegram bots can propose confirmed actions such as task creation, doc-update drafts, owner confirmation, and PR decision-context comments
+- [ ] Figma files/comments/frames can become source evidence in decision receipts and graph context
+- [ ] MCP/CLI direction is researched with security, auth, and first-tool/command boundaries documented
 
 ### Out of Scope
 
@@ -125,7 +126,7 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 
 - **AI Model**: Gemini Flash for synthesis (cheap, fast, smart)
 - **Auth**: Supabase Auth only (no Clerk, no NextAuth)
-- **Multi-tenancy**: 1:1:1 mapping (one workspace = one Linear org + one Slack workspace + optional Notion workspace)
+- **Multi-tenancy**: v1.4 will replace the original 1:1:1 workspace assumption with explicit multi-workspace support while preserving workspace-scoped isolation
 - **Token Storage**: Supabase Vault
 - **Job Queue**: FastAPI background tasks (no Celery)
 - **Graph**: Plain Postgres tables with recursive CTEs (no AGE, no Neo4j)
@@ -142,7 +143,7 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 | Supabase Vault for tokens | Managed encryption, less custom code than AES-256 | ✓ Good |
 | Gemini Flash for synthesis | Cost-effective at scale, fast response, adequate quality | ✓ Good |
 | FastAPI background tasks over Celery | MVP simplicity, Celery is overkill for current scale | ✓ Good |
-| 1:1:1 workspace tenancy | Matches real usage, simplest model | ✓ Good |
+| 1:1:1 workspace tenancy | Matched early dogfood usage, but v1.4 replaces it with explicit multi-workspace support while preserving isolation | Superseded in v1.4 |
 | Linear comment bot: update existing | One clean comment per ticket, changelog footer | ✓ Good |
 | Supabase for reads, API for actions | Instant reads via Supabase client, real-time subscriptions | ✓ Good |
 | Plain PG tables over Apache AGE | AGE not available on Supabase Cloud; recursive CTEs work well | ✓ Good |
@@ -156,4 +157,4 @@ When an engineer picks up a ticket, they immediately have the full story -- wher
 | 2,000 token unified budget for retrieval | Signal diversity first trimming prevents graph context flooding | ✓ Good |
 
 ---
-*Last updated: 2026-03-15 after v1.3 Live Intelligence milestone started*
+*Last updated: 2026-05-24 after v1.4 Product Expansion & Action Layer milestone started*

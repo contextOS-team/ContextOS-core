@@ -1,40 +1,33 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: Live Intelligence
-current_plan: 3
-status: verifying
-stopped_at: Completed 42-03-PLAN.md
-last_updated: "2026-05-22T17:37:02.452Z"
-last_activity: 2026-05-22
+milestone: v1.4
+milestone_name: Product Expansion & Action Layer
+status: planning
+last_updated: "2026-05-24T12:30:51.195Z"
+last_activity: 2026-05-24
 progress:
-  total_phases: 11
-  completed_phases: 4
-  total_plans: 18
-  completed_plans: 17
-  percent: 36
+  total_phases: 7
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-15)
+See: .planning/PROJECT.md (updated 2026-05-24)
 
-**Core value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
-**Current focus:** Phase 42 — landing-positioning-and-seo-launch-rewrite
+**Core value:** ContextOS turns scattered work conversations into source-backed decision memory, then helps teams act on those decisions without losing provenance or workspace boundaries.
+**Current focus:** v1.4 Product Expansion & Action Layer — ready to plan Phase 43
 
 ## Current Position
 
-Milestone: v1.3 Live Intelligence
-Phase: 42 (landing-positioning-and-seo-launch-rewrite) — EXECUTING
-Plan: 3 of 3
-Current Plan: 3
-Total Plans in Phase: 3
-Status: Phase complete — ready for verification
-Last activity: 2026-05-22
-
-Progress: [█████████░] 94%
+Phase: 43 (multi-workspace-foundation) — not planned
+Plan: —
+Status: Roadmap ready — plan Phase 43 next
+Last activity: 2026-05-24 — Milestone v1.4 roadmap created
 
 ## Accumulated Context
 
@@ -112,6 +105,7 @@ v1.3 roadmap created with 7 phases (32-38) covering 19 requirements across activ
 - Phase 39 added: Slack User Token Migration & DM Support
 - Phase 40 added: Telegram Shared-Bot Migration -- replace bring-your-own-bot with single shared @ContextOSBot via deep-link pairing
 - Phase 42 added: Landing Positioning and SEO Launch Rewrite -- launch-focused landing copy, SEO research, and Decision Receipt visual direction around source-backed decision memory
+- Milestone v1.4 added: Product Expansion & Action Layer -- split the user's feature backlog into separate phases for multi-workspace support, suggestions/dismissals, post-sync missed-decision detection, Graph RAG quality, confirmed Slack/Telegram actions, Figma evidence, and MCP/CLI research
 
 ### Pending Todos
 

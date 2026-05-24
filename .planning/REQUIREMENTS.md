@@ -1,101 +1,94 @@
-# Requirements: ContextOS v1.3 Live Intelligence
+# Requirements: ContextOS v1.4 Product Expansion & Action Layer
 
-**Defined:** 2026-03-15
-**Core Value:** When an engineer picks up a ticket, they immediately have the full story -- where the feature came from, what was discussed in Slack, and a ready-to-paste AI prompt.
+**Defined:** 2026-05-24
+**Core Value:** ContextOS turns scattered work conversations into source-backed decision memory, then helps teams act on those decisions without losing provenance or workspace boundaries.
 
-## v1.3 Requirements
+## v1.4 Requirements
 
-Requirements for the live intelligence milestone. Each maps to roadmap phases.
+Requirements for the product expansion and action-layer milestone. Each maps to roadmap phases 43-49.
 
-### Activity Events
+### Workspaces
 
-- [x] **ACT-05**: All integration sync services (Linear, Slack, GitHub, GitLab, Jira, Notion, Telegram) emit events to activity_events on sync completion
-- [x] **ACT-06**: Integration connect/disconnect actions emit activity events
-- [x] **ACT-07**: Context page generation (start, complete, error) emits activity events
-- [x] **ACT-08**: Activity tab shows events in real-time via existing Supabase Realtime subscription
+- [ ] **WS-01**: User can create an additional workspace from the app without replacing or corrupting their existing workspace.
+- [ ] **WS-02**: User can switch active workspaces and every dashboard, settings, sync, graph, and source view respects the selected workspace.
+- [ ] **WS-03**: Workspace integrations, OAuth credentials, sync state, graph data, suggestions, and action audit records remain isolated per workspace.
+- [ ] **WS-04**: User can rename, archive, and recover from an empty or misconfigured workspace without breaking other workspaces.
+- [ ] **WS-05**: Existing single-workspace users keep their current workspace and source connections after the migration.
 
-### Graph Visualization
+### Suggestions
 
-- [x] **GRAPH-01**: Interactive node/edge graph visualization for a ticket showing people, decisions, PRs, messages, code
-- [ ] **GRAPH-02**: Graph visualization embedded in context page detail view (/dashboard/context/[id])
-- [ ] **GRAPH-03**: Standalone /dashboard/graph route for exploring the knowledge graph
-- [ ] **GRAPH-04**: Click-to-expand node detail panel showing full content (message text, PR summary, decision rationale)
+- [ ] **SUG-01**: System can persist workspace-scoped suggestions with type, source evidence, priority, status, and provenance.
+- [ ] **SUG-02**: User can dismiss, snooze, mark resolved, or reopen a suggestion, and that state survives refreshes and syncs.
+- [ ] **SUG-03**: Dashboard surfaces a bounded suggestion area after sync completion without taking over the primary decision-memory hierarchy.
+- [ ] **SUG-04**: System can recommend missing integrations or source coverage, such as meeting notes or Figma, when decision evidence is incomplete.
 
-### Chrome Extension
+### Missed Decisions
 
-- [ ] **EXT-01**: Extension packaged and published to Chrome Web Store
-- [ ] **EXT-02**: Content script detects Linear ticket pages and shows ContextOS context inline/sidebar
-- [ ] **EXT-03**: Content script detects Jira issue pages and shows ContextOS context inline/sidebar
-- [ ] **EXT-04**: Extension popup redesigned to match dark theme brand identity
+- [ ] **GAP-01**: After a source sync completes, ContextOS can scan recent synced content for likely decisions that were discussed but not documented or planned.
+- [ ] **GAP-02**: User can review a missed-decision candidate with linked source evidence, confidence, people involved, and affected workstreams.
+- [ ] **GAP-03**: User can confirm, reject, or defer a missed-decision candidate.
+- [ ] **GAP-04**: Confirmed missed decisions can become a source-backed Decision Receipt or a follow-up suggestion without losing the original evidence trail.
 
-### Landing Page
+### Graph RAG
 
-- [ ] **LAND-01**: Integrations section updated to show all 9 integrations (add GitLab, Jira, Telegram, Slack Huddles)
-- [ ] **LAND-02**: General typography, spacing, and animation polish
-- [ ] **LAND-03**: Privacy/trust section added highlighting data ownership
-- [x] **LAND-04**: Landing hero and first viewport reposition ContextOS around source-backed decision memory for engineering teams, not generic context gathering or AI search
-- [x] **LAND-05**: SEO title, description, H1, and visible headings target the decision-memory wedge while naturally covering adjacent intent around AI knowledge management, enterprise search, and engineering knowledge graphs
-- [x] **LAND-06**: Landing copy foregrounds current MVP capabilities only: detected decisions, source links, graph/context pages, and generated ticket/PR context
-- [x] **LAND-07**: Action-layer copy is clearly framed as coming next unless implemented, and unsupported trust/compliance claims are removed or softened
-- [x] **LAND-08**: Landing visuals introduce Decision Receipt as the primary product primitive, showing decision, rationale, people involved, original sources, affected systems, and verification status instead of generic AI glow or ticket-only context
+- [ ] **GRAG-01**: Retrieval can target decision receipts, source evidence, graph neighborhoods, and related work with explicit provenance.
+- [ ] **GRAG-02**: Graph RAG quality has an evaluation set covering decision recall, source-link accuracy, stale-context avoidance, and action-suggestion grounding.
+- [ ] **GRAG-03**: Retrieval ranking uses graph adjacency, source freshness, workspace scope, and decision verification state to improve relevance.
+- [ ] **GRAG-04**: Context pages and suggestion/action generation can explain which graph/source signals produced each answer.
 
-### Onboarding
+### Action Layer
 
-- [ ] **ONB-10**: Step 4 replaced with knowledge graph preview or mock context page instead of waiting for sync to complete
-- [ ] **ONB-11**: Onboarding completion doesn't depend on sync finishing
+- [ ] **ACTL-01**: Slack and Telegram bots can send workspace-scoped suggested actions based on detected decisions, missed decisions, stale docs, or conflicting implementation signals.
+- [ ] **ACTL-02**: User must explicitly confirm any write action before ContextOS creates a Jira/Linear task, posts a PR comment, asks an owner, or drafts a doc update.
+- [ ] **ACTL-03**: Confirmed actions carry a decision receipt or source trail so the target tool shows why the action exists.
+- [ ] **ACTL-04**: Action suggestions and outcomes are recorded in an audit trail with actor, workspace, source decision, target tool, and status.
+- [ ] **ACTL-05**: User can dismiss or snooze action suggestions from the bot or dashboard.
 
-### Privacy
+### Figma
 
-- [ ] **PRIV-01**: Architecture research for self-hosted/local LLM deployment options
+- [ ] **FIG-01**: User can connect Figma to a workspace with OAuth or an approved token flow.
+- [ ] **FIG-02**: User can select Figma files or projects to sync as source material.
+- [ ] **FIG-03**: ContextOS can ingest Figma comments, file metadata, frame references, and design-review evidence relevant to product/design decisions.
+- [ ] **FIG-04**: Figma evidence can appear in Decision Receipts, graph nodes, and source chips alongside Slack, docs, tickets, and PRs.
 
-### RAG
+### Developer Surface
 
-- [ ] **RAG-01**: RAG quality improvements (scope TBD by Dulat)
+- [ ] **DEV-01**: Team has a written recommendation for MCP, CLI, or both, including user stories, authentication model, network boundary, and security risks.
+- [ ] **DEV-02**: First developer surface contract is defined for read-only decision/context operations before any write-capable tooling is planned.
+- [ ] **DEV-03**: MCP/CLI research identifies how workspace selection, local config, audit logging, and token handling should work.
 
-### Telegram Shared Bot
+## Future Requirements
 
-- [x] **TG-05**: Users connect Telegram in one click via a shared `@ContextOSBot` deep link — no BotFather, no token paste, no group-privacy toggle. Available from both the Settings → Integrations card and the onboarding sources step.
-- [x] **TG-06**: Group/supergroup chats are bound to a workspace via a single-use, ~15-min TTL pairing code. Mapping is sticky — first claim wins; no cross-workspace re-claim. Soft-deleted on `kicked`/`left`/`banned` `my_chat_member` events; `telegram_messages` history retained.
-- [x] **TG-07**: A single global webhook `/api/telegram/webhook` routes all updates by `chat_id` lookup against `telegram_chat_workspace`; messages are ingested through the existing filter + upsert + graph pipeline; `/start@bot <code>` claim path is detected and routed BEFORE the ingestion path so pairing commands never pollute `telegram_messages`.
+Deferred to future milestones. Tracked but not in the v1.4 roadmap.
 
-### Dashboard Pulse (Phase 41 — post-v1.3)
+### Action Layer Autonomy
 
-Phase 41 sits chronologically after the v1.3 milestone closed at Phase 40. These requirements were added during planning (2026-05-20) to give the redesign explicit traceability.
+- **ACTL-06**: ContextOS can execute low-risk actions automatically under workspace policy.
+- **ACTL-07**: ContextOS can batch multiple related actions into an approval queue.
+- **ACTL-08**: ContextOS can enforce decision review gates before high-risk PRs merge.
 
-- [ ] **DASH-01**: Dashboard home replaces the six-equal-section layout with a pulse layout: compact Geist Sans headline (computed from since-last-visit delta) above Recent decisions (dense lead panel, 2 visible above the fold) -> Active context (top 3 panel rows) -> Needs you (hidden when empty). Recent Activity, graph thumbnail, This Week sparkline, sprint badge, integration dots, and the greeting line are removed from home. Human checkpoint rejected the warm/serif direction; `.pulse-surface` now follows the existing global dashboard dark tokens and only scopes pulse-specific affordances.
-- [x] **DASH-02**: Per-(user, workspace) `last_visited_at` timestamp persists to a new `dashboard_user_state` table and advances only after 5 min of page-level inactivity OR explicit dismissal — never on tab-flip. A `useLastVisitedAt` React hook reads on mount, debounces writes through Supabase, and exposes a stable per-session value to the headline generator and new-item markers (Pitfall 5 — mount-time read only).
-- [x] **DASH-03**: Rules-based pure-function headline generator (`computeHeadline`) selects between three templates from the activity delta since `last_visited_at`: (a) single-item-dominant "X has been waiting on Y since Z." (any needs-you item assigned to current user wins), (b) bucket-aggregate "N decisions and M source updates.", (c) zero-new fallback "No new activity." LLM-generated headlines deferred. The home page does not render visible headline subtext after human checkpoint.
-- [x] **DASH-04**: Top-nav adds a right-aligned chrome cluster (source activity/sync state text + 1px real-tick progress bar + restyled avatar puck) replacing the avatar-only chrome. Driven by Supabase Realtime subscription on `activity_events`. Mint color reserved for wordmark + active nav-link only. Human checkpoint deviation: the integration-health click target, Radix slide-over, `Sync all`, and reconnect CTA were removed after review; source freshness risks are tracked in `41-SOURCE-FRESHNESS-RISKS.md`.
-- [ ] **DASH-05**: Unseen items carry a 1px × 14px primary-token vertical marker in the left gutter when `activity_events.created_at > last_visited_at`. Marker persists for the entire session it was seen in (no mid-visit decay) via a ref-based `useSessionSeenItems` set; decays only when `last_visited_at` advances after the 5-min inactivity hysteresis fires.
-- [ ] **DASH-06**: Each Recent-decision card renders a one-line provenance quote in italics + tertiary-color attribution line (`— Name in #channel, 18h ago`) when the Decision node's `properties.source_quote` is present; the card gracefully renders title + people + channels when absent. No backend backfill in this phase — `source_quote` is already populated by `llm_extractor.py` since v1.2.
+### Advanced Workspace Administration
 
-## v2 Requirements
+- **WS-06**: Workspace admins can invite and remove teammates with role-based access control.
+- **WS-07**: Organization owners can view cross-workspace analytics and billing.
 
-Deferred to future release. Tracked but not in current roadmap.
+### Advanced Figma
 
-### Privacy (Implementation)
-
-- **PRIV-02**: Local LLM option (Ollama/local model instead of Gemini)
-- **PRIV-03**: Self-hosted deployment (Docker Compose or Helm chart)
-- **PRIV-04**: Bring-your-own API key for OpenAI/Anthropic/Gemini
-
-### Advanced Graph
-
-- **GRAPH-05**: Graph diff view (how the knowledge graph changed over time)
-- **GRAPH-06**: Graph-based search (find all nodes related to a person/decision)
+- **FIG-05**: Figma webhooks keep design evidence fresh without manual sync.
+- **FIG-06**: ContextOS can compare design changes against implementation decisions.
 
 ## Out of Scope
 
+Explicitly excluded from v1.4 to keep the milestone executable.
+
 | Feature | Reason |
 |---------|--------|
-| Mobile app / responsive design | Desktop-first internal tool |
-| Team invites and role management | Single team dogfooding, not needed yet |
-| Slack historical backfill | Real-time ingestion covers current needs |
-| Full privacy implementation | Research first in v1.3, implement in v1.4 based on findings |
-| Telegram DMs to the shared bot | Phase 40 scope locked to groups/supergroups; Telegram terms differ for DMs |
-| Telegram channel-broadcast post ingestion | One-way broadcasts; different content surface than group ingestion |
-| Per-chat enable/disable toggle for Telegram | Joining + pairing the bot equals consent in v1; finer-grained UI is a future enhancement |
-| Phase-26 BYO-bot migration banner + backfill | No real Phase-26 production users to migrate; founding team re-pairs manually |
+| Autonomous writes without confirmation | Too risky until suggestion quality, auditability, and workspace boundaries are proven |
+| Full RBAC and billing administration | Multi-workspace foundation comes first; advanced org administration is a later layer |
+| Cross-workspace graph search | Workspace isolation is the v1.4 safety boundary |
+| Mobile app for suggestions/actions | Dashboard and Slack/Telegram cover the first action surfaces |
+| Production-grade Figma webhooks | Initial Figma phase should prove ingestion and evidence value first |
+| Write-capable MCP/CLI tools | Start with read-only developer context to avoid unsafe local-agent writes |
 
 ## Traceability
 
@@ -103,49 +96,41 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ACT-05 | Phase 32 | Complete |
-| ACT-06 | Phase 32 | Complete |
-| ACT-07 | Phase 32 | Complete |
-| ACT-08 | Phase 32 | Complete |
-| GRAPH-01 | Phase 33 | Complete |
-| GRAPH-02 | Phase 33 | Pending |
-| GRAPH-03 | Phase 33 | Pending |
-| GRAPH-04 | Phase 33 | Pending |
-| ONB-10 | Phase 34 | Pending |
-| ONB-11 | Phase 34 | Pending |
-| EXT-01 | Phase 35 | Pending |
-| EXT-02 | Phase 35 | Pending |
-| EXT-03 | Phase 35 | Pending |
-| EXT-04 | Phase 35 | Pending |
-| LAND-01 | Phase 36 | Pending |
-| LAND-02 | Phase 36 | Pending |
-| LAND-03 | Phase 36 | Pending |
-| LAND-04 | Phase 42 | Complete |
-| LAND-05 | Phase 42 | Complete |
-| LAND-06 | Phase 42 | Complete |
-| LAND-07 | Phase 42 | Complete |
-| LAND-08 | Phase 42 | Complete |
-| PRIV-01 | Phase 37 | Pending |
-| RAG-01 | Phase 38 | Pending |
-| TG-05 | Phase 40 | Complete |
-| TG-06 | Phase 40 | Complete |
-| TG-07 | Phase 40 | Complete |
-
-| DASH-01 | Phase 41 | Pending |
-| DASH-02 | Phase 41 | Complete |
-| DASH-03 | Phase 41 | Complete |
-| DASH-04 | Phase 41 | Complete |
-| DASH-05 | Phase 41 | Pending |
-| DASH-06 | Phase 41 | Pending |
+| WS-01 | Phase 43 | Pending |
+| WS-02 | Phase 43 | Pending |
+| WS-03 | Phase 43 | Pending |
+| WS-04 | Phase 43 | Pending |
+| WS-05 | Phase 43 | Pending |
+| SUG-01 | Phase 44 | Pending |
+| SUG-02 | Phase 44 | Pending |
+| SUG-03 | Phase 44 | Pending |
+| SUG-04 | Phase 44 | Pending |
+| GAP-01 | Phase 45 | Pending |
+| GAP-02 | Phase 45 | Pending |
+| GAP-03 | Phase 45 | Pending |
+| GAP-04 | Phase 45 | Pending |
+| GRAG-01 | Phase 46 | Pending |
+| GRAG-02 | Phase 46 | Pending |
+| GRAG-03 | Phase 46 | Pending |
+| GRAG-04 | Phase 46 | Pending |
+| ACTL-01 | Phase 47 | Pending |
+| ACTL-02 | Phase 47 | Pending |
+| ACTL-03 | Phase 47 | Pending |
+| ACTL-04 | Phase 47 | Pending |
+| ACTL-05 | Phase 47 | Pending |
+| FIG-01 | Phase 48 | Pending |
+| FIG-02 | Phase 48 | Pending |
+| FIG-03 | Phase 48 | Pending |
+| FIG-04 | Phase 48 | Pending |
+| DEV-01 | Phase 49 | Pending |
+| DEV-02 | Phase 49 | Pending |
+| DEV-03 | Phase 49 | Pending |
 
 **Coverage:**
-- v1.3 core requirements: 22 total
-- Phase 41/42 post-v1.3 requirements: 11 total
-- Total active requirements: 33
-- Mapped to phases: 33
+- v1.4 requirements: 29 total
+- Mapped to phases: 29
 - Unmapped: 0
-- Post-v1.3 launch/dashboard requirements: Phase 41 has 6 dashboard requirements, Phase 42 has 5 landing requirements -- all mapped
 
 ---
-*Requirements defined: 2026-03-15*
-*Last updated: 2026-05-22 - added Phase 42 launch positioning, SEO, and Decision Receipt visual requirements*
+*Requirements defined: 2026-05-24*
+*Last updated: 2026-05-24 after v1.4 Product Expansion & Action Layer milestone started*
