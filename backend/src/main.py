@@ -2,8 +2,8 @@
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,25 +11,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.config import Environment, get_settings
 from src.middleware.correlation import CorrelationIdMiddleware
 from src.middleware.rate_limit import RateLimitMiddleware
+from src.middleware.security_headers import SecurityHeadersMiddleware
 from src.observability.laminar import init_laminar
 from src.observability.langfuse_client import init_langfuse
 from src.observability.logging import configure_logging
-from src.middleware.security_headers import SecurityHeadersMiddleware
 from src.observability.sentry import SentryContextMiddleware, init_sentry
 from src.routers.auth import router as auth_router
+from src.routers.context import router as context_router
+from src.routers.dashboard import router as dashboard_router
 from src.routers.fathom import router as fathom_router
 from src.routers.github import router as github_router
 from src.routers.gitlab import router as gitlab_router
+from src.routers.graph import router as graph_router
 from src.routers.health import router as health_router
-from src.routers.notion import router as notion_router
-from src.routers.telegram import router as telegram_router
 from src.routers.integrations import router as integrations_router
 from src.routers.jira import router as jira_router
 from src.routers.linear import router as linear_router
+from src.routers.notion import router as notion_router
 from src.routers.slack import router as slack_router
-from src.routers.context import router as context_router
-from src.routers.dashboard import router as dashboard_router
-from src.routers.graph import router as graph_router
+from src.routers.telegram import router as telegram_router
 from src.routers.webhooks import router as webhooks_router
 from src.routers.workspaces import router as workspaces_router
 
@@ -53,6 +53,7 @@ logger = logging.getLogger(__name__)
 async def _reset_stale_sync_locks() -> None:
     """Reset any sync_status stuck at 'syncing' from a previous server crash."""
     from sqlalchemy import text
+
     from src.db import async_session
 
     try:
@@ -60,7 +61,10 @@ async def _reset_stale_sync_locks() -> None:
             result = await session.execute(
                 text("""
                     UPDATE workspace_integrations
-                    SET config = config || '{"sync_status": "error", "sync_started_at": null}'::jsonb
+                    SET config = config || jsonb_build_object(
+                        'sync_status', 'error',
+                        'sync_started_at', null
+                    )
                     WHERE config->>'sync_status' = 'syncing'
                 """)
             )
@@ -84,38 +88,66 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from src.services.code_index_worker import run_code_index_worker
     from src.services.embedding_worker import run_embedding_worker
     from src.services.gitlab_sync_worker import run_gitlab_sync_worker
-    from src.services.sync_scheduler import run_polling_fallback
     from src.services.graph_scheduler import (
-        run_community_rebuild_loop,
         backfill_missing_workspaces,
+        run_community_rebuild_loop,
     )
+    from src.services.sync_scheduler import run_polling_fallback
 
     # Startup: clear any stale sync locks left from previous crashes
     await _reset_stale_sync_locks()
 
     # Startup: launch background workers with auto-restart on crash
-    async def _supervised(name: str, coro_fn):
+    async def _supervised(name: str, coro_fn: Callable[[], Awaitable[None]]) -> None:
         """Run a worker coroutine, restarting it if it crashes."""
         while True:
             try:
                 await coro_fn()
+                logger.warning("Worker %s exited normally, restarting in 5s", name)
+                await asyncio.sleep(5)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception("Worker %s crashed, restarting in 5s", name)
                 await asyncio.sleep(5)
 
-    embedding_task = asyncio.create_task(_supervised("embedding_worker", run_embedding_worker))
-    polling_task = asyncio.create_task(_supervised("polling_fallback", run_polling_fallback))
-    code_index_task = asyncio.create_task(_supervised("code_index_worker", run_code_index_worker))
-    gitlab_sync_task = asyncio.create_task(_supervised("gitlab_sync_worker", run_gitlab_sync_worker))
+    async def _run_startup_task(
+        name: str,
+        coro_fn: Callable[[], Awaitable[None]],
+    ) -> None:
+        """Run a startup-only task once and log failures without restarting."""
+        try:
+            await coro_fn()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Startup task %s failed", name)
+
+    embedding_task = asyncio.create_task(
+        _supervised("embedding_worker", run_embedding_worker)
+    )
+    polling_task = asyncio.create_task(
+        _supervised("polling_fallback", run_polling_fallback)
+    )
+    code_index_task = asyncio.create_task(
+        _supervised("code_index_worker", run_code_index_worker)
+    )
+    gitlab_sync_task = asyncio.create_task(
+        _supervised("gitlab_sync_worker", run_gitlab_sync_worker)
+    )
     community_rebuild_task = asyncio.create_task(
         _supervised("community_rebuild", run_community_rebuild_loop)
     )
     # On-startup backfill — runs once, doesn't block startup.
-    asyncio.create_task(_supervised("community_backfill", backfill_missing_workspaces))
+    community_backfill_task = asyncio.create_task(
+        _run_startup_task("community_backfill", backfill_missing_workspaces)
+    )
 
-    logger.info("Background workers started: embedding_worker, polling_fallback, code_index_worker, gitlab_sync_worker, community_rebuild")
+    logger.info(
+        "Background workers started: embedding_worker, polling_fallback, "
+        "code_index_worker, gitlab_sync_worker, community_rebuild, "
+        "community_backfill"
+    )
 
     yield
 
@@ -125,8 +157,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     code_index_task.cancel()
     gitlab_sync_task.cancel()
     community_rebuild_task.cancel()
+    community_backfill_task.cancel()
 
-    for task in [embedding_task, polling_task, code_index_task, gitlab_sync_task, community_rebuild_task]:
+    for task in [
+        embedding_task,
+        polling_task,
+        code_index_task,
+        gitlab_sync_task,
+        community_rebuild_task,
+        community_backfill_task,
+    ]:
         try:
             await task
         except asyncio.CancelledError:
