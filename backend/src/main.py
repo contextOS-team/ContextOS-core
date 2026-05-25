@@ -29,6 +29,7 @@ from src.routers.jira import router as jira_router
 from src.routers.linear import router as linear_router
 from src.routers.notion import router as notion_router
 from src.routers.slack import router as slack_router
+from src.routers.suggestions import router as suggestions_router
 from src.routers.telegram import router as telegram_router
 from src.routers.webhooks import router as webhooks_router
 from src.routers.workspaces import router as workspaces_router
@@ -48,6 +49,40 @@ init_langfuse(settings)
 configure_logging(settings.ENVIRONMENT)
 
 logger = logging.getLogger(__name__)
+
+
+async def _cancel_background_tasks(
+    tasks: list[asyncio.Task[None]],
+    *,
+    timeout: float = 5.0,
+) -> None:
+    """Cancel background tasks without letting shutdown hang indefinitely."""
+    if not tasks:
+        return
+
+    for task in tasks:
+        task.cancel()
+
+    done, pending = await asyncio.wait(tasks, timeout=timeout)
+
+    for task in done:
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception(
+                "Background task %s failed during shutdown",
+                task.get_name(),
+            )
+
+    if pending:
+        task_names = ", ".join(task.get_name() for task in pending)
+        logger.warning(
+            "Timed out waiting for %d background task(s) to stop: %s",
+            len(pending),
+            task_names,
+        )
 
 
 async def _reset_stale_sync_locks() -> None:
@@ -124,23 +159,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.exception("Startup task %s failed", name)
 
     embedding_task = asyncio.create_task(
-        _supervised("embedding_worker", run_embedding_worker)
+        _supervised("embedding_worker", run_embedding_worker),
+        name="embedding_worker",
     )
     polling_task = asyncio.create_task(
-        _supervised("polling_fallback", run_polling_fallback)
+        _supervised("polling_fallback", run_polling_fallback),
+        name="polling_fallback",
     )
     code_index_task = asyncio.create_task(
-        _supervised("code_index_worker", run_code_index_worker)
+        _supervised("code_index_worker", run_code_index_worker),
+        name="code_index_worker",
     )
     gitlab_sync_task = asyncio.create_task(
-        _supervised("gitlab_sync_worker", run_gitlab_sync_worker)
+        _supervised("gitlab_sync_worker", run_gitlab_sync_worker),
+        name="gitlab_sync_worker",
     )
     community_rebuild_task = asyncio.create_task(
-        _supervised("community_rebuild", run_community_rebuild_loop)
+        _supervised("community_rebuild", run_community_rebuild_loop),
+        name="community_rebuild",
     )
     # On-startup backfill — runs once, doesn't block startup.
     community_backfill_task = asyncio.create_task(
-        _run_startup_task("community_backfill", backfill_missing_workspaces)
+        _run_startup_task("community_backfill", backfill_missing_workspaces),
+        name="community_backfill",
     )
 
     logger.info(
@@ -151,26 +192,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     yield
 
-    # Shutdown: cancel background workers gracefully
-    embedding_task.cancel()
-    polling_task.cancel()
-    code_index_task.cancel()
-    gitlab_sync_task.cancel()
-    community_rebuild_task.cancel()
-    community_backfill_task.cancel()
-
-    for task in [
+    # Shutdown: cancel background workers, but do not let reloads hang forever.
+    await _cancel_background_tasks([
         embedding_task,
         polling_task,
         code_index_task,
         gitlab_sync_task,
         community_rebuild_task,
         community_backfill_task,
-    ]:
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+    ])
 
     logger.info("Background workers stopped")
 
@@ -220,6 +250,7 @@ app.include_router(auth_router)
 app.include_router(integrations_router)
 app.include_router(linear_router)
 app.include_router(slack_router)
+app.include_router(suggestions_router)
 app.include_router(fathom_router)
 app.include_router(github_router)
 app.include_router(gitlab_router)

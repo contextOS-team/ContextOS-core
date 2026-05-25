@@ -391,6 +391,7 @@ async def _wire_graph(
                 logger.warning("Failed to upsert Ticket node %s", ref, exc_info=True)
 
     # Create Decision nodes and wire person edges
+    decision_node_ids: list[UUID] = []
     for decision in extraction.decisions:
         ext_id = _decision_external_id(decision.title, today)
         # Step 1: Create the Decision node
@@ -410,6 +411,7 @@ async def _wire_graph(
                     **({"source_channel": source_channel} if source_channel else {}),
                 },
             )
+            decision_node_ids.append(decision_node_id)
         except Exception:
             logger.warning(
                 "Failed to create Decision node: %s", decision.title, exc_info=True,
@@ -433,6 +435,22 @@ async def _wire_graph(
                     "Failed to link %s to Decision '%s'",
                     name, decision.title, exc_info=True,
                 )
+
+    if decision_node_ids:
+        try:
+            from src.services.suggestions import refresh_missing_source_coverage_suggestions
+
+            async with session.begin_nested():
+                await refresh_missing_source_coverage_suggestions(
+                    session,
+                    workspace_id,
+                    decision_ids=decision_node_ids,
+                )
+        except Exception:
+            logger.warning(
+                "Failed to publish missing-source suggestions for digest decisions",
+                exc_info=True,
+            )
 
 
 # ============================================================

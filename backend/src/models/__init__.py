@@ -10,6 +10,7 @@ from src.models.identity_mapping import IdentityMapping
 from src.models.integration import OAuthToken, WebhookDelivery, WorkspaceIntegration
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.slack import SlackMessage
+from src.models.suggestion import Suggestion
 from src.models.sync import SyncCursor
 from src.models.ticket import LinearComment, LinearTicket
 from src.models.user import Profile, WorkspaceMember
@@ -30,6 +31,7 @@ __all__ = [
     "MeetingTranscript",
     "OAuthToken",
     "SlackMessage",
+    "Suggestion",
     "SyncCursor",
     "TimestampMixin",
     "Profile",

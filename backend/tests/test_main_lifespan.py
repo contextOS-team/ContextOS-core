@@ -3,7 +3,36 @@
 from __future__ import annotations
 
 import ast
+import asyncio
+import time
 from pathlib import Path
+
+
+async def test_background_shutdown_wait_is_bounded(mock_settings) -> None:
+    """Shutdown must not hang forever if a worker is slow to cancel."""
+    from src.main import _cancel_background_tasks
+
+    async def stubborn_worker() -> None:
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            current = asyncio.current_task()
+            if current is not None:
+                current.uncancel()
+            await asyncio.sleep(60)
+            raise
+
+    task = asyncio.create_task(stubborn_worker(), name="stubborn-worker")
+    await asyncio.sleep(0)
+    started = time.perf_counter()
+
+    await _cancel_background_tasks([task], timeout=0.01)
+
+    assert time.perf_counter() - started < 0.5
+    assert not task.done()
+
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
 
 
 def test_community_backfill_is_not_restart_supervised() -> None:
