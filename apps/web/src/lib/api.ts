@@ -122,6 +122,123 @@ export function reopenSuggestion(id: string): Promise<SuggestionItem> {
 }
 
 // ---------------------------------------------------------------------------
+// Missed decisions
+// ---------------------------------------------------------------------------
+
+export type MissedDecisionConfidence = 'needs_review' | 'high' | 'very_high'
+
+export type MissedDecisionReviewStatus =
+  | 'surfaced'
+  | 'confirmed'
+  | 'linked'
+  | 'deferred'
+  | 'rejected'
+  | 'suppressed'
+
+export type MissedDecisionMatchStatus =
+  | 'strong_match'
+  | 'weak_match'
+  | 'no_match'
+  | string
+
+export type MissedDecisionLegalAction =
+  | 'confirm'
+  | 'add_evidence'
+  | 'defer'
+  | 'reject'
+  | 'ignore_duplicate'
+
+export interface MissedDecisionPossibleExistingMatch {
+  match_status: MissedDecisionMatchStatus | null
+  entity_type: string | null
+  entity_id: string | null
+  title?: string | null
+}
+
+export interface MissedDecisionReviewSuggestion {
+  id: string
+  workspace_id: string
+  status: MissedDecisionReviewStatus
+  suggestion_id: string | null
+  title: string
+  inferred_decision: string
+  inferred_rationale: string
+  source_quote: string
+  source_link: string
+  confidence: MissedDecisionConfidence
+  people: string[]
+  affected_systems: string[]
+  possible_existing_match: MissedDecisionPossibleExistingMatch | null
+  legal_actions: MissedDecisionLegalAction[]
+}
+
+export interface MissedDecisionActionResponse
+  extends MissedDecisionReviewSuggestion {
+  decision_node_id?: string | null
+}
+
+export function getMissedDecisionReviewSuggestions(
+  limit = 5
+): Promise<MissedDecisionReviewSuggestion[]> {
+  return apiFetch<MissedDecisionReviewSuggestion[]>(
+    `/api/missed-decisions/review?limit=${limit}`
+  )
+}
+
+export function saveMissedDecisionAsNewDecision(
+  candidateId: string
+): Promise<MissedDecisionActionResponse> {
+  return apiFetch<MissedDecisionActionResponse>(
+    `/api/missed-decisions/${encodeURIComponent(candidateId)}/confirm`,
+    { method: 'POST' }
+  )
+}
+
+export function addMissedDecisionAsEvidence(
+  candidateId: string
+): Promise<MissedDecisionActionResponse> {
+  return apiFetch<MissedDecisionActionResponse>(
+    `/api/missed-decisions/${encodeURIComponent(candidateId)}/add-evidence`,
+    { method: 'POST' }
+  )
+}
+
+export function deferMissedDecision(
+  candidateId: string,
+  snoozedUntil?: string | null
+): Promise<MissedDecisionActionResponse> {
+  return apiFetch<MissedDecisionActionResponse>(
+    `/api/missed-decisions/${encodeURIComponent(candidateId)}/defer`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ snoozed_until: snoozedUntil ?? null }),
+    }
+  )
+}
+
+export function dismissMissedDecision(
+  candidateId: string,
+  reason?: string | null
+): Promise<MissedDecisionActionResponse> {
+  return apiFetch<MissedDecisionActionResponse>(
+    `/api/missed-decisions/${encodeURIComponent(candidateId)}/reject`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason ?? null }),
+    }
+  )
+}
+
+export function ignoreMissedDecisionDuplicate(
+  candidateId: string
+): Promise<MissedDecisionActionResponse> {
+  return apiFetch<MissedDecisionActionResponse>(
+    `/api/missed-decisions/${encodeURIComponent(candidateId)}/ignore-duplicate`,
+    { method: 'POST' }
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Integration status
 // ---------------------------------------------------------------------------
 

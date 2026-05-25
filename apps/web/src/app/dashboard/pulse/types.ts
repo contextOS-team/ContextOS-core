@@ -1,3 +1,5 @@
+import type { MissedDecisionReviewSuggestion } from '@/lib/api'
+
 export interface NeedsYouItem {
   id: string
   ticketId: string
@@ -35,4 +37,17 @@ export interface HeadlineCopy {
 
 export interface WorkspaceFreshness {
   lastUpdatedAt: Date | null
+}
+
+export interface MissedDecisionReviewActions {
+  saveAsNewDecision: (candidateId: string) => Promise<void>
+  addAsEvidence: (candidateId: string) => Promise<void>
+  defer: (candidateId: string) => Promise<void>
+  dismiss: (candidateId: string) => Promise<void>
+  ignoreDuplicate: (candidateId: string) => Promise<void>
+}
+
+export interface NeedsReviewSuggestionsState {
+  needsReviewSuggestions: MissedDecisionReviewSuggestion[]
+  needsReviewError: string | null
 }

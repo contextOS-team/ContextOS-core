@@ -10,7 +10,13 @@ import {
 const apiMocks = vi.hoisted(() => ({
   getDashboardAttention: vi.fn(),
   getDashboardSuggestions: vi.fn(),
+  getMissedDecisionReviewSuggestions: vi.fn(),
   fetchMyWorkGraph: vi.fn(),
+  addMissedDecisionAsEvidence: vi.fn(),
+  deferMissedDecision: vi.fn(),
+  dismissMissedDecision: vi.fn(),
+  ignoreMissedDecisionDuplicate: vi.fn(),
+  saveMissedDecisionAsNewDecision: vi.fn(),
 }))
 
 const contextMocks = vi.hoisted(() => ({
@@ -25,7 +31,19 @@ const activityMocks = vi.hoisted(() => ({
 vi.mock('@/lib/api', () => ({
   getDashboardAttention: apiMocks.getDashboardAttention,
   getDashboardSuggestions: apiMocks.getDashboardSuggestions,
+  getMissedDecisionReviewSuggestions: apiMocks.getMissedDecisionReviewSuggestions,
   fetchMyWorkGraph: apiMocks.fetchMyWorkGraph,
+  addMissedDecisionAsEvidence: apiMocks.addMissedDecisionAsEvidence,
+  deferMissedDecision: apiMocks.deferMissedDecision,
+  dismissMissedDecision: apiMocks.dismissMissedDecision,
+  ignoreMissedDecisionDuplicate: apiMocks.ignoreMissedDecisionDuplicate,
+  saveMissedDecisionAsNewDecision: apiMocks.saveMissedDecisionAsNewDecision,
+}))
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+  },
 }))
 
 vi.mock('@/lib/context-feed', () => ({
@@ -46,6 +64,8 @@ function Probe() {
         error: data.error,
         isLoading: data.isLoading,
         suggestions: data.suggestions.length,
+        needsReviewSuggestions: data.needsReviewSuggestions.length,
+        needsReviewError: data.needsReviewError,
         contextItems: data.contextItems.length,
       })}
     </output>
@@ -61,6 +81,7 @@ describe('useDashboardData', () => {
   it('does not fail the dashboard when suggestions are unavailable', async () => {
     apiMocks.getDashboardAttention.mockResolvedValue([])
     apiMocks.getDashboardSuggestions.mockRejectedValue(new Error('Failed to fetch'))
+    apiMocks.getMissedDecisionReviewSuggestions.mockResolvedValue([])
     apiMocks.fetchMyWorkGraph.mockResolvedValue(null)
     contextMocks.fetchContextPages.mockResolvedValue([{ id: 'ctx-1' }])
     activityMocks.fetchActivityDelta.mockResolvedValue([])
@@ -86,6 +107,7 @@ describe('useDashboardData', () => {
     vi.useFakeTimers()
     apiMocks.getDashboardAttention.mockResolvedValue([])
     apiMocks.getDashboardSuggestions.mockReturnValue(new Promise(() => {}))
+    apiMocks.getMissedDecisionReviewSuggestions.mockResolvedValue([])
     apiMocks.fetchMyWorkGraph.mockResolvedValue(null)
     contextMocks.fetchContextPages.mockResolvedValue([{ id: 'ctx-1' }])
     activityMocks.fetchActivityDelta.mockResolvedValue([])
@@ -110,6 +132,8 @@ describe('useDashboardData', () => {
     expect(state.isLoading).toBe(false)
     expect(state.error).toBeNull()
     expect(state.suggestions).toBe(0)
+    expect(state.needsReviewSuggestions).toBe(0)
+    expect(state.needsReviewError).toBeNull()
     expect(state.contextItems).toBe(1)
   })
 })

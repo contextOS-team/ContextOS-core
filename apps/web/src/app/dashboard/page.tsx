@@ -7,6 +7,7 @@ import { ActiveContext } from './pulse/active-context'
 import { Headline } from './pulse/headline'
 import { NeedsYou } from './pulse/needs-you'
 import { NeedsReview } from './pulse/needs-review'
+import { NeedsReviewSuggestions } from './pulse/needs-review-suggestions'
 import { RecentDecisions } from './pulse/recent-decisions'
 import { useLastVisitedAt } from './pulse/since-last-visit/use-last-visited-at'
 import { SeenItemsProvider } from './pulse/since-last-visit/use-session-seen-items'
@@ -73,8 +74,18 @@ function DashboardSections({
   lastVisitedAt: Date | null
   isWorkspaceLoading: boolean
 }) {
-  const { decisions, suggestions, contextItems, needsYouItems, delta, isLoading, error } =
-    useDashboardData(workspaceId, lastVisitedAt)
+  const {
+    decisions,
+    suggestions,
+    needsReviewSuggestions,
+    needsReviewError,
+    missedDecisionActions,
+    contextItems,
+    needsYouItems,
+    delta,
+    isLoading,
+    error,
+  } = useDashboardData(workspaceId, lastVisitedAt)
 
   if (isWorkspaceLoading || isLoading) {
     return (
@@ -111,7 +122,20 @@ function DashboardSections({
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.32fr)_minmax(320px,0.68fr)]">
         <RecentDecisions data={decisions} lastVisitedAt={lastVisitedAt} />
         <div className="space-y-6">
-          <NeedsReview items={suggestions} />
+          {needsReviewSuggestions.length > 0 || needsReviewError ? (
+            <NeedsReviewSuggestions
+              suggestions={needsReviewSuggestions}
+              error={needsReviewError}
+              workspaceId={workspaceId}
+              onSaveAsNewDecision={missedDecisionActions.saveAsNewDecision}
+              onAddAsEvidence={missedDecisionActions.addAsEvidence}
+              onDefer={missedDecisionActions.defer}
+              onDismiss={missedDecisionActions.dismiss}
+              onIgnoreDuplicate={missedDecisionActions.ignoreDuplicate}
+            />
+          ) : (
+            <NeedsReview items={suggestions} />
+          )}
           <ActiveContext items={contextItems} lastVisitedAt={lastVisitedAt} />
           <NeedsYou items={needsYouItems} lastVisitedAt={lastVisitedAt} />
         </div>

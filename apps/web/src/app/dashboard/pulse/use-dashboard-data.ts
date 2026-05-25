@@ -1,17 +1,30 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import type { LensGraphResponse } from '@/components/graph/types'
 import {
+  addMissedDecisionAsEvidence,
+  deferMissedDecision,
+  dismissMissedDecision,
   getDashboardAttention,
   getDashboardSuggestions,
+  getMissedDecisionReviewSuggestions,
+  ignoreMissedDecisionDuplicate,
   fetchMyWorkGraph,
+  saveMissedDecisionAsNewDecision,
   type AttentionItem,
+  type MissedDecisionReviewSuggestion,
   type SuggestionItem,
 } from '@/lib/api'
 import { fetchContextPages, type ContextPageRow } from '@/lib/context-feed'
 import { bucketDelta, fetchActivityDelta } from './since-last-visit/activity-delta'
-import type { Delta, NeedsYouItem } from './types'
+import type {
+  Delta,
+  MissedDecisionReviewActions,
+  NeedsReviewSuggestionsState,
+  NeedsYouItem,
+} from './types'
 
 const EMPTY_DELTA: Delta = {
   decisions: { count: 0, items: [] },
@@ -21,7 +34,7 @@ const EMPTY_DELTA: Delta = {
 
 export const DASHBOARD_REQUEST_TIMEOUT_MS = 8_000
 
-export interface DashboardData {
+interface DashboardDataState extends NeedsReviewSuggestionsState {
   decisions: LensGraphResponse | null
   suggestions: SuggestionItem[]
   contextItems: ContextPageRow[]
@@ -30,6 +43,10 @@ export interface DashboardData {
   workspaceId: string | null
   isLoading: boolean
   error: string | null
+}
+
+export interface DashboardData extends DashboardDataState {
+  missedDecisionActions: MissedDecisionReviewActions
 }
 
 export function humanizeSinceDay(date: Date, now: Date = new Date()): string {
@@ -97,6 +114,13 @@ function settledValue<T>(result: PromiseSettledResult<T>, fallback: T): T {
   return result.status === 'fulfilled' ? result.value : fallback
 }
 
+function missedDecisionError(
+  result: PromiseSettledResult<MissedDecisionReviewSuggestion[]>
+): string | null {
+  if (result.status === 'fulfilled') return null
+  return 'Could not load missed-decision suggestions. Refresh the dashboard or open Activity to confirm the source sync completed.'
+}
+
 function withDashboardTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
@@ -113,9 +137,11 @@ export function useDashboardData(
   workspaceId: string | null,
   lastVisitedAt: Date | null
 ): DashboardData {
-  const [data, setData] = useState<DashboardData>({
+  const [data, setData] = useState<DashboardDataState>({
     decisions: null,
     suggestions: [],
+    needsReviewSuggestions: [],
+    needsReviewError: null,
     contextItems: [],
     needsYouItems: [],
     delta: EMPTY_DELTA,
@@ -132,6 +158,8 @@ export function useDashboardData(
         setData({
           decisions: null,
           suggestions: [],
+          needsReviewSuggestions: [],
+          needsReviewError: null,
           contextItems: [],
           needsYouItems: [],
           delta: EMPTY_DELTA,
@@ -151,6 +179,7 @@ export function useDashboardData(
         contextItemsResult,
         decisionsResult,
         activityRowsResult,
+        missedDecisionsResult,
       ] = await Promise.allSettled([
         withDashboardTimeout(getDashboardAttention(), 'Dashboard attention'),
         withDashboardTimeout(getDashboardSuggestions(3), 'Dashboard suggestions'),
@@ -159,6 +188,10 @@ export function useDashboardData(
         withDashboardTimeout(
           fetchActivityDelta(workspaceId, lastVisitedAt),
           'Dashboard activity'
+        ),
+        withDashboardTimeout(
+          getMissedDecisionReviewSuggestions(5),
+          'Missed-decision suggestions'
         ),
       ])
 
@@ -169,11 +202,14 @@ export function useDashboardData(
       const contextItems = settledValue(contextItemsResult, [])
       const decisions = settledValue(decisionsResult, null)
       const activityRows = settledValue(activityRowsResult, [])
+      const needsReviewSuggestions = settledValue(missedDecisionsResult, [])
       const needsYouItems = mapAttentionItems(attention, now)
 
       setData({
         decisions,
         suggestions,
+        needsReviewSuggestions,
+        needsReviewError: missedDecisionError(missedDecisionsResult),
         contextItems: contextItems.slice(0, 3),
         needsYouItems,
         delta: bucketDelta(activityRows, needsYouItems, ''),
@@ -195,5 +231,51 @@ export function useDashboardData(
     }
   }, [workspaceId, lastVisitedAt])
 
-  return data
+  const removeMissedDecision = useCallback((candidateId: string) => {
+    setData((current) => ({
+      ...current,
+      needsReviewSuggestions: current.needsReviewSuggestions.filter(
+        (item) => item.id !== candidateId
+      ),
+    }))
+  }, [])
+
+  const saveAsNewDecision = useCallback(async (candidateId: string) => {
+    await saveMissedDecisionAsNewDecision(candidateId)
+    removeMissedDecision(candidateId)
+    toast.success('Saved as decision receipt.')
+  }, [removeMissedDecision])
+
+  const addAsEvidence = useCallback(async (candidateId: string) => {
+    await addMissedDecisionAsEvidence(candidateId)
+    removeMissedDecision(candidateId)
+    toast.success('Added evidence to the existing decision.')
+  }, [removeMissedDecision])
+
+  const deferCandidate = useCallback(async (candidateId: string) => {
+    await deferMissedDecision(candidateId)
+    removeMissedDecision(candidateId)
+    toast.success('Deferred from review.')
+  }, [removeMissedDecision])
+
+  const dismissCandidate = useCallback(async (candidateId: string) => {
+    await dismissMissedDecision(candidateId)
+    removeMissedDecision(candidateId)
+  }, [removeMissedDecision])
+
+  const ignoreDuplicate = useCallback(async (candidateId: string) => {
+    await ignoreMissedDecisionDuplicate(candidateId)
+    removeMissedDecision(candidateId)
+  }, [removeMissedDecision])
+
+  return {
+    ...data,
+    missedDecisionActions: {
+      saveAsNewDecision,
+      addAsEvidence,
+      defer: deferCandidate,
+      dismiss: dismissCandidate,
+      ignoreDuplicate,
+    },
+  }
 }
