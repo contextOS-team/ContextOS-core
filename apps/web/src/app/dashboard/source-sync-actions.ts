@@ -11,7 +11,7 @@ import {
   type IntegrationStatusResponse,
   type ProviderStatus,
 } from '@/lib/api'
-import { isWorkspaceUpdateStale } from './sync-freshness'
+import { isWorkspaceUpdateStale, parseWorkspaceSyncDate } from './sync-freshness'
 
 type SourceSyncTask = {
   label: string
@@ -30,7 +30,7 @@ function isConnected(status: ProviderStatus): boolean {
 function needsRefresh(status: ProviderStatus): boolean {
   if (!isConnected(status)) return false
   if (!status.last_sync_at) return true
-  return isWorkspaceUpdateStale(new Date(status.last_sync_at))
+  return isWorkspaceUpdateStale(parseWorkspaceSyncDate(status.last_sync_at))
 }
 
 function formatSyncLabel(provider: string): string {
@@ -64,7 +64,7 @@ async function collectSourceSyncTasks(
     const linear = await fetchLinearSyncStatus().catch(() => null)
     const teamIds = linear?.synced_teams ?? []
     const linearNeedsRefresh = !linear?.last_sync_at
-      || isWorkspaceUpdateStale(new Date(linear.last_sync_at))
+      || isWorkspaceUpdateStale(parseWorkspaceSyncDate(linear.last_sync_at))
 
     if (teamIds.length > 0 && linearNeedsRefresh) {
       tasks.push({ label: 'Linear', run: () => triggerLinearSync(teamIds) })

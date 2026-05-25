@@ -7,7 +7,7 @@ dev-frontend:
 	./scripts/openlog.sh frontend bash -lc 'cd apps/web && pnpm dev'
 
 dev-backend:
-	./scripts/openlog.sh backend bash -lc 'cd backend && uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000'
+	./scripts/openlog.sh backend bash -lc 'cd backend && uv run uvicorn src.main:app --reload --reload-dir src --host 0.0.0.0 --port 8000'
 
 dev-ngrok:
 	@NGROK_DOMAIN=$$(grep '^NGROK_DOMAIN=' .env 2>/dev/null | cut -d= -f2-); \

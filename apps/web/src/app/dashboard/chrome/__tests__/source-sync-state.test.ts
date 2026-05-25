@@ -91,6 +91,38 @@ describe('source sync chrome state', () => {
     })
   })
 
+  it('treats timezone-less backend sync timestamps as UTC', () => {
+    const gitlab: GitlabSyncStatus = {
+      project_sync_status: {
+        '1': { status: 'synced', synced: 2, total: 2 },
+      },
+      total_mrs: 2,
+      total_reviews: 1,
+      is_syncing: false,
+      last_sync_at: '2026-05-25T07:35:57.696900',
+    }
+    const rows = buildSourceRows({
+      integrations: integrationStatus({
+        gitlab: provider({
+          status: 'connected',
+          selected_repos_count: 1,
+          last_sync_at: '2026-05-25T07:35:57.696900',
+        }),
+      }),
+      gitlab,
+      now: new Date('2026-05-25T08:41:00Z'),
+    })
+
+    const state = deriveChromeSourceState({ kind: 'unknown' }, rows)
+
+    expect(state.kind).toBe('current')
+    expect(rows.find((row) => row.provider === 'gitlab')).toMatchObject({
+      label: 'GitLab',
+      health: 'current',
+      detail: 'Synced 1h ago',
+    })
+  })
+
   it('uses source detail progress when realtime sync progress is absent', () => {
     const gitlab: GitlabSyncStatus = {
       project_sync_status: {

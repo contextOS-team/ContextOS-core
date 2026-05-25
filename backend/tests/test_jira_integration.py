@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
 
 import src.config
@@ -199,6 +200,43 @@ def test_disconnect_returns_ok(client: TestClient):
     assert response.status_code == 200
     assert response.json()["status"] == "disconnected"
     mock_disconnect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_sync_commits_request_marker_before_background_task(jira_settings: Settings):
+    """POST /sync releases the request row lock before the worker touches it."""
+    from src.routers import jira as jira_router
+
+    mock_session = AsyncMock()
+    mock_integration = MagicMock()
+    mock_integration.status = "connected"
+    mock_integration.config = {"sync_status": "complete", "issues_synced": 116}
+
+    integration_result = MagicMock()
+    integration_result.scalar_one_or_none.return_value = mock_integration
+    mock_session.execute.return_value = integration_result
+
+    class RecordingBackgroundTasks(BackgroundTasks):
+        added = False
+
+        def add_task(self, func, *args, **kwargs):
+            assert mock_session.commit.await_count == 1
+            self.added = True
+
+    background_tasks = RecordingBackgroundTasks()
+
+    with patch.object(jira_router, "emit_activity", new_callable=AsyncMock):
+        response = await jira_router.start_sync(
+            jira_router.SyncRequest(),
+            background_tasks,
+            _user_context(),
+            mock_session,
+            jira_settings,
+        )
+
+    assert response == {"status": "sync_started", "jql": None}
+    assert background_tasks.added is True
+    mock_session.commit.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

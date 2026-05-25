@@ -52,6 +52,7 @@ function integrationStatus(
 
 describe('source sync actions', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.clearAllMocks()
   })
 
@@ -79,5 +80,22 @@ describe('source sync actions', () => {
     expect(triggerLinearSync).not.toHaveBeenCalled()
     expect(result).toEqual({ started: ['GitLab'], failed: [] })
     expect(progress.map((entry) => entry.message)).toContain('Checking gitlab for changes')
+  })
+
+  it('does not start sync for a fresh timezone-less backend timestamp', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-25T08:41:00Z'))
+    vi.mocked(fetchIntegrationStatus).mockResolvedValue(integrationStatus({
+      gitlab: provider({
+        status: 'connected',
+        selected_repos_count: 1,
+        last_sync_at: '2026-05-25T07:35:57.696900',
+      }),
+    }))
+
+    const result = await triggerStaleSourceSyncs(() => {})
+
+    expect(triggerGitlabSync).not.toHaveBeenCalled()
+    expect(result).toEqual({ started: [], failed: [] })
   })
 })

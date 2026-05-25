@@ -7,7 +7,7 @@ import type {
   NotionSyncStatus,
   ProviderStatus,
 } from '@/lib/api'
-import { isWorkspaceUpdateStale } from '../sync-freshness'
+import { isWorkspaceUpdateStale, parseWorkspaceSyncDate } from '../sync-freshness'
 import type { SyncState } from './use-sync-state'
 
 export type SourceProvider =
@@ -107,12 +107,6 @@ export function progressFromStatusMap(
 
 function isConnected(status: ProviderStatus): boolean {
   return status.status === 'connected'
-}
-
-function parseDate(value?: string | null): Date | null {
-  if (!value) return null
-  const date = new Date(value)
-  return Number.isFinite(date.getTime()) ? date : null
 }
 
 function normalizedStatus(value?: string | null): string {
@@ -309,7 +303,7 @@ function linearSourceRow({
     }
   }
 
-  const lastSyncAt = parseDate(linear.last_sync_at)
+  const lastSyncAt = parseWorkspaceSyncDate(linear.last_sync_at)
   const status = normalizedStatus(linear.sync_status)
 
   if (SYNCING_STATUSES.has(status)) {
@@ -395,7 +389,7 @@ export function buildSourceRows({
       selectedCount: integrations.github.selected_repos_count ?? 0,
       integrationStatus: integrations.github,
       statusMap: github?.repo_sync_status,
-      lastSyncAt: parseDate(github?.last_sync_at ?? integrations.github.last_sync_at),
+      lastSyncAt: parseWorkspaceSyncDate(github?.last_sync_at ?? integrations.github.last_sync_at),
       now,
     }),
     codeProviderRow({
@@ -403,14 +397,14 @@ export function buildSourceRows({
       selectedCount: integrations.gitlab.selected_repos_count ?? 0,
       integrationStatus: integrations.gitlab,
       statusMap: gitlab?.project_sync_status,
-      lastSyncAt: parseDate(gitlab?.last_sync_at ?? integrations.gitlab.last_sync_at),
+      lastSyncAt: parseWorkspaceSyncDate(gitlab?.last_sync_at ?? integrations.gitlab.last_sync_at),
       isSyncing: gitlab?.is_syncing,
       now,
     }),
     timestampedSourceRow({
       provider: 'notion',
       integrationStatus: integrations.notion,
-      lastSyncAt: parseDate(notion?.last_sync_at ?? integrations.notion.last_sync_at),
+      lastSyncAt: parseWorkspaceSyncDate(notion?.last_sync_at ?? integrations.notion.last_sync_at),
       syncStatus: notion?.sync_status,
       progress: notion?.sync_total
         ? Math.max(0, Math.min(1, (notion.sync_progress ?? notion.pages_count ?? 0) / notion.sync_total))
@@ -420,7 +414,7 @@ export function buildSourceRows({
     timestampedSourceRow({
       provider: 'jira',
       integrationStatus: integrations.jira,
-      lastSyncAt: parseDate(jira?.last_sync_at ?? integrations.jira.last_sync_at),
+      lastSyncAt: parseWorkspaceSyncDate(jira?.last_sync_at ?? integrations.jira.last_sync_at),
       syncStatus: jira?.sync_status,
       progressDetail: jira && jira.issues_synced > 0
         ? syncedCountDetail(jira.issues_synced, 'issue')

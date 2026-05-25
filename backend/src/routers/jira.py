@@ -239,6 +239,9 @@ async def start_sync(
         metadata={"integration": "jira"},
         actor_id=user.user_id,
     )
+    # Release the integration row before the background sync opens its own
+    # session and updates the same config record.
+    await session.commit()
 
     # Start sync in background with its own session
     async def _run_sync():

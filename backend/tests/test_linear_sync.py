@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
+from fastapi import BackgroundTasks
 
 from tests.conftest import (
     TEST_EMAIL,
@@ -460,3 +461,47 @@ class TestSyncEndpoint:
 
         assert response.status_code == 400
         assert "not connected" in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_sync_commits_request_marker_before_background_task(
+        self, linear_settings
+    ):
+        """POST /sync releases the request row lock before the worker touches it."""
+        from src.dependencies import UserContext
+        from src.routers import linear as linear_router
+
+        mock_session = AsyncMock()
+        mock_integration = MagicMock()
+        mock_integration.status = "connected"
+        mock_integration.config = {"sync_status": "complete", "tickets_synced": 8}
+
+        integration_result = MagicMock()
+        integration_result.scalar_one_or_none.return_value = mock_integration
+        mock_session.execute.return_value = integration_result
+
+        class RecordingBackgroundTasks(BackgroundTasks):
+            added = False
+
+            def add_task(self, func, *args, **kwargs):
+                assert mock_session.commit.await_count == 1
+                self.added = True
+
+        background_tasks = RecordingBackgroundTasks()
+        user = UserContext(
+            user_id=UUID(TEST_USER_ID),
+            workspace_id=UUID(TEST_WORKSPACE_ID),
+            email=TEST_EMAIL,
+        )
+
+        with patch.object(linear_router, "emit_activity", new_callable=AsyncMock):
+            response = await linear_router.start_sync(
+                linear_router.SyncRequest(team_ids=["team-1"]),
+                background_tasks,
+                user,
+                mock_session,
+                linear_settings,
+            )
+
+        assert response == {"status": "sync_started", "team_ids": ["team-1"]}
+        assert background_tasks.added is True
+        mock_session.commit.assert_awaited_once()

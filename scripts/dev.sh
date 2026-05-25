@@ -40,7 +40,7 @@ docker compose up -d
 
 start_process "backend on http://localhost:8000/docs" \
   "$ROOT_DIR/scripts/openlog.sh" backend \
-  bash -lc 'cd backend && uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000'
+  bash -lc 'cd backend && uv run uvicorn src.main:app --reload --reload-dir src --host 0.0.0.0 --port 8000'
 
 start_process "frontend on http://localhost:3000" \
   "$ROOT_DIR/scripts/openlog.sh" frontend \

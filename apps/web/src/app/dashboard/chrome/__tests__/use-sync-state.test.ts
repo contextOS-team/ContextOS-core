@@ -171,6 +171,33 @@ describe('useSyncState', () => {
     nowSpy.mockRestore()
   })
 
+  it('treats a same-timestamp sync completion as newer than its started row', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-05-20T12:04:00Z').getTime())
+
+    const supabase = makeSupabaseMock([
+      {
+        event_type: 'sync_started',
+        created_at: '2026-05-20T12:00:00Z',
+        metadata: { integration: 'jira' },
+      },
+      {
+        event_type: 'sync_completed',
+        created_at: '2026-05-20T12:00:00Z',
+        metadata: { integration: 'jira', items_count: 119 },
+      },
+    ])
+    createClientMock.mockReturnValue(supabase)
+
+    const { result } = renderHook(() => useSyncState('workspace-1'))
+
+    await waitFor(() => expect(result.current.kind).toBe('idle'))
+    expect(result.current).toEqual({
+      kind: 'idle',
+      lastUpdatedAt: new Date('2026-05-20T12:00:00Z'),
+    })
+    nowSpy.mockRestore()
+  })
+
   it('transitions to syncing on sync_started realtime payloads', async () => {
     const supabase = makeSupabaseMock()
     createClientMock.mockReturnValue(supabase)

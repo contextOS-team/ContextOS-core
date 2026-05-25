@@ -77,14 +77,36 @@ function stateFromSyncRow(row: SyncEventRow): SyncState | null {
 }
 
 function isFreshStartedRow(row: SyncEventRow, nowMs: number): boolean {
-  const createdAtMs = new Date(row.created_at).getTime()
+  const createdAtMs = createdAtTimestamp(row)
   return Number.isFinite(createdAtMs) && nowMs - createdAtMs <= ACTIVE_SYNC_STARTED_WINDOW_MS
 }
 
+function createdAtTimestamp(row: SyncEventRow): number {
+  const value = new Date(row.created_at).getTime()
+  return Number.isFinite(value) ? value : 0
+}
+
+function eventRank(eventType: string): number {
+  if (eventType === 'sync_completed') return 0
+  if ((SOURCE_ACTIVITY_EVENT_TYPES as readonly string[]).includes(eventType)) return 1
+  if (eventType === 'sync_started') return 2
+  return 3
+}
+
+function sortedInitialRows(rows: SyncEventRow[]): SyncEventRow[] {
+  return [...rows].sort((a, b) => {
+    const timeDiff = createdAtTimestamp(b) - createdAtTimestamp(a)
+    if (timeDiff !== 0) return timeDiff
+    return eventRank(a.event_type) - eventRank(b.event_type)
+  })
+}
+
 function initialStateFromSyncRows(rows: SyncEventRow[], nowMs = Date.now()): SyncState | null {
-  for (const row of rows) {
-    if (row.event_type === 'sync_started' && !isFreshStartedRow(row, nowMs)) {
-      continue
+  const orderedRows = sortedInitialRows(rows)
+
+  for (const row of orderedRows) {
+    if (row.event_type === 'sync_started') {
+      if (!isFreshStartedRow(row, nowMs)) continue
     }
 
     const next = stateFromSyncRow(row)

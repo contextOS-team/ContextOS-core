@@ -309,9 +309,11 @@ async def start_sync(
         metadata={"integration": "linear"},
         actor_id=user.user_id,
     )
+    # Release the integration row before the background sync opens its own
+    # session and updates the same config record.
+    await session.commit()
 
     # Start sync in background with its own session
-    # (request session closes when response is sent, before background task runs)
     async def _run_sync():
         from src.db import async_session
         async with async_session() as bg_session:
