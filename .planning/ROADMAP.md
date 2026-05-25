@@ -256,7 +256,7 @@ Plans:
 **Phase Status:**
 - [ ] **Phase 43: Multi-workspace Foundation** - Not started
 - [x] **Phase 44: Suggestion System and Dismissals** - Durable workspace suggestions and dismissal lifecycle (completed 2026-05-25)
-- [ ] **Phase 45: Post-sync Missed-decision Detection** - Planned
+- [x] **Phase 45: Post-sync Missed-decision Detection** - Missed-decision scan, review, lifecycle, and Decision promotion complete (completed 2026-05-25; remote schema push follow-up pending)
 - [ ] **Phase 46: Graph RAG Quality Improvements** - Not started
 - [ ] **Phase 47: Confirmed Action Layer Bots** - Not started
 - [ ] **Phase 48: Figma Decision Evidence Integration** - Not started
@@ -305,7 +305,7 @@ Plans:
   2. Candidate missed decisions include source evidence, confidence, people involved, and affected systems or workstreams.
   3. User can confirm, reject, or defer each candidate.
   4. Confirmed candidates become source-backed Decision Receipts or follow-up suggestions while preserving the source trail.
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 **Wave 1**
@@ -320,7 +320,8 @@ Plans:
 - [x] 45-03-PLAN.md -- Review actions, candidate lifecycle transitions, evidence attachment, and Decision Receipt promotion
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 45-04-PLAN.md -- Bounded dashboard Needs review UI, typed action helpers, and component coverage
+- [x] 45-04-PLAN.md -- Bounded dashboard Needs review UI, typed action helpers, and component coverage
+  - Note: authenticated visual verification remains a follow-up because Browser automation exposed no browser backend in the execution session; automated placement/component coverage passed.
 
 ### Phase 46: Graph RAG Quality Improvements
 

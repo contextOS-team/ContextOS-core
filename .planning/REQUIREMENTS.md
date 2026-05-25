@@ -24,10 +24,10 @@ Requirements for the product expansion and action-layer milestone. Each maps to 
 
 ### Missed Decisions
 
-- [ ] **GAP-01**: After a source sync completes, ContextOS can scan recent synced content for likely decisions that were discussed but not documented or planned.
-- [ ] **GAP-02**: User can review a missed-decision candidate with linked source evidence, confidence, people involved, and affected workstreams.
-- [ ] **GAP-03**: User can confirm, reject, or defer a missed-decision candidate.
-- [ ] **GAP-04**: Confirmed missed decisions can become a source-backed Decision Receipt or a follow-up suggestion without losing the original evidence trail.
+- [x] **GAP-01**: After a source sync completes, ContextOS can scan recent synced content for likely decisions that were discussed but not documented or planned.
+- [x] **GAP-02**: User can review a missed-decision candidate with linked source evidence, confidence, people involved, and affected workstreams.
+- [x] **GAP-03**: User can confirm, reject, or defer a missed-decision candidate.
+- [x] **GAP-04**: Confirmed missed decisions can become a source-backed Decision Receipt or a follow-up suggestion without losing the original evidence trail.
 
 ### Graph RAG
 
@@ -105,10 +105,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SUG-02 | Phase 44 | Complete |
 | SUG-03 | Phase 44 | Complete |
 | SUG-04 | Phase 44 | Complete |
-| GAP-01 | Phase 45 | Pending |
-| GAP-02 | Phase 45 | Pending |
-| GAP-03 | Phase 45 | Pending |
-| GAP-04 | Phase 45 | Pending |
+| GAP-01 | Phase 45 | Complete |
+| GAP-02 | Phase 45 | Complete |
+| GAP-03 | Phase 45 | Complete |
+| GAP-04 | Phase 45 | Complete |
 | GRAG-01 | Phase 46 | Pending |
 | GRAG-02 | Phase 46 | Pending |
 | GRAG-03 | Phase 46 | Pending |
@@ -133,4 +133,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-05-24*
-*Last updated: 2026-05-24 after v1.4 Product Expansion & Action Layer milestone started*
+*Last updated: 2026-05-25 after Phase 45 execution completed with remote Supabase push follow-up pending*

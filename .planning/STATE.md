@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Product Expansion & Action Layer
 status: executing
-stopped_at: Phase 45 Plan 45-04
-last_updated: "2026-05-25T12:05:05.000Z"
-last_activity: 2026-05-25 -- Phase 45 Plan 45-03 review actions and Decision promotion complete
+stopped_at: Phase 45 execution complete
+last_updated: "2026-05-25T12:16:15.000Z"
+last_activity: 2026-05-25 -- Phase 45 Plan 45-04 dashboard Needs review surface complete
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 9
-  completed_plans: 5
-  percent: 14
+  completed_plans: 9
+  percent: 28
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-24)
 
 ## Current Position
 
-Phase: 45 (post-sync-missed-decision-detection) — EXECUTING
-Plan: 4 of 5
-Status: Executing Phase 45
-Last activity: 2026-05-25 -- 45-03 workspace-scoped review actions, promotion, and missed-decision API committed
+Phase: 45 (post-sync-missed-decision-detection) — EXECUTION COMPLETE
+Plan: 5 of 5
+Status: Phase 45 execution complete; verify-work / ship follow-up pending
+Last activity: 2026-05-25 -- 45-04 dashboard missed-decision Needs review UI, action helpers, tests, and verification artifacts committed
 
 ## Accumulated Context
 
@@ -104,6 +104,11 @@ Last activity: 2026-05-25 -- 45-03 workspace-scoped review actions, promotion, a
 - [Phase 44]: Digest-driven suggestion publication runs in a nested non-blocking transaction so suggestion failures do not roll back digest graph activity.
 - [Phase 44]: Dashboard suggestions render as a bounded `Needs review` right-rail surface; `Recent decisions` remains the primary confirmed-memory column.
 - [Phase 44]: Vitest test config now uses esbuild automatic JSX instead of `@vitejs/plugin-react` because the installed plugin imported a Vite internal export unavailable in the installed Vite version.
+- [Phase 45]: Missed-decision scans are non-blocking post-sync work; sync success must not depend on scanner success, and scanner checkpoints advance only after scan processing succeeds.
+- [Phase 45]: User-visible missed-decision candidates require exact source quotes, source links, confidence tiers, people, affected systems, and persisted candidate rows before publishing Phase 44 suggestions.
+- [Phase 45]: Raw digest Decision nodes cannot directly publish missed-decision suggestions; dedupe classifies strong/weak/no matches and suppresses exact quote duplicates before UI surfacing.
+- [Phase 45]: Confirmed candidates become source-backed graph `Decision` nodes while preserving quote, rationale, source link, confidence, people, affected systems, candidate ID, and scan-run provenance.
+- [Phase 45]: Dashboard missed-decision candidates use the existing `Needs review` hierarchy, stay out of `Recent decisions`, and take priority over the generic Phase 44 right-rail surface when present.
 
 ### Roadmap Evolution
 
@@ -122,6 +127,7 @@ v1.3 roadmap created with 7 phases (32-38) covering 19 requirements across activ
 ### Blockers/Concerns
 
 - [Phase 45]: Cloud `supabase db push` for migration 00042 still needs Supabase CLI login and `supabase link --project-ref <project-ref>`. Local development schema is applied and migration history repaired, so local downstream verification can proceed.
+- [Phase 45]: Authenticated manual visual verification of 45-04 remains pending because Browser automation exposed no browser backend in-session and unauthenticated `/dashboard` requests redirect to `/login`. Automated component, placement, and full Vitest coverage passed.
 
 ## Performance Metrics
 
