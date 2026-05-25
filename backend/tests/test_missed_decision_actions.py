@@ -47,7 +47,11 @@ def _candidate(**overrides) -> MissedDecisionCandidate:
         "source_quote": "We decided to keep the review rail bounded.",
         "inferred_decision": "Keep the review rail bounded",
         "inferred_rationale": "Confirmed decisions remain primary.",
-        "source_link": "/dashboard/source-reference?source_type=slack_message&source_id=abc&workspace_id=def&source_timestamp=2026-05-25T09:00:00Z",
+        "source_link": (
+            "/dashboard/source-reference?source_type=slack_message"
+            "&source_id=abc&workspace_id=def"
+            "&source_timestamp=2026-05-25T09:00:00Z"
+        ),
         "confidence": "high",
         "quote_fingerprint": "quote-fp",
         "decision_fingerprint": "decision-fp",

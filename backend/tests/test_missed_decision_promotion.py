@@ -38,7 +38,11 @@ def _candidate(**overrides) -> MissedDecisionCandidate:
         "source_quote": "We decided to preserve Decision Receipts before actions.",
         "inferred_decision": "Preserve Decision Receipts before actions",
         "inferred_rationale": "Actions need provenance before automation.",
-        "source_link": "/dashboard/source-reference?source_type=fathom_transcript&source_id=abc&workspace_id=def&source_timestamp=2026-05-25T09:00:00Z",
+        "source_link": (
+            "/dashboard/source-reference?source_type=fathom_transcript"
+            "&source_id=abc&workspace_id=def"
+            "&source_timestamp=2026-05-25T09:00:00Z"
+        ),
         "confidence": "very_high",
         "quote_fingerprint": "quote-fp",
         "decision_fingerprint": "decision-fp",
@@ -141,7 +145,9 @@ async def test_add_evidence_links_candidate_to_existing_decision() -> None:
         matched_entity_id=existing_decision.id,
     )
     session = AsyncMock()
-    session.execute = AsyncMock(side_effect=[_result([candidate]), _result([existing_decision])])
+    session.execute = AsyncMock(
+        side_effect=[_result([candidate]), _result([existing_decision])]
+    )
     session.flush = AsyncMock()
 
     with patch(
