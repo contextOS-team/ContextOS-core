@@ -12,12 +12,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.models.missed_decision import (
+    MissedDecisionCandidate,
     MissedDecisionScanRun,
     MissedDecisionScanState,
+)
+from src.services.missed_decision_dedupe import (
+    classify_missed_decision_candidate,
+    decision_fingerprint,
+    quote_fingerprint,
+)
+from src.services.missed_decision_extractor import (
+    extract_missed_decision_candidates,
+    is_surfaceable_confidence,
 )
 from src.services.missed_decision_sources import (
     MissedDecisionSourceRecord,
     load_source_window,
+)
+from src.services.missed_decision_suggestions import (
+    publish_missed_decision_suggestion,
 )
 
 logger = logging.getLogger(__name__)
@@ -155,13 +168,59 @@ async def process_missed_decision_source_window(
     scan_run: MissedDecisionScanRun,
     records: list[MissedDecisionSourceRecord],
 ) -> dict:
-    """Process a loaded source window.
+    """Extract, dedupe, persist, and publish source-backed candidates."""
+    candidates_created = 0
+    suggestions_published = 0
+    for record in records:
+        drafts = await extract_missed_decision_candidates(record)
+        for draft in drafts:
+            candidate = MissedDecisionCandidate(
+                workspace_id=draft.workspace_id,
+                scan_run_id=scan_run.id,
+                source_type=draft.source_type,
+                source_id=draft.source_id,
+                source_resource_id=draft.source_resource_id,
+                source_quote=draft.source_quote,
+                inferred_decision=draft.inferred_decision,
+                inferred_rationale=draft.inferred_rationale,
+                source_link=draft.source_link,
+                confidence=draft.confidence,
+                quote_fingerprint=quote_fingerprint(draft.source_quote),
+                decision_fingerprint=decision_fingerprint(draft.inferred_decision),
+                evidence=draft.evidence,
+                people=draft.people,
+                affected_systems=draft.affected_systems,
+                action_hints=draft.action_hints,
+            )
+            classification = await classify_missed_decision_candidate(
+                session,
+                candidate,
+            )
+            candidate.match_status = classification.match_status
+            candidate.lifecycle_status = classification.lifecycle_status
+            candidate.suppression_reason = classification.suppression_reason
+            candidate.matched_entity_type = classification.matched_entity_type
+            candidate.matched_entity_id = classification.matched_entity_id
 
-    Plan 45-02 replaces this placeholder with extraction, dedupe, candidate
-    persistence, and suggestion publishing. The foundation still records the
-    source count and advances checkpoints after this hook succeeds.
-    """
-    return {"candidates_created": 0}
+            await _add(session, candidate)
+            await session.flush()
+            candidates_created += 1
+
+            if (
+                classification.should_publish_suggestion
+                and is_surfaceable_confidence(candidate.confidence)
+            ):
+                suggestion = await publish_missed_decision_suggestion(
+                    session,
+                    candidate,
+                )
+                if suggestion is not None:
+                    suggestions_published += 1
+
+    return {
+        "candidates_created": candidates_created,
+        "suggestions_published": suggestions_published,
+    }
 
 
 async def run_missed_decision_scan_once(

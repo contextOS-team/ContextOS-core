@@ -139,7 +139,7 @@ def test_validation_drops_incomplete_and_hallucinated_candidates() -> None:
             _raw_candidate(source_quote="This exact text is not in the source"),
             _raw_candidate(inferred_decision=""),
             _raw_candidate(inferred_rationale=""),
-            _raw_candidate(source_link="", confidence=0.4),
+            _raw_candidate(source_link="javascript:alert(1)", confidence=0.4),
         ]
     )
 
@@ -223,7 +223,9 @@ async def test_dedupe_is_workspace_scoped() -> None:
         inferred_decision=candidate.inferred_decision,
     )
     session = AsyncMock()
-    session.execute = AsyncMock(side_effect=[_result([other_workspace_duplicate]), _result([])])
+    session.execute = AsyncMock(
+        side_effect=[_result([other_workspace_duplicate]), _result([])]
+    )
 
     classification = await classify_missed_decision_candidate(session, candidate)
 
@@ -245,7 +247,10 @@ async def test_raw_digest_decision_guardrail_links_instead_of_fresh_review() -> 
         fingerprint="digest-node",
         source_type="messages_digest",
         source_id=None,
-        properties={"rationale": "Automation needs source provenance.", "jira": "ENG-1"},
+        properties={
+            "rationale": "Automation needs source provenance.",
+            "jira": "ENG-1",
+        },
     )
     session = AsyncMock()
     session.execute = AsyncMock(side_effect=[_result([]), _result([digest_node])])
