@@ -311,6 +311,7 @@ Plans:
 **Wave 1**
 - [x] 45-00-PLAN.md -- Phase 44 suggestion contract checkpoint before Phase 45 implementation proceeds
 - [ ] 45-01-PLAN.md -- Missed-decision scan schema, source windows, non-blocking enqueue, and queued-run drain
+  - Blocked: schema push gate needs `supabase link --project-ref <project-ref>` before `supabase db push`; see 45-01-CHECKPOINT.md.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 45-02-PLAN.md -- Source-backed candidate extraction, confidence tiers, layered dedupe, and suggestion publishing
