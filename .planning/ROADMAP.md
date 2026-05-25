@@ -305,7 +305,7 @@ Plans:
   2. Candidate missed decisions include source evidence, confidence, people involved, and affected systems or workstreams.
   3. User can confirm, reject, or defer each candidate.
   4. Confirmed candidates become source-backed Decision Receipts or follow-up suggestions while preserving the source trail.
-**Plans:** 3/5 plans executed
+**Plans:** 4/5 plans executed
 
 Plans:
 **Wave 1**
@@ -316,8 +316,8 @@ Plans:
 **Wave 2**
 - [x] 45-02-PLAN.md -- Source-backed candidate extraction, confidence tiers, layered dedupe, and suggestion publishing
 
-**Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 45-03-PLAN.md -- Review actions, candidate lifecycle transitions, evidence attachment, and Decision Receipt promotion
+**Wave 3**
+- [x] 45-03-PLAN.md -- Review actions, candidate lifecycle transitions, evidence attachment, and Decision Receipt promotion
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 45-04-PLAN.md -- Bounded dashboard Needs review UI, typed action helpers, and component coverage
@@ -392,7 +392,7 @@ Phases execute in numeric order: 43 -> 44 -> 45 -> 46 -> 47, with 48 and 49 inde
 |-------|----------------|--------|-----------|
 | 43. Multi-workspace Foundation | 0/TBD | Not started | - |
 | 44. Suggestion System and Dismissals | 4/4 | Complete    | 2026-05-25 |
-| 45. Post-sync Missed-decision Detection | 2/5 | In Progress|  |
+| 45. Post-sync Missed-decision Detection | 3/5 | In Progress|  |
 | 46. Graph RAG Quality Improvements | 0/TBD | Not started | - |
 | 47. Confirmed Action Layer Bots | 0/TBD | Not started | - |
 | 48. Figma Decision Evidence Integration | 0/TBD | Not started | - |

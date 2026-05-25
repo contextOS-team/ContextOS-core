@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Product Expansion & Action Layer
 status: executing
-stopped_at: Phase 45 Plan 45-03
-last_updated: "2026-05-25T12:01:01.000Z"
-last_activity: 2026-05-25 -- Phase 45 Plan 45-02 candidate extraction and suggestion publishing complete
+stopped_at: Phase 45 Plan 45-04
+last_updated: "2026-05-25T12:05:05.000Z"
+last_activity: 2026-05-25 -- Phase 45 Plan 45-03 review actions and Decision promotion complete
 progress:
   total_phases: 7
   completed_phases: 1
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-24)
 ## Current Position
 
 Phase: 45 (post-sync-missed-decision-detection) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Executing Phase 45
-Last activity: 2026-05-25 -- 45-02 source-backed extraction, dedupe, candidate persistence, and suggestion publishing committed
+Last activity: 2026-05-25 -- 45-03 workspace-scoped review actions, promotion, and missed-decision API committed
 
 ## Accumulated Context
 
