@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Skeleton } from '@/components/ui/skeleton'
-import { fetchWorkspaceGraph } from '@/lib/api'
+import { fetchDecisions } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 import { sortDecisions, toDecisionView, type DecisionNodeView } from './decision-node'
 
@@ -17,11 +17,11 @@ export default function DecisionsPage() {
 
     async function load() {
       try {
-        const graph = await fetchWorkspaceGraph(300)
+        const nodes = await fetchDecisions()
         if (cancelled) return
 
         setDecisions(
-          graph.nodes
+          nodes
             .filter((node) => node.entity_type === 'Decision')
             .map(toDecisionView)
             .sort(sortDecisions)

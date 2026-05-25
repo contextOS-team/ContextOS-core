@@ -1,14 +1,29 @@
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LensGraphResponse } from '@/components/graph/types'
+import type { SuggestionItem } from '@/lib/api'
 import { Headline } from '../headline'
 import { ActiveContext } from '../active-context'
 import { NeedsYou } from '../needs-you'
+import { NeedsReview } from '../needs-review'
 import { RecentDecisions } from '../recent-decisions'
 import { SeenItemsProvider } from '../since-last-visit/use-session-seen-items'
 import type { Delta, NeedsYouItem } from '../types'
+
+const apiMocks = vi.hoisted(() => ({
+  dismissSuggestion: vi.fn(),
+  snoozeSuggestion: vi.fn(),
+  resolveSuggestion: vi.fn(),
+}))
+
+vi.mock('@/lib/api', () => ({
+  dismissSuggestion: apiMocks.dismissSuggestion,
+  snoozeSuggestion: apiMocks.snoozeSuggestion,
+  resolveSuggestion: apiMocks.resolveSuggestion,
+}))
 
 const deltaWithTuesdayNeed: Delta = {
   decisions: { count: 1, items: [{ id: 'd1', createdAt: '2026-05-20T12:00:00Z' }] },
@@ -47,6 +62,41 @@ function renderWithSeenProvider(ui: React.ReactElement) {
   return render(<SeenItemsProvider>{ui}</SeenItemsProvider>)
 }
 
+function suggestion(overrides: Partial<SuggestionItem> = {}): SuggestionItem {
+  return {
+    id: overrides.id ?? 'suggestion-1',
+    workspace_id: 'workspace-1',
+    type: 'missing_source_coverage',
+    status: 'open',
+    priority: 'medium',
+    fingerprint: 'missing-source:1',
+    entity_type: 'graph_node',
+    entity_id: 'decision-1',
+    title: overrides.title ?? 'Review design evidence for onboarding',
+    body: overrides.body ?? 'Slack evidence exists, but no design review is linked.',
+    primary_action: 'Review evidence',
+    action_href: '/dashboard/suggestions',
+    evidence: { present_evidence: ['Slack'], missing_evidence: ['design_review'] },
+    details: {
+      decision_title: 'onboarding',
+      coverage_assessment: {
+        reason: 'The decision changes a user-facing setup checklist.',
+        confidence: 0.92,
+        should_suggest: true,
+      },
+    },
+    provenance: {},
+    snoozed_until: null,
+    dismissed_at: null,
+    resolved_at: null,
+    reopened_at: null,
+    last_seen_at: null,
+    created_at: null,
+    updated_at: null,
+    ...overrides,
+  }
+}
+
 describe('pulse components', () => {
   afterEach(() => {
     vi.useRealTimers()
@@ -64,6 +114,12 @@ describe('pulse components', () => {
 
   it('hides Needs you when there are no items', () => {
     const { container } = renderWithSeenProvider(<NeedsYou items={[]} lastVisitedAt={null} />)
+
+    expect(container.textContent).toBe('')
+  })
+
+  it('hides Needs review when there are no visible suggestions', () => {
+    const { container } = render(<NeedsReview items={[]} />)
 
     expect(container.textContent).toBe('')
   })
@@ -188,5 +244,68 @@ describe('pulse components', () => {
 
     expect(screen.getByText('Needs you')).toBeTruthy()
     expect(screen.getByText(/Vasiliy asked Tuesday/)).toBeTruthy()
+  })
+
+  it('renders Needs review as a bounded right-rail section', () => {
+    const items = [
+      suggestion({ id: 's1', title: 'Review design evidence for onboarding' }),
+      suggestion({ id: 's2', title: 'Review design evidence for pricing' }),
+      suggestion({ id: 's3', title: 'Review design evidence for mobile' }),
+      suggestion({ id: 's4', title: 'Review design evidence for growth' }),
+    ]
+
+    render(<NeedsReview items={items} />)
+
+    expect(screen.getByText('Needs review')).toBeTruthy()
+    expect(screen.getByText('Review design evidence for onboarding')).toBeTruthy()
+    expect(screen.getByText('Review design evidence for pricing')).toBeTruthy()
+    expect(screen.queryByText('Review design evidence for mobile')).toBeNull()
+    expect(screen.queryByText('Review design evidence for growth')).toBeNull()
+    expect(screen.getByRole('link', { name: /view all/i }).getAttribute('href'))
+      .toBe('/dashboard/suggestions')
+    expect(screen.queryByText('missing figma')).toBeNull()
+    expect(screen.getAllByText('Has Slack').length).toBe(2)
+    expect(screen.getAllByText('Missing design review').length).toBe(2)
+    expect(screen.getAllByText('The decision changes a user-facing setup checklist.').length).toBe(2)
+    expect(screen.getByRole('link', { name: 'Review design evidence for onboarding' }).getAttribute('href'))
+      .toBe('/dashboard/decisions/decision-1')
+    expect(screen.getAllByRole('link', { name: 'Review' }).length).toBe(2)
+    expect(screen.getAllByRole('link', { name: 'Review' })[0].getAttribute('href'))
+      .toBe('/dashboard/decisions/decision-1')
+    expect(screen.queryByRole('button', { name: 'Snooze' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Mark resolved' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull()
+  })
+
+  it('normalizes stale missing-source actions to evidence review', () => {
+    render(
+      <NeedsReview
+        items={[
+          suggestion({
+            action_href: '/dashboard/decisions/missing-decision',
+            primary_action: 'Review gap',
+          }),
+        ]}
+      />
+    )
+
+    expect(screen.queryByRole('link', { name: 'Review gap' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Review' }).getAttribute('href'))
+      .toBe('/dashboard/decisions/decision-1')
+  })
+
+  it('dismisses a suggestion through the authenticated API helper', async () => {
+    apiMocks.dismissSuggestion.mockResolvedValue(suggestion({ status: 'dismissed' }))
+    const user = userEvent.setup()
+
+    render(<NeedsReview items={[suggestion()]} />)
+
+    await user.click(screen.getByRole('button', { name: 'Suggestion actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Dismiss' }))
+
+    await waitFor(() => {
+      expect(apiMocks.dismissSuggestion).toHaveBeenCalledWith('suggestion-1')
+      expect(screen.queryByText('Review design evidence for onboarding')).toBeNull()
+    })
   })
 })

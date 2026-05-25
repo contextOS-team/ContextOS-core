@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { fetchWorkspaceGraph } from '@/lib/api'
+import { fetchDecision } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 import { formatDecisionChannels, getDecisionPeople, toDecisionView, type DecisionNodeView } from '../decision-node'
 
@@ -21,11 +21,10 @@ export default function DecisionDetailPage() {
 
     async function load() {
       try {
-        const graph = await fetchWorkspaceGraph(300)
+        const node = await fetchDecision(decisionId)
         if (cancelled) return
 
-        const node = graph.nodes.find((item) => item.id === decisionId && item.entity_type === 'Decision')
-        setDecision(node ? toDecisionView(node) : null)
+        setDecision(toDecisionView(node))
         setError(null)
       } catch (err) {
         if (!cancelled) {

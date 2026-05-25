@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { ActiveContext } from './pulse/active-context'
 import { Headline } from './pulse/headline'
 import { NeedsYou } from './pulse/needs-you'
+import { NeedsReview } from './pulse/needs-review'
 import { RecentDecisions } from './pulse/recent-decisions'
 import { useLastVisitedAt } from './pulse/since-last-visit/use-last-visited-at'
 import { SeenItemsProvider } from './pulse/since-last-visit/use-session-seen-items'
@@ -72,7 +73,7 @@ function DashboardSections({
   lastVisitedAt: Date | null
   isWorkspaceLoading: boolean
 }) {
-  const { decisions, contextItems, needsYouItems, delta, isLoading, error } =
+  const { decisions, suggestions, contextItems, needsYouItems, delta, isLoading, error } =
     useDashboardData(workspaceId, lastVisitedAt)
 
   if (isWorkspaceLoading || isLoading) {
@@ -110,6 +111,7 @@ function DashboardSections({
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.32fr)_minmax(320px,0.68fr)]">
         <RecentDecisions data={decisions} lastVisitedAt={lastVisitedAt} />
         <div className="space-y-6">
+          <NeedsReview items={suggestions} />
           <ActiveContext items={contextItems} lastVisitedAt={lastVisitedAt} />
           <NeedsYou items={needsYouItems} lastVisitedAt={lastVisitedAt} />
         </div>

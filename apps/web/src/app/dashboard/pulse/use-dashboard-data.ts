@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import type { LensGraphResponse } from '@/components/graph/types'
-import { getDashboardAttention, fetchMyWorkGraph, type AttentionItem } from '@/lib/api'
+import {
+  getDashboardAttention,
+  getDashboardSuggestions,
+  fetchMyWorkGraph,
+  type AttentionItem,
+  type SuggestionItem,
+} from '@/lib/api'
 import { fetchContextPages, type ContextPageRow } from '@/lib/context-feed'
 import { bucketDelta, fetchActivityDelta } from './since-last-visit/activity-delta'
 import type { Delta, NeedsYouItem } from './types'
@@ -13,8 +19,11 @@ const EMPTY_DELTA: Delta = {
   needsYou: { topUrgentItem: null, items: [] },
 }
 
+export const DASHBOARD_REQUEST_TIMEOUT_MS = 8_000
+
 export interface DashboardData {
   decisions: LensGraphResponse | null
+  suggestions: SuggestionItem[]
   contextItems: ContextPageRow[]
   needsYouItems: NeedsYouItem[]
   delta: Delta
@@ -78,10 +87,26 @@ function mapAttentionItems(items: AttentionItem[], now: Date): NeedsYouItem[] {
   })
 }
 
-function firstError(results: PromiseSettledResult<unknown>[]): string | null {
+function firstError(...results: PromiseSettledResult<unknown>[]): string | null {
   const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
   if (!rejected) return null
   return rejected.reason instanceof Error ? rejected.reason.message : 'Failed to load dashboard data'
+}
+
+function settledValue<T>(result: PromiseSettledResult<T>, fallback: T): T {
+  return result.status === 'fulfilled' ? result.value : fallback
+}
+
+function withDashboardTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out`))
+    }, DASHBOARD_REQUEST_TIMEOUT_MS)
+
+    promise.then(resolve, reject).finally(() => {
+      clearTimeout(timeoutId)
+    })
+  })
 }
 
 export function useDashboardData(
@@ -90,6 +115,7 @@ export function useDashboardData(
 ): DashboardData {
   const [data, setData] = useState<DashboardData>({
     decisions: null,
+    suggestions: [],
     contextItems: [],
     needsYouItems: [],
     delta: EMPTY_DELTA,
@@ -105,6 +131,7 @@ export function useDashboardData(
       if (!workspaceId) {
         setData({
           decisions: null,
+          suggestions: [],
           contextItems: [],
           needsYouItems: [],
           delta: EMPTY_DELTA,
@@ -118,29 +145,46 @@ export function useDashboardData(
       setData((current) => ({ ...current, workspaceId, isLoading: true, error: null }))
 
       const now = new Date()
-      const results = await Promise.allSettled([
-        getDashboardAttention(),
-        fetchContextPages(),
-        fetchMyWorkGraph(),
-        fetchActivityDelta(workspaceId, lastVisitedAt),
+      const [
+        attentionResult,
+        suggestionsResult,
+        contextItemsResult,
+        decisionsResult,
+        activityRowsResult,
+      ] = await Promise.allSettled([
+        withDashboardTimeout(getDashboardAttention(), 'Dashboard attention'),
+        withDashboardTimeout(getDashboardSuggestions(3), 'Dashboard suggestions'),
+        withDashboardTimeout(fetchContextPages(), 'Dashboard context'),
+        withDashboardTimeout(fetchMyWorkGraph(), 'Dashboard graph'),
+        withDashboardTimeout(
+          fetchActivityDelta(workspaceId, lastVisitedAt),
+          'Dashboard activity'
+        ),
       ])
 
       if (cancelled) return
 
-      const attention = results[0].status === 'fulfilled' ? results[0].value : []
-      const contextItems = results[1].status === 'fulfilled' ? results[1].value : []
-      const decisions = results[2].status === 'fulfilled' ? results[2].value : null
-      const activityRows = results[3].status === 'fulfilled' ? results[3].value : []
+      const attention = settledValue(attentionResult, [])
+      const suggestions = settledValue(suggestionsResult, [])
+      const contextItems = settledValue(contextItemsResult, [])
+      const decisions = settledValue(decisionsResult, null)
+      const activityRows = settledValue(activityRowsResult, [])
       const needsYouItems = mapAttentionItems(attention, now)
 
       setData({
         decisions,
+        suggestions,
         contextItems: contextItems.slice(0, 3),
         needsYouItems,
         delta: bucketDelta(activityRows, needsYouItems, ''),
         workspaceId,
         isLoading: false,
-        error: firstError(results),
+        error: firstError(
+          attentionResult,
+          contextItemsResult,
+          decisionsResult,
+          activityRowsResult,
+        ),
       })
     }
 

@@ -54,6 +54,74 @@ export async function apiFetch<T>(
 }
 
 // ---------------------------------------------------------------------------
+// Suggestions
+// ---------------------------------------------------------------------------
+
+export type SuggestionStatus = 'open' | 'snoozed' | 'dismissed' | 'resolved'
+export type SuggestionPriority = 'high' | 'medium' | 'low'
+
+export interface SuggestionItem {
+  id: string
+  workspace_id: string
+  type: 'missing_source_coverage' | 'missed_decision' | 'action_prompt'
+  status: SuggestionStatus
+  priority: SuggestionPriority
+  fingerprint: string
+  entity_type: string | null
+  entity_id: string | null
+  title: string
+  body: string
+  primary_action: string | null
+  action_href: string | null
+  evidence: Record<string, unknown>
+  details: Record<string, unknown>
+  provenance: Record<string, unknown>
+  snoozed_until: string | null
+  dismissed_at: string | null
+  resolved_at: string | null
+  reopened_at: string | null
+  last_seen_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export function getDashboardSuggestions(limit = 3): Promise<SuggestionItem[]> {
+  return apiFetch<SuggestionItem[]>(`/api/suggestions?limit=${limit}`)
+}
+
+export function getAllSuggestions(limit = 100): Promise<SuggestionItem[]> {
+  return apiFetch<SuggestionItem[]>(`/api/suggestions/all?limit=${limit}`)
+}
+
+export function dismissSuggestion(id: string): Promise<SuggestionItem> {
+  return apiFetch<SuggestionItem>(`/api/suggestions/${id}/dismiss`, {
+    method: 'POST',
+  })
+}
+
+export function snoozeSuggestion(
+  id: string,
+  snoozedUntil?: string
+): Promise<SuggestionItem> {
+  return apiFetch<SuggestionItem>(`/api/suggestions/${id}/snooze`, {
+    method: 'POST',
+    body: JSON.stringify({ snoozed_until: snoozedUntil ?? null }),
+  })
+}
+
+export function resolveSuggestion(id: string): Promise<SuggestionItem> {
+  return apiFetch<SuggestionItem>(`/api/suggestions/${id}/resolve`, {
+    method: 'POST',
+  })
+}
+
+export function reopenSuggestion(id: string): Promise<SuggestionItem> {
+  return apiFetch<SuggestionItem>(`/api/suggestions/${id}/reopen`, {
+    method: 'POST',
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Integration status
 // ---------------------------------------------------------------------------
 
@@ -854,11 +922,26 @@ export const getDashboardResurfaced = cache(() =>
 // Graph Neighborhood
 // ---------------------------------------------------------------------------
 
-import type { GraphNeighborhoodResponse, WorkspaceGraphResponse, LensGraphResponse } from '@/components/graph/types'
+import type {
+  ApiNode,
+  GraphNeighborhoodResponse,
+  WorkspaceGraphResponse,
+  LensGraphResponse,
+} from '@/components/graph/types'
 
 export const fetchWorkspaceGraph = cache(
   (limit: number = 200): Promise<WorkspaceGraphResponse> =>
     apiFetch<WorkspaceGraphResponse>(`/api/graph/?limit=${limit}`)
+)
+
+export const fetchDecisions = cache(
+  (limit: number = 500): Promise<ApiNode[]> =>
+    apiFetch<ApiNode[]>(`/api/graph/decisions?limit=${limit}`)
+)
+
+export const fetchDecision = cache(
+  (decisionId: string): Promise<ApiNode> =>
+    apiFetch<ApiNode>(`/api/graph/decisions/${encodeURIComponent(decisionId)}`)
 )
 
 export const fetchGraphNeighborhood = cache(

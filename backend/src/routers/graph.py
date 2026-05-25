@@ -7,6 +7,7 @@ Exposes workspace-wide and per-ticket graph data as structured JSON
 import logging
 from collections import Counter
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel as PydanticBaseModel
@@ -23,7 +24,10 @@ from src.models.identity_mapping import IdentityMapping
 from src.models.integration import WorkspaceIntegration
 from src.models.jira import JiraIssue
 from src.models.ticket import LinearTicket
-from src.services.dashboard_sprint import get_active_sprint, get_sprint_ticket_identifiers
+from src.services.dashboard_sprint import (
+    get_active_sprint,
+    get_sprint_ticket_identifiers,
+)
 from src.services.graph_ops import compute_fingerprint
 from src.services.jira_sync import list_my_jira_issues
 from src.services.linear_graphql import LinearGraphQLClient
@@ -164,6 +168,24 @@ def _node_passes_source_filter(n, allowed_source_types: set[str]) -> bool:
     if not n.source_type:
         return True
     return n.source_type in allowed_source_types
+
+
+def _node_response(node: GraphNode, *, depth: int = 0) -> GraphNodeResponse:
+    return GraphNodeResponse(
+        id=str(node.id),
+        entity_type=node.entity_type,
+        name=node.name,
+        depth=depth,
+        properties=node.properties if node.properties else {},
+    )
+
+
+def _decision_sort_key(node: GraphNode) -> tuple[str, str, str]:
+    props = node.properties or {}
+    date = props.get("date")
+    date_key = date if isinstance(date, str) else ""
+    created_key = node.created_at.isoformat() if node.created_at else ""
+    return date_key, created_key, node.name
 
 
 async def _validate_ticket_identifiers(
@@ -727,6 +749,64 @@ async def get_workspace_graph(
         nodes=response_nodes,
         edges=response_edges,
     )
+
+
+@router.get("/decisions", response_model=list[GraphNodeResponse])
+async def get_decisions(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    limit: int = Query(default=500, ge=1, le=500),
+) -> list[GraphNodeResponse]:
+    """List all workspace decisions from connected sources, sorted by decision date."""
+    connected_providers = await _get_connected_providers(session, user.workspace_id)
+    allowed_source_types = _allowed_source_types(connected_providers)
+
+    stmt = select(GraphNode).where(
+        GraphNode.workspace_id == user.workspace_id,
+        GraphNode.entity_type == "Decision",
+        GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    result = await session.execute(stmt)
+    decisions = [
+        node
+        for node in result.scalars().all()
+        if _node_passes_source_filter(node, allowed_source_types)
+    ]
+    decisions = sorted(decisions, key=_decision_sort_key, reverse=True)[:limit]
+
+    return [_node_response(node) for node in decisions]
+
+
+@router.get("/decisions/{decision_id}", response_model=GraphNodeResponse)
+async def get_decision(
+    decision_id: UUID,
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> GraphNodeResponse:
+    """Fetch one decision directly by graph node ID."""
+    stmt = select(GraphNode).where(
+        GraphNode.id == decision_id,
+        GraphNode.workspace_id == user.workspace_id,
+        GraphNode.entity_type == "Decision",
+        GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    result = await session.execute(stmt)
+    decision = result.scalar_one_or_none()
+    if decision is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Decision not found",
+        )
+
+    connected_providers = await _get_connected_providers(session, user.workspace_id)
+    allowed_source_types = _allowed_source_types(connected_providers)
+    if not _node_passes_source_filter(decision, allowed_source_types):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Decision not found",
+        )
+
+    return _node_response(decision)
 
 
 @router.get("/lens/my-work")
