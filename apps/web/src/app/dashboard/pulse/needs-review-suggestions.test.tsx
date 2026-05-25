@@ -2,6 +2,8 @@
 
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   addMissedDecisionAsEvidence,
@@ -374,5 +376,24 @@ describe('NeedsReviewSuggestions', () => {
 
     expect(screen.getByText('Use the regional rollout guardrail')).toBeTruthy()
     expect(screen.getByText('Could not update this suggestion. Try again.')).toBeTruthy()
+  })
+})
+
+describe('dashboard missed-decision composition', () => {
+  it('keeps Recent decisions primary and places missed-decision review in the right rail', () => {
+    const source = readFileSync(
+      path.join(process.cwd(), 'src/app/dashboard/page.tsx'),
+      'utf8'
+    )
+    const recentIndex = source.indexOf('<RecentDecisions data={decisions}')
+    const reviewIndex = source.indexOf('<NeedsReviewSuggestions')
+    const activeContextIndex = source.indexOf('<ActiveContext')
+    const needsYouIndex = source.indexOf('<NeedsYou')
+
+    expect(recentIndex).toBeGreaterThan(-1)
+    expect(reviewIndex).toBeGreaterThan(recentIndex)
+    expect(activeContextIndex).toBeGreaterThan(reviewIndex)
+    expect(needsYouIndex).toBeGreaterThan(activeContextIndex)
+    expect(source).not.toContain('<RecentDecisions data={needsReviewSuggestions}')
   })
 })
