@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Product Expansion & Action Layer
-status: executing
-stopped_at: Phase 44 context gathered
-last_updated: "2026-05-24T22:11:55.435Z"
-last_activity: 2026-05-24 -- Phase 45 planning complete
+status: ready_to_execute
+stopped_at: Phase 44 complete (4/4) -- Phase 45 remains planned, not executed
+last_updated: "2026-05-24T22:32:25.859Z"
+last_activity: 2026-05-25 -- Phase 44 suggestion system executed and verified
 progress:
   total_phases: 7
-  completed_phases: 0
-  total_plans: 5
-  completed_plans: 0
-  percent: 0
+  completed_phases: 1
+  total_plans: 9
+  completed_plans: 4
+  percent: 44
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-24)
 
 **Core value:** ContextOS turns scattered work conversations into source-backed decision memory, then helps teams act on those decisions without losing provenance or workspace boundaries.
-**Current focus:** v1.4 Product Expansion & Action Layer — ready to plan Phase 43
+**Current focus:** v1.4 Product Expansion & Action Layer -- Phase 44 complete; Phase 45 is planned but not executed, and Phase 43 remains pending in roadmap order
 
 ## Current Position
 
-Phase: 43 (multi-workspace-foundation) — not planned
-Plan: —
-Status: Ready to execute
-Last activity: 2026-05-24 -- Phase 45 planning complete
+Phase: 44 (suggestion-system-and-dismissals) -- complete
+Plan: 44-04 closed
+Status: Verification passed
+Last activity: 2026-05-25 -- Phase 44 suggestion system executed and verified
 
 ## Accumulated Context
 
@@ -98,6 +98,12 @@ Last activity: 2026-05-24 -- Phase 45 planning complete
 - [Phase 42]: Decision Receipt sample data is fictional — Satisfies the plan threat model by avoiding any implication of real customer workspace data.
 - [Phase 42]: Landing page now prioritizes hero -> product demo -> sources -> booking -> footer — User feedback found the plan-compliant version too noisy, so problem/how/features/trust bands were removed from the rendered page order.
 - [Phase 42]: Landing route owns social metadata — Absolute title, OpenGraph, Twitter, and landing-scoped OG image copy prevent old ticket-first root metadata from leaking into launch previews.
+- [Phase 44]: Suggestions use one generic workspace-scoped contract for missing-source coverage now and missed-decision/action-prompt families later.
+- [Phase 44]: Exact workspace/fingerprint matches are the preservation boundary; dismissed or resolved exact suggestions are not reopened by detector refreshes.
+- [Phase 44]: Missing-source coverage suggestions require concrete Decision graph targets and specific missing evidence context, not generic integration upsells.
+- [Phase 44]: Digest-driven suggestion publication runs in a nested non-blocking transaction so suggestion failures do not roll back digest graph activity.
+- [Phase 44]: Dashboard suggestions render as a bounded `Needs review` right-rail surface; `Recent decisions` remains the primary confirmed-memory column.
+- [Phase 44]: Vitest test config now uses esbuild automatic JSX instead of `@vitejs/plugin-react` because the installed plugin imported a Vite internal export unavailable in the installed Vite version.
 
 ### Roadmap Evolution
 
@@ -129,9 +135,10 @@ None.
 | Phase 42 P01 | 4min | 3 tasks | 5 files |
 | Phase 42 P02 | 4min | 3 tasks | 3 files |
 | Phase 42 P03 | 24min | 4 tasks | 12 files |
+| Phase 44 P01-P04 | 2026-05-25 | 8 tasks | 24 code/planning files |
 
 ## Session Continuity
 
-Last session: 2026-05-24T22:11:55.424Z
-Stopped at: Phase 44 context gathered
-Resume file: .planning/phases/44-suggestion-system-and-dismissals/44-CONTEXT.md
+Last session: 2026-05-24T22:30:29Z
+Stopped at: Phase 44 complete
+Resume file: .planning/phases/44-suggestion-system-and-dismissals/44-VERIFICATION.md

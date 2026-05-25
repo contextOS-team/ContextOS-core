@@ -17,10 +17,10 @@ Requirements for the product expansion and action-layer milestone. Each maps to 
 
 ### Suggestions
 
-- [ ] **SUG-01**: System can persist workspace-scoped suggestions with type, source evidence, priority, status, and provenance.
-- [ ] **SUG-02**: User can dismiss, snooze, mark resolved, or reopen a suggestion, and that state survives refreshes and syncs.
-- [ ] **SUG-03**: Dashboard surfaces a bounded suggestion area after sync completion without taking over the primary decision-memory hierarchy.
-- [ ] **SUG-04**: System can recommend missing integrations or source coverage, such as meeting notes or Figma, when decision evidence is incomplete.
+- [x] **SUG-01**: System can persist workspace-scoped suggestions with type, source evidence, priority, status, and provenance.
+- [x] **SUG-02**: User can dismiss, snooze, mark resolved, or reopen a suggestion, and that state survives refreshes and syncs.
+- [x] **SUG-03**: Dashboard surfaces a bounded suggestion area after sync completion without taking over the primary decision-memory hierarchy.
+- [x] **SUG-04**: System can recommend missing integrations or source coverage, such as meeting notes or Figma, when decision evidence is incomplete.
 
 ### Missed Decisions
 
@@ -101,10 +101,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WS-03 | Phase 43 | Pending |
 | WS-04 | Phase 43 | Pending |
 | WS-05 | Phase 43 | Pending |
-| SUG-01 | Phase 44 | Pending |
-| SUG-02 | Phase 44 | Pending |
-| SUG-03 | Phase 44 | Pending |
-| SUG-04 | Phase 44 | Pending |
+| SUG-01 | Phase 44 | Complete |
+| SUG-02 | Phase 44 | Complete |
+| SUG-03 | Phase 44 | Complete |
+| SUG-04 | Phase 44 | Complete |
 | GAP-01 | Phase 45 | Pending |
 | GAP-02 | Phase 45 | Pending |
 | GAP-03 | Phase 45 | Pending |

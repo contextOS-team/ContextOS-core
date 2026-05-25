@@ -253,6 +253,15 @@ Plans:
 
 **Milestone Goal:** Expand ContextOS from source-backed decision memory into workspace-aware decision operations: multiple workspaces, post-sync decision gap detection, dismissible guidance, confirmed bot actions, Figma evidence, better Graph RAG, and a researched MCP/CLI developer surface.
 
+**Phase Status:**
+- [ ] **Phase 43: Multi-workspace Foundation** - Not started
+- [x] **Phase 44: Suggestion System and Dismissals** - Durable workspace suggestions and dismissal lifecycle (completed 2026-05-25)
+- [ ] **Phase 45: Post-sync Missed-decision Detection** - Planned
+- [ ] **Phase 46: Graph RAG Quality Improvements** - Not started
+- [ ] **Phase 47: Confirmed Action Layer Bots** - Not started
+- [ ] **Phase 48: Figma Decision Evidence Integration** - Not started
+- [ ] **Phase 49: MCP and CLI Surface Research** - Not started
+
 ### Phase 43: Multi-workspace Foundation
 
 **Goal:** Users can create, switch, and manage multiple workspaces while all source data, graph records, suggestions, integrations, and future actions stay isolated by workspace.
@@ -278,10 +287,13 @@ Plans:
   2. User can dismiss, snooze, resolve, and reopen suggestions, and that state survives refreshes and future syncs.
   3. Dashboard shows suggestions in a bounded surface after sync completion without displacing the Recent decisions hierarchy.
   4. ContextOS can recommend missing source coverage such as meeting notes or Figma when evidence gaps are detected.
-**Plans:** TBD
+**Plans:** 4/4 plans complete
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 44 to break down)
+- [x] 44-01-PLAN.md -- Suggestion schema, SQLModel, lifecycle service, missing-source generation, and backend tests
+- [x] 44-02-PLAN.md -- Authenticated suggestion API routes, router registration, and digest decision publication hook
+- [x] 44-03-PLAN.md -- Dashboard Needs review data fetch, right-rail surface, lifecycle actions, and component coverage
+- [x] 44-04-PLAN.md -- Full suggestion queue route, verification, and closeout
 
 ### Phase 45: Post-sync Missed-decision Detection
 
@@ -378,7 +390,7 @@ Phases execute in numeric order: 43 -> 44 -> 45 -> 46 -> 47, with 48 and 49 inde
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 43. Multi-workspace Foundation | 0/TBD | Not started | - |
-| 44. Suggestion System and Dismissals | 0/TBD | Not started | - |
+| 44. Suggestion System and Dismissals | 4/4 | Complete    | 2026-05-25 |
 | 45. Post-sync Missed-decision Detection | 0/5 | Planned    |  |
 | 46. Graph RAG Quality Improvements | 0/TBD | Not started | - |
 | 47. Confirmed Action Layer Bots | 0/TBD | Not started | - |
