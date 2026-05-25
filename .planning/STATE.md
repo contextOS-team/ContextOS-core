@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Product Expansion & Action Layer
-status: blocked
-stopped_at: Phase 45 Plan 45-01 Supabase schema push
-last_updated: "2026-05-25T11:52:02.000Z"
-last_activity: 2026-05-25 -- Phase 45 Plan 45-01 blocked because `supabase db push` needs project linkage
+status: executing
+stopped_at: Phase 45 Plan 45-02
+last_updated: "2026-05-25T11:55:06.000Z"
+last_activity: 2026-05-25 -- Phase 45 Plan 45-01 local schema gate resolved; continuing to candidate extraction
 progress:
   total_phases: 7
   completed_phases: 1
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-24)
 
 ## Current Position
 
-Phase: 45 (post-sync-missed-decision-detection) — BLOCKED
-Plan: 1 of 5
-Status: Blocked on Phase 45 Plan 45-01 Supabase schema push
-Last activity: 2026-05-25 -- 45-01 implementation committed; `supabase db push` failed because the repo is not linked to a Supabase project ref
+Phase: 45 (post-sync-missed-decision-detection) — EXECUTING
+Plan: 2 of 5
+Status: Executing Phase 45
+Last activity: 2026-05-25 -- 45-01 implementation committed and local migration 00042 applied with psql; cloud push still needs Supabase project linkage
 
 ## Accumulated Context
 
@@ -121,7 +121,7 @@ v1.3 roadmap created with 7 phases (32-38) covering 19 requirements across activ
 
 ### Blockers/Concerns
 
-- [Phase 45]: 45-01 Task 2 is blocked by Supabase CLI project linkage. `supabase db push` failed with `Cannot find project ref. Have you run supabase link?`; link the intended project with `supabase link --project-ref <project-ref>` and rerun `supabase db push` before downstream 45-02 verification.
+- [Phase 45]: Cloud `supabase db push` for migration 00042 still needs Supabase CLI login and `supabase link --project-ref <project-ref>`. Local development schema is applied and migration history repaired, so local downstream verification can proceed.
 
 ## Performance Metrics
 
