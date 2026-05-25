@@ -25,6 +25,7 @@ from sqlmodel import select
 from src.models.integration import Provider, WorkspaceIntegration
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.services import embedding
+from src.services.missed_decision_scanner import enqueue_missed_decision_scan
 from src.services.sync_adapter import emit_activity
 from src.services.vault import delete_token, read_token, store_token
 
@@ -462,6 +463,13 @@ async def poll_transcripts(
         config = dict(integration.config) if integration.config else {}
         config["last_poll_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         integration.config = config
+        if ingested_count > 0:
+            await enqueue_missed_decision_scan(
+                session,
+                workspace_id,
+                "fathom_transcript",
+                sync_completed_at=datetime.now(timezone.utc),
+            )
         await session.commit()
 
     return {

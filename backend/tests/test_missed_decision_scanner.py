@@ -285,7 +285,11 @@ async def test_run_failure_does_not_advance_checkpoint(
         raise RuntimeError("extractor unavailable")
 
     monkeypatch.setattr(scanner, "load_source_window", fake_load_window)
-    monkeypatch.setattr(scanner, "process_missed_decision_source_window", failing_process)
+    monkeypatch.setattr(
+        scanner,
+        "process_missed_decision_source_window",
+        failing_process,
+    )
 
     await scanner.run_missed_decision_scan_once(session, run)
 

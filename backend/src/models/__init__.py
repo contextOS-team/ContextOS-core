@@ -9,6 +9,11 @@ from src.models.graph_node import GraphNode
 from src.models.identity_mapping import IdentityMapping
 from src.models.integration import OAuthToken, WebhookDelivery, WorkspaceIntegration
 from src.models.meeting import MeetingSegment, MeetingTranscript
+from src.models.missed_decision import (
+    MissedDecisionCandidate,
+    MissedDecisionScanRun,
+    MissedDecisionScanState,
+)
 from src.models.slack import SlackMessage
 from src.models.suggestion import Suggestion
 from src.models.sync import SyncCursor
@@ -29,6 +34,9 @@ __all__ = [
     "LinearTicket",
     "MeetingSegment",
     "MeetingTranscript",
+    "MissedDecisionCandidate",
+    "MissedDecisionScanRun",
+    "MissedDecisionScanState",
     "OAuthToken",
     "SlackMessage",
     "Suggestion",

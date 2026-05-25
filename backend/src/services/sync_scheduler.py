@@ -25,6 +25,10 @@ from src.config import get_settings
 from src.db import async_session
 from src.models.context_page import ContextPage
 from src.models.integration import Provider, WorkspaceIntegration
+from src.services.missed_decision_scanner import (
+    drain_queued_missed_decision_scans,
+    enqueue_missed_decision_scan,
+)
 from src.services.slack_messages import poll_user_messages
 from src.services.sync_adapter import SyncRunLogger
 
@@ -302,10 +306,26 @@ async def _emit_daily_digest(workspace_id: UUID, integration: str) -> None:
             raise
 
         if result:
+            await enqueue_missed_decision_scan(
+                session,
+                workspace_id,
+                f"{integration}_message",
+            )
             await session.commit()
             logger.info(
                 "%s daily digest: %d messages for workspace %s",
                 integration.capitalize(), result["message_count"], workspace_id,
+            )
+
+
+async def _drain_missed_decision_scans() -> None:
+    async with async_session() as session:
+        processed = await drain_queued_missed_decision_scans(session)
+        if processed:
+            await session.commit()
+            logger.info(
+                "Drained %d missed-decision scan run(s)",
+                processed,
             )
 
 
@@ -378,6 +398,13 @@ async def run_polling_fallback() -> None:
                 try:
                     async with async_session() as session:
                         result = await poll_user_messages(session, ws_id)
+                        if result.get("reason") is None and result.get("ingested", 0) > 0:
+                            await enqueue_missed_decision_scan(
+                                session,
+                                ws_id,
+                                "slack_message",
+                            )
+                            await session.commit()
                     if result.get("reason") is None and result.get("ingested", 0) > 0:
                         logger.info(
                             "Slack DM poll for workspace %s: ingested=%d skipped=%d",
@@ -419,3 +446,7 @@ async def run_polling_fallback() -> None:
             logger.exception("Polling fallback scheduler error")
 
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
+        try:
+            await _drain_missed_decision_scans()
+        except Exception:
+            logger.exception("Missed-decision scan drain failed")

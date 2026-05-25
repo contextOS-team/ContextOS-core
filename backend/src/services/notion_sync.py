@@ -18,6 +18,7 @@ from src.db import async_session
 from src.models.integration import Provider, WorkspaceIntegration
 from src.models.notion import NotionPage
 from src.services.embedding_worker import enqueue_embedding_job
+from src.services.missed_decision_scanner import enqueue_missed_decision_scan
 from src.services.notion_client import NotionClient
 from src.services.notion_oauth import get_valid_access_token
 from src.services.sync_adapter import (
@@ -261,6 +262,12 @@ async def run_full_sync(workspace_id: UUID, user_id: UUID) -> None:
                     "items_count": synced_count,
                     "duration_ms": _sync_duration_ms,
                 })
+                await enqueue_missed_decision_scan(
+                    session,
+                    workspace_id,
+                    "notion_page",
+                    sync_completed_at=datetime.now(timezone.utc),
+                )
 
                 await session.commit()
                 srl.info(
@@ -333,6 +340,13 @@ async def sync_page_by_id(
             # Queue embedding regeneration for this page
             await enqueue_embedding_job(
                 workspace_id, "notion_page", [page_record.id]
+            )
+            await enqueue_missed_decision_scan(
+                session,
+                workspace_id,
+                "notion_page",
+                source_resource_id=page_record.notion_id,
+                sync_completed_at=datetime.now(timezone.utc),
             )
 
             await session.commit()
