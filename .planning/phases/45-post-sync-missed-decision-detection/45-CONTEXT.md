@@ -38,6 +38,7 @@ This phase depends on Phase 44's durable suggestion model and bounded dashboard 
   3. Semantic similarity against existing Decision nodes, suggestions, tickets, docs, and PRs to classify strong, weak, or no match.
   4. Graph neighborhood, including people, systems, projects, tickets, docs, and time window, as confidence booster/tie-breaker only.
 - **D-13:** Strong match suppresses the candidate and attaches new source evidence. Weak match surfaces as possible existing capture. No match surfaces as a missed decision.
+- **D-13A:** Raw `messages_digest` Decision nodes are inputs/evidence only. A digest Decision with `source_id = null`, missing source reference, or unresolved provenance must be dropped, kept internal, or used only as weak evidence; it must never directly publish a Phase 44 `Needs review` suggestion. User-visible missed-decision suggestions must reference a persisted `missed_decision_candidate` with exact source quote/passage, inferred decision, inferred rationale, real source link or internal workspace-scoped source reference, and dedupe/match classification. If matching Jira/MR/PR evidence exists, the candidate must classify as suppressed or `Add as evidence`, not as a fresh missed-decision review item.
 
 ### Review Surface and Statuses
 - **D-14:** Use both a `missed_decision_candidate` record and a generic `suggestion` record. The candidate is the source of truth for detection/provenance/scoring; the suggestion is the user-visible review/action state.
