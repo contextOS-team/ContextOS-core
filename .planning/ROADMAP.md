@@ -333,10 +333,23 @@ Plans:
   2. A repeatable evaluation set measures decision recall, source-link accuracy, stale-context avoidance, and action-suggestion grounding.
   3. Ranking uses graph adjacency, source freshness, workspace scope, and decision verification state.
   4. Context pages and suggestion/action generation can explain which graph/source signals supported an answer.
-**Plans:** TBD
+**Plans:** 7 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 46 to break down)
+**Wave 1**
+- [ ] 46-00-PLAN.md -- Wave 0 Graph RAG eval runner, golden dataset, trace contracts, and Make target
+- [ ] 46-01-PLAN.md -- Wave 0 suggestion-family quality contracts and missed-decision eval extensions
+- [ ] 46-02-PLAN.md -- Target-aware retrieval routing, stream parity, and Phase 45 Decision property support
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 46-03-PLAN.md -- Freshness, verification, source originality, selected/dropped ranking features, and ranking evals
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 46-04-PLAN.md -- Context-page source explanation persistence and synthesis prompt provenance packets
+- [ ] 46-05-PLAN.md -- Suggestion/action-hint grounding explanations and no-write boundary tests
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 46-06-PLAN.md -- Bounded context-sidebar source path explanation UI
 
 ### Phase 47: Confirmed Action Layer Bots
 
