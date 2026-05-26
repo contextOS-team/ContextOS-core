@@ -33,6 +33,8 @@ FAMILY_POLICIES: dict[SuggestionFamily, str] = {
     SuggestionFamily.ACTION_PROMPT: "action_prompt_requires_source_backing_no_write",
 }
 
+NO_WRITE_BOUNDARY = "phase_46_metadata_only"
+
 
 class SuggestionGroundingTrace(BaseModel):
     """Source evidence used to show or suppress a suggestion."""
@@ -70,6 +72,49 @@ class SuggestionGroundingTrace(BaseModel):
         ).lower()
         return any(phrase in text for phrase in PROMPT_INJECTION_PHRASES)
 
+    @property
+    def has_source_quote(self) -> bool:
+        return bool((self.source_quote or "").strip())
+
+    @property
+    def has_source_backed_action_hints(self) -> bool:
+        if not self.action_hints:
+            return False
+        return (
+            self.has_source_ref
+            and self.has_valid_source_link
+            and self.has_source_quote
+        )
+
+    def grounding_state(
+        self,
+        *,
+        should_surface: bool,
+        suppress_reason: str | None = None,
+    ) -> str:
+        """Return a compact state for UI explanations and evals."""
+        if not should_surface:
+            return "suppressed" if suppress_reason else "not_grounded"
+        if self.has_source_ref:
+            return "source_backed"
+        return "not_grounded"
+
+    def action_hint_grounding(self) -> list[dict[str, Any]]:
+        """Attach source and no-write metadata to generated action hints."""
+        grounded = self.has_source_backed_action_hints
+        return [
+            {
+                **hint,
+                "grounding_state": "source_backed" if grounded else "not_grounded",
+                "source_type": self.source_type,
+                "source_id": self.source_id,
+                "source_quote": self.source_quote,
+                "source_link": self.source_link,
+                "no_write_boundary": NO_WRITE_BOUNDARY,
+            }
+            for hint in self.action_hints
+        ]
+
 
 class SuggestionFamilyAssessment(BaseModel):
     """Structured quality verdict shared by suggestion families."""
@@ -105,11 +150,25 @@ class SuggestionFamilyAssessment(BaseModel):
         payload: dict[str, Any] = {
             "selected_because": self.reason if self.should_surface else None,
             "suppressed_because": self.suppress_reason,
+            "grounding_state": self.grounding.grounding_state(
+                should_surface=self.should_surface,
+                suppress_reason=self.suppress_reason,
+            ),
             "grounding_family": self.family.value,
             "policy": self.policy,
             "required_evidence": self.required_evidence,
             "confidence": self.confidence,
+            "retrieval_signals": self.grounding.retrieval_signals,
         }
+        if self.grounding.source_type and self.grounding.source_id:
+            payload["source_ref"] = {
+                "type": self.grounding.source_type,
+                "id": self.grounding.source_id,
+                "link": self.grounding.source_link,
+            }
+        if self.grounding.action_hints:
+            payload["action_hint_grounding"] = self.grounding.action_hint_grounding()
+            payload["no_write_boundary"] = NO_WRITE_BOUNDARY
         return {key: value for key, value in payload.items() if value is not None}
 
     def quality_gate(self) -> dict[str, Any]:
@@ -117,8 +176,15 @@ class SuggestionFamilyAssessment(BaseModel):
         return {
             "family": self.family.value,
             "policy": self.policy,
+            "required_evidence": self.required_evidence,
             "validators": self.validators,
             "passed": self.should_surface,
+            "confidence": self.confidence,
+            "grounding_state": self.grounding.grounding_state(
+                should_surface=self.should_surface,
+                suppress_reason=self.suppress_reason,
+            ),
+            "retrieval_signals": self.grounding.retrieval_signals,
             "suppress_reason": self.suppress_reason,
         }
 
@@ -159,6 +225,8 @@ def assess_suggestion_family(
         validators.append("action_hint_grounding")
         if not grounding.action_hints:
             suppress_reason = suppress_reason or "missing_action_hint"
+        elif not grounding.has_source_backed_action_hints:
+            suppress_reason = suppress_reason or "ungrounded_action_hint"
 
     validators.append("family_policy")
     should_surface = suppress_reason is None

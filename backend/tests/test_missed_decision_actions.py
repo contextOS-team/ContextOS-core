@@ -121,6 +121,42 @@ async def test_terminal_candidates_cannot_be_confirmed_again() -> None:
 
 
 @pytest.mark.asyncio
+async def test_confirmed_decision_preserves_action_hint_grounding_metadata() -> None:
+    candidate = _candidate()
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([candidate]))
+    session.flush = AsyncMock()
+
+    with (
+        patch(
+            "src.services.missed_decision_actions.upsert_node",
+            new=AsyncMock(return_value=uuid4()),
+        ) as upsert_node,
+        patch("src.services.missed_decision_actions.upsert_edge", new=AsyncMock()),
+        patch(
+            "src.services.missed_decision_actions.resolve_suggestion",
+            new=AsyncMock(),
+        ),
+    ):
+        await confirm_candidate(session, WORKSPACE_ID, USER_ID, candidate.id)
+
+    props = upsert_node.await_args.kwargs["properties"]
+    assert props["source_quote"] == candidate.source_quote
+    assert props["source_link"] == candidate.source_link
+    assert props["candidate_id"] == str(candidate.id)
+    assert props["grounding_explanation"]["no_write_boundary"] == (
+        "phase_46_metadata_only"
+    )
+    assert props["action_hints"] == candidate.action_hints
+    assert props["action_hint_grounding"][0]["grounding_state"] == "source_backed"
+    assert props["action_hint_grounding"][0]["source_type"] == candidate.source_type
+    assert props["action_hint_grounding"][0]["source_id"] == str(candidate.source_id)
+    assert props["action_hint_grounding"][0]["no_write_boundary"] == (
+        "phase_46_metadata_only"
+    )
+
+
+@pytest.mark.asyncio
 async def test_ignore_duplicate_suppresses_and_resolves_suggestion() -> None:
     candidate = _candidate(match_status="strong_match")
     session = AsyncMock()

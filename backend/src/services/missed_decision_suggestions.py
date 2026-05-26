@@ -12,6 +12,7 @@ from src.models.missed_decision import MissedDecisionCandidate
 from src.models.suggestion import Suggestion
 from src.services.missed_decision_extractor import is_surfaceable_confidence
 from src.services.suggestion_quality import (
+    NO_WRITE_BOUNDARY,
     SuggestionFamily,
     SuggestionGroundingTrace,
     assess_suggestion_family,
@@ -74,15 +75,32 @@ def build_missed_decision_suggestion(
         action_hints=candidate.action_hints or [],
         metadata={"candidate_id": str(candidate_id)},
     )
+    required_evidence = ["source_ref", "source_link", "source_quote"]
+    if candidate.action_hints:
+        required_evidence.append("action_hint_grounding")
     assessment = assess_suggestion_family(
         family=SuggestionFamily.MISSED_DECISION,
         grounding=grounding,
         reason="Source-backed missed-decision candidate is ready for review.",
         confidence=1.0 if candidate.confidence == "very_high" else 0.85,
-        required_evidence=["source_ref", "source_link", "source_quote"],
+        required_evidence=required_evidence,
     )
     if not assessment.should_surface:
         return None
+    action_hint_grounding = grounding.action_hint_grounding()
+    provenance = {
+        "generator": MISSED_DECISION_SUGGESTION_GENERATOR,
+        "source": "missed_decision_candidate",
+        "candidate_id": str(candidate_id),
+        "quote_fingerprint": candidate.quote_fingerprint,
+        "decision_fingerprint": candidate.decision_fingerprint,
+        "retrieval_signals": grounding.retrieval_signals,
+        "source_link": candidate.source_link,
+        "source_quote": candidate.source_quote,
+        "quality_gate": assessment.quality_gate(),
+    }
+    if action_hint_grounding:
+        provenance["no_write_boundary"] = NO_WRITE_BOUNDARY
 
     return Suggestion(
         workspace_id=candidate.workspace_id,
@@ -114,16 +132,10 @@ def build_missed_decision_suggestion(
             "affected_systems": candidate.affected_systems or [],
             "match_status": candidate.match_status,
             "action_hints": candidate.action_hints or [],
+            "action_hint_grounding": action_hint_grounding,
             "explanation": assessment.explanation(),
         },
-        provenance={
-            "generator": MISSED_DECISION_SUGGESTION_GENERATOR,
-            "source": "missed_decision_candidate",
-            "candidate_id": str(candidate_id),
-            "quote_fingerprint": candidate.quote_fingerprint,
-            "decision_fingerprint": candidate.decision_fingerprint,
-            "quality_gate": assessment.quality_gate(),
-        },
+        provenance=provenance,
         last_seen_at=_now(),
     )
 

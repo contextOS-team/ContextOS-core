@@ -266,7 +266,9 @@ async def test_raw_digest_decision_guardrail_links_instead_of_fresh_review() -> 
 
 @pytest.mark.asyncio
 async def test_publish_missed_decision_suggestion_references_candidate() -> None:
-    candidate = _candidate()
+    candidate = _candidate(
+        action_hints=[{"kind": "ticket", "title": "Document the rail rule"}]
+    )
     candidate.id = uuid4()
     session = AsyncMock()
     session.add = MagicMock()
@@ -284,8 +286,25 @@ async def test_publish_missed_decision_suggestion_references_candidate() -> None
     assert suggestion.details["candidate_id"] == str(candidate.id)
     assert suggestion.details["match_status"] == candidate.match_status
     assert suggestion.details["explanation"]["grounding_family"] == "missed_decision"
+    assert suggestion.details["explanation"]["grounding_state"] == "source_backed"
+    assert suggestion.details["action_hint_grounding"][0]["grounding_state"] == (
+        "source_backed"
+    )
+    assert suggestion.details["action_hint_grounding"][0]["no_write_boundary"] == (
+        "phase_46_metadata_only"
+    )
     assert suggestion.provenance["candidate_id"] == str(candidate.id)
+    assert suggestion.provenance["retrieval_signals"] == [
+        "missed_decision_candidate"
+    ]
+    assert suggestion.provenance["no_write_boundary"] == "phase_46_metadata_only"
     assert suggestion.provenance["quality_gate"]["passed"] is True
+    assert suggestion.provenance["quality_gate"]["required_evidence"] == [
+        "source_ref",
+        "source_link",
+        "source_quote",
+        "action_hint_grounding",
+    ]
     assert candidate.lifecycle_status == "surfaced"
     assert candidate.suggestion_id == suggestion.id
     session.add.assert_called_once()

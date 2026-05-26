@@ -15,6 +15,7 @@ from src.services.graph_ops import upsert_edge, upsert_node
 from src.services.missed_decision_dedupe import (
     SUPPRESSION_DUPLICATE_NO_NEW_EVIDENCE,
 )
+from src.services.suggestion_quality import NO_WRITE_BOUNDARY, SuggestionGroundingTrace
 from src.services.suggestions import resolve_suggestion, snooze_suggestion
 
 LIFECYCLE_SURFACED = "surfaced"
@@ -158,6 +159,16 @@ async def list_review_candidates(
 
 
 def _decision_properties(candidate: MissedDecisionCandidate) -> dict:
+    grounding = SuggestionGroundingTrace(
+        source_type=candidate.source_type,
+        source_id=str(candidate.source_id),
+        source_link=candidate.source_link,
+        source_quote=candidate.source_quote,
+        retrieval_signals=["confirmed_missed_decision_candidate"],
+        action_hints=candidate.action_hints or [],
+        metadata={"candidate_id": str(candidate.id)},
+    )
+    action_hint_grounding = grounding.action_hint_grounding()
     return {
         "description": candidate.inferred_decision,
         "rationale": candidate.inferred_rationale,
@@ -172,6 +183,18 @@ def _decision_properties(candidate: MissedDecisionCandidate) -> dict:
         "source_type": candidate.source_type,
         "source_id": str(candidate.source_id),
         "action_hints": candidate.action_hints or [],
+        "action_hint_grounding": action_hint_grounding,
+        "grounding_explanation": {
+            "selected_because": (
+                "Confirmed missed-decision candidate preserves exact source evidence."
+            ),
+            "grounding_state": "source_backed_candidate",
+            "candidate_id": str(candidate.id),
+            "source_quote": candidate.source_quote,
+            "source_link": candidate.source_link,
+            "retrieval_signals": grounding.retrieval_signals,
+            "no_write_boundary": NO_WRITE_BOUNDARY,
+        },
         "status": "confirmed",
         "model": "missed_decision:v1",
     }

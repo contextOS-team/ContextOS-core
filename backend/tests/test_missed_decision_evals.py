@@ -86,12 +86,16 @@ def test_eval_runner_scores_expected_candidates_and_invalid_drops(
                         "candidate_id": "candidate-1",
                         "confidence": "high",
                         "match_status": "no_match",
-                        "explanation": {"selected_because": "Source backed."},
+                        "explanation": {
+                            "selected_because": "Source backed.",
+                            "grounding_state": "source_backed",
+                        },
                     },
                     "provenance": {
                         "generator": "missed_decision:v1",
                         "candidate_id": "candidate-1",
                         "quality_gate": {"passed": True},
+                        "retrieval_signals": ["missed_decision_candidate"],
                     },
                 },
             },

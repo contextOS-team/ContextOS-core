@@ -251,16 +251,29 @@ def _payload_completeness(payload: dict[str, Any] | None) -> float:
         ("details", "confidence"),
         ("details", "match_status"),
         ("details", "explanation"),
+        ("details", "explanation", "selected_because"),
+        ("details", "explanation", "grounding_state"),
         ("provenance", "generator"),
         ("provenance", "candidate_id"),
         ("provenance", "quality_gate"),
+        ("provenance", "quality_gate", "passed"),
+        ("provenance", "retrieval_signals"),
     ]
     present = 0
-    for section, key in required_paths:
-        value = (payload.get(section) or {}).get(key)
+    for path in required_paths:
+        value = _path_value(payload, path)
         if value not in (None, "", [], {}):
             present += 1
     return present / len(required_paths)
+
+
+def _path_value(payload: dict[str, Any], path: tuple[str, ...]) -> Any:
+    value: Any = payload
+    for key in path:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
 
 
 def evaluate_dataset(

@@ -181,10 +181,16 @@ def test_build_missing_source_suggestion_is_decision_specific(mock_settings) -> 
     assert suggestion.evidence["missing_evidence"] == ["design_review"]
     assert suggestion.details["coverage_assessment"]["confidence"] == 0.92
     assert suggestion.details["explanation"]["selected_because"]
+    assert suggestion.details["explanation"]["grounding_state"] == "source_backed"
     assert suggestion.details["explanation"]["grounding_family"] == (
         "missing_source_coverage"
     )
+    assert suggestion.details["explanation"]["retrieval_signals"] == [
+        "graph_decision"
+    ]
+    assert suggestion.provenance["retrieval_signals"] == ["graph_decision"]
     assert suggestion.provenance["quality_gate"]["passed"] is True
+    assert suggestion.provenance["quality_gate"]["grounding_state"] == "source_backed"
 
 
 def test_suggestion_family_quality_contracts_cover_all_families() -> None:
@@ -236,6 +242,18 @@ def test_suggestion_family_quality_contracts_cover_all_families() -> None:
         assert assessment.reason
         assert assessment.confidence == 0.9
         assert assessment.policy
+        assert assessment.explanation()["grounding_state"] == "source_backed"
+        assert assessment.quality_gate()["required_evidence"]
+    action_prompt = assessments[-1]
+    assert action_prompt.explanation()["action_hint_grounding"][0][
+        "grounding_state"
+    ] == "source_backed"
+    assert (
+        action_prompt.explanation()["action_hint_grounding"][0][
+            "no_write_boundary"
+        ]
+        == "phase_46_metadata_only"
+    )
 
 
 def test_suggestion_family_quality_rejects_prompt_injection_source_text() -> None:
@@ -254,6 +272,11 @@ def test_suggestion_family_quality_rejects_prompt_injection_source_text() -> Non
 
     assert assessment.should_surface is False
     assert assessment.suppress_reason == "prompt_injection_source_text"
+    assert assessment.explanation()["grounding_state"] == "suppressed"
+    assert (
+        assessment.explanation()["suppressed_because"]
+        == "prompt_injection_source_text"
+    )
 
 
 def test_build_missing_source_suggestion_skips_non_concrete_targets(
