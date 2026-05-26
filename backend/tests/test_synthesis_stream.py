@@ -493,6 +493,70 @@ async def test_linear_ticket_sets_ticket_id_not_jira():
     assert context_page.ticket_identifier == "CON-42"
 
 
+@pytest.mark.asyncio
+async def test_stream_persists_graph_evidence_without_extra_step():
+    """Graph-only final evidence should persist without changing SSE source steps."""
+    from src.services.graph_rag_types import RetrievalTarget
+    from src.services.linking import LinkedItem
+
+    session = AsyncMock()
+    linear_ticket = _make_linear_ticket()
+    decision_id = uuid4()
+
+    session.execute.side_effect = _mock_execute_returning([
+        ("scalar_one_or_none", linear_ticket),
+        ("fetchall", []),
+        ("fetchall", []),
+        ("fetchall", []),
+        ("scalar_one_or_none", None),
+    ])
+
+    graph_item = LinkedItem(
+        source_type="decision",
+        source_id=decision_id,
+        title="Keep stream retrieval aligned",
+        snippet="[DECISION] Keep stream retrieval aligned",
+        relevance_score=1.0,
+        signals=["graph:Decision(decided_in,d=1)"],
+        targets=[RetrievalTarget.DECISION_RECEIPTS, RetrievalTarget.GRAPH_NEIGHBORHOOD],
+    )
+
+    async def _find_with_graph(*args, **kwargs):
+        yield "linear", [], "No comments found"
+        yield "graph", [graph_item], "Found 1 graph item"
+
+    mock_llm = MagicMock()
+    mock_llm.generate = AsyncMock(return_value=_make_llm_response())
+
+    with (
+        patch("src.services.synthesis.find_content_by_source", _find_with_graph),
+        patch("src.services.synthesis.get_llm_client", return_value=mock_llm),
+    ):
+        from src.services.synthesis import generate_context_page_stream
+
+        events = await _collect_events(
+            generate_context_page_stream(session, WORKSPACE_ID, "CON-42")
+        )
+
+    step_sources = [
+        event.get("source")
+        for event in events
+        if event.get("event") == "step_complete"
+    ]
+    assert "linear" in step_sources
+    assert "graph" not in step_sources
+
+    context_page = session.add.call_args_list[0][0][0]
+    source_types = [source["type"] for source in context_page.sources]
+    assert "decision" in source_types
+    decision_source = next(
+        source
+        for source in context_page.sources
+        if source["type"] == "decision"
+    )
+    assert RetrievalTarget.DECISION_RECEIPTS.value in decision_source["targets"]
+
+
 # ---------------------------------------------------------------------------
 # Test 9: Regenerating Jira page backfills jira_issue_id
 # ---------------------------------------------------------------------------

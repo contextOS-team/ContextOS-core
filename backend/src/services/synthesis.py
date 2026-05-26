@@ -18,9 +18,13 @@ from src.models.integration import OAuthToken, WorkspaceIntegration
 from src.models.jira import JiraIssue
 from src.models.sync import SyncCursor
 from src.models.ticket import LinearTicket
-from src.services.graph_ops import compute_fingerprint
 from src.services.audit import log_audit_event
-from src.services.linking import LinkedItem, find_content_by_source, find_related_content
+from src.services.graph_ops import compute_fingerprint
+from src.services.linking import (
+    LinkedItem,
+    find_content_by_source,
+    find_related_content,
+)
 from src.services.llm_client import get_llm_client
 from src.services.sync_adapter import emit_activity
 
@@ -478,6 +482,37 @@ def _format_related_content(
     return "\n\n---\n\n".join(sections)
 
 
+def _source_payload(item: LinkedItem) -> dict:
+    features = getattr(item, "features", None)
+    dump_features = getattr(features, "model_dump", None)
+    feature_payload = dump_features(mode="json") if callable(dump_features) else {}
+    if not isinstance(feature_payload, dict):
+        feature_payload = {}
+
+    targets = []
+    for target in getattr(item, "targets", []) or []:
+        target_value = getattr(target, "value", None)
+        if isinstance(target_value, str):
+            targets.append(target_value)
+
+    metadata = getattr(item, "metadata", {}) or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    payload = {
+        "type": item.source_type,
+        "id": str(item.source_id),
+        "title": item.title,
+        "relevance_score": round(item.relevance_score, 3),
+        "targets": targets,
+        "retrieval_metadata": metadata,
+        "retrieval_features": feature_payload,
+    }
+    if item.url:
+        payload["url"] = item.url
+    return payload
+
+
 def _priority_label(priority: int | str | None) -> str:
     """Convert priority to human-readable label.
 
@@ -781,16 +816,7 @@ async def generate_context_page(
         )
 
         # Build sources list for the context page
-        sources_list = [
-            {
-                "type": item.source_type,
-                "id": str(item.source_id),
-                "title": item.title,
-                "relevance_score": round(item.relevance_score, 3),
-                **({"url": item.url} if item.url else {}),
-            }
-            for item in linking_result.items
-        ]
+        sources_list = [_source_payload(item) for item in linking_result.items]
 
         now = datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -992,6 +1018,9 @@ async def generate_context_page_stream(
         async for source_name, items, detail in find_content_by_source(
             session, workspace_id, ticket, connected_sources=set(connected_sources)
         ):
+            if source_name == "graph":
+                all_items.extend(items)
+                continue
             if source_name not in connected_sources:
                 continue
             all_items.extend(items)
@@ -1071,16 +1100,7 @@ async def generate_context_page_stream(
         )
 
         # 7. Update context page with results
-        sources_list = [
-            {
-                "type": item.source_type,
-                "id": str(item.source_id),
-                "title": item.title,
-                "relevance_score": round(item.relevance_score, 3),
-                **({"url": item.url} if item.url else {}),
-            }
-            for item in all_items
-        ]
+        sources_list = [_source_payload(item) for item in all_items]
 
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         cluster_section = _format_cluster_membership_section(communities or [])

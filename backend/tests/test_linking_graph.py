@@ -11,8 +11,6 @@ Covers:
 - TOKEN-DIVERSITY: Token budget guarantees signal diversity
 """
 
-import logging
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -284,7 +282,7 @@ async def test_depth_decay_scoring() -> None:
     ]
 
     with patch("src.services.linking.compute_fingerprint", return_value="fp"):
-        from src.services.linking import _find_graph_results, WEIGHT_GRAPH, DEPTH_DECAY
+        from src.services.linking import DEPTH_DECAY, WEIGHT_GRAPH, _find_graph_results
 
         items = await _find_graph_results(mock_session, WORKSPACE_ID, ticket)
 
@@ -391,7 +389,7 @@ async def test_same_as_transparent() -> None:
     ]
 
     with patch("src.services.linking.compute_fingerprint", return_value="fp"):
-        from src.services.linking import _find_graph_results, WEIGHT_GRAPH, DEPTH_DECAY
+        from src.services.linking import DEPTH_DECAY, WEIGHT_GRAPH, _find_graph_results
 
         items = await _find_graph_results(mock_session, WORKSPACE_ID, ticket)
 
@@ -414,7 +412,7 @@ async def test_three_signal_merge() -> None:
     and graph, find_related_content() returns the item with merged signals and
     the highest RRF score, plus all unique items. Graph-only items are included.
     Result count reflects merged items."""
-    from src.services.linking import LinkedItem, CommunityContext
+    from src.services.linking import LinkedItem
 
     mock_session = AsyncMock()
     ticket = _make_ticket()
@@ -490,6 +488,221 @@ async def test_three_signal_merge() -> None:
     # Graph-only decision should be present
     decision_items = [i for i in result.items if i.source_type == "decision"]
     assert len(decision_items) == 1
+    assert all(item.targets for item in result.items)
+
+
+@pytest.mark.asyncio
+async def test_find_related_content_filters_by_retrieval_target() -> None:
+    """decision_receipts target should route to graph decisions only."""
+    from src.services.graph_rag_types import RetrievalTarget
+    from src.services.linking import LinkedItem
+
+    mock_session = AsyncMock()
+    ticket = _make_ticket()
+    decision_id = uuid4()
+
+    graph_items = {
+        ("decision", decision_id): LinkedItem(
+            source_type="decision",
+            source_id=decision_id,
+            title="Keep receipts bounded",
+            snippet="[DECISION] Keep receipts bounded",
+            relevance_score=0.8,
+            signals=["graph:Decision(decided_in,d=1)"],
+        ),
+        ("slack_message", uuid4()): LinkedItem(
+            source_type="slack_message",
+            source_id=uuid4(),
+            title="Source evidence",
+            snippet="Slack source",
+            relevance_score=0.7,
+            signals=["graph:SlackThread(discussed_in,d=1)"],
+        ),
+    }
+
+    with (
+        patch(
+            "src.services.linking._find_explicit_refs",
+            new_callable=AsyncMock,
+        ) as explicit,
+        patch(
+            "src.services.linking._find_hybrid_matches",
+            new_callable=AsyncMock,
+        ) as hybrid,
+        patch(
+            "src.services.linking._find_graph_results",
+            new_callable=AsyncMock,
+            return_value=graph_items,
+        ),
+        patch(
+            "src.services.linking._fetch_communities_for_ticket",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+    ):
+        from src.services.linking import find_related_content
+
+        result = await find_related_content(
+            mock_session,
+            WORKSPACE_ID,
+            ticket,
+            targets=[RetrievalTarget.DECISION_RECEIPTS],
+        )
+
+    explicit.assert_not_awaited()
+    hybrid.assert_not_awaited()
+    assert [item.source_type for item in result.items] == ["decision"]
+    assert RetrievalTarget.DECISION_RECEIPTS in result.items[0].targets
+    assert RetrievalTarget.SOURCE_EVIDENCE not in result.items[0].targets
+
+
+def test_target_metadata_inference_covers_every_retrieval_target() -> None:
+    from src.services.graph_rag_types import RetrievalTarget
+    from src.services.linking import LinkedItem, _ensure_item_retrieval_metadata
+
+    items = [
+        LinkedItem(
+            source_type="decision",
+            source_id=uuid4(),
+            title="Decision",
+            snippet="[DECISION] Use receipts",
+            relevance_score=1.0,
+            signals=["graph:Decision(decided_in,d=1)"],
+        ),
+        LinkedItem(
+            source_type="slack_message",
+            source_id=uuid4(),
+            title="Slack evidence",
+            snippet="Source quote",
+            relevance_score=1.0,
+            signals=["explicit_reference"],
+        ),
+        LinkedItem(
+            source_type="github_pull_request",
+            source_id=uuid4(),
+            title="Related PR",
+            snippet="Related implementation",
+            relevance_score=1.0,
+            signals=["hybrid_search"],
+        ),
+    ]
+
+    observed: set[RetrievalTarget] = set()
+    for item in items:
+        _ensure_item_retrieval_metadata(item)
+        observed.update(item.targets)
+        assert item.metadata["retrieval_targets"]
+
+    assert observed == set(RetrievalTarget)
+
+
+@pytest.mark.asyncio
+async def test_find_related_content_rejects_invalid_targets() -> None:
+    from src.services.linking import find_related_content
+
+    mock_session = AsyncMock()
+    ticket = _make_ticket()
+
+    with pytest.raises(ValueError, match="cannot be empty"):
+        await find_related_content(mock_session, WORKSPACE_ID, ticket, targets=[])
+
+    with pytest.raises(ValueError, match="unsupported retrieval target"):
+        await find_related_content(
+            mock_session,
+            WORKSPACE_ID,
+            ticket,
+            targets=["not-a-target"],  # type: ignore[list-item]
+        )
+
+
+@pytest.mark.asyncio
+async def test_phase45_confirmed_decision_renders_source_backed_receipt() -> None:
+    """Phase 45 promoted Decision properties should not degrade to Unknown."""
+    from src.services.graph_rag_types import RetrievalTarget, VerificationState
+
+    mock_session = AsyncMock()
+    ticket = _make_ticket()
+    graph_node = _make_graph_node()
+    decision_id = uuid4()
+
+    mock_node_result = MagicMock()
+    mock_node_result.scalar_one_or_none.return_value = graph_node
+
+    row_decision = _make_traverse_row(
+        node_id=decision_id,
+        entity_type="Decision",
+        name="Keep generated context evidence bounded",
+        properties={
+            "person_name": "Daulet",
+            "source_type": "slack_message",
+            "source_link": "https://slack.example/archives/C1/p1",
+            "source_quote": "We decided to keep generated context evidence bounded.",
+            "affected_systems": ["context-pages"],
+            "confidence": 0.91,
+            "status": "confirmed",
+        },
+        edge_relationship_type="decided_in",
+        depth=1,
+        source_type=None,
+    )
+    mock_traverse_result = MagicMock()
+    mock_traverse_result.fetchall.return_value = [row_decision]
+    mock_session.execute.side_effect = [mock_node_result, mock_traverse_result]
+
+    with patch("src.services.linking.compute_fingerprint", return_value="fp"):
+        from src.services.linking import _find_graph_results
+
+        items = await _find_graph_results(mock_session, WORKSPACE_ID, ticket)
+
+    item = items[("decision", decision_id)]
+    assert "By: Daulet" in item.snippet
+    assert "In: slack_message" in item.snippet
+    assert "Quote: We decided" in item.snippet
+    assert item.url == "https://slack.example/archives/C1/p1"
+    assert item.features.verification_state == VerificationState.CONFIRMED_DECISION
+    assert RetrievalTarget.DECISION_RECEIPTS in item.targets
+    assert RetrievalTarget.SOURCE_EVIDENCE in item.targets
+
+
+@pytest.mark.asyncio
+async def test_generated_context_decision_is_not_primary_source_evidence() -> None:
+    from src.services.graph_rag_types import RetrievalTarget, VerificationState
+
+    mock_session = AsyncMock()
+    ticket = _make_ticket()
+    graph_node = _make_graph_node()
+    decision_id = uuid4()
+
+    mock_node_result = MagicMock()
+    mock_node_result.scalar_one_or_none.return_value = graph_node
+
+    row_decision = _make_traverse_row(
+        node_id=decision_id,
+        entity_type="Decision",
+        name="Generated summary says auth should change",
+        properties={
+            "source_type": "context_page",
+            "status": "confirmed",
+            "confidence": 0.5,
+        },
+        edge_relationship_type="summarized_in",
+        depth=1,
+        source_type=None,
+    )
+    mock_traverse_result = MagicMock()
+    mock_traverse_result.fetchall.return_value = [row_decision]
+    mock_session.execute.side_effect = [mock_node_result, mock_traverse_result]
+
+    with patch("src.services.linking.compute_fingerprint", return_value="fp"):
+        from src.services.linking import _find_graph_results
+
+        items = await _find_graph_results(mock_session, WORKSPACE_ID, ticket)
+
+    item = items[("decision", decision_id)]
+    assert "In: generated_context" in item.snippet
+    assert item.features.verification_state == VerificationState.GENERATED_CONTEXT
+    assert RetrievalTarget.DECISION_RECEIPTS in item.targets
+    assert RetrievalTarget.SOURCE_EVIDENCE not in item.targets
 
 
 @pytest.mark.asyncio
@@ -614,7 +827,7 @@ class TestLinkingResultCommunities:
         assert cc.relevance_reason == "assignee_primary"
 
     def test_select_communities_picks_assignee_primary_first(self):
-        from src.services.linking import _select_communities, CommunityContext
+        from src.services.linking import CommunityContext, _select_communities
         # 4 candidate communities, all valid; assignee_primary must be #1 in result.
         candidates = [
             CommunityContext(community_id=10, label="A", summary="a", person_count=2,
@@ -635,7 +848,7 @@ class TestLinkingResultCommunities:
         assert len(chosen) == 3
 
     def test_select_communities_caps_at_max(self):
-        from src.services.linking import _select_communities, CommunityContext
+        from src.services.linking import CommunityContext, _select_communities
         candidates = [
             CommunityContext(community_id=i, label=str(i), summary="s",
                              person_count=2, ticket_count=2, member_count=4,

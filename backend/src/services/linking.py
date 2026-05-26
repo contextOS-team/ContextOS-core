@@ -24,14 +24,19 @@ from src.models.code_chunk import CodeChunk
 from src.models.github import GithubPullRequest, GithubReview
 from src.models.gitlab import GitlabMergeRequest, GitlabReview
 from src.models.graph_node import GraphNode
+from src.models.jira import JiraComment, JiraIssue
 from src.models.meeting import MeetingSegment, MeetingTranscript
 from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
 from src.models.telegram import TelegramMessage
-from src.models.jira import JiraComment, JiraIssue
 from src.models.ticket import LinearComment, LinearTicket
 from src.services.embedding import generate_embedding
 from src.services.graph_ops import compute_fingerprint
+from src.services.graph_rag_types import (
+    RetrievalFeatures,
+    RetrievalTarget,
+    VerificationState,
+)
 from src.services.llm_client import get_llm_client
 from src.services.slack_events import slack_archive_url
 
@@ -65,6 +70,110 @@ _GRAPH_ONLY_ENTITIES = {"Person", "Decision", "Blocker", "Feature", "Component"}
 # Maximum number of graph results to prevent same_as expansion explosion
 _GRAPH_MAX_RESULTS = 20
 
+_ALL_RETRIEVAL_TARGETS = frozenset(RetrievalTarget)
+_SOURCE_RETRIEVAL_TARGETS = frozenset(
+    {RetrievalTarget.SOURCE_EVIDENCE, RetrievalTarget.RELATED_WORK}
+)
+_GRAPH_RETRIEVAL_TARGETS = frozenset(
+    {
+        RetrievalTarget.DECISION_RECEIPTS,
+        RetrievalTarget.GRAPH_NEIGHBORHOOD,
+        RetrievalTarget.SOURCE_EVIDENCE,
+    }
+)
+_GRAPH_ONLY_SOURCE_TYPES = {"decision", "person", "blocker", "feature", "component"}
+
+
+def _validate_retrieval_targets(
+    targets: list[RetrievalTarget] | None,
+) -> frozenset[RetrievalTarget]:
+    """Validate caller-requested retrieval targets.
+
+    ``None`` preserves the historical broad retrieval behavior. Explicit
+    empty lists or unknown values are rejected so callers cannot silently
+    degrade to all-source retrieval.
+    """
+    if targets is None:
+        return _ALL_RETRIEVAL_TARGETS
+    if not targets:
+        raise ValueError("retrieval targets cannot be empty")
+
+    validated: list[RetrievalTarget] = []
+    for target in targets:
+        try:
+            validated.append(
+                target
+                if isinstance(target, RetrievalTarget)
+                else RetrievalTarget(str(target))
+            )
+        except ValueError as exc:
+            raise ValueError(f"unsupported retrieval target: {target}") from exc
+    return frozenset(validated)
+
+
+def _targets_for_item(item: "LinkedItem") -> list[RetrievalTarget]:
+    """Infer default target metadata for legacy or test-created items."""
+    targets: set[RetrievalTarget] = set(item.targets)
+
+    if item.source_type in _GRAPH_ONLY_SOURCE_TYPES:
+        targets.add(RetrievalTarget.GRAPH_NEIGHBORHOOD)
+        if item.source_type == "decision":
+            targets.add(RetrievalTarget.DECISION_RECEIPTS)
+
+    for signal in item.signals:
+        if signal.startswith("graph:"):
+            targets.add(RetrievalTarget.GRAPH_NEIGHBORHOOD)
+            if item.source_type == "decision":
+                targets.add(RetrievalTarget.DECISION_RECEIPTS)
+        elif signal in ("explicit_link", "explicit_reference"):
+            targets.update(_SOURCE_RETRIEVAL_TARGETS)
+        elif signal == "hybrid_search":
+            targets.update(_SOURCE_RETRIEVAL_TARGETS)
+
+    if not targets:
+        targets.update(_SOURCE_RETRIEVAL_TARGETS)
+
+    return sorted(targets, key=lambda target: target.value)
+
+
+def _ensure_item_retrieval_metadata(item: "LinkedItem") -> None:
+    if not item.targets:
+        item.targets = _targets_for_item(item)
+    item.metadata.setdefault(
+        "retrieval_targets",
+        [target.value for target in item.targets],
+    )
+    item.metadata.setdefault("retrieval_signals", list(item.signals))
+
+
+def _item_matches_targets(
+    item: "LinkedItem",
+    requested_targets: frozenset[RetrievalTarget],
+) -> bool:
+    _ensure_item_retrieval_metadata(item)
+    return any(target in requested_targets for target in item.targets)
+
+
+def _source_group_for_type(source_type: str) -> str | None:
+    for source_name, source_types in SOURCE_TYPE_MAP.items():
+        if source_type in source_types:
+            return source_name
+    if source_type in _GRAPH_ONLY_SOURCE_TYPES:
+        return "graph"
+    return None
+
+
+def _source_group_matches_connected_sources(
+    item: "LinkedItem",
+    connected_sources: set[str] | None,
+) -> bool:
+    if connected_sources is None:
+        return True
+    source_group = _source_group_for_type(item.source_type)
+    if source_group == "graph":
+        return True
+    return source_group in connected_sources
+
 
 @dataclass
 class LinkedItem:
@@ -77,6 +186,9 @@ class LinkedItem:
     relevance_score: float
     signals: list[str] = field(default_factory=list)
     url: str | None = None
+    targets: list[RetrievalTarget] = field(default_factory=list)
+    features: RetrievalFeatures = field(default_factory=RetrievalFeatures)
+    metadata: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -359,6 +471,8 @@ async def _find_explicit_refs(
                 signals=["explicit_reference"],
             )
 
+    for item in items.values():
+        _ensure_item_retrieval_metadata(item)
     return items
 
 
@@ -502,6 +616,8 @@ async def _find_hybrid_matches(
             url=url,
         )
 
+    for item in items.values():
+        _ensure_item_retrieval_metadata(item)
     return items
 
 
@@ -629,7 +745,6 @@ async def _bulk_lookup_source_summaries(
         grouped.setdefault(source_type, []).append(source_id)
 
     # Phase 1: Try embedding metadata first (works even after raw content deletion)
-    missing_keys: list[tuple[str, UUID]] = []
     all_ids = [sid for _, sid in keys]
     if all_ids:
         emb_stmt = select(Embedding).where(
@@ -683,6 +798,106 @@ async def _lookup_source_summary(
     if record is None:
         return None
     return extract(record)
+
+
+def _as_list(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if item is not None]
+    if isinstance(value, tuple | set):
+        return [str(item) for item in value if item is not None]
+    return [str(value)]
+
+
+def _decision_verification_state(properties: dict) -> VerificationState:
+    source_type = str(properties.get("source_type") or properties.get("source") or "")
+    source_quote = properties.get("source_quote")
+    source_link = properties.get("source_link")
+    status = str(properties.get("status") or "").lower()
+
+    if source_type == "context_page":
+        return VerificationState.GENERATED_CONTEXT
+    if status == "confirmed" and source_quote and source_link:
+        return VerificationState.CONFIRMED_DECISION
+    if source_quote and source_link:
+        return VerificationState.SOURCE_BACKED_CANDIDATE
+    return VerificationState.UNKNOWN
+
+
+def _format_decision_graph_item(
+    *,
+    name: str,
+    properties: dict,
+    score: float,
+    provenance: str,
+    source_id: UUID,
+    graph_depth: int,
+) -> LinkedItem:
+    """Render a graph Decision node using Phase 45 promoted properties first."""
+    verification_state = _decision_verification_state(properties)
+    person = (
+        properties.get("person_name")
+        or next(iter(_as_list(properties.get("participants"))), None)
+        or properties.get("by")
+        or "Unknown"
+    )
+    source_type = (
+        "generated_context"
+        if verification_state == VerificationState.GENERATED_CONTEXT
+        else properties.get("source_type")
+        or properties.get("source")
+        or "Unknown"
+    )
+    affected = (
+        _as_list(properties.get("affected_systems"))
+        or _as_list(properties.get("ticket_refs"))
+        or _as_list(properties.get("affects"))
+    )
+    source_quote = properties.get("source_quote")
+    source_link = properties.get("source_link")
+    confidence = properties.get("confidence", "N/A")
+
+    parts = [f"[DECISION] {name}", f"By: {person}", f"In: {source_type}"]
+    if affected:
+        parts.append(f"Affects: {', '.join(affected)}")
+    if source_quote:
+        parts.append(f"Quote: {source_quote}")
+    if source_link:
+        parts.append(f"Source: {source_link}")
+    parts.append(f"Confidence: {confidence}")
+
+    targets = [RetrievalTarget.DECISION_RECEIPTS, RetrievalTarget.GRAPH_NEIGHBORHOOD]
+    if verification_state in (
+        VerificationState.CONFIRMED_DECISION,
+        VerificationState.SOURCE_BACKED_CANDIDATE,
+    ):
+        targets.append(RetrievalTarget.SOURCE_EVIDENCE)
+
+    item = LinkedItem(
+        source_type="decision",
+        source_id=source_id,
+        title=name,
+        snippet=" | ".join(parts),
+        relevance_score=score,
+        signals=[provenance],
+        url=str(source_link) if source_link else None,
+        targets=targets,
+        features=RetrievalFeatures(
+            verification_state=verification_state,
+            graph_depth=graph_depth,
+        ),
+        metadata={
+            "source_type": source_type,
+            "person_name": str(person),
+            "source_quote": str(source_quote) if source_quote else None,
+            "source_link": str(source_link) if source_link else None,
+            "provenance_label": verification_state.value,
+            "status": properties.get("status"),
+        },
+    )
+    _ensure_item_retrieval_metadata(item)
+    return item
 
 
 async def _find_graph_results(
@@ -779,6 +994,8 @@ async def _find_graph_results(
             source_lookup = await session.execute(
                 select(GraphNode.id, GraphNode.source_id).where(
                     GraphNode.id.in_(source_backed_node_ids),
+                    GraphNode.workspace_id == workspace_id,
+                    GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
                 )
             )
             for nid, sid in source_lookup.fetchall():
@@ -786,7 +1003,7 @@ async def _find_graph_results(
 
         # 5. Process each result row
         source_backed_keys: list[tuple[str, UUID]] = []
-        pending: list[tuple[tuple[str, UUID], float, str, str]] = []
+        pending: list[tuple[tuple[str, UUID], float, str, str, int]] = []
 
         for row in result_rows:
             entity_type = row.entity_type
@@ -811,7 +1028,7 @@ async def _find_graph_results(
                 source_id = node_source_map.get(row.node_id) or row.node_id
                 key = (source_type, source_id)
                 source_backed_keys.append(key)
-                pending.append((key, score, provenance, row.name))
+                pending.append((key, score, provenance, row.name, effective_depth))
             elif entity_type in _GRAPH_ONLY_ENTITIES:
                 # Graph-only entities use node_id as source_id
                 source_type = entity_type.lower()
@@ -821,20 +1038,13 @@ async def _find_graph_results(
                 # Special formatting for Decision nodes
                 if entity_type == "Decision":
                     props = row.properties or {}
-                    snippet = (
-                        f"[DECISION] {row.name}"
-                        f" | By: {props.get('by', 'Unknown')}"
-                        f" | In: {props.get('source', 'Unknown')}"
-                        f" | Affects: {props.get('affects', 'Unknown')}"
-                        f" | Confidence: {props.get('confidence', 'N/A')}"
-                    )
-                    items[key] = LinkedItem(
-                        source_type=source_type,
+                    items[key] = _format_decision_graph_item(
+                        name=row.name,
+                        properties=props,
+                        score=score,
+                        provenance=provenance,
                         source_id=source_id,
-                        title=row.name,
-                        snippet=snippet,
-                        relevance_score=score,
-                        signals=[provenance],
+                        graph_depth=effective_depth,
                     )
                 else:
                     props = row.properties or {}
@@ -846,6 +1056,11 @@ async def _find_graph_results(
                         snippet=snippet,
                         relevance_score=score,
                         signals=[provenance],
+                        targets=[RetrievalTarget.GRAPH_NEIGHBORHOOD],
+                        features=RetrievalFeatures(
+                            verification_state=VerificationState.UNKNOWN,
+                            graph_depth=effective_depth,
+                        ),
                     )
 
         # 6. Bulk-fetch summaries for source-backed entities
@@ -854,7 +1069,7 @@ async def _find_graph_results(
                 session, source_backed_keys
             )
 
-            for key, score, provenance, node_name in pending:
+            for key, score, provenance, node_name, graph_depth in pending:
                 title, snippet, url = summaries.get(key, (key[0], "", None))
                 # Fall back to graph node name when source lookup fails
                 if title == key[0]:
@@ -867,6 +1082,14 @@ async def _find_graph_results(
                     relevance_score=score,
                     signals=[provenance],
                     url=url,
+                    targets=[
+                        RetrievalTarget.GRAPH_NEIGHBORHOOD,
+                        RetrievalTarget.SOURCE_EVIDENCE,
+                    ],
+                    features=RetrievalFeatures(
+                        verification_state=VerificationState.SOURCE_EVIDENCE,
+                        graph_depth=graph_depth,
+                    ),
                 )
 
     except Exception:
@@ -876,6 +1099,8 @@ async def _find_graph_results(
         )
         return {}
 
+    for item in items.values():
+        _ensure_item_retrieval_metadata(item)
     return items
 
 
@@ -984,6 +1209,7 @@ async def find_content_by_source(
     workspace_id: UUID,
     ticket: LinearTicket,
     connected_sources: set[str] | None = None,
+    targets: list[RetrievalTarget] | None = None,
 ) -> AsyncGenerator[tuple[str, list[LinkedItem], str], None]:
     """Find related content and yield results grouped by source.
 
@@ -995,21 +1221,26 @@ async def find_content_by_source(
             not in this set.  When ``None``, query all sources (backward
             compatible).  Source names match keys in ``SOURCE_TYPE_MAP``.
     """
-    # Run existing queries — forward connected_sources to skip DB queries early
-    explicit = await _find_explicit_refs(session, workspace_id, ticket, connected_sources)
-    hybrid = await _find_hybrid_matches(session, workspace_id, ticket, connected_sources)
+    requested_targets = _validate_retrieval_targets(targets)
+    result = await _collect_targeted_linked_items(
+        session,
+        workspace_id,
+        ticket,
+        requested_targets=requested_targets,
+        connected_sources=connected_sources,
+    )
+    merged_items = result.items
 
-    # Merge
-    merged: dict[tuple[str, UUID], LinkedItem] = {}
-    for signal_items in [explicit, hybrid]:
-        for key, item in signal_items.items():
-            if key in merged:
-                merged[key].relevance_score = min(merged[key].relevance_score + item.relevance_score, 1.0)
-                merged[key].signals.extend(item.signals)
-                if not merged[key].url and item.url:
-                    merged[key].url = item.url
-            else:
-                merged[key] = item
+    def _source_targets(source_name: str) -> set[RetrievalTarget]:
+        if source_name == "graph":
+            return {
+                RetrievalTarget.GRAPH_NEIGHBORHOOD,
+                RetrievalTarget.DECISION_RECEIPTS,
+            }
+        return {
+            RetrievalTarget.SOURCE_EVIDENCE,
+            RetrievalTarget.RELATED_WORK,
+        }
 
     # Group by source — skip disconnected providers when caller provides the set
     for source_name, source_types in SOURCE_TYPE_MAP.items():
@@ -1017,13 +1248,15 @@ async def find_content_by_source(
             continue
 
         source_items = [
-            item for item in merged.values()
+            item for item in merged_items
             if item.source_type in source_types
         ]
         source_items.sort(key=lambda x: x.relevance_score, reverse=True)
 
         # Build detail string
-        if source_name == "github":
+        if not (_source_targets(source_name) & set(requested_targets)):
+            detail = "Target not requested"
+        elif source_name == "github":
             prs = sum(1 for i in source_items if i.source_type == "github_pull_request")
             reviews = sum(1 for i in source_items if i.source_type == "github_review")
             parts = []
@@ -1066,6 +1299,18 @@ async def find_content_by_source(
             detail = f"Found {len(source_items)} items" if source_items else "No items found"
 
         yield source_name, source_items, detail
+
+    graph_items = [
+        item for item in merged_items
+        if _source_group_for_type(item.source_type) == "graph"
+    ]
+    if graph_items:
+        graph_items.sort(key=lambda x: x.relevance_score, reverse=True)
+        detail = (
+            f"Found {len(graph_items)} graph item"
+            f"{'s' if len(graph_items) != 1 else ''}"
+        )
+        yield "graph", graph_items, detail
 
 
 async def _llm_rerank(
@@ -1164,9 +1409,11 @@ async def _fetch_communities_for_ticket(
     Failure modes (missing tables, DB errors) return [] so synthesis silently degrades.
     """
     from collections import Counter
+
+    from sqlalchemy.exc import OperationalError, ProgrammingError
+
     from src.models.graph_community import GraphCommunity
     from src.models.graph_edge import GraphEdge
-    from sqlalchemy.exc import OperationalError, ProgrammingError
 
     try:
         # 1. Assignee primary community: find ticket node, follow assigned_to edge
@@ -1270,10 +1517,109 @@ async def _fetch_communities_for_ticket(
         return []
 
 
+async def _collect_targeted_linked_items(
+    session: AsyncSession,
+    workspace_id: UUID,
+    ticket: LinearTicket,
+    *,
+    requested_targets: frozenset[RetrievalTarget],
+    connected_sources: set[str] | None = None,
+) -> LinkingResult:
+    """Collect related content once using the target-aware retrieval policy."""
+    signal_results: list[dict[tuple[str, UUID], LinkedItem]] = []
+
+    if requested_targets & _SOURCE_RETRIEVAL_TARGETS:
+        explicit = await _find_explicit_refs(
+            session, workspace_id, ticket, connected_sources
+        )
+        hybrid = await _find_hybrid_matches(
+            session, workspace_id, ticket, connected_sources
+        )
+        signal_results.extend([explicit, hybrid])
+
+    if requested_targets & _GRAPH_RETRIEVAL_TARGETS:
+        graph = await _find_graph_results(session, workspace_id, ticket)
+        signal_results.append(graph)
+
+    filtered_results: list[dict[tuple[str, UUID], LinkedItem]] = []
+    for signal_items in signal_results:
+        filtered: dict[tuple[str, UUID], LinkedItem] = {}
+        for key, item in signal_items.items():
+            if not _item_matches_targets(item, requested_targets):
+                continue
+            if not _source_group_matches_connected_sources(item, connected_sources):
+                item.metadata["route_omission_reason"] = "source_not_connected"
+                continue
+            filtered[key] = item
+        if filtered:
+            filtered_results.append(filtered)
+
+    # Merge results using Reciprocal Rank Fusion (RRF) for better ranking.
+    merged: dict[tuple[str, UUID], LinkedItem] = {}
+    signal_ranked_lists: list[list[tuple[tuple[str, UUID], LinkedItem]]] = []
+    for signal_items in filtered_results:
+        ranked = sorted(
+            signal_items.items(),
+            key=lambda x: x[1].relevance_score,
+            reverse=True,
+        )
+        if ranked:
+            signal_ranked_lists.append(ranked)
+
+    rrf_scores: dict[tuple[str, UUID], float] = {}
+    for ranked_list in signal_ranked_lists:
+        for rank, (key, _item) in enumerate(ranked_list):
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (RRF_K + rank + 1)
+
+    for signal_items in filtered_results:
+        for key, item in signal_items.items():
+            _ensure_item_retrieval_metadata(item)
+            if key in merged:
+                existing = merged[key]
+                existing.signals.extend(item.signals)
+                for target in item.targets:
+                    if target not in existing.targets:
+                        existing.targets.append(target)
+                existing.metadata["retrieval_targets"] = [
+                    target.value for target in existing.targets
+                ]
+                existing.metadata["retrieval_signals"] = list(existing.signals)
+                if not existing.url and item.url:
+                    existing.url = item.url
+            else:
+                merged[key] = item
+
+    if rrf_scores:
+        max_rrf = max(rrf_scores.values())
+        for key, item in merged.items():
+            item.relevance_score = (
+                rrf_scores.get(key, 0.0) / max_rrf if max_rrf > 0 else 0.0
+            )
+            item.features.rrf_score = item.relevance_score
+
+    merged_items = list(merged.values())
+    reranked = await _llm_rerank(ticket, merged_items)
+
+    for item in reranked:
+        _ensure_item_retrieval_metadata(item)
+
+    budget_trimmed = _apply_token_budget(reranked)
+    communities = await _fetch_communities_for_ticket(
+        session, workspace_id, ticket, budget_trimmed
+    )
+    return LinkingResult(
+        ticket_id=ticket.id,
+        ticket_identifier=ticket.identifier,
+        items=budget_trimmed,
+        communities=communities,
+    )
+
+
 async def find_related_content(
     session: AsyncSession,
     workspace_id: UUID,
     ticket: LinearTicket,
+    targets: list[RetrievalTarget] | None = None,
 ) -> LinkingResult:
     """Find all content related to a Linear ticket using multi-signal search.
 
@@ -1289,62 +1635,10 @@ async def find_related_content(
     Returns:
         LinkingResult with ranked list of LinkedItem objects.
     """
-    # Gather signals from all three sources
-    explicit = await _find_explicit_refs(session, workspace_id, ticket)
-    hybrid = await _find_hybrid_matches(session, workspace_id, ticket)
-    graph = await _find_graph_results(session, workspace_id, ticket)
-
-    # Merge results using Reciprocal Rank Fusion (RRF) for better ranking.
-    # RRF combines multiple ranked lists more robustly than simple score addition
-    # by using rank positions: RRF(d) = Σ 1/(k + rank_i(d)) across all signals.
-    # This prevents high-scoring items from one signal dominating.
-    merged: dict[tuple[str, UUID], LinkedItem] = {}
-
-    # Build per-signal ranked lists sorted by score descending
-    signal_ranked_lists: list[list[tuple[tuple[str, UUID], LinkedItem]]] = []
-    for signal_items in [explicit, hybrid, graph]:
-        ranked = sorted(signal_items.items(), key=lambda x: x[1].relevance_score, reverse=True)
-        if ranked:
-            signal_ranked_lists.append(ranked)
-
-    # Compute RRF score for each item across all signals
-    rrf_scores: dict[tuple[str, UUID], float] = {}
-    for ranked_list in signal_ranked_lists:
-        for rank, (key, item) in enumerate(ranked_list):
-            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (RRF_K + rank + 1)
-
-    # Merge items with RRF scores
-    for signal_items in [explicit, hybrid, graph]:
-        for key, item in signal_items.items():
-            if key in merged:
-                existing = merged[key]
-                existing.signals.extend(item.signals)
-                if not existing.url and item.url:
-                    existing.url = item.url
-            else:
-                merged[key] = item
-
-    # Apply RRF scores (normalized to 0-1 range)
-    if rrf_scores:
-        max_rrf = max(rrf_scores.values())
-        for key, item in merged.items():
-            item.relevance_score = rrf_scores.get(key, 0.0) / max_rrf if max_rrf > 0 else 0.0
-
-    # Rerank merged items using LLM-based relevance scoring.
-    # The LLM evaluates each item against the ticket query to produce
-    # a more accurate relevance score than retrieval-time heuristics.
-    merged_items = list(merged.values())
-    reranked = await _llm_rerank(ticket, merged_items)
-
-    # Apply token budget trimming with signal diversity guarantee
-    budget_trimmed = _apply_token_budget(reranked)
-
-    communities = await _fetch_communities_for_ticket(
-        session, workspace_id, ticket, budget_trimmed
-    )
-    return LinkingResult(
-        ticket_id=ticket.id,
-        ticket_identifier=ticket.identifier,
-        items=budget_trimmed,
-        communities=communities,
+    requested_targets = _validate_retrieval_targets(targets)
+    return await _collect_targeted_linked_items(
+        session,
+        workspace_id,
+        ticket,
+        requested_targets=requested_targets,
     )
