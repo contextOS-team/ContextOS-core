@@ -17,6 +17,12 @@ from src.models.integration import WorkspaceIntegration
 from src.models.suggestion import Suggestion
 from src.services.audit import log_audit_event
 from src.services.llm_client import LLMClient, get_llm_client
+from src.services.suggestion_quality import (
+    SuggestionFamily,
+    SuggestionFamilyAssessment,
+    SuggestionGroundingTrace,
+    assess_suggestion_family,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -468,10 +474,33 @@ def build_missing_source_suggestion(
 ) -> Suggestion | None:
     """Build a concrete missing-source suggestion after a relevance verdict."""
     present_evidence = present_evidence or _present_evidence_labels(decision)
+    props = decision.properties or {}
+    source_link = props.get("source_link")
+    source_quote = props.get("source_quote")
+    source_text = props.get("rationale") or props.get("source_quote") or ""
+    grounding = SuggestionGroundingTrace(
+        source_type=decision.source_type,
+        source_id=str(decision.source_id) if decision.source_id else str(decision.id),
+        source_link=source_link if isinstance(source_link, str) else None,
+        source_quote=source_quote if isinstance(source_quote, str) else None,
+        retrieval_signals=["graph_decision"],
+        metadata={"source_text": source_text},
+    )
+    quality_assessment: SuggestionFamilyAssessment | None = None
+    if assessment is not None:
+        quality_assessment = assess_suggestion_family(
+            family=SuggestionFamily.MISSING_SOURCE,
+            grounding=grounding,
+            reason=assessment.reason,
+            confidence=assessment.confidence,
+            required_evidence=["source_ref"],
+        )
     if (
         not present_evidence
         or assessment is None
         or not assessment.should_suggest
+        or quality_assessment is None
+        or not quality_assessment.should_surface
         or assessment.confidence < DESIGN_REVIEW_CONFIDENCE_THRESHOLD
         or _has_design_or_meeting_evidence(decision)
     ):
@@ -480,7 +509,6 @@ def build_missing_source_suggestion(
     present_label = " and ".join(present_evidence)
     body = f"{present_label} evidence exists, but no design review is linked."
     fingerprint = _missing_source_fingerprint(workspace_id, decision, present_evidence)
-    props = decision.properties or {}
     evidence = {
         "source_refs": [
             {
@@ -503,11 +531,14 @@ def build_missing_source_suggestion(
         "decision_title": decision.name,
         "missing_evidence_type": MISSING_DESIGN_EVIDENCE,
         "coverage_assessment": assessment.model_dump(),
+        "explanation": quality_assessment.explanation(),
     }
     provenance = {
         "generator": MISSING_SOURCE_COVERAGE_GENERATOR,
         "source": "graph_decision",
         "decision_fingerprint": decision.fingerprint,
+        "retrieval_signals": grounding.retrieval_signals,
+        "quality_gate": quality_assessment.quality_gate(),
     }
     return Suggestion(
         workspace_id=workspace_id,
