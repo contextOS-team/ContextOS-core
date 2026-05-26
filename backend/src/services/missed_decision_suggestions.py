@@ -11,6 +11,11 @@ from sqlmodel import select
 from src.models.missed_decision import MissedDecisionCandidate
 from src.models.suggestion import Suggestion
 from src.services.missed_decision_extractor import is_surfaceable_confidence
+from src.services.suggestion_quality import (
+    SuggestionFamily,
+    SuggestionGroundingTrace,
+    assess_suggestion_family,
+)
 from src.services.suggestions import (
     SUGGESTION_STATUS_OPEN,
     SUGGESTION_STATUS_SNOOZED,
@@ -60,6 +65,25 @@ def build_missed_decision_suggestion(
         return None
 
     candidate_id = _candidate_id(candidate)
+    grounding = SuggestionGroundingTrace(
+        source_type=candidate.source_type,
+        source_id=str(candidate.source_id),
+        source_link=candidate.source_link,
+        source_quote=candidate.source_quote,
+        retrieval_signals=["missed_decision_candidate"],
+        action_hints=candidate.action_hints or [],
+        metadata={"candidate_id": str(candidate_id)},
+    )
+    assessment = assess_suggestion_family(
+        family=SuggestionFamily.MISSED_DECISION,
+        grounding=grounding,
+        reason="Source-backed missed-decision candidate is ready for review.",
+        confidence=1.0 if candidate.confidence == "very_high" else 0.85,
+        required_evidence=["source_ref", "source_link", "source_quote"],
+    )
+    if not assessment.should_surface:
+        return None
+
     return Suggestion(
         workspace_id=candidate.workspace_id,
         type=SUGGESTION_TYPE_MISSED_DECISION,
@@ -90,6 +114,7 @@ def build_missed_decision_suggestion(
             "affected_systems": candidate.affected_systems or [],
             "match_status": candidate.match_status,
             "action_hints": candidate.action_hints or [],
+            "explanation": assessment.explanation(),
         },
         provenance={
             "generator": MISSED_DECISION_SUGGESTION_GENERATOR,
@@ -97,6 +122,7 @@ def build_missed_decision_suggestion(
             "candidate_id": str(candidate_id),
             "quote_fingerprint": candidate.quote_fingerprint,
             "decision_fingerprint": candidate.decision_fingerprint,
+            "quality_gate": assessment.quality_gate(),
         },
         last_seen_at=_now(),
     )

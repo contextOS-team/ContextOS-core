@@ -280,9 +280,41 @@ async def test_publish_missed_decision_suggestion_references_candidate() -> None
     assert suggestion.entity_type == "missed_decision_candidate"
     assert suggestion.entity_id == candidate.id
     assert suggestion.evidence["source_quote"] == candidate.source_quote
+    assert suggestion.evidence["source_link"] == candidate.source_link
+    assert suggestion.details["candidate_id"] == str(candidate.id)
+    assert suggestion.details["match_status"] == candidate.match_status
+    assert suggestion.details["explanation"]["grounding_family"] == "missed_decision"
+    assert suggestion.provenance["candidate_id"] == str(candidate.id)
+    assert suggestion.provenance["quality_gate"]["passed"] is True
     assert candidate.lifecycle_status == "surfaced"
     assert candidate.suggestion_id == suggestion.id
     session.add.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_missed_decision_suggestion_requires_quote_and_link() -> None:
+    candidate = _candidate(source_quote="", source_link="")
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.execute = AsyncMock(return_value=_result([]))
+    session.flush = AsyncMock()
+
+    suggestion = await publish_missed_decision_suggestion(session, candidate)
+
+    assert suggestion is None
+    session.add.assert_not_called()
+
+
+def test_missed_decision_schema_checkpoint_for_payload_contract() -> None:
+    """Optional live DB inspection:
+    `psql "$LOCAL_SUPABASE_URL" -c '\\d suggestions'`
+    `psql "$LOCAL_SUPABASE_URL" -c '\\d missed_decision_candidates'`
+    """
+    assert Suggestion.__tablename__ == "suggestions"
+    assert MissedDecisionCandidate.__tablename__ == "missed_decision_candidates"
+    assert hasattr(Suggestion, "evidence")
+    assert hasattr(Suggestion, "details")
+    assert hasattr(Suggestion, "provenance")
 
 
 @pytest.mark.asyncio
