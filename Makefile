@@ -1,4 +1,4 @@
-.PHONY: dev dev-frontend dev-backend dev-ngrok setup setup-backend check-prereqs setup-frontend-env db-reset lint typecheck test codegen clean
+.PHONY: dev dev-frontend dev-backend dev-ngrok setup setup-backend check-prereqs setup-frontend-env db-reset lint typecheck test eval-graph-rag codegen clean
 
 dev:
 	./scripts/dev.sh
@@ -83,6 +83,9 @@ typecheck:
 
 test:
 	cd backend && uv run pytest || (cd backend && . .venv/bin/activate && pytest)
+
+eval-graph-rag:
+	cd backend && uv run python -m src.evals.graph_rag --dataset evals/datasets/graph_rag/golden.jsonl
 
 codegen:
 	@echo "OpenAPI TypeScript codegen deferred to Phase 2 (see CONTEXT.md cross-team contracts)."
