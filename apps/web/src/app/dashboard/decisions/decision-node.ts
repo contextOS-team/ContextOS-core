@@ -9,6 +9,7 @@ export interface DecisionNodeView {
   authorName: string | null
   participants: string[]
   date: string | null
+  capturedAt: string | null
   confidence: number | null
 }
 
@@ -60,10 +61,17 @@ export function toDecisionView(node: ApiNode): DecisionNodeView {
     authorName: asString(props.author_name) ?? asString(props.person_name) ?? participants[0] ?? null,
     participants,
     date: asString(props.date),
+    capturedAt: asString(node.created_at),
     confidence: asNumber(props.confidence),
   }
 }
 
+export function getDecisionRecencyDate(
+  decision: Pick<DecisionNodeView, 'capturedAt' | 'date'>
+): string | null {
+  return decision.capturedAt ?? decision.date
+}
+
 export function sortDecisions(a: DecisionNodeView, b: DecisionNodeView): number {
-  return (b.date ?? '').localeCompare(a.date ?? '')
+  return (getDecisionRecencyDate(b) ?? '').localeCompare(getDecisionRecencyDate(a) ?? '')
 }

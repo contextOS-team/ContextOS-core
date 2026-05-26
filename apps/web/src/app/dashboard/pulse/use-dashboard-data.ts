@@ -2,16 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import type { LensGraphResponse } from '@/components/graph/types'
+import type { ApiNode } from '@/components/graph/types'
 import {
   addMissedDecisionAsEvidence,
   deferMissedDecision,
   dismissMissedDecision,
+  fetchDecisions,
   getDashboardAttention,
   getDashboardSuggestions,
   getMissedDecisionReviewSuggestions,
   ignoreMissedDecisionDuplicate,
-  fetchMyWorkGraph,
   saveMissedDecisionAsNewDecision,
   type AttentionItem,
   type MissedDecisionReviewSuggestion,
@@ -35,7 +35,7 @@ const EMPTY_DELTA: Delta = {
 export const DASHBOARD_REQUEST_TIMEOUT_MS = 8_000
 
 interface DashboardDataState extends NeedsReviewSuggestionsState {
-  decisions: LensGraphResponse | null
+  decisions: ApiNode[] | null
   suggestions: SuggestionItem[]
   contextItems: ContextPageRow[]
   needsYouItems: NeedsYouItem[]
@@ -184,7 +184,7 @@ export function useDashboardData(
         withDashboardTimeout(getDashboardAttention(), 'Dashboard attention'),
         withDashboardTimeout(getDashboardSuggestions(3), 'Dashboard suggestions'),
         withDashboardTimeout(fetchContextPages(), 'Dashboard context'),
-        withDashboardTimeout(fetchMyWorkGraph(), 'Dashboard graph'),
+        withDashboardTimeout(fetchDecisions(20), 'Dashboard decisions'),
         withDashboardTimeout(
           fetchActivityDelta(workspaceId, lastVisitedAt),
           'Dashboard activity'

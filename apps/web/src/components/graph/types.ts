@@ -76,6 +76,8 @@ export interface ApiNode {
   name: string
   depth: number
   properties: Record<string, unknown>
+  created_at?: string | null
+  updated_at?: string | null
 }
 
 export interface ApiEdge {

@@ -3,7 +3,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { LensGraphResponse } from '@/components/graph/types'
+import type { ApiNode } from '@/components/graph/types'
 import type { SuggestionItem } from '@/lib/api'
 import { Headline } from '../headline'
 import { ActiveContext } from '../active-context'
@@ -34,29 +34,48 @@ const deltaWithTuesdayNeed: Delta = {
   },
 }
 
-const graphWithQuote: LensGraphResponse = {
-  lens: 'my_work',
-  clusters: [],
-  all_edges: [],
-  all_nodes: [
-    {
-      id: 'decision-1',
-      entity_type: 'Decision',
-      name: 'Use old estimate',
-      depth: 0,
-      properties: {
-        date: '2026-05-20T10:00:00Z',
-        source_quote: 'Use old estimate for now.',
-        author_name: 'Daulet',
-        source_channel: '#dev-room',
-        participants: ['Daulet', 'Vasiliy'],
-      },
+const graphWithQuote: ApiNode[] = [
+  {
+    id: 'decision-1',
+    entity_type: 'Decision',
+    name: 'Use old estimate',
+    depth: 0,
+    properties: {
+      date: '2026-05-20T10:00:00Z',
+      source_quote: 'Use old estimate for now.',
+      author_name: 'Daulet',
+      source_channel: '#dev-room',
+      participants: ['Daulet', 'Vasiliy'],
     },
-  ],
-  node_count: 1,
-  edge_count: 0,
-  truncated: false,
-}
+  },
+]
+
+const graphWithNewlyCapturedDecision = {
+  newCapture: {
+    id: 'decision-new-capture',
+    entity_type: 'Decision',
+    name: 'Captured old source decision',
+    depth: 0,
+    created_at: '2026-05-20T11:00:00Z',
+    properties: {
+      date: '2026-05-16T10:00:00Z',
+      author_name: 'Daulet',
+      source_channel: '#dev-room',
+    },
+  },
+  oldCapture: {
+    id: 'decision-old-capture',
+    entity_type: 'Decision',
+    name: 'Older capture with newer source date',
+    depth: 0,
+    created_at: '2026-05-18T10:00:00Z',
+    properties: {
+      date: '2026-05-19T10:00:00Z',
+      author_name: 'Daulet',
+      source_channel: '#dev-room',
+    },
+  },
+} satisfies Record<string, ApiNode>
 
 function renderWithSeenProvider(ui: React.ReactElement) {
   return render(<SeenItemsProvider>{ui}</SeenItemsProvider>)
@@ -130,6 +149,20 @@ describe('pulse components', () => {
     expect(container.textContent).toBe('')
   })
 
+  it('tolerates legacy graph-shaped decision data during refresh', () => {
+    const legacyData = { all_nodes: graphWithQuote } as unknown as ApiNode[]
+
+    renderWithSeenProvider(
+      <RecentDecisions
+        data={legacyData}
+        lastVisitedAt={new Date('2026-05-19T00:00:00Z')}
+      />
+    )
+
+    expect(screen.getByRole('link', { name: /Use old estimate/ }).getAttribute('href'))
+      .toBe('/dashboard/decisions/decision-1')
+  })
+
   it('renders decision provenance quotes when source_quote exists', () => {
     renderWithSeenProvider(<RecentDecisions data={graphWithQuote} lastVisitedAt={new Date('2026-05-19T00:00:00Z')} />)
 
@@ -141,6 +174,27 @@ describe('pulse components', () => {
       .toBe('/dashboard/decisions/decision-1')
     expect(screen.getByRole('link', { name: /view all/i }).getAttribute('href'))
       .toBe('/dashboard/decisions')
+  })
+
+  it('prioritizes decisions captured since the last visit over older capture rows', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-20T12:00:00Z'))
+
+    renderWithSeenProvider(
+      <RecentDecisions
+        data={[
+          graphWithNewlyCapturedDecision.newCapture,
+          graphWithNewlyCapturedDecision.oldCapture,
+        ]}
+        lastVisitedAt={new Date('2026-05-20T00:00:00Z')}
+      />
+    )
+
+    const decisionLinks = screen.getAllByRole('link').filter((link) => (
+      link.getAttribute('href')?.startsWith('/dashboard/decisions/')
+    ))
+    expect(decisionLinks[0].textContent).toContain('Captured old source decision')
+    expect(decisionLinks[0].textContent).toContain('1h ago')
   })
 
   it('renders Active context as an artifact card with bracket tags', () => {

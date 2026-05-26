@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import type { LensGraphResponse } from '@/components/graph/types'
+import type { ApiNode } from '@/components/graph/types'
 import { formatRelativeTime } from '@/lib/utils'
 import {
   formatDecisionChannels,
   getDecisionPeople,
+  getDecisionRecencyDate,
   sortDecisions,
   toDecisionView,
   type DecisionNodeView,
@@ -15,8 +16,16 @@ import { useSessionSeenItems } from './since-last-visit/use-session-seen-items'
 import { NewItemMarker } from './new-item-marker'
 
 interface RecentDecisionsProps {
-  data: LensGraphResponse | null
+  data: ApiNode[] | null
   lastVisitedAt: Date | null
+}
+
+function decisionNodesFromData(data: unknown): ApiNode[] {
+  if (!data) return []
+  if (Array.isArray(data)) return data as ApiNode[]
+
+  const legacyNodes = (data as { all_nodes?: unknown }).all_nodes
+  return Array.isArray(legacyNodes) ? (legacyNodes as ApiNode[]) : []
 }
 
 function DecisionCard({
@@ -27,8 +36,9 @@ function DecisionCard({
   lastVisitedAt: Date | null
 }) {
   const seen = useSessionSeenItems()
-  const isNew = decision.date && lastVisitedAt
-    ? new Date(decision.date) > lastVisitedAt
+  const recencyDate = getDecisionRecencyDate(decision)
+  const isNew = recencyDate && lastVisitedAt
+    ? new Date(recencyDate) > lastVisitedAt
     : false
   const showMarker = Boolean(isNew || seen.hasSeen(decision.id))
 
@@ -40,7 +50,8 @@ function DecisionCard({
   const channels = formatDecisionChannels(decision.sourceChannel)
   const visibleChannels = channels.slice(0, 2)
   const hiddenChannelCount = Math.max(0, channels.length - visibleChannels.length)
-  const relativeTime = decision.date ? formatRelativeTime(decision.date) : null
+  const relativeTime = recencyDate ? formatRelativeTime(recencyDate) : null
+  const sourceRelativeTime = decision.date ? formatRelativeTime(decision.date) : null
 
   return (
     <Link
@@ -83,7 +94,7 @@ function DecisionCard({
                 {' '}in <span className="pulse-mono">{channels.join(', ')}</span>
               </>
             )}
-            {decision.date && <>, {formatRelativeTime(decision.date)}</>}
+            {sourceRelativeTime && <>, {sourceRelativeTime}</>}
           </p>
         </blockquote>
       )}
@@ -93,8 +104,7 @@ function DecisionCard({
 
 export function RecentDecisions({ data, lastVisitedAt }: RecentDecisionsProps) {
   const decisions = useMemo(() => {
-    if (!data) return []
-    return data.all_nodes
+    return decisionNodesFromData(data)
       .filter((node) => node.entity_type === 'Decision')
       .map(toDecisionView)
       .sort(sortDecisions)

@@ -31,7 +31,9 @@ vi.mock('@/lib/supabase/client', () => ({
 
 vi.mock('@/lib/api', () => ({
   getDashboardAttention: vi.fn(async () => []),
-  fetchMyWorkGraph: vi.fn(async () => null),
+  getDashboardSuggestions: vi.fn(async () => []),
+  getMissedDecisionReviewSuggestions: vi.fn(async () => []),
+  fetchDecisions: vi.fn(async () => []),
 }))
 
 vi.mock('@/lib/context-feed', () => ({

@@ -11,7 +11,7 @@ const apiMocks = vi.hoisted(() => ({
   getDashboardAttention: vi.fn(),
   getDashboardSuggestions: vi.fn(),
   getMissedDecisionReviewSuggestions: vi.fn(),
-  fetchMyWorkGraph: vi.fn(),
+  fetchDecisions: vi.fn(),
   addMissedDecisionAsEvidence: vi.fn(),
   deferMissedDecision: vi.fn(),
   dismissMissedDecision: vi.fn(),
@@ -32,7 +32,7 @@ vi.mock('@/lib/api', () => ({
   getDashboardAttention: apiMocks.getDashboardAttention,
   getDashboardSuggestions: apiMocks.getDashboardSuggestions,
   getMissedDecisionReviewSuggestions: apiMocks.getMissedDecisionReviewSuggestions,
-  fetchMyWorkGraph: apiMocks.fetchMyWorkGraph,
+  fetchDecisions: apiMocks.fetchDecisions,
   addMissedDecisionAsEvidence: apiMocks.addMissedDecisionAsEvidence,
   deferMissedDecision: apiMocks.deferMissedDecision,
   dismissMissedDecision: apiMocks.dismissMissedDecision,
@@ -67,6 +67,7 @@ function Probe() {
         needsReviewSuggestions: data.needsReviewSuggestions.length,
         needsReviewError: data.needsReviewError,
         contextItems: data.contextItems.length,
+        decisions: data.decisions?.length ?? 0,
       })}
     </output>
   )
@@ -82,7 +83,7 @@ describe('useDashboardData', () => {
     apiMocks.getDashboardAttention.mockResolvedValue([])
     apiMocks.getDashboardSuggestions.mockRejectedValue(new Error('Failed to fetch'))
     apiMocks.getMissedDecisionReviewSuggestions.mockResolvedValue([])
-    apiMocks.fetchMyWorkGraph.mockResolvedValue(null)
+    apiMocks.fetchDecisions.mockResolvedValue([])
     contextMocks.fetchContextPages.mockResolvedValue([{ id: 'ctx-1' }])
     activityMocks.fetchActivityDelta.mockResolvedValue([])
     activityMocks.bucketDelta.mockReturnValue({
@@ -103,12 +104,45 @@ describe('useDashboardData', () => {
     })
   })
 
+  it('loads workspace decisions for the home Recent decisions feed', async () => {
+    apiMocks.getDashboardAttention.mockResolvedValue([])
+    apiMocks.getDashboardSuggestions.mockResolvedValue([])
+    apiMocks.getMissedDecisionReviewSuggestions.mockResolvedValue([])
+    apiMocks.fetchDecisions.mockResolvedValue([
+      {
+        id: 'decision-1',
+        entity_type: 'Decision',
+        name: 'Approved layouts for active contractual orders in the cockpit admin',
+        depth: 0,
+        created_at: '2026-05-25T13:48:04Z',
+        properties: { date: '2026-05-25' },
+      },
+    ])
+    contextMocks.fetchContextPages.mockResolvedValue([])
+    activityMocks.fetchActivityDelta.mockResolvedValue([])
+    activityMocks.bucketDelta.mockReturnValue({
+      decisions: { count: 1, items: [] },
+      sources: { count: 0, items: [] },
+      needsYou: { topUrgentItem: null, items: [] },
+    })
+
+    render(<Probe />)
+
+    await waitFor(() => {
+      const state = JSON.parse(screenText())
+
+      expect(state.isLoading).toBe(false)
+      expect(state.decisions).toBe(1)
+      expect(apiMocks.fetchDecisions).toHaveBeenCalledWith(20)
+    })
+  })
+
   it('does not leave the dashboard loading when suggestions never settle', async () => {
     vi.useFakeTimers()
     apiMocks.getDashboardAttention.mockResolvedValue([])
     apiMocks.getDashboardSuggestions.mockReturnValue(new Promise(() => {}))
     apiMocks.getMissedDecisionReviewSuggestions.mockResolvedValue([])
-    apiMocks.fetchMyWorkGraph.mockResolvedValue(null)
+    apiMocks.fetchDecisions.mockResolvedValue([])
     contextMocks.fetchContextPages.mockResolvedValue([{ id: 'ctx-1' }])
     activityMocks.fetchActivityDelta.mockResolvedValue([])
     activityMocks.bucketDelta.mockReturnValue({
