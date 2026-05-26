@@ -8,10 +8,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from src.evals.graph_rag import EvalThresholds, evaluate_case, evaluate_dataset, load_dataset
+from src.evals.graph_rag import (
+    EvalThresholds,
+    evaluate_case,
+    evaluate_dataset,
+    load_dataset,
+)
 from src.services.graph_rag_types import (
     FreshnessState,
-    GraphRagResult,
     RetrievalFeatures,
     RetrievalTarget,
     RetrievalTraceItem,
