@@ -35,9 +35,15 @@ import { createClient } from '@/lib/supabase/client'
 import { useContextPagesRealtime } from '@/hooks/use-context-pages-realtime'
 import { apiFetchSSE, SOURCE_LABELS } from '@/lib/api'
 import { GenerationProgress } from '@/components/generation-progress'
+import {
+  getSourceSignalLabels,
+  hasSourceExplanation,
+  RetrievalSignalChip,
+  SourcePathDisclosure,
+} from './source-explanations'
 import type { GenerationState } from '@/lib/context-feed'
+import type { ContextPageSource } from '@/lib/api'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
-
 
 // ---------------------------------------------------------------------------
 // Source type config
@@ -171,7 +177,7 @@ interface ContextPageData {
   jira_issue_id: string | null
   status: string
   content: string
-  sources: Array<{ type: string; id: string; title: string; relevance_score: number; url?: string }>
+  sources: ContextPageSource[]
   generated_at: string | null
   updated_at: string
 }
@@ -232,7 +238,7 @@ function ContentSection({
 function SourceSidebar({
   sources,
 }: {
-  sources: Array<{ type: string; id: string; title: string; relevance_score: number; url?: string }>
+  sources: ContextPageSource[]
 }) {
   const grouped = useMemo(() => {
     const groups: Record<string, typeof sources> = {}
@@ -274,6 +280,9 @@ function SourceSidebar({
             <div className="space-y-0.5">
               {items.map((source, i) => {
                 const config = SOURCE_TYPE_CONFIG[source.type]
+                const rowKey = `${source.type}-${source.id}-${i}`
+                const explanationAvailable = hasSourceExplanation(source)
+                const signalLabels = getSourceSignalLabels(source)
                 const inner = (
                   <>
                     <span className="text-muted-foreground shrink-0 mt-0.5">
@@ -287,22 +296,49 @@ function SourceSidebar({
                     </span>
                   </>
                 )
-                return source.url ? (
-                  <a
-                    key={`${source.type}-${source.id}-${i}`}
-                    href={source.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/30 transition-colors group cursor-pointer"
-                  >
-                    {inner}
-                  </a>
-                ) : (
+                if (!explanationAvailable && source.url) {
+                  return (
+                    <a
+                      key={rowKey}
+                      href={source.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/30 transition-colors group cursor-pointer"
+                    >
+                      {inner}
+                    </a>
+                  )
+                }
+
+                return (
                   <div
-                    key={`${source.type}-${source.id}-${i}`}
-                    className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/30 transition-colors group"
+                    key={rowKey}
+                    className="rounded-md px-2 py-1.5 text-xs hover:bg-muted/30 transition-colors group"
                   >
-                    {inner}
+                    <div className="flex min-w-0 items-start gap-2">
+                      {inner}
+                      {explanationAvailable && source.url && (
+                        <a
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ml-1 inline-flex min-h-6 shrink-0 items-center rounded-md px-1.5 text-[11px] font-medium text-primary transition-[color,transform] hover:text-primary/85 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          Open source
+                        </a>
+                      )}
+                    </div>
+                    {signalLabels.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {signalLabels.map((label) => (
+                          <RetrievalSignalChip key={label} label={label} />
+                        ))}
+                      </div>
+                    )}
+                    <SourcePathDisclosure
+                      source={source}
+                      disclosureId={`source-path-${groupName}-${i}`}
+                    />
                   </div>
                 )
               })}

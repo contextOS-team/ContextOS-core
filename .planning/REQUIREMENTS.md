@@ -31,10 +31,10 @@ Requirements for the product expansion and action-layer milestone. Each maps to 
 
 ### Graph RAG
 
-- [ ] **GRAG-01**: Retrieval can target decision receipts, source evidence, graph neighborhoods, and related work with explicit provenance.
-- [ ] **GRAG-02**: Graph RAG quality has an evaluation set covering decision recall, source-link accuracy, stale-context avoidance, and action-suggestion grounding.
-- [ ] **GRAG-03**: Retrieval ranking uses graph adjacency, source freshness, workspace scope, and decision verification state to improve relevance.
-- [ ] **GRAG-04**: Context pages and suggestion/action generation can explain which graph/source signals produced each answer.
+- [x] **GRAG-01**: Retrieval can target decision receipts, source evidence, graph neighborhoods, and related work with explicit provenance.
+- [x] **GRAG-02**: Graph RAG quality has an evaluation set covering decision recall, source-link accuracy, stale-context avoidance, and action-suggestion grounding.
+- [x] **GRAG-03**: Retrieval ranking uses graph adjacency, source freshness, workspace scope, and decision verification state to improve relevance.
+- [x] **GRAG-04**: Context pages and suggestion/action generation can explain which graph/source signals produced each answer.
 
 ### Action Layer
 
@@ -109,10 +109,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GAP-02 | Phase 45 | Complete |
 | GAP-03 | Phase 45 | Complete |
 | GAP-04 | Phase 45 | Complete |
-| GRAG-01 | Phase 46 | Pending |
-| GRAG-02 | Phase 46 | Pending |
-| GRAG-03 | Phase 46 | Pending |
-| GRAG-04 | Phase 46 | Pending |
+| GRAG-01 | Phase 46 | Complete |
+| GRAG-02 | Phase 46 | Complete |
+| GRAG-03 | Phase 46 | Complete |
+| GRAG-04 | Phase 46 | Complete |
 | ACTL-01 | Phase 47 | Pending |
 | ACTL-02 | Phase 47 | Pending |
 | ACTL-03 | Phase 47 | Pending |

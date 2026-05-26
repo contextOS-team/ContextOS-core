@@ -257,7 +257,7 @@ Plans:
 - [ ] **Phase 43: Multi-workspace Foundation** - Not started
 - [x] **Phase 44: Suggestion System and Dismissals** - Durable workspace suggestions and dismissal lifecycle (completed 2026-05-25)
 - [x] **Phase 45: Post-sync Missed-decision Detection** - Missed-decision scan, review, lifecycle, and Decision promotion complete (completed 2026-05-25; remote schema push follow-up pending)
-- [ ] **Phase 46: Graph RAG Quality Improvements** - Not started
+- [x] **Phase 46: Graph RAG Quality Improvements** - Complete (completed 2026-05-26)
 - [ ] **Phase 47: Confirmed Action Layer Bots** - Not started
 - [ ] **Phase 48: Figma Decision Evidence Integration** - Not started
 - [ ] **Phase 49: MCP and CLI Surface Research** - Not started
@@ -333,7 +333,7 @@ Plans:
   2. A repeatable evaluation set measures decision recall, source-link accuracy, stale-context avoidance, and action-suggestion grounding.
   3. Ranking uses graph adjacency, source freshness, workspace scope, and decision verification state.
   4. Context pages and suggestion/action generation can explain which graph/source signals supported an answer.
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans complete
 
 Plans:
 **Wave 1**
@@ -349,7 +349,7 @@ Plans:
 - [x] 46-05-PLAN.md -- Suggestion/action-hint grounding explanations and no-write boundary tests
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 46-06-PLAN.md -- Bounded context-sidebar source path explanation UI
+- [x] 46-06-PLAN.md -- Bounded context-sidebar source path explanation UI
 
 ### Phase 47: Confirmed Action Layer Bots
 
@@ -407,7 +407,7 @@ Phases execute in numeric order: 43 -> 44 -> 45 -> 46 -> 47, with 48 and 49 inde
 | 43. Multi-workspace Foundation | 0/TBD | Not started | - |
 | 44. Suggestion System and Dismissals | 4/4 | Complete    | 2026-05-25 |
 | 45. Post-sync Missed-decision Detection | 3/5 | In Progress|  |
-| 46. Graph RAG Quality Improvements | 6/7 | In Progress|  |
+| 46. Graph RAG Quality Improvements | 7/7 | Complete   | 2026-05-26 |
 | 47. Confirmed Action Layer Bots | 0/TBD | Not started | - |
 | 48. Figma Decision Evidence Integration | 0/TBD | Not started | - |
 | 49. MCP and CLI Surface Research | 0/TBD | Not started | - |

@@ -6,7 +6,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import type { GenerationStep } from '@/lib/api'
+import type { ContextPageSource, GenerationStep } from '@/lib/api'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -25,7 +25,7 @@ export interface ContextPageRow {
   title: string
   ticket_identifier: string | null
   status: 'draft' | 'generating' | 'ready' | 'stale' | 'error'
-  sources: Array<{ type: string; id: string; title: string; relevance_score: number }>
+  sources: ContextPageSource[]
   updated_at: string
   generated_at: string | null
 }

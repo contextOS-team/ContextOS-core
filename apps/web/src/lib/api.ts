@@ -835,6 +835,36 @@ export interface ContextPageSource {
   id: string
   title: string
   relevance_score: number
+  url?: string
+  targets?: string[]
+  retrieval_targets?: string[]
+  retrieval_signals?: string[]
+  retrieval_metadata?: Record<string, unknown>
+  features?: ContextPageSourceFeatures
+  retrieval_features?: ContextPageSourceFeatures
+  graph_path?: ContextPageSourceGraphPathStep[]
+  freshness?: string
+  verification_state?: string
+  source_originality?: string
+  why_selected?: string
+  suppress_reason?: string
+  route_omission_reason?: string
+  source_explanation?: string
+}
+
+export interface ContextPageSourceGraphPathStep {
+  node_id?: string
+  entity_type?: string
+  title?: string
+  relationship?: string | null
+}
+
+export interface ContextPageSourceFeatures extends Record<string, unknown> {
+  freshness_state?: string
+  verification_state?: string
+  source_originality?: string
+  graph_depth?: number
+  graph_path?: ContextPageSourceGraphPathStep[]
 }
 
 export interface ContextPageResponse {
