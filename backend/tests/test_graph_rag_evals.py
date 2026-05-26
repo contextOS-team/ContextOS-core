@@ -152,6 +152,41 @@ def test_eval_runner_fails_broken_source_links_and_missing_expected_ids(
     assert set(report.cases[0].failures) >= {"recall_at_5", "source_link_accuracy"}
 
 
+def test_eval_runner_fails_missing_ranking_provenance_fields(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "graph-rag-missing-features.jsonl"
+    row = {
+        "id": "missing-ranking-features",
+        "tags": ["provenance_completeness"],
+        "expected_source_ids": ["decision-1"],
+        "result": {
+            "query_id": "q-1",
+            "trace": [
+                RetrievalTraceItem(
+                    source_type="decision",
+                    source_id="decision-1",
+                    title="Decision without freshness",
+                    snippet="Decision text",
+                    source_link="/dashboard/source-reference?source_id=decision-1",
+                    targets=[RetrievalTarget.DECISION_RECEIPTS],
+                    signals=["graph_traversal"],
+                    features=RetrievalFeatures(
+                        verification_state=VerificationState.CONFIRMED_DECISION,
+                    ),
+                    selected=True,
+                    why_selected="Confirmed decision.",
+                ).model_dump(mode="json")
+            ],
+        },
+    }
+    dataset_path.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = evaluate_dataset(load_dataset(dataset_path), thresholds=EvalThresholds())
+
+    assert report.passed is False
+    assert report.cases[0].provenance_completeness == 0.0
+    assert "provenance_completeness" in report.cases[0].failures
+
+
 def test_bundled_graph_rag_golden_dataset_passes_thresholds() -> None:
     dataset_path = Path("evals/datasets/graph_rag/golden.jsonl")
 

@@ -4,7 +4,7 @@ Verifies the *current* contract (post privacy-aware rewrite):
 1. Groups IDs by source_type and issues one fallback query per type
    (preceded by a single type-agnostic Embedding metadata probe), never
    one query per ID.
-2. Returns ``(title, snippet, url)`` 3-tuples keyed by
+2. Returns SourceSummary values keyed by
    ``(source_type, source_id)`` for records that are found.
 3. Missing records are simply absent from the result map (callers treat
    absence as "no summary"); there is no synthetic fallback tuple.
@@ -83,19 +83,19 @@ async def test_bulk_lookup_groups_by_source_type():
 
     assert len(result) == 3
 
-    # Values are (title, snippet, url) 3-tuples.
-    title1, _snippet1, _url1 = result[("code_chunk", chunk_id_1)]
-    assert "function" in title1
-    assert "foo" in title1
-    assert "org/repo" in title1
+    summary1 = result[("code_chunk", chunk_id_1)]
+    assert "function" in summary1.title
+    assert "foo" in summary1.title
+    assert "org/repo" in summary1.title
+    assert summary1.features.source_originality == "indexed_source"
 
-    title2, _snippet2, _url2 = result[("code_chunk", chunk_id_2)]
-    assert "class" in title2
-    assert "Bar" in title2
+    summary2 = result[("code_chunk", chunk_id_2)]
+    assert "class" in summary2.title
+    assert "Bar" in summary2.title
 
-    title3, _snippet3, _url3 = result[("slack_message", slack_id)]
-    assert "alice" in title3
-    assert "dev" in title3
+    summary3 = result[("slack_message", slack_id)]
+    assert "alice" in summary3.title
+    assert "dev" in summary3.title
 
     # Batched by source_type, not per-ID: 3 keys must not yield 3
     # source-table queries. One Embedding probe + one fallback query per
@@ -135,7 +135,7 @@ async def test_bulk_lookup_handles_missing_records():
     # Only the found record is present; the missing one is simply omitted
     # so callers can treat absence as "no summary available".
     assert set(result.keys()) == {("code_chunk", found_id)}
-    assert "exists" in result[("code_chunk", found_id)][0]
+    assert "exists" in result[("code_chunk", found_id)].title
     assert ("code_chunk", missing_id) not in result
 
 

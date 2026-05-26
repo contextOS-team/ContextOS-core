@@ -333,16 +333,16 @@ Plans:
   2. A repeatable evaluation set measures decision recall, source-link accuracy, stale-context avoidance, and action-suggestion grounding.
   3. Ranking uses graph adjacency, source freshness, workspace scope, and decision verification state.
   4. Context pages and suggestion/action generation can explain which graph/source signals supported an answer.
-**Plans:** 2/7 plans executed
+**Plans:** 4/7 plans executed
 
 Plans:
 **Wave 1**
 - [x] 46-00-PLAN.md -- Wave 0 Graph RAG eval runner, golden dataset, trace contracts, and Make target
 - [x] 46-01-PLAN.md -- Wave 0 suggestion-family quality contracts and missed-decision eval extensions
-- [ ] 46-02-PLAN.md -- Target-aware retrieval routing, stream parity, and Phase 45 Decision property support
+- [x] 46-02-PLAN.md -- Target-aware retrieval routing, stream parity, and Phase 45 Decision property support
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 46-03-PLAN.md -- Freshness, verification, source originality, selected/dropped ranking features, and ranking evals
+- [x] 46-03-PLAN.md -- Freshness, verification, source originality, selected/dropped ranking features, and ranking evals
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 46-04-PLAN.md -- Context-page source explanation persistence and synthesis prompt provenance packets
@@ -407,7 +407,7 @@ Phases execute in numeric order: 43 -> 44 -> 45 -> 46 -> 47, with 48 and 49 inde
 | 43. Multi-workspace Foundation | 0/TBD | Not started | - |
 | 44. Suggestion System and Dismissals | 4/4 | Complete    | 2026-05-25 |
 | 45. Post-sync Missed-decision Detection | 3/5 | In Progress|  |
-| 46. Graph RAG Quality Improvements | 2/7 | In Progress|  |
+| 46. Graph RAG Quality Improvements | 4/7 | In Progress|  |
 | 47. Confirmed Action Layer Bots | 0/TBD | Not started | - |
 | 48. Figma Decision Evidence Integration | 0/TBD | Not started | - |
 | 49. MCP and CLI Surface Research | 0/TBD | Not started | - |

@@ -21,6 +21,76 @@ from tests.conftest import TEST_WORKSPACE_ID
 WORKSPACE_ID = UUID(TEST_WORKSPACE_ID)
 
 
+def test_provider_freshness_matrix_covers_source_families() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from src.services.graph_rag_freshness import calculate_freshness_state
+    from src.services.graph_rag_types import FreshnessState, VerificationState
+
+    now = datetime(2026, 5, 26, tzinfo=UTC)
+
+    assert (
+        calculate_freshness_state(
+            "slack_message",
+            {"slack_created_at": now - timedelta(days=2)},
+            now=now,
+        ).freshness_state
+        == FreshnessState.FRESH
+    )
+    assert (
+        calculate_freshness_state(
+            "notion_page",
+            {"notion_updated_at": now - timedelta(days=500)},
+            now=now,
+        ).freshness_state
+        == FreshnessState.STALE
+    )
+    assert (
+        calculate_freshness_state(
+            "github_pull_request",
+            {"github_merged_at": now - timedelta(days=3)},
+            now=now,
+        ).freshness_state
+        == FreshnessState.FRESH
+    )
+    assert (
+        calculate_freshness_state(
+            "linear_ticket",
+            {"linear_updated_at": now - timedelta(days=20)},
+            now=now,
+        ).freshness_state
+        == FreshnessState.FRESH
+    )
+    assert (
+        calculate_freshness_state(
+            "meeting_transcript",
+            {"meeting_date": now - timedelta(days=120)},
+            now=now,
+        ).freshness_state
+        == FreshnessState.UNKNOWN
+    )
+
+    generated = calculate_freshness_state(
+        "context_page",
+        {"generated_at": now - timedelta(days=1)},
+        verification_state=VerificationState.GENERATED_CONTEXT,
+        now=now,
+    )
+    assert generated.source_originality == "generated_context"
+    assert generated.freshness_state == FreshnessState.FRESH
+
+    unknown = calculate_freshness_state("telegram_message", {}, now=now)
+    assert unknown.freshness_state == FreshnessState.UNKNOWN
+
+    old_confirmed = calculate_freshness_state(
+        "decision",
+        {"source_timestamp": now - timedelta(days=400)},
+        verification_state=VerificationState.CONFIRMED_DECISION,
+        now=now,
+    )
+    assert old_confirmed.freshness_state is not FreshnessState.FRESH
+
+
 def _make_ticket(
     identifier: str = "ENG-42",
     title: str = "Fix auth flow",
@@ -168,6 +238,7 @@ async def test_find_graph_results_basic() -> None:
     # Check provenance paths contain "graph:" prefix
     for item in items.values():
         assert any(s.startswith("graph:") for s in item.signals)
+        assert item.features.graph_depth in (1, 2)
 
 
 @pytest.mark.asyncio
@@ -703,6 +774,140 @@ async def test_generated_context_decision_is_not_primary_source_evidence() -> No
     assert item.features.verification_state == VerificationState.GENERATED_CONTEXT
     assert RetrievalTarget.DECISION_RECEIPTS in item.targets
     assert RetrievalTarget.SOURCE_EVIDENCE not in item.targets
+
+
+@pytest.mark.asyncio
+async def test_confirmed_decision_drops_generated_context_duplicate() -> None:
+    from src.services.graph_rag_types import (
+        FreshnessState,
+        RetrievalFeatures,
+        RetrievalTarget,
+        VerificationState,
+    )
+    from src.services.linking import LinkedItem
+
+    mock_session = AsyncMock()
+    ticket = _make_ticket()
+    confirmed_id = uuid4()
+    generated_id = uuid4()
+
+    graph_items = {
+        ("decision", confirmed_id): LinkedItem(
+            source_type="decision",
+            source_id=confirmed_id,
+            title="Use source-path explanations",
+            snippet="[DECISION] Use source-path explanations",
+            relevance_score=0.5,
+            signals=["graph:Decision(decided_in,d=1)"],
+            targets=[RetrievalTarget.DECISION_RECEIPTS],
+            features=RetrievalFeatures(
+                freshness_state=FreshnessState.FRESH,
+                verification_state=VerificationState.CONFIRMED_DECISION,
+                source_originality="source_of_record",
+            ),
+        ),
+        ("decision", generated_id): LinkedItem(
+            source_type="decision",
+            source_id=generated_id,
+            title="Generated duplicate",
+            snippet="[DECISION] Generated context repeats the same decision",
+            relevance_score=1.0,
+            signals=["graph:Decision(summarized_in,d=1)"],
+            targets=[RetrievalTarget.DECISION_RECEIPTS],
+            features=RetrievalFeatures(
+                freshness_state=FreshnessState.FRESH,
+                verification_state=VerificationState.GENERATED_CONTEXT,
+                source_originality="generated_context",
+            ),
+        ),
+    }
+
+    with (
+        patch("src.services.linking._find_graph_results", new_callable=AsyncMock, return_value=graph_items),
+        patch("src.services.linking._fetch_communities_for_ticket", new_callable=AsyncMock, return_value=[]),
+    ):
+        from src.services.linking import find_related_content
+
+        result = await find_related_content(
+            mock_session,
+            WORKSPACE_ID,
+            ticket,
+            targets=[RetrievalTarget.DECISION_RECEIPTS],
+        )
+
+    assert [item.source_id for item in result.items] == [confirmed_id]
+    assert result.items[0].why_selected
+    assert result.dropped_items[0].source_id == generated_id
+    assert (
+        result.dropped_items[0].suppress_reason
+        == "generated_context_not_primary_evidence"
+    )
+
+
+@pytest.mark.asyncio
+async def test_stale_duplicate_is_dropped_with_reason() -> None:
+    from src.services.graph_rag_types import (
+        FreshnessState,
+        RetrievalFeatures,
+        RetrievalTarget,
+        VerificationState,
+    )
+    from src.services.linking import LinkedItem
+
+    mock_session = AsyncMock()
+    ticket = _make_ticket()
+    fresh_id = uuid4()
+    stale_id = uuid4()
+
+    explicit_items = {
+        ("slack_message", fresh_id): LinkedItem(
+            source_type="slack_message",
+            source_id=fresh_id,
+            title="Fresh source",
+            snippet="Fresh source of record",
+            relevance_score=0.7,
+            signals=["explicit_reference"],
+            targets=[RetrievalTarget.SOURCE_EVIDENCE],
+            features=RetrievalFeatures(
+                freshness_state=FreshnessState.FRESH,
+                verification_state=VerificationState.SOURCE_EVIDENCE,
+                source_originality="source_of_record",
+            ),
+        ),
+        ("slack_message", stale_id): LinkedItem(
+            source_type="slack_message",
+            source_id=stale_id,
+            title="Stale source",
+            snippet="Old duplicate",
+            relevance_score=1.0,
+            signals=["explicit_reference"],
+            targets=[RetrievalTarget.SOURCE_EVIDENCE],
+            features=RetrievalFeatures(
+                freshness_state=FreshnessState.STALE,
+                verification_state=VerificationState.SOURCE_EVIDENCE,
+                source_originality="source_of_record",
+            ),
+        ),
+    }
+
+    with (
+        patch("src.services.linking._find_explicit_refs", new_callable=AsyncMock, return_value=explicit_items),
+        patch("src.services.linking._find_hybrid_matches", new_callable=AsyncMock, return_value={}),
+        patch("src.services.linking._find_graph_results", new_callable=AsyncMock, return_value={}),
+        patch("src.services.linking._fetch_communities_for_ticket", new_callable=AsyncMock, return_value=[]),
+    ):
+        from src.services.linking import find_related_content
+
+        result = await find_related_content(
+            mock_session,
+            WORKSPACE_ID,
+            ticket,
+            targets=[RetrievalTarget.SOURCE_EVIDENCE],
+        )
+
+    assert [item.source_id for item in result.items] == [fresh_id]
+    assert result.dropped_items[0].source_id == stale_id
+    assert result.dropped_items[0].suppress_reason == "stale_duplicate"
 
 
 @pytest.mark.asyncio

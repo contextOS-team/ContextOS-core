@@ -32,9 +32,12 @@ from src.models.telegram import TelegramMessage
 from src.models.ticket import LinearComment, LinearTicket
 from src.services.embedding import generate_embedding
 from src.services.graph_ops import compute_fingerprint
+from src.services.graph_rag_freshness import calculate_freshness_state
 from src.services.graph_rag_types import (
+    FreshnessState,
     RetrievalFeatures,
     RetrievalTarget,
+    RetrievalTraceItem,
     VerificationState,
 )
 from src.services.llm_client import get_llm_client
@@ -189,6 +192,97 @@ class LinkedItem:
     targets: list[RetrievalTarget] = field(default_factory=list)
     features: RetrievalFeatures = field(default_factory=RetrievalFeatures)
     metadata: dict = field(default_factory=dict)
+    selected: bool = True
+    why_selected: str | None = None
+    suppress_reason: str | None = None
+
+
+@dataclass
+class SourceSummary:
+    """Resolved source display fields plus deterministic retrieval features."""
+
+    title: str
+    snippet: str
+    url: str | None
+    features: RetrievalFeatures
+
+
+_TIMESTAMP_FIELD_NAMES = (
+    "source_timestamp",
+    "slack_created_at",
+    "telegram_date",
+    "notion_updated_at",
+    "notion_created_at",
+    "meeting_date",
+    "github_merged_at",
+    "github_updated_at",
+    "github_submitted_at",
+    "gitlab_merged_at",
+    "gitlab_updated_at",
+    "gitlab_submitted_at",
+    "linear_updated_at",
+    "linear_created_at",
+    "jira_updated_at",
+    "jira_created_at",
+    "generated_at",
+    "updated_at",
+    "created_at",
+)
+
+
+def _timestamp_map_from_value(value) -> dict:
+    if isinstance(value, dict):
+        return {
+            key: value.get(key)
+            for key in _TIMESTAMP_FIELD_NAMES
+            if value.get(key) is not None
+        }
+    return {
+        key: getattr(value, key)
+        for key in _TIMESTAMP_FIELD_NAMES
+        if getattr(value, key, None) is not None
+    }
+
+
+def _features_for_source(
+    source_type: str,
+    source,
+    *,
+    verification_state: VerificationState = VerificationState.SOURCE_EVIDENCE,
+    graph_depth: int | None = None,
+) -> RetrievalFeatures:
+    timestamps = _timestamp_map_from_value(source)
+    assessment = calculate_freshness_state(
+        source_type,
+        timestamps,
+        verification_state=verification_state,
+        generated_context=verification_state == VerificationState.GENERATED_CONTEXT,
+    )
+    return RetrievalFeatures(
+        freshness_state=assessment.freshness_state,
+        verification_state=verification_state,
+        source_timestamp=assessment.source_timestamp,
+        freshness_age_days=assessment.freshness_age_days,
+        source_originality=assessment.source_originality,
+        graph_depth=graph_depth,
+    )
+
+
+def _merge_features(existing: RetrievalFeatures, incoming: RetrievalFeatures) -> None:
+    if existing.freshness_state == FreshnessState.UNKNOWN:
+        existing.freshness_state = incoming.freshness_state
+    if existing.verification_state == VerificationState.UNKNOWN:
+        existing.verification_state = incoming.verification_state
+    if existing.source_timestamp is None:
+        existing.source_timestamp = incoming.source_timestamp
+    if existing.freshness_age_days is None:
+        existing.freshness_age_days = incoming.freshness_age_days
+    if existing.source_originality is None:
+        existing.source_originality = incoming.source_originality
+    if existing.graph_depth is None:
+        existing.graph_depth = incoming.graph_depth
+    if not existing.graph_path:
+        existing.graph_path = list(incoming.graph_path)
 
 
 @dataclass
@@ -218,6 +312,7 @@ class LinkingResult:
     ticket_identifier: str
     items: list[LinkedItem] = field(default_factory=list)
     communities: list[CommunityContext] = field(default_factory=list)
+    dropped_items: list[LinkedItem] = field(default_factory=list)
 
 
 async def _find_explicit_refs(
@@ -262,6 +357,7 @@ async def _find_explicit_refs(
                 relevance_score=WEIGHT_EXPLICIT,
                 signals=["explicit_link"],
                 url=pr_url,
+                features=_features_for_source("github_pull_request", pr),
             )
 
             # Also find reviews on linked PRs
@@ -280,6 +376,7 @@ async def _find_explicit_refs(
                         snippet=(review.body or "")[:200],
                         relevance_score=WEIGHT_EXPLICIT,
                         signals=["explicit_link"],
+                        features=_features_for_source("github_review", review),
                     )
 
     # 2. GitLab MRs linked via FK (linear_ticket_id or jira_issue_id)
@@ -308,6 +405,7 @@ async def _find_explicit_refs(
                 relevance_score=WEIGHT_EXPLICIT,
                 signals=["explicit_link"],
                 url=mr_url,
+                features=_features_for_source("gitlab_merge_request", mr),
             )
 
             # Also find reviews on linked MRs
@@ -326,6 +424,7 @@ async def _find_explicit_refs(
                         snippet=(review.body or "")[:200],
                         relevance_score=WEIGHT_EXPLICIT,
                         signals=["explicit_link"],
+                        features=_features_for_source("gitlab_review", review),
                     )
 
     # 3. Ticket comments via FK
@@ -346,6 +445,7 @@ async def _find_explicit_refs(
                 relevance_score=WEIGHT_EXPLICIT,
                 signals=["explicit_link"],
                 url=f"https://linear.app/issue/{ticket.identifier}",
+                features=_features_for_source("linear_comment", comment),
             )
     elif not is_linear and (connected_sources is None or "jira" in connected_sources):
         # Jira comments linked via issue_id FK
@@ -364,6 +464,7 @@ async def _find_explicit_refs(
                     snippet=comment.body[:200],
                     relevance_score=WEIGHT_EXPLICIT,
                     signals=["explicit_link"],
+                    features=_features_for_source("jira_comment", comment),
                 )
 
     # 4. Slack messages containing the ticket identifier
@@ -450,6 +551,7 @@ async def _find_explicit_refs(
                 relevance_score=WEIGHT_EXPLICIT,
                 signals=["explicit_reference"],
                 url=slack_permalink,
+                features=_features_for_source("slack_message", msg),
             )
 
     # 5. Telegram messages containing the ticket identifier
@@ -469,6 +571,7 @@ async def _find_explicit_refs(
                 snippet=msg.text[:200],
                 relevance_score=WEIGHT_EXPLICIT,
                 signals=["explicit_reference"],
+                features=_features_for_source("telegram_message", msg),
             )
 
     for item in items.values():
@@ -603,17 +706,18 @@ async def _find_hybrid_matches(
             )
             continue
 
-        title, snippet, url = summaries[key]
+        summary = summaries[key]
         score = combined_score * WEIGHT_HYBRID
 
         items[key] = LinkedItem(
             source_type=source_type,
             source_id=source_id,
-            title=title,
-            snippet=snippet,
+            title=summary.title,
+            snippet=summary.snippet,
             relevance_score=score,
             signals=["hybrid_search"],
-            url=url,
+            url=summary.url,
+            features=summary.features,
         )
 
     for item in items.values():
@@ -727,7 +831,7 @@ _SOURCE_SUMMARY_MAP: dict[str, tuple] = {
 async def _bulk_lookup_source_summaries(
     session: AsyncSession,
     keys: list[tuple[str, UUID]],
-) -> dict[tuple[str, UUID], tuple[str, str, str | None]]:
+) -> dict[tuple[str, UUID], SourceSummary]:
     """Bulk-fetch title/snippet/url for multiple source records.
 
     Privacy-aware: first tries to read from embedding metadata (which
@@ -735,7 +839,7 @@ async def _bulk_lookup_source_summaries(
     """
     from src.models.embedding import Embedding
 
-    result_map: dict[tuple[str, UUID], tuple[str, str, str | None]] = {}
+    result_map: dict[tuple[str, UUID], SourceSummary] = {}
     if not keys:
         return result_map
 
@@ -756,7 +860,12 @@ async def _bulk_lookup_source_summaries(
             meta = emb.metadata_ or {}
             if meta.get("title") and meta.get("snippet"):
                 key = (emb.source_type, emb.source_id)
-                result_map[key] = (meta["title"], meta["snippet"], meta.get("url"))
+                result_map[key] = SourceSummary(
+                    title=meta["title"],
+                    snippet=meta["snippet"],
+                    url=meta.get("url"),
+                    features=_features_for_source(emb.source_type, meta),
+                )
 
     # Phase 2: Fall back to source tables for any records not found in metadata
     for source_type, ids in grouped.items():
@@ -772,7 +881,12 @@ async def _bulk_lookup_source_summaries(
         for record in records:
             title, snippet = extract(record)
             url = url_fn(record) if url_fn else None
-            result_map[(source_type, record.id)] = (title, snippet, url)
+            result_map[(source_type, record.id)] = SourceSummary(
+                title=title,
+                snippet=snippet,
+                url=url,
+                features=_features_for_source(source_type, record),
+            )
 
     return result_map
 
@@ -874,6 +988,15 @@ def _format_decision_graph_item(
     ):
         targets.append(RetrievalTarget.SOURCE_EVIDENCE)
 
+    features = _features_for_source(
+        "context_page"
+        if verification_state == VerificationState.GENERATED_CONTEXT
+        else "decision",
+        properties,
+        verification_state=verification_state,
+        graph_depth=graph_depth,
+    )
+
     item = LinkedItem(
         source_type="decision",
         source_id=source_id,
@@ -883,10 +1006,7 @@ def _format_decision_graph_item(
         signals=[provenance],
         url=str(source_link) if source_link else None,
         targets=targets,
-        features=RetrievalFeatures(
-            verification_state=verification_state,
-            graph_depth=graph_depth,
-        ),
+        features=features,
         metadata={
             "source_type": source_type,
             "person_name": str(person),
@@ -1057,7 +1177,9 @@ async def _find_graph_results(
                         relevance_score=score,
                         signals=[provenance],
                         targets=[RetrievalTarget.GRAPH_NEIGHBORHOOD],
-                        features=RetrievalFeatures(
+                        features=_features_for_source(
+                            source_type,
+                            props,
                             verification_state=VerificationState.UNKNOWN,
                             graph_depth=effective_depth,
                         ),
@@ -1070,26 +1192,33 @@ async def _find_graph_results(
             )
 
             for key, score, provenance, node_name, graph_depth in pending:
-                title, snippet, url = summaries.get(key, (key[0], "", None))
+                summary = summaries.get(
+                    key,
+                    SourceSummary(
+                        title=key[0],
+                        snippet="",
+                        url=None,
+                        features=_features_for_source(key[0], {}),
+                    ),
+                )
                 # Fall back to graph node name when source lookup fails
-                if title == key[0]:
-                    title = node_name
+                title = node_name if summary.title == key[0] else summary.title
+                features = summary.features.model_copy()
+                features.graph_depth = graph_depth
+                features.verification_state = VerificationState.SOURCE_EVIDENCE
                 items[key] = LinkedItem(
                     source_type=key[0],
                     source_id=key[1],
                     title=title,
-                    snippet=snippet,
+                    snippet=summary.snippet,
                     relevance_score=score,
                     signals=[provenance],
-                    url=url,
+                    url=summary.url,
                     targets=[
                         RetrievalTarget.GRAPH_NEIGHBORHOOD,
                         RetrievalTarget.SOURCE_EVIDENCE,
                     ],
-                    features=RetrievalFeatures(
-                        verification_state=VerificationState.SOURCE_EVIDENCE,
-                        graph_depth=graph_depth,
-                    ),
+                    features=features,
                 )
 
     except Exception:
@@ -1189,6 +1318,116 @@ def _apply_token_budget(
     # Sort final result by relevance_score descending
     result.sort(key=lambda x: x.relevance_score, reverse=True)
     return result
+
+
+def _feature_score_adjustment(item: LinkedItem) -> float:
+    features = item.features
+    adjustment = 0.0
+    if features.verification_state == VerificationState.CONFIRMED_DECISION:
+        adjustment += 0.20
+    elif features.verification_state in (
+        VerificationState.SOURCE_EVIDENCE,
+        VerificationState.SOURCE_BACKED_CANDIDATE,
+    ):
+        adjustment += 0.10
+    elif features.verification_state == VerificationState.GENERATED_CONTEXT:
+        adjustment -= 0.35
+
+    if features.freshness_state == FreshnessState.FRESH:
+        adjustment += 0.05
+    elif features.freshness_state == FreshnessState.STALE:
+        adjustment -= 0.20
+    elif features.freshness_state == FreshnessState.SUPERSEDED:
+        adjustment -= 0.40
+
+    if features.source_originality == "generated_context":
+        adjustment -= 0.20
+    return adjustment
+
+
+def _selection_reason(item: LinkedItem) -> str:
+    features = item.features
+    if features.verification_state == VerificationState.CONFIRMED_DECISION:
+        return "Confirmed source-backed decision receipt."
+    if features.verification_state == VerificationState.SOURCE_BACKED_CANDIDATE:
+        return "Source-backed candidate with exact provenance."
+    if features.source_originality == "source_of_record":
+        return "Primary source-of-record evidence matched retrieval targets."
+    return "Selected by target-aware retrieval score and signal diversity."
+
+
+def _mark_dropped(item: LinkedItem, reason: str) -> LinkedItem:
+    item.selected = False
+    item.why_selected = None
+    item.suppress_reason = reason
+    item.metadata["suppress_reason"] = reason
+    return item
+
+
+def _apply_feature_ranking_policy(
+    items: list[LinkedItem],
+) -> tuple[list[LinkedItem], list[LinkedItem]]:
+    for item in items:
+        item.relevance_score = max(
+            0.0,
+            min(1.0, item.relevance_score + _feature_score_adjustment(item)),
+        )
+
+    has_primary_source = any(
+        item.features.workspace_match
+        and item.features.verification_state
+        in (
+            VerificationState.CONFIRMED_DECISION,
+            VerificationState.SOURCE_EVIDENCE,
+            VerificationState.SOURCE_BACKED_CANDIDATE,
+        )
+        and item.features.source_originality != "generated_context"
+        for item in items
+    )
+
+    selected: list[LinkedItem] = []
+    dropped: list[LinkedItem] = []
+    for item in items:
+        if not item.features.workspace_match:
+            dropped.append(_mark_dropped(item, "workspace_mismatch"))
+        elif (
+            has_primary_source
+            and item.features.verification_state == VerificationState.GENERATED_CONTEXT
+        ):
+            dropped.append(_mark_dropped(item, "generated_context_not_primary_evidence"))
+        elif (
+            has_primary_source
+            and item.features.freshness_state == FreshnessState.SUPERSEDED
+        ):
+            dropped.append(_mark_dropped(item, "superseded_decision"))
+        elif has_primary_source and item.features.freshness_state == FreshnessState.STALE:
+            dropped.append(_mark_dropped(item, "stale_duplicate"))
+        else:
+            item.selected = True
+            item.suppress_reason = None
+            item.why_selected = item.why_selected or _selection_reason(item)
+            selected.append(item)
+
+    selected.sort(key=lambda x: x.relevance_score, reverse=True)
+    return selected, dropped
+
+
+def linked_item_to_trace(item: LinkedItem) -> RetrievalTraceItem:
+    """Convert a linked item into the shared deterministic trace contract."""
+    return RetrievalTraceItem(
+        source_type=item.source_type,
+        source_id=str(item.source_id),
+        title=item.title,
+        snippet=item.snippet,
+        source_link=item.url,
+        targets=item.targets,
+        signals=item.signals,
+        features=item.features,
+        selected=item.selected,
+        why_selected=item.why_selected,
+        suppress_reason=item.suppress_reason,
+        metadata=item.metadata,
+    )
 
 SOURCE_TYPE_MAP = {
     "slack": ["slack_message"],
@@ -1584,6 +1823,7 @@ async def _collect_targeted_linked_items(
                     target.value for target in existing.targets
                 ]
                 existing.metadata["retrieval_signals"] = list(existing.signals)
+                _merge_features(existing.features, item.features)
                 if not existing.url and item.url:
                     existing.url = item.url
             else:
@@ -1601,9 +1841,17 @@ async def _collect_targeted_linked_items(
     reranked = await _llm_rerank(ticket, merged_items)
 
     for item in reranked:
+        item.features.rerank_score = item.relevance_score
         _ensure_item_retrieval_metadata(item)
 
-    budget_trimmed = _apply_token_budget(reranked)
+    selectable, policy_dropped = _apply_feature_ranking_policy(reranked)
+    budget_trimmed = _apply_token_budget(selectable)
+    selected_ids = {(item.source_type, item.source_id) for item in budget_trimmed}
+    budget_dropped = [
+        _mark_dropped(item, "token_budget")
+        for item in selectable
+        if (item.source_type, item.source_id) not in selected_ids
+    ]
     communities = await _fetch_communities_for_ticket(
         session, workspace_id, ticket, budget_trimmed
     )
@@ -1612,6 +1860,7 @@ async def _collect_targeted_linked_items(
         ticket_identifier=ticket.identifier,
         items=budget_trimmed,
         communities=communities,
+        dropped_items=policy_dropped + budget_dropped,
     )
 
 
