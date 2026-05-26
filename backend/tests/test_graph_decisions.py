@@ -1,5 +1,6 @@
 """Tests for decision-specific graph endpoints."""
 
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -34,8 +35,14 @@ def _result_one(value):
     return result
 
 
-def _decision(name: str, date: str) -> GraphNode:
-    return GraphNode(
+def _decision(
+    name: str,
+    date: str,
+    *,
+    created_at: datetime | None = None,
+    updated_at: datetime | None = None,
+) -> GraphNode:
+    node = GraphNode(
         id=uuid4(),
         workspace_id=WORKSPACE_ID,
         entity_type="Decision",
@@ -44,27 +51,42 @@ def _decision(name: str, date: str) -> GraphNode:
         source_type="messages_digest",
         properties={"date": date, "source": "slack"},
     )
+    node.created_at = created_at or datetime(2026, 5, 20, 11, 0, 0)
+    node.updated_at = updated_at or datetime(2026, 5, 20, 11, 30, 0)
+    return node
 
 
 @pytest.mark.asyncio
-async def test_get_decisions_returns_all_decisions_sorted_by_date(
+async def test_get_decisions_returns_all_decisions_sorted_by_capture_recency(
     mock_settings,
 ) -> None:
-    """The Decisions page needs all decisions, not the graph top-node subset."""
+    """New captures stay visible even when their source date is older."""
     session = AsyncMock()
+    captured_old_source = _decision(
+        "Captured old source decision",
+        "2026-05-16",
+        created_at=datetime(2026, 5, 21, 9, 0, 0),
+    )
     older_suggested = _decision(
         "Use a Bottom Sheet for menu visuals in the RD-752 release",
         "2026-05-04",
+        created_at=datetime(2026, 5, 19, 9, 0, 0),
     )
-    recent = _decision("Branch names must contain exactly one dash", "2026-05-22")
+    recent = _decision(
+        "Branch names must contain exactly one dash",
+        "2026-05-22",
+        created_at=datetime(2026, 5, 18, 9, 0, 0),
+    )
     oldest_suggested = _decision(
         "Add a new button to the interface as part of the task implementation.",
         "2026-04-22",
+        created_at=datetime(2026, 5, 17, 9, 0, 0),
     )
     session.execute.return_value = _result_all([
         older_suggested,
         recent,
         oldest_suggested,
+        captured_old_source,
     ])
 
     connected = AsyncMock(return_value={"slack"})
@@ -72,8 +94,9 @@ async def test_get_decisions_returns_all_decisions_sorted_by_date(
         rows = await get_decisions(user=_user(), session=session, limit=100)
 
     assert [row.name for row in rows] == [
-        "Branch names must contain exactly one dash",
+        "Captured old source decision",
         "Use a Bottom Sheet for menu visuals in the RD-752 release",
+        "Branch names must contain exactly one dash",
         "Add a new button to the interface as part of the task implementation.",
     ]
 
@@ -93,6 +116,8 @@ async def test_get_decision_returns_edge_less_digest_decision(mock_settings) -> 
         row = await get_decision(decision_id=decision.id, user=_user(), session=session)
 
     assert row.id == str(decision.id)
+    assert row.created_at == "2026-05-20T11:00:00"
+    assert row.updated_at == "2026-05-20T11:30:00"
     assert (
         row.name
         == "Add a new button to the interface as part of the task implementation."

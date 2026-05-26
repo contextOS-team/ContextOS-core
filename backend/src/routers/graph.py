@@ -6,6 +6,7 @@ Exposes workspace-wide and per-ticket graph data as structured JSON
 
 import logging
 from collections import Counter
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -44,6 +45,8 @@ class GraphNodeResponse(PydanticBaseModel):
     name: str
     depth: int
     properties: dict
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class GraphEdgeResponse(PydanticBaseModel):
@@ -170,6 +173,10 @@ def _node_passes_source_filter(n, allowed_source_types: set[str]) -> bool:
     return n.source_type in allowed_source_types
 
 
+def _iso_timestamp(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
+
+
 def _node_response(node: GraphNode, *, depth: int = 0) -> GraphNodeResponse:
     return GraphNodeResponse(
         id=str(node.id),
@@ -177,15 +184,17 @@ def _node_response(node: GraphNode, *, depth: int = 0) -> GraphNodeResponse:
         name=node.name,
         depth=depth,
         properties=node.properties if node.properties else {},
+        created_at=_iso_timestamp(node.created_at),
+        updated_at=_iso_timestamp(node.updated_at),
     )
 
 
-def _decision_sort_key(node: GraphNode) -> tuple[str, str, str]:
+def _decision_recency_sort_key(node: GraphNode) -> tuple[str, str, str]:
     props = node.properties or {}
     date = props.get("date")
     date_key = date if isinstance(date, str) else ""
-    created_key = node.created_at.isoformat() if node.created_at else ""
-    return date_key, created_key, node.name
+    recency_key = _iso_timestamp(node.created_at) or date_key
+    return recency_key, date_key, node.name
 
 
 async def _validate_ticket_identifiers(
@@ -294,25 +303,13 @@ async def _inject_user_decisions(
     for pn in person_nodes:
         str_id = str(pn.id)
         if str_id not in existing_ids:
-            new_nodes.append(GraphNodeResponse(
-                id=str_id,
-                entity_type=pn.entity_type,
-                name=pn.name,
-                depth=0,
-                properties=pn.properties or {},
-            ))
+            new_nodes.append(_node_response(pn))
             existing_ids.add(str_id)
 
     for dn in decision_nodes:
         str_id = str(dn.id)
         if str_id not in existing_ids:
-            new_nodes.append(GraphNodeResponse(
-                id=str_id,
-                entity_type=dn.entity_type,
-                name=dn.name,
-                depth=1,
-                properties=dn.properties or {},
-            ))
+            new_nodes.append(_node_response(dn, depth=1))
             existing_ids.add(str_id)
 
     existing_edge_keys = {
@@ -435,9 +432,17 @@ async def _build_ticket_clusters(
     # references like "DLVR-01" that don't exist in Linear/Jira).
     blocked_node_ids: set[str] = set()
     root_node_ids = {str(gn.id) for gn in ident_to_node.values()}
+    node_timestamps: dict[str, tuple[str | None, str | None]] = {}
 
     if all_traversed_node_ids:
-        src_stmt = select(GraphNode.id, GraphNode.source_type, GraphNode.entity_type, GraphNode.name).where(
+        src_stmt = select(
+            GraphNode.id,
+            GraphNode.source_type,
+            GraphNode.entity_type,
+            GraphNode.name,
+            GraphNode.created_at,
+            GraphNode.updated_at,
+        ).where(
             GraphNode.id.in_(all_traversed_node_ids),
         )
         src_result = await session.execute(src_stmt)
@@ -446,6 +451,10 @@ async def _build_ticket_clusters(
             nid = str(row[0])
             src_type = row[1]
             entity_type = row[2]
+            node_timestamps[nid] = (
+                _iso_timestamp(row[4]),
+                _iso_timestamp(row[5]),
+            )
             # Block nodes from disconnected integrations
             if src_type and src_type not in allowed_src:
                 blocked_node_ids.add(nid)
@@ -485,10 +494,18 @@ async def _build_ticket_clusters(
                 "name": row[2],
                 "depth": node_depth,
                 "properties": row[3] if row[3] is not None else {},
+                "created_at": node_timestamps.get(node_id, (None, None))[0],
+                "updated_at": node_timestamps.get(node_id, (None, None))[1],
             }
-            if node_id not in cluster_node_map or node_depth < cluster_node_map[node_id]["depth"]:
+            if (
+                node_id not in cluster_node_map
+                or node_depth < cluster_node_map[node_id]["depth"]
+            ):
                 cluster_node_map[node_id] = node_data
-            if node_id not in all_node_map or node_depth < all_node_map[node_id]["depth"]:
+            if (
+                node_id not in all_node_map
+                or node_depth < all_node_map[node_id]["depth"]
+            ):
                 all_node_map[node_id] = node_data
 
         # Get edges within cluster
@@ -720,13 +737,7 @@ async def get_workspace_graph(
 
     # Step 9: Build response
     response_nodes = [
-        GraphNodeResponse(
-            id=nid,
-            entity_type=n.entity_type,
-            name=n.name,
-            depth=0,
-            properties=n.properties if n.properties else {},
-        )
+        _node_response(n)
         for nid in sorted_ids[:limit]
         if (n := display_nodes.get(nid))
     ]
@@ -757,7 +768,7 @@ async def get_decisions(
     session: AsyncSession = Depends(get_session),
     limit: int = Query(default=500, ge=1, le=500),
 ) -> list[GraphNodeResponse]:
-    """List all workspace decisions from connected sources, sorted by decision date."""
+    """List workspace decisions from connected sources, newest capture first."""
     connected_providers = await _get_connected_providers(session, user.workspace_id)
     allowed_source_types = _allowed_source_types(connected_providers)
 
@@ -772,7 +783,7 @@ async def get_decisions(
         for node in result.scalars().all()
         if _node_passes_source_filter(node, allowed_source_types)
     ]
-    decisions = sorted(decisions, key=_decision_sort_key, reverse=True)[:limit]
+    decisions = sorted(decisions, key=_decision_recency_sort_key, reverse=True)[:limit]
 
     return [_node_response(node) for node in decisions]
 

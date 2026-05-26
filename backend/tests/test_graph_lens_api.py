@@ -131,13 +131,16 @@ def _make_bulk_traverse_row(
 def _mock_source_type_lookup(
     id_to_info: dict[str, tuple[str | None, str, str]],
 ) -> MagicMock:
-    """Mock the bulk GraphNode (id, source_type, entity_type, name) lookup.
+    """Mock the bulk GraphNode metadata lookup.
 
     id_to_info maps node_id -> (source_type, entity_type, name).
     """
     mock = MagicMock()
     mock.__iter__ = lambda self: iter(
-        [(UUID(nid), src, etype, name) for nid, (src, etype, name) in id_to_info.items()]
+        [
+            (UUID(nid), src, etype, name, None, None)
+            for nid, (src, etype, name) in id_to_info.items()
+        ]
     )
     return mock
 
@@ -235,7 +238,7 @@ SIG_INTEGRATION = "WorkspaceIntegration:1"  # _get_connected_providers
 SIG_LINEAR_VALIDATE = "LinearTicket:1"    # _validate_ticket_identifiers (linear)
 SIG_JIRA_VALIDATE = "JiraIssue:1"         # _validate_ticket_identifiers (jira)
 SIG_NODE_FULL = "GraphNode:1"             # select(GraphNode) fingerprint/blocked lookup
-SIG_NODE_SRC = "GraphNode:4"              # select(GraphNode.id, source_type, entity_type, name)
+SIG_NODE_SRC = "GraphNode:6"              # select GraphNode id/source/name/timestamps
 SIG_EDGE = "GraphEdge:1"                  # select(GraphEdge) blocks / per-cluster edges
 SIG_TRAVERSE = "TEXT"                     # bulk traverse_graph text()
 SIG_IDENTITY_FALLBACK = "IdentityMapping:1"   # my-work fallback id lookup
