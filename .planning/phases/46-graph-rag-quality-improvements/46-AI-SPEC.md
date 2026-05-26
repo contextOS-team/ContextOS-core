@@ -107,19 +107,19 @@ No sector-specific regulatory regime was identified for this deployment context:
 
 ## 2. Framework Decision
 
-**Selected Framework:** LangGraph
+**Selected Framework:** Existing FastAPI/SQLModel/Postgres service layer
 
-**Version:** 1.0.9 (existing backend dependency)
+**Version:** No new AI framework for Phase 46. LangGraph 1.0.9 remains an installed dependency but is optional and not required by this contract.
 
 **Rationale:**
-The generic RAG-first framework choice would be LlamaIndex, but Phase 46 has explicit constraints: no vendor lock-in, no new framework dependency, no new infrastructure, and reuse existing Langfuse/Laminar observability. LangGraph is already installed, model-agnostic, and production-oriented enough for observable retrieval routing and stateful quality gates, while the actual retrieval, ranking, provenance, and eval logic should remain in typed FastAPI/Postgres services.
+Phase 46 is not blocked on an AI orchestration framework. The work is retrieval quality: target routing, deterministic evals, provenance, freshness, ranking features, stream parity, and explanation payloads. Those concerns are already owned by typed FastAPI services, SQLModel/Postgres persistence, pgvector search, `traverse_graph()`, `LLMClient`, and existing Langfuse/Laminar tracing. Adding a framework wrapper now would risk making the planner invent orchestration files before the service contracts exist.
 
 **Alternatives Considered:**
 
 | Framework | Ruled Out Because |
 |-----------|------------------|
 | LlamaIndex | Strong generic RAG fit, but would add a new framework dependency and duplicate current custom Postgres/pgvector/graph retrieval primitives. |
-| Direct FastAPI/SQLModel/Postgres retrieval layer | Best fallback if LangGraph adds overhead; satisfies all constraints but gives up LangGraph's state/debug workflow structure. |
+| LangGraph | Already installed and may be useful later as a thin wrapper, but Phase 46 does not need it to deliver retrieval targets, ranking features, evals, provenance, or stream parity. Use only if a later implementation proves a state graph removes real complexity. |
 | OpenAI Agents SDK | Adds provider coupling and does not match the model-agnostic constraint for Phase 46. |
 | CrewAI / AutoGen / Google ADK | Multi-agent orchestration is outside Phase 46 scope and would add unnecessary framework surface. |
 
@@ -129,45 +129,36 @@ The generic RAG-first framework choice would be LlamaIndex, but Phase 46 has exp
 
 ## 3. Framework Quick Reference
 
-> Fetched from official docs by `gsd-ai-researcher`. Distilled for this specific use case.
+> Phase 46 uses the existing service layer as the implementation framework. External framework docs are reference material only; they do not create implementation requirements.
 
 ### Installation
 ```bash
-# Already present in backend/pyproject.toml; backend/uv.lock resolves langgraph==1.0.9.
-# Use this only if the dependency must be recreated or pinned explicitly:
-uv add "langgraph==1.0.9"
-
-# Official docs default for latest stable:
-uv add langgraph
+# No new framework dependency for Phase 46.
+cd backend
+uv sync --all-extras
 ```
 
 ### Core Imports
 ```python
 from __future__ import annotations
 
-import operator
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Literal
 from uuid import UUID
 
-from langgraph.graph import END, START, StateGraph
-from langgraph.runtime import Runtime
 from pydantic import BaseModel, Field
-from typing_extensions import TypedDict
 ```
 
 ### Entry Point Pattern
 ```python
 from __future__ import annotations
 
-import operator
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Literal
 from uuid import UUID
 
-from langgraph.graph import END, START, StateGraph
-from langgraph.runtime import Runtime
-from typing_extensions import TypedDict
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class RetrievalTarget(StrEnum):
@@ -177,100 +168,91 @@ class RetrievalTarget(StrEnum):
     RELATED_WORK = "related_work"
 
 
-class GraphRagContext(TypedDict):
-    workspace_id: UUID
-    session: Any  # AsyncSession in production code; kept Any to avoid import cycles in examples.
-    token_budget: int
+class RetrievalFeatures(BaseModel):
+    explicit_ref: bool = False
+    rrf_score: float | None = None
+    graph_depth: int | None = None
+    source_freshness_days: int | None = None
+    verification_state: Literal[
+        "confirmed_decision",
+        "source_backed_candidate",
+        "source_evidence",
+        "generated_context",
+        "unknown",
+    ] = "unknown"
+    workspace_match: bool = True
 
 
-class GraphRagState(TypedDict, total=False):
-    query: str
-    ticket: Any
-    requested_targets: list[RetrievalTarget]
-    selected_targets: list[RetrievalTarget]
-    retrieval_items: Annotated[list[Any], operator.add]
-    explanations: Annotated[list[dict[str, Any]], operator.add]
+class RetrievalTraceItem(BaseModel):
+    source_type: str
+    source_id: UUID
+    title: str
+    url: str | None = None
+    quote: str | None = None
+    targets: list[RetrievalTarget]
+    signals: list[str]
+    features: RetrievalFeatures
+    why_selected: str | None = None
+    suppress_reason: str | None = None
 
 
-def route_targets(state: GraphRagState) -> dict[str, list[RetrievalTarget]]:
-    """Deterministic first pass: context pages request all Phase 46 targets."""
-    requested = state.get("requested_targets") or [
-        RetrievalTarget.DECISION_RECEIPTS,
-        RetrievalTarget.SOURCE_EVIDENCE,
-        RetrievalTarget.GRAPH_NEIGHBORHOOD,
-        RetrievalTarget.RELATED_WORK,
-    ]
-    return {"selected_targets": requested}
+class GraphRagResult(BaseModel):
+    selected: list[RetrievalTraceItem]
+    dropped: list[RetrievalTraceItem] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
 
 
-async def retrieve_existing_signals(
-    state: GraphRagState,
-    runtime: Runtime[GraphRagContext],
-) -> dict[str, list[Any]]:
-    """Delegate to existing retrieval; Phase 46 should split internals by target."""
+async def retrieve_graph_rag_context(
+    session: AsyncSession,
+    workspace_id: UUID,
+    ticket: object,
+    targets: list[RetrievalTarget] | None = None,
+    token_budget: int = 25_000,
+) -> GraphRagResult:
+    """Service-layer entry point consumed by context pages, suggestions, and evals."""
     from src.services.linking import find_related_content
 
+    requested_targets = targets or list(RetrievalTarget)
     result = await find_related_content(
-        runtime.context["session"],
-        runtime.context["workspace_id"],
-        state["ticket"],
+        session,
+        workspace_id,
+        ticket,
     )
-    return {"retrieval_items": list(result.items)}
-
-
-def build_explanations(state: GraphRagState) -> dict[str, list[dict[str, Any]]]:
-    """Produce eval/UI-visible traces from existing LinkedItem fields."""
-    explanations = []
-    for item in state.get("retrieval_items", []):
-        explanations.append(
-            {
-                "source_type": item.source_type,
-                "source_id": str(item.source_id),
-                "title": item.title,
-                "signals": list(item.signals),
-                "score": item.relevance_score,
-                "url": item.url,
-            }
+    selected: list[RetrievalTraceItem] = []
+    errors: list[str] = []
+    for item in result.items:
+        if not item.signals:
+            errors.append(f"{item.source_type}:{item.source_id} has no retrieval signal")
+        selected.append(
+            RetrievalTraceItem(
+                source_type=item.source_type,
+                source_id=item.source_id,
+                title=item.title,
+                url=item.url,
+                targets=requested_targets,
+                signals=list(item.signals),
+                features=RetrievalFeatures(rrf_score=item.relevance_score),
+                why_selected=f"Selected by {', '.join(item.signals) or 'unknown signal'}",
+            )
         )
-    return {"explanations": explanations}
-
-
-builder = StateGraph(GraphRagState, context_schema=GraphRagContext)
-builder.add_node("route_targets", route_targets)
-builder.add_node("retrieve_existing_signals", retrieve_existing_signals)
-builder.add_node("build_explanations", build_explanations)
-builder.add_edge(START, "route_targets")
-builder.add_edge("route_targets", "retrieve_existing_signals")
-builder.add_edge("retrieve_existing_signals", "build_explanations")
-builder.add_edge("build_explanations", END)
-
-graph_rag_workflow = builder.compile()
-
-
-async def run_graph_rag(ticket: Any, session: Any, workspace_id: UUID) -> GraphRagState:
-    return await graph_rag_workflow.ainvoke(
-        {"ticket": ticket, "query": f"{ticket.identifier}: {ticket.title}"},
-        context={"session": session, "workspace_id": workspace_id, "token_budget": 25_000},
-        config={"recursion_limit": 8},
-    )
+    return GraphRagResult(selected=selected, validation_errors=errors)
 ```
 
 ### Key Abstractions
 | Concept | What It Is | When You Use It |
 |---------|-----------|-----------------|
-| `StateGraph` | A typed graph builder whose nodes read state and return partial state updates. | Use only as a thin orchestration wrapper around Phase 46 retrieval routing, ranking, validation, and explanation steps. |
-| State schema | A `TypedDict` or Pydantic-shaped contract for graph state keys. Reducers such as `Annotated[list, operator.add]` control how concurrent updates merge. | Use for request-local retrieval state: target list, retrieved units, ranking features, validation notes, and trace metadata. |
-| Nodes | Plain sync or async Python functions. A node receives state and can receive `Runtime[ContextSchema]`. | Use async nodes for existing DB/LLM calls; keep deterministic ranking and validation in ordinary service functions. |
-| Edges and conditional edges | `add_edge()` creates fixed flow; `add_conditional_edges()` routes based on state. | Use conditional routing only for explicit retrieval targets or validation retry branches; avoid agent-style open loops. |
-| Runtime context | Per-run immutable-ish context passed via `graph.ainvoke(..., context={...})`. | Pass `workspace_id`, `AsyncSession`, token budget, model profile, and trace IDs without storing them in graph state. |
-| Streaming | `graph.astream(..., stream_mode=["updates", "custom"], version="v2")` yields node updates and custom progress events. | Use for UI progress parity with `generate_context_page_stream`; use `ainvoke` for final structured validation/evals. |
+| `RetrievalTarget` | The explicit retrieval mode requested by a call site: decision receipts, source evidence, graph neighborhood, or related work. | Use whenever context pages, suggestions, evals, or future MCP tools ask for retrieval. |
+| `RetrievalTraceItem` | A typed result/explanation unit with source identity, signals, features, and selection/suppression reason. | Use in `context_page.sources`, suggestion payloads, and eval outputs so provenance is inspectable. |
+| `RetrievalFeatures` | Ranking/explanation features such as RRF score, graph depth, source freshness, verification state, and workspace match. | Use before final ranking and when explaining why a result won or was dropped. |
+| `GraphRagResult` | The selected/dropped result set plus validation errors. | Use as the stable service return type for context generation, suggestion grounding, and eval runners. |
+| Deterministic eval case | JSONL fixture with expected source IDs, decision IDs, source links, quote substrings, stale constraints, and must-not-include items. | Use as the pass/fail oracle before tuning ranking or prompts. |
 
 ### Common Pitfalls
-1. **Letting LangGraph become the RAG framework.** LangGraph orchestrates stateful workflows; it does not replace `hybrid_search()`, `traverse_graph()`, RRF, source freshness rules, provenance storage, or the deterministic eval runner. For Phase 46, keep core quality logic in existing services and call it from nodes.
-2. **Parallel nodes writing the same state key without a reducer.** LangGraph requires a reducer such as `Annotated[list, operator.add]` when multiple branches update the same list. Otherwise parallel retrieval branches can fail with concurrent state update errors or silently push developers toward brittle single-branch hacks.
-3. **Passing `recursion_limit` inside `configurable`.** LangGraph treats `recursion_limit` as a top-level config key for `invoke`/`stream`, not a nested `configurable` value. Phase 46 should set a small limit for any retry loop and prefer deterministic validators over open-ended graph cycles.
-4. **Adding checkpointers before the workflow needs durable resume.** Redis/Postgres checkpointers require setup and `thread_id` discipline. Phase 46 is a request-scoped RAG quality pass; persist durable truth in existing Postgres tables and use Langfuse/Laminar traces first.
-5. **Streaming partial JSON into validators.** Stream node progress for UX, but wait for the final model response before Pydantic validation. Structured outputs should use `LLMClient.generate_json()` or a provider-specific wrapper behind the model-agnostic client.
+1. **Adding orchestration before contracts.** Do not create a workflow wrapper until retrieval targets, trace payloads, ranking features, validators, and eval fixtures exist.
+2. **Treating generated context as primary evidence.** Generated context pages can help navigation, but primary grounding must prefer original source records or confirmed Decision Receipts.
+3. **Hiding ranking features.** A final score without graph path, freshness, verification state, and selected/dropped reasons is not enough for Phase 46.
+4. **Diverging stream and non-stream retrieval.** Streaming context generation must use the same target-aware retrieval policy as non-stream generation or record an explicit omission reason.
+5. **Streaming partial JSON into validators.** Stream progress for UX, but wait for final structured outputs before Pydantic validation.
 
 ### Recommended Project Structure
 ```
@@ -279,8 +261,8 @@ backend/
 │   ├── services/
 │   │   ├── linking.py                 # Keep retrieval primitives, target routing, RRF, graph traversal here
 │   │   ├── synthesis.py               # Consume enriched retrieval evidence and persist source explanations
-│   │   ├── graph_rag_types.py         # New typed RetrievalTarget/RetrievalUnit/RetrievalTrace contracts if needed
-│   │   ├── graph_rag_workflow.py      # Optional thin LangGraph StateGraph wrapper around existing services
+│   │   ├── graph_rag_types.py         # RetrievalTarget/RetrievalUnit/RetrievalTrace contracts
+│   │   ├── graph_rag_service.py       # Plain async service entry point for target-aware retrieval
 │   │   ├── llm_client.py              # Keep provider calls, structured JSON, token usage, and model config here
 │   │   └── observability/             # Continue using current Langfuse/Laminar wrappers
 │   └── evals/
@@ -308,14 +290,8 @@ backend/
 
 ### Sources
 
-- LangGraph install docs: https://docs.langchain.com/oss/python/langgraph/install
-- LangGraph overview: https://docs.langchain.com/oss/python/langgraph/overview
-- LangGraph Graph API and runtime context: https://docs.langchain.com/oss/python/langgraph/graph-api
-- LangGraph Graph API usage examples: https://docs.langchain.com/oss/python/langgraph/use-graph-api
-- LangGraph workflow/routing patterns: https://docs.langchain.com/oss/python/langgraph/workflows-agents
-- LangGraph streaming docs: https://docs.langchain.com/oss/python/langgraph/streaming
-- LangGraph memory/checkpointer docs: https://docs.langchain.com/oss/python/langgraph/add-memory
-- LangGraph durable execution docs: https://docs.langchain.com/oss/python/langgraph/durable-execution
+- Local stack and retrieval contract: `backend/pyproject.toml`, `backend/src/services/linking.py`, `backend/src/services/synthesis.py`, `backend/src/services/llm_client.py`
+- Existing eval pattern: `backend/src/evals/missed_decisions.py`, `backend/evals/README.md`
 - Langfuse Python tracing docs: https://langfuse.com/docs/observability/sdk/python/decorators
 - pgvector README: https://github.com/pgvector/pgvector/blob/master/README.md
 - Pydantic v2 model validation docs: https://docs.pydantic.dev/latest/concepts/models/
@@ -328,7 +304,7 @@ backend/
 
 **Model Configuration:**
 
-Use the current model-agnostic wrapper, not direct provider calls inside LangGraph nodes.
+Use the current model-agnostic wrapper, not direct provider calls inside retrieval/ranking services.
 
 | Use | Model Path | Params |
 |-----|------------|--------|
@@ -341,19 +317,16 @@ Current gap: `LLMClient.generate()` and `generate_json()` do not expose `max_out
 
 **Core Pattern:**
 
-LangGraph should wrap the retrieval-quality workflow, not own retrieval. The graph state carries IDs, targets, compact evidence, and validation notes; existing services continue to own database queries, graph traversal, RRF, token trimming, synthesis, and persistence.
+Phase 46 should start as a plain async service workflow. The service carries IDs, targets, compact evidence, ranking features, validation notes, and trace payloads; existing modules continue to own database queries, graph traversal, RRF, token trimming, synthesis, and persistence.
 
 ```python
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
 from uuid import UUID
 
-from langgraph.graph import END, START, StateGraph
-from langgraph.runtime import Runtime
 from pydantic import BaseModel, Field
-from typing_extensions import TypedDict
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.observability.laminar import observe
 from src.observability.langfuse_client import langfuse_observe
@@ -367,92 +340,70 @@ class RetrievalTarget(StrEnum):
     RELATED_WORK = "related_work"
 
 
-class RetrievalExplanation(BaseModel):
+class RetrievalTraceItem(BaseModel):
     source_type: str
-    source_id: str
+    source_id: UUID
     title: str
     score: float = Field(ge=0)
     signals: list[str]
     url: str | None = None
-    why_selected: str
-
-
-class GraphRagRuntime(TypedDict):
-    session: Any
-    workspace_id: UUID
-    token_budget: int
-
-
-class GraphRagState(TypedDict, total=False):
-    ticket: Any
     targets: list[RetrievalTarget]
-    items: list[LinkedItem]
-    explanations: list[RetrievalExplanation]
+    why_selected: str
+    suppress_reason: str | None = None
+
+
+class GraphRagServiceResult(BaseModel):
+    selected: list[RetrievalTraceItem]
+    dropped: list[RetrievalTraceItem] = Field(default_factory=list)
     validation_errors: list[str]
 
 
-def select_targets(state: GraphRagState) -> dict[str, list[RetrievalTarget]]:
-    # Context page generation needs breadth; later call sites can pass a narrower list.
-    return {
-        "targets": state.get("targets") or [
-            RetrievalTarget.DECISION_RECEIPTS,
-            RetrievalTarget.SOURCE_EVIDENCE,
-            RetrievalTarget.GRAPH_NEIGHBORHOOD,
-            RetrievalTarget.RELATED_WORK,
-        ]
-    }
+def default_targets() -> list[RetrievalTarget]:
+    return list(RetrievalTarget)
 
 
-async def retrieve(state: GraphRagState, runtime: Runtime[GraphRagRuntime]) -> dict[str, Any]:
-    # First implementation delegates to existing retrieval.
-    # Phase 46 can then refactor find_related_content() internals into target-aware helpers.
-    result = await find_related_content(
-        runtime.context["session"],
-        runtime.context["workspace_id"],
-        state["ticket"],
-    )
-    return {"items": result.items}
-
-
-def explain(state: GraphRagState) -> dict[str, list[RetrievalExplanation] | list[str]]:
-    explanations: list[RetrievalExplanation] = []
+def explain_items(
+    items: list[LinkedItem],
+    targets: list[RetrievalTarget],
+) -> tuple[list[RetrievalTraceItem], list[str]]:
+    selected: list[RetrievalTraceItem] = []
     errors: list[str] = []
-    for item in state.get("items", []):
+    for item in items:
         if not item.signals:
             errors.append(f"{item.source_type}:{item.source_id} has no retrieval signal")
-        explanations.append(
-            RetrievalExplanation(
+        selected.append(
+            RetrievalTraceItem(
                 source_type=item.source_type,
-                source_id=str(item.source_id),
+                source_id=item.source_id,
                 title=item.title,
                 score=item.relevance_score,
                 signals=list(item.signals),
                 url=item.url,
+                targets=targets,
                 why_selected=f"Selected by {', '.join(item.signals) or 'unknown signal'}",
             )
         )
-    return {"explanations": explanations, "validation_errors": errors}
+    return selected, errors
 
 
-builder = StateGraph(GraphRagState, context_schema=GraphRagRuntime)
-builder.add_node("select_targets", select_targets)
-builder.add_node("retrieve", retrieve)
-builder.add_node("explain", explain)
-builder.add_edge(START, "select_targets")
-builder.add_edge("select_targets", "retrieve")
-builder.add_edge("retrieve", "explain")
-builder.add_edge("explain", END)
-graph = builder.compile()
-
-
-@langfuse_observe(name="graph_rag_quality_workflow", as_type="span")
-@observe(name="graph_rag_quality_workflow")
-async def run_graph_rag_quality(ticket: Any, session: Any, workspace_id: UUID) -> GraphRagState:
-    return await graph.ainvoke(
-        {"ticket": ticket},
-        context={"session": session, "workspace_id": workspace_id, "token_budget": 25_000},
-        config={"recursion_limit": 8},
+@langfuse_observe(name="graph_rag_quality_service", as_type="span")
+@observe(name="graph_rag_quality_service")
+async def retrieve_graph_rag_context(
+    session: AsyncSession,
+    workspace_id: UUID,
+    ticket: object,
+    targets: list[RetrievalTarget] | None = None,
+) -> GraphRagServiceResult:
+    # First implementation delegates to existing retrieval, then Phase 46 splits
+    # find_related_content() internals into target-aware helpers.
+    requested_targets = targets or default_targets()
+    result = await find_related_content(
+        session,
+        workspace_id,
+        ticket,
     )
+    selected, errors = explain_items(result.items, requested_targets)
+    return GraphRagServiceResult(selected=selected, validation_errors=errors)
 ```
 
 Implementation order:
@@ -463,18 +414,18 @@ Implementation order:
 
 **Tool Use:**
 
-- Do **not** use LangGraph `ToolNode` for this phase. The "tools" are trusted internal service calls: `hybrid_search()`, `traverse_graph()`, `generate_embedding()`, source lookups, existing `LLMClient.generate_json()`, and deterministic validators.
+- Do not introduce an agent/tool abstraction for this phase. The "tools" are trusted internal service calls: `hybrid_search()`, `traverse_graph()`, `generate_embedding()`, source lookups, existing `LLMClient.generate_json()`, and deterministic validators.
 - Treat provider/source text as untrusted evidence, never as instructions. Prompt blocks should label source type, source ID, quote/snippet, URL, freshness state, and graph path explicitly.
 - Keep model provider calls behind `LLMClient`; do not introduce LangChain chat-model adapters just to use `.with_structured_output()`.
-- Trace graph entry, target selection, retrieved source IDs, dropped source IDs/reasons, token counts, model name, prompt version, and eval case ID in existing Langfuse/Laminar spans.
+- Trace service entry, target selection, retrieved source IDs, dropped source IDs/reasons, token counts, model name, prompt version, and eval case ID in existing Langfuse/Laminar spans.
 - No external writes. Phase 46 may ground future action suggestions, but Phase 47 owns Slack/Telegram/Jira/Linear write confirmation flows.
 
 **State Management:**
 
-- LangGraph state is request-local and should stay compact: ticket identity, selected targets, `LinkedItem`/`RetrievalUnit` references, score features, validation notes, and explanation payloads.
+- Service-local state should stay compact: ticket identity, selected targets, `LinkedItem`/`RetrievalUnit` references, score features, validation notes, and explanation payloads.
 - Durable state remains in existing Postgres/Supabase tables: graph nodes/edges, source records, context pages, missed-decision candidates, suggestions, and eval datasets.
-- Do not add a LangGraph checkpointer for the first Phase 46 implementation. Use checkpointers only if a workflow must resume across process crashes; if that happens, reuse existing Redis/Postgres infrastructure and require a stable `thread_id`.
-- If parallel retrieval branches are introduced later, either return target-specific keys or add explicit reducers for shared list fields.
+- Do not add new checkpointing infrastructure for the first Phase 46 implementation. If a workflow must resume across process crashes, reuse existing Redis/Postgres infrastructure and require a stable run ID.
+- If parallel retrieval branches are introduced later, keep shared SQLAlchemy session safety explicit; return target-specific result lists and merge them deterministically.
 
 **Context Window Strategy:**
 
@@ -546,7 +497,7 @@ class GraphRagQualityAssessment(BaseModel):
     validation_notes: list[str] = Field(default_factory=list)
 ```
 
-LangGraph does not validate model outputs by itself. In this repo, a LangGraph node should call the current provider-agnostic wrapper:
+The service layer should call the current provider-agnostic wrapper for structured validation:
 
 ```python
 from uuid import UUID
@@ -576,9 +527,9 @@ Retry policy:
 
 ### Async-First Design
 
-LangGraph supports async nodes and `await graph.ainvoke(...)` / `async for part in graph.astream(...)`. Phase 46 should keep the whole RAG path async because FastAPI, SQLAlchemy `AsyncSession`, provider SDK calls, and streaming synthesis are already async.
+Phase 46 should keep the whole RAG path async because FastAPI, SQLAlchemy `AsyncSession`, provider SDK calls, and streaming synthesis are already async.
 
-Common mistake: do not call `asyncio.run()` inside FastAPI handlers or LangGraph nodes; it will fail inside the running event loop. Also avoid sharing one SQLAlchemy `AsyncSession` across true parallel graph branches unless the called code is known to be safe; if independent DB work must run concurrently, use separate sessions or keep the DB portion sequential and parallelize provider/network calls only.
+Common mistake: do not call `asyncio.run()` inside FastAPI handlers or service functions; it will fail inside the running event loop. Also avoid sharing one SQLAlchemy `AsyncSession` across true parallel branches unless the called code is known to be safe; if independent DB work must run concurrently, use separate sessions or keep the DB portion sequential and parallelize provider/network calls only.
 
 Use streaming for UX progress (`stream_mode=["updates", "custom"]`) and source-by-source progress events. Use awaited final calls for structured output validation, eval runners, and persistence, because partial streamed JSON should not be validated as final truth.
 
@@ -592,14 +543,14 @@ Use streaming for UX progress (`stream_mode=["updates", "custom"]`) and source-b
 
 ### Context Window Management
 
-For this RAG system, context control is a ranking and provenance problem, not a LangGraph memory problem.
+For this RAG system, context control is a ranking and provenance problem, not an orchestration or memory-framework problem.
 
 - Use per-target quotas: decision receipts, primary source evidence, graph neighborhood, related work, and code should each have bounded slots.
 - Rerank/truncate with recorded drop reasons. Evals should assert both `must_include` and `must_not_include` source IDs.
 - Keep exact quotes and URLs for source-backed decisions; summarize surrounding source text only after quote/link validation.
 - Compress graph paths to the shortest useful relationship sequence and cap path count. Store full IDs in trace metadata, not only prose.
 - Do not let generated context pages outrank primary source records by default. If included, mark them as `generated_context`.
-- LangGraph state should carry compact IDs, traces, and snippets; do not accumulate full source documents across nodes.
+- Service state should carry compact IDs, traces, and snippets; do not accumulate full source documents across the retrieval pipeline.
 
 ### Cost and Latency Budget
 
