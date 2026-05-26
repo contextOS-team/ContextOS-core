@@ -496,7 +496,12 @@ async def test_linear_ticket_sets_ticket_id_not_jira():
 @pytest.mark.asyncio
 async def test_stream_persists_graph_evidence_without_extra_step():
     """Graph-only final evidence should persist without changing SSE source steps."""
-    from src.services.graph_rag_types import RetrievalTarget
+    from src.services.graph_rag_types import (
+        FreshnessState,
+        RetrievalFeatures,
+        RetrievalTarget,
+        VerificationState,
+    )
     from src.services.linking import LinkedItem
 
     session = AsyncMock()
@@ -519,6 +524,13 @@ async def test_stream_persists_graph_evidence_without_extra_step():
         relevance_score=1.0,
         signals=["graph:Decision(decided_in,d=1)"],
         targets=[RetrievalTarget.DECISION_RECEIPTS, RetrievalTarget.GRAPH_NEIGHBORHOOD],
+        features=RetrievalFeatures(
+            freshness_state=FreshnessState.FRESH,
+            verification_state=VerificationState.CONFIRMED_DECISION,
+            source_originality="source_of_record",
+            graph_depth=1,
+        ),
+        why_selected="Confirmed source-backed decision receipt.",
     )
 
     async def _find_with_graph(*args, **kwargs):
@@ -555,6 +567,10 @@ async def test_stream_persists_graph_evidence_without_extra_step():
         if source["type"] == "decision"
     )
     assert RetrievalTarget.DECISION_RECEIPTS.value in decision_source["targets"]
+    assert decision_source["retrieval_signals"] == ["graph:Decision(decided_in,d=1)"]
+    assert decision_source["freshness"] == "fresh"
+    assert decision_source["verification_state"] == "confirmed_decision"
+    assert decision_source["why_selected"] == "Confirmed source-backed decision receipt."
 
 
 # ---------------------------------------------------------------------------
