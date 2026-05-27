@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from urllib.parse import quote
 from uuid import UUID
 
+from sqlalchemy import and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -68,6 +69,31 @@ def _source_link(
     )
 
 
+def _apply_cursor(
+    stmt,
+    timestamp_column,
+    id_column,
+    *,
+    after_source_created_at: datetime | None,
+    after_source_id: UUID | None,
+):
+    if after_source_created_at is None or after_source_id is None:
+        return stmt
+    return stmt.where(
+        or_(
+            timestamp_column > after_source_created_at,
+            and_(
+                timestamp_column == after_source_created_at,
+                id_column > after_source_id,
+            ),
+        )
+    )
+
+
+def _has_text(*columns):
+    return or_(*(and_(column.is_not(None), column != "") for column in columns))
+
+
 async def _load_slack(
     session: AsyncSession,
     workspace_id: UUID,
@@ -75,6 +101,8 @@ async def _load_slack(
     end: datetime,
     *,
     source_resource_id: str | None,
+    after_source_created_at: datetime | None,
+    after_source_id: UUID | None,
     limit: int,
 ) -> list[MissedDecisionSourceRecord]:
     stmt = select(SlackMessage).where(
@@ -82,10 +110,21 @@ async def _load_slack(
         SlackMessage.deleted_at.is_(None),  # type: ignore[union-attr]
         SlackMessage.slack_created_at >= start,  # type: ignore[operator]
         SlackMessage.slack_created_at <= end,  # type: ignore[operator]
+        _has_text(SlackMessage.text),
     )
     if source_resource_id:
         stmt = stmt.where(SlackMessage.channel_id == source_resource_id)
-    stmt = stmt.order_by(SlackMessage.slack_created_at.asc()).limit(limit)  # type: ignore[union-attr]
+    stmt = _apply_cursor(
+        stmt,
+        SlackMessage.slack_created_at,
+        SlackMessage.id,
+        after_source_created_at=after_source_created_at,
+        after_source_id=after_source_id,
+    )
+    stmt = stmt.order_by(  # type: ignore[union-attr]
+        SlackMessage.slack_created_at.asc(),
+        SlackMessage.id.asc(),
+    ).limit(limit)
     result = await session.execute(stmt)
     rows = result.scalars().all()
     records: list[MissedDecisionSourceRecord] = []
@@ -123,6 +162,8 @@ async def _load_telegram(
     end: datetime,
     *,
     source_resource_id: str | None,
+    after_source_created_at: datetime | None,
+    after_source_id: UUID | None,
     limit: int,
 ) -> list[MissedDecisionSourceRecord]:
     stmt = select(TelegramMessage).where(
@@ -130,10 +171,21 @@ async def _load_telegram(
         TelegramMessage.deleted_at.is_(None),  # type: ignore[union-attr]
         TelegramMessage.telegram_date >= start,  # type: ignore[operator]
         TelegramMessage.telegram_date <= end,  # type: ignore[operator]
+        _has_text(TelegramMessage.text),
     )
     if source_resource_id:
         stmt = stmt.where(TelegramMessage.chat_id == int(source_resource_id))
-    stmt = stmt.order_by(TelegramMessage.telegram_date.asc()).limit(limit)  # type: ignore[union-attr]
+    stmt = _apply_cursor(
+        stmt,
+        TelegramMessage.telegram_date,
+        TelegramMessage.id,
+        after_source_created_at=after_source_created_at,
+        after_source_id=after_source_id,
+    )
+    stmt = stmt.order_by(  # type: ignore[union-attr]
+        TelegramMessage.telegram_date.asc(),
+        TelegramMessage.id.asc(),
+    ).limit(limit)
     result = await session.execute(stmt)
     rows = result.scalars().all()
     records: list[MissedDecisionSourceRecord] = []
@@ -169,6 +221,8 @@ async def _load_notion(
     end: datetime,
     *,
     source_resource_id: str | None,
+    after_source_created_at: datetime | None,
+    after_source_id: UUID | None,
     limit: int,
 ) -> list[MissedDecisionSourceRecord]:
     stmt = select(NotionPage).where(
@@ -176,10 +230,21 @@ async def _load_notion(
         NotionPage.deleted_at.is_(None),  # type: ignore[union-attr]
         NotionPage.notion_updated_at >= start,  # type: ignore[operator]
         NotionPage.notion_updated_at <= end,  # type: ignore[operator]
+        _has_text(NotionPage.content, NotionPage.title),
     )
     if source_resource_id:
         stmt = stmt.where(NotionPage.notion_id == source_resource_id)
-    stmt = stmt.order_by(NotionPage.notion_updated_at.asc()).limit(limit)  # type: ignore[union-attr]
+    stmt = _apply_cursor(
+        stmt,
+        NotionPage.notion_updated_at,
+        NotionPage.id,
+        after_source_created_at=after_source_created_at,
+        after_source_id=after_source_id,
+    )
+    stmt = stmt.order_by(  # type: ignore[union-attr]
+        NotionPage.notion_updated_at.asc(),
+        NotionPage.id.asc(),
+    ).limit(limit)
     result = await session.execute(stmt)
     rows = result.scalars().all()
     records: list[MissedDecisionSourceRecord] = []
@@ -215,6 +280,8 @@ async def _load_meetings(
     end: datetime,
     *,
     source_resource_id: str | None,
+    after_source_created_at: datetime | None,
+    after_source_id: UUID | None,
     limit: int,
 ) -> list[MissedDecisionSourceRecord]:
     stmt = select(MeetingTranscript).where(
@@ -223,10 +290,21 @@ async def _load_meetings(
         MeetingTranscript.source == "fathom",
         MeetingTranscript.meeting_date >= start,  # type: ignore[operator]
         MeetingTranscript.meeting_date <= end,  # type: ignore[operator]
+        _has_text(MeetingTranscript.transcript, MeetingTranscript.summary),
     )
     if source_resource_id:
         stmt = stmt.where(MeetingTranscript.id == UUID(source_resource_id))
-    stmt = stmt.order_by(MeetingTranscript.meeting_date.asc()).limit(limit)  # type: ignore[union-attr]
+    stmt = _apply_cursor(
+        stmt,
+        MeetingTranscript.meeting_date,
+        MeetingTranscript.id,
+        after_source_created_at=after_source_created_at,
+        after_source_id=after_source_id,
+    )
+    stmt = stmt.order_by(  # type: ignore[union-attr]
+        MeetingTranscript.meeting_date.asc(),
+        MeetingTranscript.id.asc(),
+    ).limit(limit)
     result = await session.execute(stmt)
     rows = result.scalars().all()
     records: list[MissedDecisionSourceRecord] = []
@@ -266,6 +344,8 @@ async def load_source_window(
     end: datetime,
     *,
     source_resource_id: str | None = None,
+    after_source_created_at: datetime | None = None,
+    after_source_id: UUID | None = None,
     limit: int = 100,
 ) -> list[MissedDecisionSourceRecord]:
     """Load normalized source records for a scan window."""
@@ -276,6 +356,8 @@ async def load_source_window(
             start,
             end,
             source_resource_id=source_resource_id,
+            after_source_created_at=after_source_created_at,
+            after_source_id=after_source_id,
             limit=limit,
         )
     if source_type == "telegram_message":
@@ -285,6 +367,8 @@ async def load_source_window(
             start,
             end,
             source_resource_id=source_resource_id,
+            after_source_created_at=after_source_created_at,
+            after_source_id=after_source_id,
             limit=limit,
         )
     if source_type == "notion_page":
@@ -294,6 +378,8 @@ async def load_source_window(
             start,
             end,
             source_resource_id=source_resource_id,
+            after_source_created_at=after_source_created_at,
+            after_source_id=after_source_id,
             limit=limit,
         )
     if source_type in {"fathom_transcript", "meeting_transcript"}:
@@ -303,6 +389,8 @@ async def load_source_window(
             start,
             end,
             source_resource_id=source_resource_id,
+            after_source_created_at=after_source_created_at,
+            after_source_id=after_source_id,
             limit=limit,
         )
     return []

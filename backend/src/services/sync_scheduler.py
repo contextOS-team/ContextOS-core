@@ -11,11 +11,9 @@ that support webhooks (Notion, GitHub, Linear).
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 from time import monotonic
 from uuid import UUID
-
-from datetime import timedelta
 
 import redis.asyncio as aioredis
 from sqlalchemy import update
@@ -25,7 +23,11 @@ from src.config import get_settings
 from src.db import async_session
 from src.models.context_page import ContextPage
 from src.models.integration import Provider, WorkspaceIntegration
+from src.models.missed_decision import MissedDecisionScanRun, MissedDecisionScanState
+from src.models.telegram import TelegramChatWorkspace
 from src.services.missed_decision_scanner import (
+    SCAN_STATUS_QUEUED,
+    SCAN_STATUS_RUNNING,
     drain_queued_missed_decision_scans,
     enqueue_missed_decision_scan,
 )
@@ -36,7 +38,15 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 15 * 60  # 15 minutes per CONTEXT.md decision
 CODE_INDEX_INTERVAL_SECONDS = 60 * 60  # 60 minutes for code re-indexing
-STALE_GENERATION_MINUTES = 5  # Pages stuck in "generating" longer than this are marked as error
+# Pages stuck in "generating" longer than this are marked as error.
+STALE_GENERATION_MINUTES = 5
+MISSED_DECISION_BACKSTOP_INTERVAL = timedelta(days=1)
+MISSED_DECISION_BACKSTOP_SOURCES = {
+    Provider.NOTION: "notion_page",
+    Provider.SLACK: "slack_message",
+    Provider.TELEGRAM: "telegram_message",
+    Provider.FATHOM: "fathom_transcript",
+}
 
 # Daily digest gate
 # ---------------------------------------------------------------------
@@ -94,11 +104,11 @@ async def reconcile_notion(workspace_id: UUID) -> None:
     Fetches the search API and compares last_edited_time against stored
     notion_updated_at to find pages that changed but didn't trigger a webhook.
     """
-    from src.services.notion_oauth import get_valid_access_token
-    from src.services.notion_client import NotionClient
-    from src.services.notion_sync import sync_single_page
-    from src.services.embedding_worker import enqueue_embedding_job
     import src.config as config_module
+    from src.services.embedding_worker import enqueue_embedding_job
+    from src.services.notion_client import NotionClient
+    from src.services.notion_oauth import get_valid_access_token
+    from src.services.notion_sync import sync_single_page
 
     settings = config_module.get_settings()
 
@@ -120,7 +130,9 @@ async def reconcile_notion(workspace_id: UUID) -> None:
                 user_id = result.scalar_one_or_none()
 
                 if user_id is None:
-                    srl.warning("No active user found for workspace, skipping reconcile")
+                    srl.warning(
+                        "No active user found for workspace, skipping reconcile"
+                    )
                     return
 
                 access_token = await get_valid_access_token(
@@ -134,8 +146,9 @@ async def reconcile_notion(workspace_id: UUID) -> None:
 
                 updated_count = 0
                 async with async_session() as session:
-                    from src.models.notion import NotionPage
                     from sqlmodel import select as sm_select
+
+                    from src.models.notion import NotionPage
 
                     notion_ids = [p.get("id", "") for p in pages if p.get("id")]
                     stored_map: dict[str, object] = {}
@@ -179,7 +192,7 @@ async def reconcile_notion(workspace_id: UUID) -> None:
 
                     if updated_count > 0:
                         await session.commit()
-                        srl.info("Reconciled %d Notion pages" % updated_count)
+                        srl.info(f"Reconciled {updated_count} Notion pages")
                     else:
                         srl.info("No Notion pages need reconciliation")
 
@@ -217,13 +230,13 @@ async def _check_code_index_freshness(workspace_id: UUID) -> None:
             return
 
         code_index_last = config.get("code_index_last_at")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         if code_index_last:
             try:
                 last_dt = datetime.fromisoformat(code_index_last)
                 if last_dt.tzinfo is None:
-                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                    last_dt = last_dt.replace(tzinfo=UTC)
                 elapsed = (now - last_dt).total_seconds()
                 if elapsed < CODE_INDEX_INTERVAL_SECONDS:
                     return  # Still fresh
@@ -244,7 +257,9 @@ async def _expire_stale_generations() -> None:
     'generating' forever — blocking regeneration and showing incorrect
     status in the feed.
     """
-    cutoff = datetime.utcnow() - timedelta(minutes=STALE_GENERATION_MINUTES)
+    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(
+        minutes=STALE_GENERATION_MINUTES
+    )
     async with async_session() as session:
         stmt = (
             update(ContextPage)
@@ -314,7 +329,9 @@ async def _emit_daily_digest(workspace_id: UUID, integration: str) -> None:
             await session.commit()
             logger.info(
                 "%s daily digest: %d messages for workspace %s",
-                integration.capitalize(), result["message_count"], workspace_id,
+                integration.capitalize(),
+                result["message_count"],
+                workspace_id,
             )
 
 
@@ -329,13 +346,226 @@ async def _drain_missed_decision_scans() -> None:
             )
 
 
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
+async def _has_active_missed_decision_scan(
+    session,
+    workspace_id: UUID,
+    source_type: str,
+) -> bool:
+    stmt = (
+        select(MissedDecisionScanRun)
+        .where(
+            MissedDecisionScanRun.workspace_id == workspace_id,
+            MissedDecisionScanRun.source_type == source_type,
+            MissedDecisionScanRun.status.in_(  # type: ignore[attr-defined]
+                [SCAN_STATUS_QUEUED, SCAN_STATUS_RUNNING]
+            ),
+            MissedDecisionScanRun.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        .limit(1)
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none() is not None
+
+
+async def _missed_decision_backstop_due(
+    session,
+    workspace_id: UUID,
+    source_type: str,
+    now: datetime,
+) -> bool:
+    stmt = select(MissedDecisionScanState).where(
+        MissedDecisionScanState.workspace_id == workspace_id,
+        MissedDecisionScanState.source_type == source_type,
+        MissedDecisionScanState.source_resource_id.is_(None),  # type: ignore[union-attr]
+        MissedDecisionScanState.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    result = await session.execute(stmt)
+    state = result.scalar_one_or_none()
+    if state is not None and state.last_missed_decision_scan_at is not None:
+        last_scan_at = _aware_utc(state.last_missed_decision_scan_at)
+        if now - last_scan_at < MISSED_DECISION_BACKSTOP_INTERVAL:
+            return False
+    return not await _has_active_missed_decision_scan(
+        session,
+        workspace_id,
+        source_type,
+    )
+
+
+async def _enqueue_missed_decision_backstop(
+    workspaces_by_provider: dict[Provider, list[UUID]],
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Queue stale safety scans for connected sources when event enqueue was missed."""
+    completed_at = now or datetime.now(UTC)
+    enqueued = 0
+    async with async_session() as session:
+        for provider, source_type in MISSED_DECISION_BACKSTOP_SOURCES.items():
+            for workspace_id in workspaces_by_provider.get(provider, []):
+                if not await _missed_decision_backstop_due(
+                    session,
+                    workspace_id,
+                    source_type,
+                    completed_at,
+                ):
+                    continue
+                run = await enqueue_missed_decision_scan(
+                    session,
+                    workspace_id,
+                    source_type,
+                    sync_completed_at=completed_at,
+                )
+                if run is not None:
+                    enqueued += 1
+        if enqueued:
+            await session.commit()
+            logger.info(
+                "Queued %d missed-decision backstop scan(s)",
+                enqueued,
+            )
+    return enqueued
+
+
+async def _run_polling_cycle() -> None:
+    try:
+        # Expire stale context page generations
+        await _expire_stale_generations()
+
+        # Single batched query for all connected workspaces grouped by
+        # provider — avoids 4× sequential round-trips to Supabase.
+        polled_providers = [
+            Provider.NOTION,
+            Provider.GITHUB,
+            Provider.SLACK,
+            Provider.TELEGRAM,
+            Provider.FATHOM,
+        ]
+        workspaces_by_provider: dict[Provider, list[UUID]] = {
+            p: [] for p in polled_providers
+        }
+        async with async_session() as session:
+            stmt = select(
+                WorkspaceIntegration.workspace_id,
+                WorkspaceIntegration.provider,
+            ).where(
+                WorkspaceIntegration.status == "connected",
+                WorkspaceIntegration.provider.in_(polled_providers),  # type: ignore[attr-defined]
+            )
+            result = await session.execute(stmt)
+            for ws_id, provider in result.fetchall():
+                workspaces_by_provider.setdefault(provider, []).append(ws_id)
+
+            tg_stmt = (
+                select(TelegramChatWorkspace.workspace_id)
+                .where(TelegramChatWorkspace.removed_at.is_(None))  # type: ignore[union-attr]
+                .distinct()
+            )
+            tg_result = await session.execute(tg_stmt)
+            telegram_workspaces = workspaces_by_provider.setdefault(
+                Provider.TELEGRAM,
+                [],
+            )
+            for (ws_id,) in tg_result.fetchall():
+                if ws_id not in telegram_workspaces:
+                    telegram_workspaces.append(ws_id)
+
+        # Notion reconciliation
+        notion_workspaces = workspaces_by_provider.get(Provider.NOTION, [])
+        for ws_id in notion_workspaces:
+            try:
+                await reconcile_notion(ws_id)
+            except Exception:
+                logger.exception("Notion reconciliation failed for workspace %s", ws_id)
+
+        # GitHub code index freshness check (every 60 min)
+        github_workspaces = workspaces_by_provider.get(Provider.GITHUB, [])
+        for ws_id in github_workspaces:
+            try:
+                await _check_code_index_freshness(ws_id)
+            except Exception:
+                logger.exception(
+                    "Code index freshness check failed for workspace %s", ws_id
+                )
+
+        # Slack user-token polling covers DMs, group DMs, and readable channels.
+        # The Events API path is still idempotent for future message delivery.
+        slack_workspaces = workspaces_by_provider.get(Provider.SLACK, [])
+        for ws_id in slack_workspaces:
+            try:
+                async with async_session() as session:
+                    result = await poll_user_messages(session, ws_id)
+                    if result.get("reason") is None and result.get("ingested", 0) > 0:
+                        await enqueue_missed_decision_scan(
+                            session,
+                            ws_id,
+                            "slack_message",
+                        )
+                        await session.commit()
+                if result.get("reason") is None and result.get("ingested", 0) > 0:
+                    logger.info(
+                        "Slack DM poll for workspace %s: ingested=%d skipped=%d",
+                        ws_id,
+                        result["ingested"],
+                        result["skipped"],
+                    )
+                elif result.get("reason") not in (None, "dms_disabled"):
+                    logger.warning(
+                        "Slack DM poll for workspace %s reason=%s",
+                        ws_id,
+                        result["reason"],
+                    )
+            except Exception:
+                logger.exception("Slack DM poll crashed for workspace %s", ws_id)
+
+        # Daily digests for messaging integrations.
+        # Dedup is handled inside generate_digest.
+        for provider, integration_name in [
+            (Provider.SLACK, "slack"),
+            (Provider.TELEGRAM, "telegram"),
+        ]:
+            workspaces = workspaces_by_provider.get(provider, [])
+            for ws_id in workspaces:
+                try:
+                    await _emit_daily_digest(ws_id, integration_name)
+                except Exception:
+                    logger.exception(
+                        "%s daily digest failed for workspace %s",
+                        integration_name.capitalize(),
+                        ws_id,
+                    )
+
+        # Linear reconciliation stub
+        # (can be implemented when Linear has incremental sync
+        # support via updatedAt filters)
+
+        await _enqueue_missed_decision_backstop(workspaces_by_provider)
+
+    except Exception:
+        logger.exception("Polling fallback scheduler error")
+
+    try:
+        await _drain_missed_decision_scans()
+    except Exception:
+        logger.exception("Missed-decision scan drain failed")
+
+
 async def run_polling_fallback() -> None:
     """Run the polling fallback loop indefinitely.
 
     Checks all connected providers every 15 minutes for missed webhook
     events. Designed to be started as a background task on application startup.
     """
-    logger.info("Polling fallback scheduler started (interval=%ds)", POLL_INTERVAL_SECONDS)
+    logger.info(
+        "Polling fallback scheduler started (interval=%ds)",
+        POLL_INTERVAL_SECONDS,
+    )
 
     # Expire stale generations immediately on startup
     try:
@@ -344,109 +574,5 @@ async def run_polling_fallback() -> None:
         logger.exception("Initial stale generation cleanup failed")
 
     while True:
-        try:
-            # Expire stale context page generations
-            await _expire_stale_generations()
-
-            # Single batched query for all connected workspaces grouped by
-            # provider — avoids 4× sequential round-trips to Supabase.
-            polled_providers = [
-                Provider.NOTION,
-                Provider.GITHUB,
-                Provider.SLACK,
-                Provider.TELEGRAM,
-            ]
-            workspaces_by_provider: dict[Provider, list[UUID]] = {
-                p: [] for p in polled_providers
-            }
-            async with async_session() as session:
-                stmt = select(
-                    WorkspaceIntegration.workspace_id,
-                    WorkspaceIntegration.provider,
-                ).where(
-                    WorkspaceIntegration.status == "connected",
-                    WorkspaceIntegration.provider.in_(polled_providers),  # type: ignore[attr-defined]
-                )
-                result = await session.execute(stmt)
-                for ws_id, provider in result.fetchall():
-                    workspaces_by_provider.setdefault(provider, []).append(ws_id)
-
-            # Notion reconciliation
-            notion_workspaces = workspaces_by_provider.get(Provider.NOTION, [])
-            for ws_id in notion_workspaces:
-                try:
-                    await reconcile_notion(ws_id)
-                except Exception:
-                    logger.exception(
-                        "Notion reconciliation failed for workspace %s", ws_id
-                    )
-
-            # GitHub code index freshness check (every 60 min)
-            github_workspaces = workspaces_by_provider.get(Provider.GITHUB, [])
-            for ws_id in github_workspaces:
-                try:
-                    await _check_code_index_freshness(ws_id)
-                except Exception:
-                    logger.exception(
-                        "Code index freshness check failed for workspace %s", ws_id
-                    )
-
-            # Slack DM polling (user-token) per Phase 39. Channels still use
-            # the bot Events API webhook path — this only covers im/mpim.
-            slack_workspaces = workspaces_by_provider.get(Provider.SLACK, [])
-            for ws_id in slack_workspaces:
-                try:
-                    async with async_session() as session:
-                        result = await poll_user_messages(session, ws_id)
-                        if result.get("reason") is None and result.get("ingested", 0) > 0:
-                            await enqueue_missed_decision_scan(
-                                session,
-                                ws_id,
-                                "slack_message",
-                            )
-                            await session.commit()
-                    if result.get("reason") is None and result.get("ingested", 0) > 0:
-                        logger.info(
-                            "Slack DM poll for workspace %s: ingested=%d skipped=%d",
-                            ws_id,
-                            result["ingested"],
-                            result["skipped"],
-                        )
-                    elif result.get("reason") not in (None, "dms_disabled"):
-                        logger.warning(
-                            "Slack DM poll for workspace %s reason=%s",
-                            ws_id,
-                            result["reason"],
-                        )
-                except Exception:
-                    logger.exception(
-                        "Slack DM poll crashed for workspace %s", ws_id
-                    )
-
-            # Daily digests for messaging integrations (dedup handled inside generate_digest)
-            for provider, integration_name in [
-                (Provider.SLACK, "slack"),
-                (Provider.TELEGRAM, "telegram"),
-            ]:
-                workspaces = workspaces_by_provider.get(provider, [])
-                for ws_id in workspaces:
-                    try:
-                        await _emit_daily_digest(ws_id, integration_name)
-                    except Exception:
-                        logger.exception(
-                            "%s daily digest failed for workspace %s",
-                            integration_name.capitalize(), ws_id,
-                        )
-
-            # Linear reconciliation stub
-            # (can be implemented when Linear has incremental sync
-            # support via updatedAt filters)
-
-        except Exception:
-            logger.exception("Polling fallback scheduler error")
-
+        await _run_polling_cycle()
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
-        try:
-            await _drain_missed_decision_scans()
-        except Exception:
-            logger.exception("Missed-decision scan drain failed")

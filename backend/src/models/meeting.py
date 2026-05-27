@@ -13,7 +13,7 @@ from BaseModel (which includes TimestampMixin with updated_at).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String
+from sqlalchemy import Column, DateTime, String
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlmodel import Field, SQLModel
@@ -41,7 +41,10 @@ class MeetingTranscript(SQLModel, table=True):
         default=None,
         sa_column=Column(ARRAY(String), nullable=True),
     )
-    meeting_date: datetime | None = Field(default=None)
+    meeting_date: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     duration_minutes: int | None = Field(default=None)
     raw_data: dict = Field(
         default_factory=dict,

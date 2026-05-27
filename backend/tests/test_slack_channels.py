@@ -30,6 +30,7 @@ from tests.conftest import (
     TEST_USER_ID,
     TEST_WORKSPACE_ID,
     _make_test_settings,
+    make_entity_execute,
 )
 
 # Test Slack config values
@@ -395,9 +396,10 @@ class TestRefreshChannels:
         mock_int_result = MagicMock()
         mock_int_result.scalar_one_or_none.return_value = mock_integration
 
-        mock_session.execute = AsyncMock(
-            side_effect=[mock_ws_result, mock_int_result]
-        )
+        mock_session.execute.side_effect = make_entity_execute({
+            "WorkspaceMember": mock_ws_result,
+            "WorkspaceIntegration": mock_int_result,
+        })
         mock_session.commit = AsyncMock()
 
         mock_response = MagicMock()
@@ -456,9 +458,10 @@ class TestGetChannelsEndpoint:
         mock_int_result = MagicMock()
         mock_int_result.scalar_one_or_none.return_value = mock_integration
 
-        mock_session.execute = AsyncMock(
-            side_effect=[mock_ws_result, mock_int_result]
-        )
+        mock_session.execute.side_effect = make_entity_execute({
+            "WorkspaceMember": mock_ws_result,
+            "WorkspaceIntegration": mock_int_result,
+        })
 
         response = channel_client.get(
             "/api/slack/channels",

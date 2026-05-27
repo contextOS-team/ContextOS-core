@@ -26,17 +26,22 @@ from __future__ import annotations
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
+from sqlalchemy import text as sa_text
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import get_settings
 from src.models.telegram import TelegramChatWorkspace, TelegramPairingCode
+from src.services.missed_decision_scanner import (
+    FIRST_SCAN_LOOKBACK_DAYS,
+    enqueue_missed_decision_scan,
+)
 from src.services.sync_adapter import emit_activity
 from src.services.telegram_bot import TelegramError, telegram_api_call
 
@@ -50,8 +55,10 @@ PAIRING_TTL_MINUTES = 15
 # override at deploy time can wire a settings field in a follow-up.
 _DASHBOARD_URL_DEFAULT = "https://contextos.pro/dashboard/settings?tab=integrations"
 
+TELEGRAM_MISSED_DECISION_SOURCE_TYPE = "telegram_message"
 
-class ClaimResult(str, Enum):
+
+class ClaimResult(StrEnum):
     """Outcome of a `/start@bot <code>` claim attempt."""
 
     CLAIMED = "claimed"
@@ -216,9 +223,7 @@ async def claim_chat(session: AsyncSession, message: dict[str, Any]) -> ClaimRes
 
     # Same-workspace re-claim -- idempotent NOOP, do not burn the code.
     if existing_ws is not None and existing_ws == claimer_ws:
-        logger.info(
-            "telegram_claim_noop chat_id=%s workspace=%s", chat_id, claimer_ws
-        )
+        logger.info("telegram_claim_noop chat_id=%s workspace=%s", chat_id, claimer_ws)
         return ClaimResult.NOOP
 
     # Step 3: fresh claim. Atomically burn the code.
@@ -269,20 +274,33 @@ async def claim_chat(session: AsyncSession, message: dict[str, Any]) -> ClaimRes
     )
     insert_result = await session.execute(insert_stmt)
     inserted = insert_result.first() is not None
+    claim_time = datetime.now(UTC)
 
-    # Emit activity event before commit so it lands in the same transaction
-    # (emit_activity uses begin_nested + fail-silent under the hood).
-    await emit_activity(
-        session,
-        claimer_ws,
-        "integration_connected",
-        metadata={
-            "integration": "telegram",
-            "chat_title": chat_title,
-            "chat_id": chat_id,
-        },
-        actor_id=created_by,
-    )
+    if inserted:
+        await _backfill_recent_chat_messages_for_claim(
+            session,
+            claimer_ws,
+            chat_id,
+            now=claim_time,
+        )
+        await _enqueue_initial_telegram_scan(
+            session,
+            claimer_ws,
+            sync_completed_at=claim_time,
+        )
+        # Emit activity event before commit so it lands in the same transaction
+        # (emit_activity uses begin_nested + fail-silent under the hood).
+        await emit_activity(
+            session,
+            claimer_ws,
+            "integration_connected",
+            metadata={
+                "integration": "telegram",
+                "chat_title": chat_title,
+                "chat_id": chat_id,
+            },
+            actor_id=created_by,
+        )
     await session.commit()
 
     if inserted:
@@ -303,10 +321,140 @@ async def claim_chat(session: AsyncSession, message: dict[str, Any]) -> ClaimRes
         chat_id,
         claimer_ws,
     )
-    await _send_reply_safe(
-        chat_id, _reply_text(ClaimResult.ALREADY_CLAIMED_BY_OTHER)
-    )
+    await _send_reply_safe(chat_id, _reply_text(ClaimResult.ALREADY_CLAIMED_BY_OTHER))
     return ClaimResult.ALREADY_CLAIMED_BY_OTHER
+
+
+async def _backfill_recent_chat_messages_for_claim(
+    session: AsyncSession,
+    workspace_id: UUID,
+    chat_id: int,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Copy locally captured chat history into a freshly claimed workspace.
+
+    Telegram only delivers messages to us after the shared bot has observed
+    them. When a chat is re-paired to a new workspace, recent rows may already
+    exist locally under the previous workspace. Copying the last scanner
+    lookback window lets the new workspace run the same first 14-day missed
+    decision scan as Slack, Notion, and meeting sources without moving history
+    out of the old workspace.
+    """
+    cutoff = (now or datetime.now(UTC)) - timedelta(days=FIRST_SCAN_LOOKBACK_DAYS)
+    stmt = sa_text(
+        """
+        WITH source_rows AS (
+            SELECT DISTINCT ON (src.chat_id, src.message_id)
+                src.message_id,
+                src.chat_id,
+                src.chat_title,
+                src.chat_type,
+                src.from_user_id,
+                src.from_username,
+                src.from_first_name,
+                src.text,
+                src.reply_to_message_id,
+                src.is_reply,
+                src.telegram_date,
+                src.raw_data,
+                src.created_at
+            FROM telegram_messages src
+            WHERE src.chat_id = CAST(:chat_id AS bigint)
+              AND src.workspace_id <> CAST(:workspace_id AS uuid)
+              AND src.deleted_at IS NULL
+              AND COALESCE(src.telegram_date, src.created_at) >=
+                  CAST(:cutoff AS timestamptz)
+            ORDER BY
+                src.chat_id,
+                src.message_id,
+                COALESCE(src.telegram_date, src.created_at) DESC,
+                src.created_at DESC
+        )
+        INSERT INTO telegram_messages (
+            id,
+            workspace_id,
+            message_id,
+            chat_id,
+            chat_title,
+            chat_type,
+            from_user_id,
+            from_username,
+            from_first_name,
+            text,
+            reply_to_message_id,
+            is_reply,
+            telegram_date,
+            raw_data,
+            created_at
+        )
+        SELECT
+            gen_random_uuid(),
+            CAST(:workspace_id AS uuid),
+            src.message_id,
+            src.chat_id,
+            src.chat_title,
+            src.chat_type,
+            src.from_user_id,
+            src.from_username,
+            src.from_first_name,
+            src.text,
+            src.reply_to_message_id,
+            src.is_reply,
+            src.telegram_date,
+            src.raw_data,
+            src.created_at
+        FROM source_rows src
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM telegram_messages existing
+            WHERE existing.workspace_id = CAST(:workspace_id AS uuid)
+              AND existing.chat_id = src.chat_id
+              AND existing.message_id = src.message_id
+        )
+        RETURNING id
+        """
+    )
+    try:
+        result = await session.execute(
+            stmt,
+            {
+                "workspace_id": workspace_id,
+                "chat_id": chat_id,
+                "cutoff": cutoff,
+            },
+        )
+        copied_ids = list(result.scalars().all())
+        if copied_ids:
+            logger.info(
+                "telegram_history_backfilled workspace=%s chat_id=%s copied=%d",
+                workspace_id,
+                chat_id,
+                len(copied_ids),
+            )
+        return len(copied_ids)
+    except Exception:
+        logger.warning(
+            "telegram_history_backfill_failed workspace=%s chat_id=%s",
+            workspace_id,
+            chat_id,
+            exc_info=True,
+        )
+        return 0
+
+
+async def _enqueue_initial_telegram_scan(
+    session: AsyncSession,
+    workspace_id: UUID,
+    *,
+    sync_completed_at: datetime,
+) -> None:
+    await enqueue_missed_decision_scan(
+        session,
+        workspace_id,
+        TELEGRAM_MISSED_DECISION_SOURCE_TYPE,
+        sync_completed_at=sync_completed_at,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -314,9 +462,7 @@ async def claim_chat(session: AsyncSession, message: dict[str, Any]) -> ClaimRes
 # ---------------------------------------------------------------------------
 
 
-async def handle_my_chat_member(
-    session: AsyncSession, update: dict[str, Any]
-) -> None:
+async def handle_my_chat_member(session: AsyncSession, update: dict[str, Any]) -> None:
     """Bookkeeping for ChatMemberUpdated events on the bot's own status.
 
     On `left`/`kicked`: soft-delete the mapping (set `removed_at = now()`)
@@ -332,9 +478,7 @@ async def handle_my_chat_member(
     new_member = update.get("new_chat_member", {}) or {}
     new_status = new_member.get("status")
 
-    logger.info(
-        "telegram_my_chat_member chat_id=%s new_status=%s", chat_id, new_status
-    )
+    logger.info("telegram_my_chat_member chat_id=%s new_status=%s", chat_id, new_status)
 
     if new_status not in ("left", "kicked"):
         return
@@ -400,9 +544,7 @@ async def _send_reply_safe(chat_id: int, text: str) -> None:
         logger.exception("telegram_reply_failed chat_id=%s", chat_id)
 
 
-def _reply_text(
-    result: ClaimResult, *, chat_title: str | None = None
-) -> str:
+def _reply_text(result: ClaimResult, *, chat_title: str | None = None) -> str:
     """Render the in-chat reply text for a given claim outcome.
 
     Wording is Claude's discretion per CONTEXT. Kept short and link-driven.

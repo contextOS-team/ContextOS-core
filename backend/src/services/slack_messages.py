@@ -67,7 +67,7 @@ from src.services.slack_oauth import SlackOAuthError, get_user_token
 logger = logging.getLogger(__name__)
 
 SLACK_API_BASE = "https://slack.com/api"
-BACKFILL_DAYS = 7
+BACKFILL_DAYS = 14
 BACKFILL_MESSAGES_PER_CONVERSATION_CAP = 100
 # Conservative page size: RESEARCH.md flags a 1-rpm cap with limit=15 for
 # non-Marketplace apps. Start at 100 and let 429 handling absorb bursts.
@@ -634,8 +634,11 @@ async def _upsert_messages(
             # something we don't expect (DB down, conflict-target mismatch).
             # Skip rather than crash the whole batch.
             logger.warning(
-                "slack upsert returned no row_id (workspace=%s channel=%s ts=%s); skipping",
-                workspace_id, conv_id, msg["ts"],
+                "slack upsert returned no row_id "
+                "(workspace=%s channel=%s ts=%s); skipping",
+                workspace_id,
+                conv_id,
+                msg["ts"],
             )
             continue
         persisted.append((msg, row_id))

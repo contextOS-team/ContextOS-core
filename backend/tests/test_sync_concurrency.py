@@ -1,8 +1,7 @@
-"""Tests for concurrency controls, HTTP/2, jitter, incremental sync, and polling scheduler."""
+"""Tests for concurrency controls, HTTP/2, sync, and polling scheduler."""
 
-import asyncio
 import random
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -49,7 +48,7 @@ class TestJitter:
     """Verify jitter formula produces values in [0.5*base, 1.5*base] range."""
 
     def test_jitter_range(self):
-        """Verify jitter formula produces values in expected range over many iterations."""
+        """Verify jitter formula stays in range over many iterations."""
         base_delay = 2.0
         min_expected = base_delay * 0.5
         max_expected = base_delay * 1.5
@@ -57,7 +56,8 @@ class TestJitter:
         for _ in range(1000):
             jittered = base_delay * (0.5 + random.random())
             assert min_expected <= jittered <= max_expected, (
-                f"Jittered value {jittered} outside range [{min_expected}, {max_expected}]"
+                f"Jittered value {jittered} outside range "
+                f"[{min_expected}, {max_expected}]"
             )
 
 
@@ -66,7 +66,7 @@ class TestIncrementalSync:
 
     @pytest.mark.asyncio
     async def test_notion_incremental_skips_unchanged(self):
-        """When stored timestamp >= API timestamp, get_page_markdown should NOT be called."""
+        """Stored timestamp >= API timestamp skips get_page_markdown."""
         from datetime import datetime
 
         mock_client = AsyncMock()
@@ -129,3 +129,267 @@ class TestPollingScheduler:
         from src.services.sync_scheduler import POLL_INTERVAL_SECONDS
 
         assert POLL_INTERVAL_SECONDS == 900  # 15 * 60
+
+    @pytest.mark.asyncio
+    async def test_polling_fallback_runs_cycle_before_sleep(self, monkeypatch):
+        from src.services import sync_scheduler
+
+        events = []
+
+        async def fake_expire_stale_generations():
+            events.append("startup-expire")
+
+        async def fake_run_polling_cycle():
+            events.append("cycle")
+
+        async def fake_sleep(_seconds):
+            events.append("sleep")
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(
+            sync_scheduler,
+            "_expire_stale_generations",
+            fake_expire_stale_generations,
+        )
+        monkeypatch.setattr(
+            sync_scheduler,
+            "_run_polling_cycle",
+            fake_run_polling_cycle,
+        )
+        monkeypatch.setattr(sync_scheduler.asyncio, "sleep", fake_sleep)
+
+        with pytest.raises(KeyboardInterrupt):
+            await sync_scheduler.run_polling_fallback()
+
+        assert events == ["startup-expire", "cycle", "sleep"]
+
+    @pytest.mark.asyncio
+    async def test_polling_cycle_drains_missed_decision_scans(self, monkeypatch):
+        from src.services import sync_scheduler
+
+        events = []
+
+        async def fake_expire_stale_generations():
+            events.append("expire")
+
+        async def fake_drain_missed_decision_scans():
+            events.append("drain")
+
+        async def fake_enqueue_missed_decision_backstop(_workspaces):
+            events.append("backstop")
+
+        class EmptyProviderRows:
+            def fetchall(self):
+                return []
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=EmptyProviderRows())
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        monkeypatch.setattr(
+            sync_scheduler,
+            "_expire_stale_generations",
+            fake_expire_stale_generations,
+        )
+        monkeypatch.setattr(
+            sync_scheduler,
+            "_drain_missed_decision_scans",
+            fake_drain_missed_decision_scans,
+        )
+        monkeypatch.setattr(
+            sync_scheduler,
+            "_enqueue_missed_decision_backstop",
+            fake_enqueue_missed_decision_backstop,
+        )
+        monkeypatch.setattr(
+            sync_scheduler,
+            "async_session",
+            MagicMock(return_value=mock_cm),
+        )
+
+        await sync_scheduler._run_polling_cycle()
+
+        assert events == ["expire", "backstop", "drain"]
+        assert mock_session.execute.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_backstop_enqueues_stale_missed_decision_scan(self, monkeypatch):
+        from datetime import UTC, datetime, timedelta
+        from uuid import uuid4
+
+        from src.models.integration import Provider
+        from src.models.missed_decision import MissedDecisionScanState
+        from src.services import sync_scheduler
+
+        workspace_id = uuid4()
+        now = datetime(2026, 5, 26, 12, 0, tzinfo=UTC)
+        state = MissedDecisionScanState(
+            workspace_id=workspace_id,
+            source_type="slack_message",
+            last_missed_decision_scan_at=now - timedelta(days=2),
+        )
+
+        state_result = MagicMock()
+        state_result.scalar_one_or_none.return_value = state
+        run_result = MagicMock()
+        run_result.scalar_one_or_none.return_value = None
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=[state_result, run_result])
+        mock_session.commit = AsyncMock()
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_enqueue = AsyncMock(return_value=object())
+
+        monkeypatch.setattr(
+            sync_scheduler,
+            "async_session",
+            MagicMock(return_value=mock_cm),
+        )
+        monkeypatch.setattr(
+            sync_scheduler,
+            "enqueue_missed_decision_scan",
+            mock_enqueue,
+        )
+
+        await sync_scheduler._enqueue_missed_decision_backstop(
+            {Provider.SLACK: [workspace_id]},
+            now=now,
+        )
+
+        mock_enqueue.assert_awaited_once_with(
+            mock_session,
+            workspace_id,
+            "slack_message",
+            sync_completed_at=now,
+        )
+        mock_session.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_backstop_skips_recent_missed_decision_scan(self, monkeypatch):
+        from datetime import UTC, datetime, timedelta
+        from uuid import uuid4
+
+        from src.models.integration import Provider
+        from src.models.missed_decision import MissedDecisionScanState
+        from src.services import sync_scheduler
+
+        workspace_id = uuid4()
+        now = datetime(2026, 5, 26, 12, 0, tzinfo=UTC)
+        state = MissedDecisionScanState(
+            workspace_id=workspace_id,
+            source_type="slack_message",
+            last_missed_decision_scan_at=now - timedelta(hours=2),
+        )
+        state_result = MagicMock()
+        state_result.scalar_one_or_none.return_value = state
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=state_result)
+        mock_session.commit = AsyncMock()
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_enqueue = AsyncMock()
+
+        monkeypatch.setattr(
+            sync_scheduler,
+            "async_session",
+            MagicMock(return_value=mock_cm),
+        )
+        monkeypatch.setattr(
+            sync_scheduler,
+            "enqueue_missed_decision_scan",
+            mock_enqueue,
+        )
+
+        await sync_scheduler._enqueue_missed_decision_backstop(
+            {Provider.SLACK: [workspace_id]},
+            now=now,
+        )
+
+        mock_enqueue.assert_not_awaited()
+        mock_session.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_backstop_skips_when_any_scan_for_source_is_active(self, monkeypatch):
+        from datetime import UTC, datetime, timedelta
+        from uuid import uuid4
+
+        from sqlalchemy.dialects import postgresql
+
+        from src.models.integration import Provider
+        from src.models.missed_decision import (
+            MissedDecisionScanRun,
+            MissedDecisionScanState,
+        )
+        from src.services import sync_scheduler
+
+        workspace_id = uuid4()
+        now = datetime(2026, 5, 26, 12, 0, tzinfo=UTC)
+        state = MissedDecisionScanState(
+            workspace_id=workspace_id,
+            source_type="slack_message",
+            last_missed_decision_scan_at=now - timedelta(days=2),
+        )
+        active_resource_run = MissedDecisionScanRun(
+            workspace_id=workspace_id,
+            source_type="slack_message",
+            source_resource_id="C123",
+            status="queued",
+        )
+        state_result = MagicMock()
+        state_result.scalar_one_or_none.return_value = state
+        active_result = MagicMock()
+        active_result.scalar_one_or_none.return_value = active_resource_run
+        no_active_result = MagicMock()
+        no_active_result.scalar_one_or_none.return_value = None
+        active_scan_sql = ""
+
+        async def fake_execute(stmt):
+            nonlocal active_scan_sql
+            entity = None
+            descriptions = getattr(stmt, "column_descriptions", None)
+            if descriptions:
+                entity = descriptions[0].get("entity")
+            if entity is MissedDecisionScanState:
+                return state_result
+            if entity is MissedDecisionScanRun:
+                compiled = stmt.compile(
+                    dialect=postgresql.dialect(),
+                    compile_kwargs={"literal_binds": True},
+                )
+                active_scan_sql = str(compiled)
+                if "source_resource_id IS NULL" in active_scan_sql:
+                    return no_active_result
+                return active_result
+            raise AssertionError(f"unexpected statement: {stmt}")
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=fake_execute)
+        mock_session.commit = AsyncMock()
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_enqueue = AsyncMock()
+
+        monkeypatch.setattr(
+            sync_scheduler,
+            "async_session",
+            MagicMock(return_value=mock_cm),
+        )
+        monkeypatch.setattr(
+            sync_scheduler,
+            "enqueue_missed_decision_scan",
+            mock_enqueue,
+        )
+
+        await sync_scheduler._enqueue_missed_decision_backstop(
+            {Provider.SLACK: [workspace_id]},
+            now=now,
+        )
+
+        assert "source_resource_id IS NULL" not in active_scan_sql
+        mock_enqueue.assert_not_awaited()
+        mock_session.commit.assert_not_awaited()

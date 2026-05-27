@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, UniqueConstraint
+from sqlalchemy import Column, DateTime, UniqueConstraint
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
@@ -34,7 +34,10 @@ class NotionPage(SQLModel, table=True):
     url: str | None = Field(default=None)
     last_edited_by: str | None = Field(default=None)
     notion_created_at: datetime | None = Field(default=None)
-    notion_updated_at: datetime | None = Field(default=None)
+    notion_updated_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     raw_data: dict = Field(
         default_factory=dict,
         sa_column=Column(JSONB, nullable=True, server_default=sa_text("'{}'")),

@@ -161,6 +161,7 @@ async def sync_repos(
             "items_count": total_prs,
             "duration_ms": _sync_duration_ms,
         })
+        await session.commit()
 
         srl.info("GitHub sync complete: %d PRs across %d repos" % (total_prs, len(selected_repos)))
 

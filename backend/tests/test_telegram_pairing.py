@@ -14,22 +14,22 @@ NOTHING insert). No real DB and no real Telegram API call.
 """
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
 
 import src.config
-from src.config import Settings
+from src.services.telegram_bot import TelegramError
 from src.services.telegram_pairing import (
     ClaimResult,
+    _backfill_recent_chat_messages_for_claim,
     claim_chat,
     generate_pairing_code,
     handle_my_chat_member,
     resolve_workspace_for_chat,
 )
-from src.services.telegram_bot import TelegramError
 from tests.conftest import _make_test_settings
 
 WORKSPACE_A = UUID("11111111-1111-1111-1111-111111111111")
@@ -66,6 +66,25 @@ def mock_emit_activity():
         yield mock
 
 
+@pytest.fixture()
+def mock_initial_backfill():
+    with patch(
+        "src.services.telegram_pairing._backfill_recent_chat_messages_for_claim",
+        new_callable=AsyncMock,
+    ) as mock:
+        mock.return_value = 0
+        yield mock
+
+
+@pytest.fixture()
+def mock_initial_scan():
+    with patch(
+        "src.services.telegram_pairing._enqueue_initial_telegram_scan",
+        new_callable=AsyncMock,
+    ) as mock:
+        yield mock
+
+
 def _make_session() -> AsyncMock:
     """Build an AsyncMock that mimics AsyncSession.
 
@@ -94,6 +113,48 @@ def _make_group_message(
     }
 
 
+class _ScalarResult:
+    def __init__(self, values: list[UUID]) -> None:
+        self._values = values
+
+    def scalars(self):
+        result = MagicMock()
+        result.all.return_value = self._values
+        return result
+
+
+# ===========================================================================
+# Telegram history backfill
+# ===========================================================================
+
+
+class TestTelegramHistoryBackfill:
+    @pytest.mark.asyncio
+    async def test_copies_recent_locally_captured_chat_rows_for_new_workspace(self):
+        session = _make_session()
+        copied_id = uuid4()
+        session.execute = AsyncMock(return_value=_ScalarResult([copied_id]))
+        now = datetime(2026, 5, 27, 12, 0, tzinfo=UTC)
+
+        count = await _backfill_recent_chat_messages_for_claim(
+            session,
+            WORKSPACE_A,
+            -1001234567890,
+            now=now,
+        )
+
+        assert count == 1
+        stmt, params = session.execute.await_args.args
+        sql = str(stmt)
+        assert "INSERT INTO telegram_messages" in sql
+        assert "gen_random_uuid()" in sql
+        assert "DISTINCT ON (src.chat_id, src.message_id)" in sql
+        assert "NOT EXISTS" in sql
+        assert params["workspace_id"] == WORKSPACE_A
+        assert params["chat_id"] == -1001234567890
+        assert params["cutoff"] == now - timedelta(days=14)
+
+
 # ===========================================================================
 # generate_pairing_code
 # ===========================================================================
@@ -106,7 +167,9 @@ class TestGeneratePairingCode:
         result = await generate_pairing_code(session, WORKSPACE_A, USER_A)
         code = result["code"]
         assert isinstance(code, str)
-        assert len(code) == 16, f"Expected 16-char base64url code, got {len(code)}: {code!r}"
+        assert len(code) == 16, (
+            f"Expected 16-char base64url code, got {len(code)}: {code!r}"
+        )
         assert re.fullmatch(r"[A-Za-z0-9_-]{16}", code) is not None, (
             f"Code {code!r} does not match base64url alphabet"
         )
@@ -121,9 +184,9 @@ class TestGeneratePairingCode:
     @pytest.mark.asyncio
     async def test_expires_at_is_15_minutes_from_now(self):
         session = _make_session()
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         result = await generate_pairing_code(session, WORKSPACE_A, USER_A)
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         # 15 minutes ± a small fudge for clock drift between two `datetime.now`
         delta_low = (result["expires_at"] - before).total_seconds()
         delta_high = (result["expires_at"] - after).total_seconds()
@@ -196,7 +259,9 @@ class TestClaimChatBranches:
     """Behavior matrix for each ClaimResult branch."""
 
     @pytest.mark.asyncio
-    async def test_private_chat_returns_ignore(self, mock_send_reply, mock_emit_activity):
+    async def test_private_chat_returns_ignore(
+        self, mock_send_reply, mock_emit_activity
+    ):
         session = _make_session()
         message = _make_group_message(chat_type="private")
         result = await claim_chat(session, message)
@@ -209,7 +274,9 @@ class TestClaimChatBranches:
         mock_emit_activity.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_non_group_chat_returns_ignore(self, mock_send_reply, mock_emit_activity):
+    async def test_non_group_chat_returns_ignore(
+        self, mock_send_reply, mock_emit_activity
+    ):
         """Channel/private/anything-else is ignored (groups + supergroups only)."""
         session = _make_session()
         message = _make_group_message(chat_type="channel")
@@ -221,7 +288,7 @@ class TestClaimChatBranches:
     async def test_invalid_or_expired_code_returns_invalid(
         self, mock_send_reply, mock_emit_activity
     ):
-        """Code lookup returns no row -> INVALID_CODE; no DB changes; in-chat reply sent."""
+        """Code lookup returns no row -> INVALID_CODE with no DB changes."""
         session = _make_session()
         # Peek query returns no row
         peek_result = MagicMock()
@@ -270,7 +337,7 @@ class TestClaimChatBranches:
     async def test_same_workspace_re_claim_is_noop(
         self, mock_send_reply, mock_emit_activity
     ):
-        """Code's workspace == existing mapping's workspace -> NOOP, no burn, no reply."""
+        """Code workspace == existing mapping workspace -> NOOP, no burn."""
         session = _make_session()
         peek_result = MagicMock()
         peek_result.first = MagicMock(return_value=(WORKSPACE_A, USER_A))
@@ -289,7 +356,11 @@ class TestClaimChatBranches:
 
     @pytest.mark.asyncio
     async def test_fresh_claim_burns_code_inserts_mapping_emits_activity(
-        self, mock_send_reply, mock_emit_activity
+        self,
+        mock_send_reply,
+        mock_emit_activity,
+        mock_initial_backfill,
+        mock_initial_scan,
     ):
         """Code valid, chat unmapped -> CLAIMED with side effects."""
         session = _make_session()
@@ -303,7 +374,9 @@ class TestClaimChatBranches:
         insert_result = MagicMock()
         insert_result.first = MagicMock(return_value=(-1001234567890,))
 
-        session.execute = AsyncMock(side_effect=[peek_result, redeem_result, insert_result])
+        session.execute = AsyncMock(
+            side_effect=[peek_result, redeem_result, insert_result]
+        )
         # Chat is unmapped
         session.scalar = AsyncMock(return_value=None)
 
@@ -315,16 +388,25 @@ class TestClaimChatBranches:
         session.commit.assert_awaited()
         mock_send_reply.assert_awaited_once()
         mock_emit_activity.assert_awaited_once()
+        mock_initial_backfill.assert_awaited_once()
+        mock_initial_scan.assert_awaited_once()
         # Activity event should be 'integration_connected'
         args, kwargs = mock_emit_activity.call_args
-        assert "integration_connected" in args or kwargs.get("event_type") == "integration_connected"
+        assert (
+            "integration_connected" in args
+            or kwargs.get("event_type") == "integration_connected"
+        )
         # And should reference workspace A
         # (positional signature: session, workspace_id, event_type)
         assert args[1] == WORKSPACE_A or kwargs.get("workspace_id") == WORKSPACE_A
 
     @pytest.mark.asyncio
     async def test_repair_after_kick_updates_soft_deleted_row(
-        self, mock_send_reply, mock_emit_activity
+        self,
+        mock_send_reply,
+        mock_emit_activity,
+        mock_initial_backfill,
+        mock_initial_scan,
     ):
         """Bot was kicked (removed_at IS NOT NULL); same workspace re-pairs.
         ON CONFLICT DO UPDATE WHERE removed_at IS NOT NULL re-claims the slot
@@ -339,7 +421,9 @@ class TestClaimChatBranches:
         insert_result = MagicMock()
         insert_result.first = MagicMock(return_value=(-1001234567890,))
 
-        session.execute = AsyncMock(side_effect=[peek_result, redeem_result, insert_result])
+        session.execute = AsyncMock(
+            side_effect=[peek_result, redeem_result, insert_result]
+        )
         # resolve_workspace_for_chat filters removed_at IS NULL -> None for kicked
         session.scalar = AsyncMock(return_value=None)
 
@@ -350,10 +434,16 @@ class TestClaimChatBranches:
         session.commit.assert_awaited()
         mock_send_reply.assert_awaited_once()
         mock_emit_activity.assert_awaited_once()
+        mock_initial_backfill.assert_awaited_once()
+        mock_initial_scan.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_race_insert_active_row_returns_already_claimed(
-        self, mock_send_reply, mock_emit_activity
+        self,
+        mock_send_reply,
+        mock_emit_activity,
+        mock_initial_backfill,
+        mock_initial_scan,
     ):
         """A parallel claim from another workspace inserted an active row
         between our resolve_workspace_for_chat and our ON CONFLICT DO UPDATE.
@@ -366,9 +456,13 @@ class TestClaimChatBranches:
         redeem_result = MagicMock()
         redeem_result.first = MagicMock(return_value=(WORKSPACE_A,))
         insert_result = MagicMock()
-        insert_result.first = MagicMock(return_value=None)  # active row blocked the update
+        insert_result.first = MagicMock(
+            return_value=None
+        )  # active row blocked the update
 
-        session.execute = AsyncMock(side_effect=[peek_result, redeem_result, insert_result])
+        session.execute = AsyncMock(
+            side_effect=[peek_result, redeem_result, insert_result]
+        )
         session.scalar = AsyncMock(return_value=None)
 
         message = _make_group_message(text="/start@ContextOSBot RACECONF00")
@@ -377,6 +471,9 @@ class TestClaimChatBranches:
         assert result == ClaimResult.ALREADY_CLAIMED_BY_OTHER
         session.commit.assert_awaited()
         mock_send_reply.assert_awaited_once()
+        mock_emit_activity.assert_not_called()
+        mock_initial_backfill.assert_not_awaited()
+        mock_initial_scan.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_race_redeem_returns_no_row_marks_invalid(
@@ -409,7 +506,9 @@ class TestClaimChatTokenization:
     """Tokenize `/start[@bot] <code>` correctly."""
 
     @pytest.mark.asyncio
-    async def test_no_payload_returns_invalid(self, mock_send_reply, mock_emit_activity):
+    async def test_no_payload_returns_invalid(
+        self, mock_send_reply, mock_emit_activity
+    ):
         """`/start` with no payload yields empty code -> INVALID_CODE."""
         session = _make_session()
         peek_result = MagicMock()
@@ -423,7 +522,11 @@ class TestClaimChatTokenization:
 
     @pytest.mark.asyncio
     async def test_start_without_bot_username_works(
-        self, mock_send_reply, mock_emit_activity
+        self,
+        mock_send_reply,
+        mock_emit_activity,
+        mock_initial_backfill,
+        mock_initial_scan,
     ):
         """Plain `/start <code>` (no @bot suffix) is also valid."""
         session = _make_session()
@@ -434,12 +537,16 @@ class TestClaimChatTokenization:
         insert_result = MagicMock()
         insert_result.rowcount = 1
 
-        session.execute = AsyncMock(side_effect=[peek_result, redeem_result, insert_result])
+        session.execute = AsyncMock(
+            side_effect=[peek_result, redeem_result, insert_result]
+        )
         session.scalar = AsyncMock(return_value=None)
 
         message = _make_group_message(text="/start CODE12345")
         result = await claim_chat(session, message)
         assert result == ClaimResult.CLAIMED
+        mock_initial_backfill.assert_awaited_once()
+        mock_initial_scan.assert_awaited_once()
 
 
 class TestSendReplySafety:
@@ -455,13 +562,26 @@ class TestSendReplySafety:
         redeem_result.first = MagicMock(return_value=(WORKSPACE_A,))
         insert_result = MagicMock()
         insert_result.rowcount = 1
-        session.execute = AsyncMock(side_effect=[peek_result, redeem_result, insert_result])
+        session.execute = AsyncMock(
+            side_effect=[peek_result, redeem_result, insert_result]
+        )
         session.scalar = AsyncMock(return_value=None)
 
         # Real _send_reply_safe path: patch telegram_api_call to raise.
-        with patch(
-            "src.services.telegram_pairing.telegram_api_call", new_callable=AsyncMock
-        ) as mock_api:
+        with (
+            patch(
+                "src.services.telegram_pairing.telegram_api_call",
+                new_callable=AsyncMock,
+            ) as mock_api,
+            patch(
+                "src.services.telegram_pairing._backfill_recent_chat_messages_for_claim",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.services.telegram_pairing._enqueue_initial_telegram_scan",
+                new_callable=AsyncMock,
+            ),
+        ):
             mock_api.side_effect = TelegramError("Forbidden: bot was muted")
             message = _make_group_message(text="/start@ContextOSBot CODE")
             # Should NOT raise -- _send_reply_safe swallows it
@@ -499,7 +619,10 @@ class TestHandleMyChatMember:
         # integration_disconnected activity emitted
         mock_emit_activity.assert_awaited_once()
         args, kwargs = mock_emit_activity.call_args
-        assert "integration_disconnected" in args or kwargs.get("event_type") == "integration_disconnected"
+        assert (
+            "integration_disconnected" in args
+            or kwargs.get("event_type") == "integration_disconnected"
+        )
 
     @pytest.mark.asyncio
     async def test_kicked_status_soft_deletes_mapping(self, mock_emit_activity):
@@ -542,7 +665,9 @@ class TestHandleMyChatMember:
         mock_emit_activity.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_left_with_no_existing_mapping_skips_activity(self, mock_emit_activity):
+    async def test_left_with_no_existing_mapping_skips_activity(
+        self, mock_emit_activity
+    ):
         """If resolve_workspace_for_chat returns None, no activity is emitted
         (UPDATE still runs but matches 0 rows).
         """

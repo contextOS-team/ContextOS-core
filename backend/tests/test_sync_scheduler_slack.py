@@ -50,6 +50,8 @@ class _CancelAfterFirstCycle:
 def _patch_workspaces(
     monkeypatch: pytest.MonkeyPatch,
     ws_by_provider: dict[Provider, list[UUID]],
+    *,
+    telegram_chat_workspaces: list[UUID] | None = None,
 ) -> None:
     """Patch sync_scheduler.async_session for the current batched-query contract.
 
@@ -73,13 +75,21 @@ def _patch_workspaces(
         for ws_id in ws_ids
     ]
 
-    result = MagicMock()
-    result.fetchall.return_value = rows
+    telegram_rows = [(ws_id,) for ws_id in (telegram_chat_workspaces or [])]
+
+    async def _execute(stmt):
+        sql = str(stmt)
+        result = MagicMock()
+        if "telegram_chat_workspace" in sql:
+            result.fetchall.return_value = telegram_rows
+        else:
+            result.fetchall.return_value = rows
+        return result
 
     @contextlib.asynccontextmanager
     async def _fake_async_session():
         session = AsyncMock()
-        session.execute = AsyncMock(return_value=result)
+        session.execute = AsyncMock(side_effect=_execute)
         yield session
 
     monkeypatch.setattr(sync_scheduler, "async_session", _fake_async_session)
@@ -129,9 +139,7 @@ class TestSlackPollingIntegration:
         )
         # IMPORTANT: patch the LOCALLY-BOUND name in sync_scheduler, not the
         # origin in slack_messages.
-        monkeypatch.setattr(
-            "src.services.sync_scheduler.poll_user_messages", poll_mock
-        )
+        monkeypatch.setattr("src.services.sync_scheduler.poll_user_messages", poll_mock)
 
         await _run_one_cycle(monkeypatch)
 
@@ -172,9 +180,7 @@ class TestSlackPollingIntegration:
             return {"ingested": 1, "skipped": 0, "reason": None}
 
         poll_mock = AsyncMock(side_effect=_poll)
-        monkeypatch.setattr(
-            "src.services.sync_scheduler.poll_user_messages", poll_mock
-        )
+        monkeypatch.setattr("src.services.sync_scheduler.poll_user_messages", poll_mock)
 
         caplog.set_level("ERROR", logger="src.services.sync_scheduler")
         await _run_one_cycle(monkeypatch)
@@ -224,9 +230,7 @@ class TestSlackPollingIntegration:
         poll_mock = AsyncMock(
             return_value={"ingested": 0, "skipped": 0, "reason": "dms_disabled"}
         )
-        monkeypatch.setattr(
-            "src.services.sync_scheduler.poll_user_messages", poll_mock
-        )
+        monkeypatch.setattr("src.services.sync_scheduler.poll_user_messages", poll_mock)
 
         await _run_one_cycle(monkeypatch)
 
@@ -267,9 +271,7 @@ class TestSlackPollingIntegration:
         poll_mock = AsyncMock(
             return_value={"ingested": 0, "skipped": 0, "reason": "dms_disabled"}
         )
-        monkeypatch.setattr(
-            "src.services.sync_scheduler.poll_user_messages", poll_mock
-        )
+        monkeypatch.setattr("src.services.sync_scheduler.poll_user_messages", poll_mock)
 
         await _run_one_cycle(monkeypatch)
 
@@ -282,3 +284,40 @@ class TestSlackPollingIntegration:
         digest_call_args = {call.args for call in digest_mock.await_args_list}
         assert (slack_ws, "slack") in digest_call_args
         assert (telegram_ws, "telegram") in digest_call_args
+
+    @pytest.mark.asyncio
+    async def test_E_telegram_chat_mapping_counts_as_connected_provider(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.services import sync_scheduler
+
+        telegram_ws = uuid4()
+
+        _patch_workspaces(
+            monkeypatch,
+            {},
+            telegram_chat_workspaces=[telegram_ws],
+        )
+        monkeypatch.setattr(
+            sync_scheduler, "_expire_stale_generations", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            sync_scheduler, "reconcile_notion", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            sync_scheduler,
+            "_check_code_index_freshness",
+            AsyncMock(return_value=None),
+        )
+        digest_mock = AsyncMock(return_value=None)
+        monkeypatch.setattr(sync_scheduler, "_emit_daily_digest", digest_mock)
+        monkeypatch.setattr(
+            "src.services.sync_scheduler.poll_user_messages",
+            AsyncMock(
+                return_value={"ingested": 0, "skipped": 0, "reason": "dms_disabled"}
+            ),
+        )
+
+        await _run_one_cycle(monkeypatch)
+
+        digest_mock.assert_any_await(telegram_ws, "telegram")

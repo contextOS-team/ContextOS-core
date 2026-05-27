@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, Index
+from sqlalchemy import Column, DateTime, Index
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field
@@ -38,7 +38,10 @@ class MissedDecisionScanState(BaseModel, table=True):
     workspace_id: uuid.UUID = Field(foreign_key="workspaces.id", nullable=False)
     source_type: str = Field(nullable=False)
     source_resource_id: str | None = Field(default=None)
-    last_missed_decision_scan_at: datetime | None = Field(default=None)
+    last_missed_decision_scan_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
 
 
 class MissedDecisionScanRun(BaseModel, table=True):
@@ -50,14 +53,26 @@ class MissedDecisionScanRun(BaseModel, table=True):
     source_type: str = Field(nullable=False)
     source_resource_id: str | None = Field(default=None)
     status: str = Field(default="queued", nullable=False)
-    source_window_start: datetime | None = Field(default=None)
-    source_window_end: datetime | None = Field(default=None)
+    source_window_start: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    source_window_end: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     sources_scanned: int = Field(default=0, nullable=False)
     candidates_created: int = Field(default=0, nullable=False)
     attempts: int = Field(default=0, nullable=False)
     error_message: str | None = Field(default=None)
-    started_at: datetime | None = Field(default=None)
-    completed_at: datetime | None = Field(default=None)
+    started_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    completed_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
 
 
 class MissedDecisionCandidate(BaseModel, table=True):
@@ -124,8 +139,17 @@ class MissedDecisionCandidate(BaseModel, table=True):
     )
     detected_at: datetime | None = Field(
         default=None,
-        nullable=False,
-        sa_column_kwargs={"server_default": sa_text("now()")},
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=sa_text("now()"),
+        ),
     )
-    surfaced_at: datetime | None = Field(default=None)
-    resolved_at: datetime | None = Field(default=None)
+    surfaced_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    resolved_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )

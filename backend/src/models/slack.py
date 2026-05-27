@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, UniqueConstraint
+from sqlalchemy import Column, DateTime, UniqueConstraint
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
@@ -39,7 +39,10 @@ class SlackMessage(SQLModel, table=True):
         default_factory=list,
         sa_column=Column(JSONB, nullable=False, server_default=sa_text("'[]'")),
     )
-    slack_created_at: datetime | None = Field(default=None)
+    slack_created_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     raw_data: dict = Field(
         default_factory=dict,
         sa_column=Column(JSONB, nullable=False, server_default=sa_text("'{}'")),

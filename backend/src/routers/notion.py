@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from pydantic import BaseModel as PydanticBaseModel
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel as PydanticBaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import func, select
 
@@ -21,6 +21,7 @@ from src.dependencies import UserContext, get_current_user
 from src.models.integration import Provider, WorkspaceIntegration
 from src.models.notion import NotionPage
 from src.services.embedding_worker import enqueue_embedding_job
+from src.services.missed_decision_scanner import enqueue_missed_decision_scan
 from src.services.notion_client import NotionClient
 from src.services.notion_oauth import (
     NotionOAuthError,
@@ -672,7 +673,8 @@ async def _run_sync_inner(
 
             # ── Phase 3: mark complete (both JSONB and sync_cursors) ──
             async with async_session() as session:
-                now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                completed_at = datetime.now(timezone.utc)
+                now = completed_at.isoformat().replace("+00:00", "Z")
                 await _update_sync_config(
                     session,
                     workspace_id,
@@ -686,6 +688,12 @@ async def _run_sync_inner(
                     session, workspace_id, "notion", "default",
                     sync_status="complete",
                     records_synced=len(page_ids),
+                )
+                await enqueue_missed_decision_scan(
+                    session,
+                    workspace_id,
+                    "notion_page",
+                    sync_completed_at=completed_at,
                 )
                 await session.commit()
 

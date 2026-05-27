@@ -253,7 +253,7 @@ class TestEnumerate:
 
     @pytest.mark.asyncio
     async def test_C_enumerates_dms_and_channels(self) -> None:
-        """Test C: users.conversations is called once with types covering DMs + channels.
+        """Test C: users.conversations covers DMs and channels.
 
         Phase 39.1 gap closure: the user-token poller now covers channels the
         installer is already a member of (no bot /invite required). Returned
@@ -361,8 +361,8 @@ class TestEnumerate:
         assert captured_oldests[0] == expected
 
     @pytest.mark.asyncio
-    async def test_D_backfill_uses_seven_day_window(self) -> None:
-        """Test D (backfill): first-time DM opt-in uses oldest = now-7d."""
+    async def test_D_backfill_uses_fourteen_day_window(self) -> None:
+        """Test D (backfill): first-time DM opt-in uses oldest = now-14d."""
         from datetime import datetime, timedelta
 
         from src.services.slack_messages import poll_user_messages
@@ -407,8 +407,8 @@ class TestEnumerate:
         assert oldest_val is not None
         oldest_float = float(oldest_val)
         now = datetime.now(UTC)
-        expected_low = (now - timedelta(days=7, minutes=5)).timestamp()
-        expected_high = (now - timedelta(days=7) + timedelta(minutes=5)).timestamp()
+        expected_low = (now - timedelta(days=14, minutes=5)).timestamp()
+        expected_high = (now - timedelta(days=14) + timedelta(minutes=5)).timestamp()
         assert expected_low <= oldest_float <= expected_high
 
 

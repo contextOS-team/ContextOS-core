@@ -41,7 +41,10 @@ class TelegramMessage(SQLModel, table=True):
     text: str = Field(nullable=False)
     reply_to_message_id: int | None = Field(default=None, sa_column=Column(BigInteger))
     is_reply: bool = Field(default=False)
-    telegram_date: datetime | None = Field(default=None)
+    telegram_date: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     raw_data: dict = Field(
         default_factory=dict,
         sa_column=Column(JSONB, nullable=False, server_default=sa_text("'{}'")),

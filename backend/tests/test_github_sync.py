@@ -507,6 +507,14 @@ class TestSyncRepoProgress:
         from src.services.github_sync import sync_repos
 
         settings = MagicMock()
+        emitted_events = []
+        committed_events = []
+
+        async def record_commit():
+            committed_events.append(list(emitted_events))
+
+        async def record_activity(_session, _workspace_id, event_type, **_kwargs):
+            emitted_events.append(event_type)
 
         mock_integration = MagicMock()
         mock_integration.config = {"selected_repos": ["org/repo"]}
@@ -516,12 +524,16 @@ class TestSyncRepoProgress:
 
         mock_session.execute = AsyncMock(return_value=mock_result)
         mock_session.flush = AsyncMock()
-        mock_session.commit = AsyncMock()
+        mock_session.commit = AsyncMock(side_effect=record_commit)
 
         with patch(
             "src.services.github_sync.sync_single_repo",
             new_callable=AsyncMock,
             return_value=(5, 3),
+        ), patch(
+            "src.services.github_sync.emit_activity",
+            new_callable=AsyncMock,
+            side_effect=record_activity,
         ):
             result = await sync_repos(
                 UUID(TEST_WORKSPACE_ID),
@@ -539,6 +551,7 @@ class TestSyncRepoProgress:
         assert "repo_sync_status" in updated_config
         assert updated_config["repo_sync_status"]["org/repo"]["status"] == "synced"
         assert updated_config["last_sync_at"] is not None
+        assert committed_events[-1] == ["sync_started", "sync_completed"]
 
 
 # ---------- link_pr_to_ticket ----------

@@ -77,6 +77,21 @@ def test_missed_decision_models_capture_scan_and_candidate_contracts() -> None:
     assert candidate.affected_systems == ["dashboard"]
 
 
+def test_missed_decision_scan_timestamps_use_timezone_aware_columns() -> None:
+    timestamp_columns = [
+        MissedDecisionScanState.__table__.c.last_missed_decision_scan_at,
+        MissedDecisionScanRun.__table__.c.source_window_start,
+        MissedDecisionScanRun.__table__.c.source_window_end,
+        MissedDecisionScanRun.__table__.c.started_at,
+        MissedDecisionScanRun.__table__.c.completed_at,
+        MissedDecisionCandidate.__table__.c.detected_at,
+        MissedDecisionCandidate.__table__.c.surfaced_at,
+        MissedDecisionCandidate.__table__.c.resolved_at,
+    ]
+
+    assert all(column.type.timezone for column in timestamp_columns)
+
+
 def test_missed_decision_migration_defines_workspace_rls_and_lifecycles() -> None:
     migration = Path("../supabase/migrations/00042_missed_decisions.sql")
     sql = migration.read_text()
@@ -94,24 +109,22 @@ def test_missed_decision_migration_defines_workspace_rls_and_lifecycles() -> Non
 
 
 @pytest.mark.asyncio
-async def test_first_scan_window_uses_later_of_connected_at_or_14_days() -> None:
+async def test_first_scan_window_uses_full_14_day_default_lookback() -> None:
     session = AsyncMock()
     session.execute = AsyncMock(return_value=_result_one(None))
     session.add = MagicMock()
     session.flush = AsyncMock()
     workspace_id = uuid4()
     now = datetime(2026, 5, 25, 12, 0, tzinfo=UTC)
-    connected_at = now - timedelta(days=3)
 
     window = await scanner.get_scan_window(
         session,
         workspace_id,
         "slack_message",
         sync_completed_at=now,
-        source_connected_at=connected_at,
     )
 
-    assert window.start == connected_at
+    assert window.start == now - timedelta(days=14)
     assert window.end == now
     assert window.state.workspace_id == workspace_id
     session.add.assert_called_once()
@@ -258,6 +271,130 @@ async def test_run_success_advances_checkpoint_after_processing(
 
 
 @pytest.mark.asyncio
+async def test_run_processes_source_window_in_cursor_batches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_id = uuid4()
+    source_window_end = datetime(2026, 5, 25, 9, 0, tzinfo=UTC)
+    run = MissedDecisionScanRun(
+        workspace_id=workspace_id,
+        source_type="slack_message",
+        status="running",
+        source_window_end=source_window_end,
+    )
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_result_one(None))
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+    records = [
+        MissedDecisionSourceRecord(
+            workspace_id=workspace_id,
+            source_type="slack_message",
+            source_id=uuid4(),
+            text=f"We decided to preserve evidence batch {i}.",
+            source_link=build_internal_source_reference(
+                "slack_message",
+                workspace_id,
+                uuid4(),
+                source_window_end + timedelta(minutes=i),
+            ),
+            source_created_at=source_window_end + timedelta(minutes=i),
+            metadata={},
+        )
+        for i in range(3)
+    ]
+    load_calls = []
+    processed_batches = []
+
+    async def fake_load_window(
+        _session,
+        _workspace_id,
+        _source_type,
+        _start,
+        _end,
+        *,
+        limit,
+        after_source_created_at=None,
+        after_source_id=None,
+        source_resource_id=None,
+    ):
+        load_calls.append((limit, after_source_created_at, after_source_id))
+        if after_source_created_at is None:
+            start_index = 0
+        else:
+            start_index = next(
+                i + 1
+                for i, record in enumerate(records)
+                if record.source_created_at == after_source_created_at
+                and record.source_id == after_source_id
+            )
+        return records[start_index : start_index + limit]
+
+    async def fake_process(_session, _scan_run, batch):
+        processed_batches.append([record.source_id for record in batch])
+        return {"candidates_created": len(batch)}
+
+    monkeypatch.setattr(scanner, "SOURCE_WINDOW_BATCH_SIZE", 2)
+    monkeypatch.setattr(scanner, "load_source_window", fake_load_window)
+    monkeypatch.setattr(scanner, "process_missed_decision_source_window", fake_process)
+
+    await scanner.run_missed_decision_scan_once(session, run)
+
+    assert [call[0] for call in load_calls] == [2, 2]
+    assert load_calls[1][1] == records[1].source_created_at
+    assert load_calls[1][2] == records[1].source_id
+    assert processed_batches == [
+        [records[0].source_id, records[1].source_id],
+        [records[2].source_id],
+    ]
+    assert run.sources_scanned == 3
+    assert run.candidates_created == 3
+    state = session.add.call_args.args[0]
+    assert state.last_missed_decision_scan_at == source_window_end
+
+
+@pytest.mark.asyncio
+async def test_run_uses_newer_checkpoint_when_queued_scan_window_is_stale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_id = uuid4()
+    queued_start = datetime(2026, 5, 13, 9, 0, tzinfo=UTC)
+    checkpoint = datetime(2026, 5, 25, 9, 0, tzinfo=UTC)
+    source_window_end = datetime(2026, 5, 25, 10, 0, tzinfo=UTC)
+    state = MissedDecisionScanState(
+        workspace_id=workspace_id,
+        source_type="telegram_message",
+        last_missed_decision_scan_at=checkpoint,
+    )
+    run = MissedDecisionScanRun(
+        workspace_id=workspace_id,
+        source_type="telegram_message",
+        status="running",
+        source_window_start=queued_start,
+        source_window_end=source_window_end,
+    )
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_result_one(state))
+    session.flush = AsyncMock()
+    load_args = None
+
+    async def fake_load_window(*args, **_kwargs):
+        nonlocal load_args
+        load_args = args
+        return []
+
+    monkeypatch.setattr(scanner, "load_source_window", fake_load_window)
+
+    await scanner.run_missed_decision_scan_once(session, run)
+
+    assert run.status == "succeeded"
+    assert run.source_window_start == checkpoint
+    assert load_args is not None
+    assert load_args[3] == checkpoint
+    assert state.last_missed_decision_scan_at == source_window_end
+
+
+@pytest.mark.asyncio
 async def test_run_failure_does_not_advance_checkpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -277,9 +414,23 @@ async def test_run_failure_does_not_advance_checkpoint(
     session = AsyncMock()
     session.execute = AsyncMock(return_value=_result_one(state))
     session.flush = AsyncMock()
+    record = MissedDecisionSourceRecord(
+        workspace_id=workspace_id,
+        source_type="slack_message",
+        source_id=uuid4(),
+        text="We decided to keep source-backed review.",
+        source_link=build_internal_source_reference(
+            "slack_message",
+            workspace_id,
+            uuid4(),
+            checkpoint,
+        ),
+        source_created_at=checkpoint,
+        metadata={},
+    )
 
     async def fake_load_window(*_args, **_kwargs):
-        return []
+        return [record]
 
     async def failing_process(*_args, **_kwargs):
         raise RuntimeError("extractor unavailable")

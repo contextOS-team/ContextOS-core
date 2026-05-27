@@ -458,6 +458,81 @@ class TestRunSync:
     """End-to-end tests for _run_sync with mocked Notion API and DB."""
 
     @pytest.mark.asyncio
+    async def test_sync_complete_enqueues_missed_decision_scan(self):
+        """A completed production Notion sync must enqueue missed-decision review."""
+        from src.routers.notion import _run_sync
+
+        workspace_id = UUID(TEST_WORKSPACE_ID)
+        user_id = UUID(TEST_USER_ID)
+        settings = _make_test_settings(
+            NOTION_CLIENT_ID=NOTION_CLIENT_ID,
+            NOTION_CLIENT_SECRET=NOTION_CLIENT_SECRET,
+        )
+
+        mock_notion_client = AsyncMock()
+        mock_notion_client.search_pages = AsyncMock(
+            return_value={"results": [], "has_more": False}
+        )
+        mock_notion_client.close = AsyncMock()
+        mock_notion_client.__aenter__ = AsyncMock(return_value=mock_notion_client)
+        mock_notion_client.__aexit__ = AsyncMock(return_value=False)
+
+        mock_execute_result = MagicMock()
+        mock_execute_result.all.return_value = []
+        mock_execute_result.scalar_one_or_none.return_value = None
+
+        mock_session = AsyncMock()
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.flush = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=mock_execute_result)
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "src.routers.notion.get_valid_access_token",
+                new_callable=AsyncMock,
+                return_value="fake-token",
+            ),
+            patch(
+                "src.routers.notion.NotionClient",
+                return_value=mock_notion_client,
+            ),
+            patch(
+                "src.routers.notion._soft_delete_removed_pages",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.routers.notion._update_sync_config",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.routers.notion.async_session",
+                return_value=mock_cm,
+            ),
+            patch(
+                "src.routers.notion.enqueue_embedding_job",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.routers.notion.enqueue_missed_decision_scan",
+                new_callable=AsyncMock,
+                create=True,
+            ) as mock_enqueue_scan,
+        ):
+            await _run_sync(workspace_id, user_id, settings)
+
+        mock_enqueue_scan.assert_awaited_once()
+        args = mock_enqueue_scan.await_args.args
+        kwargs = mock_enqueue_scan.await_args.kwargs
+        assert args[1] == workspace_id
+        assert args[2] == "notion_page"
+        assert kwargs["sync_completed_at"] is not None
+
+    @pytest.mark.asyncio
     async def test_sync_writes_content_for_all_pages(self):
         """Phase 2 must write content for every page, not just batch boundaries."""
         from src.routers.notion import _run_sync
