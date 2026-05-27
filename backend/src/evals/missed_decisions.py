@@ -236,14 +236,21 @@ def evaluate_case(case: MissedDecisionEvalCase) -> CaseEvalResult:
         false_negative_count=false_negative_count,
         invalid_candidate_count=raw_candidate_count - len(actual_keys),
         source_link_match_count=source_link_match_count,
-        payload_completeness=_payload_completeness(case.suggestion_payload),
+        payload_completeness=_payload_completeness(
+            case.suggestion_payload,
+            expected_count=len(expected_keys),
+        ),
     )
 
 
-def _payload_completeness(payload: dict[str, Any] | None) -> float:
+def _payload_completeness(
+    payload: dict[str, Any] | None,
+    *,
+    expected_count: int,
+) -> float:
     """Score source-backed suggestion payload fields when provided."""
     if payload is None:
-        return 1.0
+        return 0.0 if expected_count > 0 else 1.0
     required_paths = [
         ("evidence", "source_quote"),
         ("evidence", "source_link"),

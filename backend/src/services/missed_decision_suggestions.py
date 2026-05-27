@@ -172,6 +172,7 @@ async def publish_missed_decision_suggestion(
     if existing is None:
         session.add(built)
         suggestion = built
+        await session.flush()
     else:
         suggestion = existing
         if suggestion.status in {SUGGESTION_STATUS_OPEN, SUGGESTION_STATUS_SNOOZED}:

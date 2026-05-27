@@ -72,9 +72,7 @@ def _record(
 
 def _raw_candidate(**overrides) -> RawMissedDecisionCandidate:
     values = {
-        "source_quote": (
-            "We decided to keep the dashboard Needs review rail bounded"
-        ),
+        "source_quote": ("We decided to keep the dashboard Needs review rail bounded"),
         "inferred_decision": "Keep the dashboard Needs review rail bounded",
         "inferred_rationale": "Confirmed decisions remain the primary surface.",
         "source_link": "",
@@ -94,9 +92,7 @@ def _draft(**overrides) -> MissedDecisionCandidateDraft:
         "source_type": record.source_type,
         "source_id": record.source_id,
         "source_resource_id": "C123",
-        "source_quote": (
-            "We decided to keep the dashboard Needs review rail bounded"
-        ),
+        "source_quote": ("We decided to keep the dashboard Needs review rail bounded"),
         "inferred_decision": "Keep the dashboard Needs review rail bounded",
         "inferred_rationale": "Confirmed decisions remain the primary surface.",
         "source_link": record.source_link,
@@ -177,9 +173,7 @@ def test_prompt_injection_guardrail_and_confidence_tiers() -> None:
 
     drafts = validate_missed_decision_candidates(
         record,
-        RawMissedDecisionExtractionResult(
-            candidates=[very_high, needs_review]
-        ),
+        RawMissedDecisionExtractionResult(candidates=[very_high, needs_review]),
     )
 
     assert drafts[0].confidence == CONFIDENCE_VERY_HIGH
@@ -294,9 +288,7 @@ async def test_publish_missed_decision_suggestion_references_candidate() -> None
         "phase_46_metadata_only"
     )
     assert suggestion.provenance["candidate_id"] == str(candidate.id)
-    assert suggestion.provenance["retrieval_signals"] == [
-        "missed_decision_candidate"
-    ]
+    assert suggestion.provenance["retrieval_signals"] == ["missed_decision_candidate"]
     assert suggestion.provenance["no_write_boundary"] == "phase_46_metadata_only"
     assert suggestion.provenance["quality_gate"]["passed"] is True
     assert suggestion.provenance["quality_gate"]["required_evidence"] == [
@@ -308,6 +300,28 @@ async def test_publish_missed_decision_suggestion_references_candidate() -> None
     assert candidate.lifecycle_status == "surfaced"
     assert candidate.suggestion_id == suggestion.id
     session.add.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_publish_missed_decision_suggestion_flushes_new_suggestion_first() -> (
+    None
+):
+    candidate = _candidate()
+    candidate.id = uuid4()
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.execute = AsyncMock(return_value=_result([]))
+    candidate_links_during_flush: list[object] = []
+
+    async def capture_flush() -> None:
+        candidate_links_during_flush.append(candidate.suggestion_id)
+
+    session.flush = AsyncMock(side_effect=capture_flush)
+
+    await publish_missed_decision_suggestion(session, candidate)
+
+    assert candidate_links_during_flush[0] is None
+    assert candidate_links_during_flush[-1] == candidate.suggestion_id
 
 
 @pytest.mark.asyncio
