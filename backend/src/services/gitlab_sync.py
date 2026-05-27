@@ -162,6 +162,7 @@ async def sync_projects(
             "items_count": total_mrs,
             "duration_ms": _sync_duration_ms,
         })
+        await session.commit()
 
         srl.info(
             "GitLab sync complete: %d MRs across %d projects"

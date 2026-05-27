@@ -45,6 +45,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/gitlab", tags=["gitlab"])
 
 
+def _normalize_project_sync_status(
+    project_sync_status: dict,
+    cursor_statuses: dict[str, str],
+) -> dict:
+    """Prefer durable cursor completion over stale JSONB progress rows."""
+    normalized = {}
+    for project_id, status_row in project_sync_status.items():
+        if not isinstance(status_row, dict):
+            normalized[project_id] = status_row
+            continue
+
+        next_row = dict(status_row)
+        if (
+            next_row.get("status") == "syncing"
+            and cursor_statuses.get(str(project_id)) == "complete"
+        ):
+            next_row["status"] = "synced"
+        normalized[project_id] = next_row
+
+    return normalized
+
+
 @router.get("/connect")
 async def connect(
     user: UserContext = Depends(get_current_user),
@@ -305,8 +327,37 @@ async def get_sync_status(
     integration = result.scalar_one_or_none()
 
     project_sync_status = {}
+    config_last_sync_at = None
     if integration and integration.config:
         project_sync_status = integration.config.get("project_sync_status", {})
+        config_last_sync_at = integration.config.get("last_sync_at")
+
+    cursor_statuses = {}
+    cursor_last_sync_at = None
+    if project_sync_status:
+        from src.models.sync import SyncCursor
+
+        cursor_result = await session.execute(
+            sm_select(
+                SyncCursor.resource_type,
+                SyncCursor.sync_status,
+                SyncCursor.last_sync_at,
+            ).where(
+                SyncCursor.workspace_id == user.workspace_id,
+                SyncCursor.provider == "gitlab",
+            )
+        )
+        for resource_type, sync_status, last_sync_at in cursor_result.fetchall():
+            cursor_statuses[str(resource_type)] = sync_status
+            if last_sync_at and (
+                cursor_last_sync_at is None or last_sync_at > cursor_last_sync_at
+            ):
+                cursor_last_sync_at = last_sync_at
+
+        project_sync_status = _normalize_project_sync_status(
+            project_sync_status,
+            cursor_statuses,
+        )
 
     # Get actual MR and review counts from DB
     mr_count_result = await session.execute(
@@ -336,7 +387,9 @@ async def get_sync_status(
         "total_mrs": total_mrs,
         "total_reviews": total_reviews,
         "is_syncing": is_syncing,
-        "last_sync_at": integration.config.get("last_sync_at") if integration and integration.config else None,
+        "last_sync_at": (
+            cursor_last_sync_at.isoformat() if cursor_last_sync_at else config_last_sync_at
+        ),
     }
 
 

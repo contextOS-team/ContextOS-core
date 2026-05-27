@@ -352,6 +352,37 @@ class TestReviewEmbeddingScope:
 class TestTimeoutIsolation:
 
     @pytest.mark.asyncio
+    async def test_sync_projects_commits_sync_completed_activity(self):
+        """sync_projects commits the final sync_completed activity row."""
+        from src.services.gitlab_sync import sync_projects
+
+        session, _, _ = _mock_session()
+        settings = MagicMock()
+        emitted_events = []
+        committed_events = []
+
+        async def record_commit():
+            committed_events.append(list(emitted_events))
+
+        async def record_activity(_session, _workspace_id, event_type, **_kwargs):
+            emitted_events.append(event_type)
+
+        session.commit = AsyncMock(side_effect=record_commit)
+
+        with (
+            patch("src.services.gitlab_sync.sync_single_project", return_value=(3, 1)),
+            patch(
+                "src.services.gitlab_sync.emit_activity",
+                new_callable=AsyncMock,
+                side_effect=record_activity,
+            ),
+        ):
+            result = await sync_projects(WS_UUID, [100], session, settings)
+
+        assert result["total_mrs"] == 3
+        assert committed_events[-1] == ["sync_started", "sync_completed"]
+
+    @pytest.mark.asyncio
     async def test_slow_project_does_not_block_fast_project(self):
         """A timed-out project doesn't prevent other projects from syncing."""
         from src.services.gitlab_sync import sync_projects
