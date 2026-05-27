@@ -93,6 +93,16 @@ def _patch_workspaces(
         yield session
 
     monkeypatch.setattr(sync_scheduler, "async_session", _fake_async_session)
+    monkeypatch.setattr(
+        sync_scheduler,
+        "_enqueue_missed_decision_backstop",
+        AsyncMock(return_value=0),
+    )
+    monkeypatch.setattr(
+        sync_scheduler,
+        "_drain_missed_decision_scans",
+        AsyncMock(return_value=None),
+    )
 
 
 async def _run_one_cycle(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -146,6 +156,54 @@ class TestSlackPollingIntegration:
         assert poll_mock.await_count == 2
         called_ws_ids = {call.args[1] for call in poll_mock.await_args_list}
         assert called_ws_ids == {ws_a, ws_b}
+
+    @pytest.mark.asyncio
+    async def test_A2_backstop_runs_before_slack_polling(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.services import sync_scheduler
+
+        slack_ws = uuid4()
+        events: list[str] = []
+
+        _patch_workspaces(monkeypatch, {Provider.SLACK: [slack_ws]})
+        monkeypatch.setattr(
+            sync_scheduler, "_expire_stale_generations", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            sync_scheduler, "reconcile_notion", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            sync_scheduler,
+            "_check_code_index_freshness",
+            AsyncMock(return_value=None),
+        )
+        monkeypatch.setattr(
+            sync_scheduler, "_emit_daily_digest", AsyncMock(return_value=None)
+        )
+
+        async def fake_backstop(_workspaces: object) -> int:
+            events.append("backstop")
+            return 1
+
+        async def fake_drain() -> None:
+            events.append("drain")
+
+        async def fake_poll(_session: object, _workspace_id: UUID) -> dict:
+            events.append("poll")
+            return {"ingested": 0, "skipped": 0, "reason": "dms_disabled"}
+
+        monkeypatch.setattr(
+            sync_scheduler,
+            "_enqueue_missed_decision_backstop",
+            fake_backstop,
+        )
+        monkeypatch.setattr(sync_scheduler, "_drain_missed_decision_scans", fake_drain)
+        monkeypatch.setattr("src.services.sync_scheduler.poll_user_messages", fake_poll)
+
+        await sync_scheduler._run_polling_cycle()
+
+        assert events == ["backstop", "drain", "poll"]
 
     @pytest.mark.asyncio
     async def test_B_exception_in_one_workspace_does_not_block_others(

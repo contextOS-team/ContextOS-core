@@ -476,6 +476,16 @@ async def _run_polling_cycle() -> None:
                 if ws_id not in telegram_workspaces:
                     telegram_workspaces.append(ws_id)
 
+        # Missed-decision scan backstops must not wait behind provider polling.
+        # Slack history polling can spend minutes in rate-limit sleeps; enqueue
+        # stale/missing scans first so review candidates are not starved by API
+        # catch-up work.
+        await _enqueue_missed_decision_backstop(workspaces_by_provider)
+        try:
+            await _drain_missed_decision_scans()
+        except Exception:
+            logger.exception("Missed-decision scan drain failed")
+
         # Notion reconciliation
         notion_workspaces = workspaces_by_provider.get(Provider.NOTION, [])
         for ws_id in notion_workspaces:
@@ -541,19 +551,8 @@ async def _run_polling_cycle() -> None:
                         ws_id,
                     )
 
-        # Linear reconciliation stub
-        # (can be implemented when Linear has incremental sync
-        # support via updatedAt filters)
-
-        await _enqueue_missed_decision_backstop(workspaces_by_provider)
-
     except Exception:
         logger.exception("Polling fallback scheduler error")
-
-    try:
-        await _drain_missed_decision_scans()
-    except Exception:
-        logger.exception("Missed-decision scan drain failed")
 
 
 async def run_polling_fallback() -> None:
