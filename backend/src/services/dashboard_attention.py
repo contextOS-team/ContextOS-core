@@ -5,28 +5,49 @@ into a unified attention list for the dashboard homepage widget.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import and_, or_
+from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.models.context_page import ContextPage
 from src.models.github import GithubPullRequest
 from src.models.gitlab import GitlabMergeRequest
+from src.models.jira import JiraIssue
+from src.models.ticket import LinearTicket
 
 logger = logging.getLogger(__name__)
+
+TERMINAL_LINEAR_STATE_TYPES = {"completed", "canceled"}
+TERMINAL_JIRA_STATUS_CATEGORY_KEYS = {"done"}
+
+
+def _is_terminal_provider_state(
+    linear_state_type: str | None,
+    jira_status_category_key: str | None,
+) -> bool:
+    linear_state = linear_state_type.strip().lower() if linear_state_type else None
+    jira_category = (
+        jira_status_category_key.strip().lower()
+        if jira_status_category_key
+        else None
+    )
+    return (
+        linear_state in TERMINAL_LINEAR_STATE_TYPES
+        or jira_category in TERMINAL_JIRA_STATUS_CATEGORY_KEYS
+    )
 
 
 def _relative_age(dt: datetime | None) -> str | None:
     """Return a human-readable relative age string from a datetime."""
     if dt is None:
         return None
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     # Ensure dt is timezone-aware
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     delta = now - dt
     days = delta.days
     if days == 0:
@@ -46,10 +67,21 @@ async def get_attention_items(
     'type' field indicating the kind of attention item.
     """
     items: list[dict] = []
+    linear_state_type = func.lower(
+        func.coalesce(LinearTicket.raw_data["state"]["type"].as_string(), "")
+    )
+    jira_status_category_key = func.lower(
+        func.coalesce(
+            JiraIssue.raw_data["fields"]["status"]["statusCategory"]["key"].as_string(),
+            "",
+        )
+    )
 
     # 1. Stale or empty-sources context pages
     stmt = (
-        select(ContextPage)
+        select(ContextPage, linear_state_type, jira_status_category_key)
+        .outerjoin(LinearTicket, ContextPage.ticket_id == LinearTicket.id)
+        .outerjoin(JiraIssue, ContextPage.jira_issue_id == JiraIssue.id)
         .where(
             ContextPage.workspace_id == workspace_id,
             ContextPage.deleted_at.is_(None),  # type: ignore[union-attr]
@@ -57,12 +89,23 @@ async def get_attention_items(
                 ContextPage.status == "stale",
                 ContextPage.sources == [],
             ),
+            or_(
+                LinearTicket.id.is_(None),  # type: ignore[union-attr]
+                linear_state_type.not_in(TERMINAL_LINEAR_STATE_TYPES),
+            ),
+            or_(
+                JiraIssue.id.is_(None),  # type: ignore[union-attr]
+                jira_status_category_key.not_in(TERMINAL_JIRA_STATUS_CATEGORY_KEYS),
+            ),
         )
         .order_by(ContextPage.updated_at.desc())  # type: ignore[union-attr]
         .limit(10)
     )
     result = await session.execute(stmt)
-    for cp in result.scalars().all():
+    for cp, linear_status_type, jira_category_key in result.all():
+        if _is_terminal_provider_state(linear_status_type, jira_category_key):
+            continue
+
         item_type = "stale_context" if cp.status == "stale" else "no_sources"
         items.append(
             {
