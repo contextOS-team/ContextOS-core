@@ -24,14 +24,14 @@
   - Used to clone repos (via installation tokens) for `tree-sitter` code indexing
   - Services: `backend/src/services/github_oauth.py`, `backend/src/services/github_sync.py`, `backend/src/services/github_webhook.py`, `backend/src/services/github_repos.py`, `backend/src/services/github_common.py`, `backend/src/services/github_linking.py`
   - Router: `backend/src/routers/github.py`
-  - DB tables: `supabase/migrations/00004_github_tables.sql`
+  - DB tables: `supabase/migrations/000040_github_tables.sql`
 
 - **GitLab** — OAuth2 integration for MR context
   - OAuth: `GITLAB_CLIENT_ID`, `GITLAB_CLIENT_SECRET`
   - Webhook secret: `GITLAB_WEBHOOK_SECRET`
   - Services: `backend/src/services/gitlab_oauth.py`, `backend/src/services/gitlab_sync.py`, `backend/src/services/gitlab_webhook.py`, `backend/src/services/gitlab_repos.py`, `backend/src/services/gitlab_common.py`, `backend/src/services/gitlab_linking.py`
   - Router: `backend/src/routers/gitlab.py`
-  - DB tables: `supabase/migrations/00019_gitlab_tables.sql`
+  - DB tables: `supabase/migrations/000190_gitlab_tables.sql`
 
 **Communication (message context):**
 - **Slack** — OAuth2 with Events API; syncs channel messages for context

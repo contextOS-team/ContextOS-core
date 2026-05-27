@@ -70,11 +70,11 @@
 - Trigger: Any caller that doesn't commit after `generate_context_page` returns will leave the context page in `"generating"` status permanently.
 - Workaround: The background task caller at `backend/src/routers/context.py:232` does `await session.commit()` after the call.
 
-**Duplicate migration number 00019:**
-- Symptoms: Two files named `00019_*.sql` exist: `00019_gitlab_tables.sql` and `00019_jira_tables.sql`. Migration tools that order by filename will have non-deterministic behavior for which runs first.
-- Files: `supabase/migrations/00019_gitlab_tables.sql`, `supabase/migrations/00019_jira_tables.sql`
-- Trigger: Running `supabase db push` or `supabase db reset` in any environment.
-- Workaround: Neither migration exists in production yet based on git status showing `00021` as newest applied.
+**Historical fractional migration numbers require normalized local repair:**
+- Symptoms: Older files used short versions next to pseudo-fractional versions, e.g. `00004` before `000045` and `00019` before `000195`; Supabase CLI can report local/remote mismatch even when the schema exists.
+- Files: `supabase/migrations/000040_github_tables.sql`, `supabase/migrations/000045_vault_lazy_migration.sql`, `supabase/migrations/000190_gitlab_tables.sql`, `supabase/migrations/000195_jira_tables.sql`
+- Trigger: Running Supabase migration commands against a DB whose ledger still has the old `00004` or `00019` version IDs.
+- Workaround: Repair the migration ledger to `000040` and `000190` after confirming the GitHub/GitLab tables already exist; do not replay those SQL files against an existing DB.
 
 **JQL injection sanitization is incomplete:**
 - Symptoms: The Jira sync JQL query only strips backslashes and double-quotes from `ticket_identifier`, but does not validate that the remaining string matches the expected `KEY-123` format.
