@@ -44,3 +44,22 @@ def test_normalize_project_sync_status_uses_error_cursor():
 
     assert normalized["123"]["status"] == "error"
     assert normalized["456"]["status"] == "timeout"
+
+
+def test_normalize_project_sync_status_copies_cursor_error_message():
+    status = {
+        "123": {"status": "syncing", "synced": 0, "total": 0},
+    }
+
+    normalized = _normalize_project_sync_status(
+        status,
+        {"123": "error"},
+        {"123": "No refresh token found -- reconnect GitLab"},
+    )
+
+    assert normalized["123"] == {
+        "status": "error",
+        "synced": 0,
+        "total": 0,
+        "error_message": "No refresh token found -- reconnect GitLab",
+    }

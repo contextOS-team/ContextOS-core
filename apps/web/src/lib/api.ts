@@ -625,7 +625,7 @@ export function triggerGitlabSync(): Promise<{ status: string }> {
 export interface GitlabSyncStatus {
   project_sync_status: Record<
     string,
-    { status: string; synced: number; total: number }
+    { status: string; synced: number; total: number; error_message?: string | null }
   >
   total_mrs: number
   total_reviews: number

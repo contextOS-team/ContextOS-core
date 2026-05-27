@@ -48,6 +48,7 @@ type StatusMapRow = {
   status?: string
   synced?: number
   total?: number
+  error_message?: string | null
 }
 
 type SourceRowsInput = {
@@ -125,6 +126,18 @@ function hasAnyStatus(
   return Object.values(statusMap).some((row) => statuses.has(normalizedStatus(row.status)))
 }
 
+function firstAttentionDetail(
+  statusMap: Record<string, StatusMapRow> | undefined
+): string | null {
+  if (!statusMap) return null
+  for (const row of Object.values(statusMap)) {
+    if (!ATTENTION_STATUSES.has(normalizedStatus(row.status))) continue
+    const message = row.error_message?.trim()
+    if (message) return message
+  }
+  return null
+}
+
 function syncedDetail(lastSyncAt: Date | null, now: Date): string {
   if (!lastSyncAt) return 'Never synced'
   return `Synced ${formatShortRelativeSyncTime(lastSyncAt, now)}`
@@ -185,12 +198,13 @@ function codeProviderRow({
   const syncProgress = statusMap ? progressFromStatusMap(statusMap) : null
   const sourceIsSyncing = isSyncing || hasAnyStatus(statusMap, SYNCING_STATUSES)
   const hasAttention = hasAnyStatus(statusMap, ATTENTION_STATUSES)
+  const attentionDetail = firstAttentionDetail(statusMap)
   if (hasAttention && (!sourceIsSyncing || syncProgress === 1)) {
     return {
       provider,
       label: PROVIDER_LABELS[provider],
       health: 'attention',
-      detail: 'Sync needs attention',
+      detail: attentionDetail ?? 'Sync needs attention',
       lastSyncAt,
     }
   }
@@ -221,7 +235,7 @@ function codeProviderRow({
       provider,
       label: PROVIDER_LABELS[provider],
       health: 'attention',
-      detail: 'Sync needs attention',
+      detail: attentionDetail ?? 'Sync needs attention',
       lastSyncAt,
     }
   }

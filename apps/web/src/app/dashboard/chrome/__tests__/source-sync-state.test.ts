@@ -221,6 +221,38 @@ describe('source sync chrome state', () => {
     })
   })
 
+  it('shows GitLab sync error detail when available', () => {
+    const gitlab: GitlabSyncStatus = {
+      project_sync_status: {
+        '1': {
+          status: 'error',
+          synced: 0,
+          total: 0,
+          error_message: 'No refresh token found -- reconnect GitLab',
+        },
+      },
+      total_mrs: 0,
+      total_reviews: 0,
+      is_syncing: false,
+      last_sync_at: null,
+    }
+    const rows = buildSourceRows({
+      integrations: integrationStatus({
+        gitlab: provider({
+          status: 'connected',
+          selected_repos_count: 1,
+        }),
+      }),
+      gitlab,
+      now: new Date('2026-05-21T12:00:00Z'),
+    })
+
+    expect(rows.find((row) => row.provider === 'gitlab')).toMatchObject({
+      health: 'attention',
+      detail: 'No refresh token found -- reconnect GitLab',
+    })
+  })
+
   it('ignores stale realtime syncing events after provider status is current', () => {
     const github: GithubSyncStatus = {
       repo_sync_status: {

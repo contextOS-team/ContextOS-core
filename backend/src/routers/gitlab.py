@@ -48,8 +48,10 @@ router = APIRouter(prefix="/api/gitlab", tags=["gitlab"])
 def _normalize_project_sync_status(
     project_sync_status: dict,
     cursor_statuses: dict[str, str],
+    cursor_errors: dict[str, str | None] | None = None,
 ) -> dict:
     """Prefer durable cursor terminal states over stale JSONB progress rows."""
+    cursor_errors = cursor_errors or {}
     normalized = {}
     for project_id, status_row in project_sync_status.items():
         if not isinstance(status_row, dict):
@@ -57,7 +59,9 @@ def _normalize_project_sync_status(
             continue
 
         next_row = dict(status_row)
-        cursor_status = cursor_statuses.get(str(project_id))
+        project_key = str(project_id)
+        cursor_status = cursor_statuses.get(project_key)
+        cursor_error = cursor_errors.get(project_key)
         synced = next_row.get("synced")
         total = next_row.get("total")
         has_complete_progress = (
@@ -71,6 +75,8 @@ def _normalize_project_sync_status(
             and cursor_status in {"error", "failed", "timeout"}
         ):
             next_row["status"] = cursor_status
+            if cursor_error:
+                next_row["error_message"] = cursor_error
         elif (
             next_row.get("status") == "syncing"
             and (cursor_status == "complete" or has_complete_progress)
@@ -347,6 +353,7 @@ async def get_sync_status(
         config_last_sync_at = integration.config.get("last_sync_at")
 
     cursor_statuses = {}
+    cursor_errors = {}
     cursor_last_sync_at = None
     if project_sync_status:
         from src.models.sync import SyncCursor
@@ -356,13 +363,15 @@ async def get_sync_status(
                 SyncCursor.resource_type,
                 SyncCursor.sync_status,
                 SyncCursor.last_sync_at,
+                SyncCursor.error_message,
             ).where(
                 SyncCursor.workspace_id == user.workspace_id,
                 SyncCursor.provider == "gitlab",
             )
         )
-        for resource_type, sync_status, last_sync_at in cursor_result.fetchall():
+        for resource_type, sync_status, last_sync_at, error_message in cursor_result.fetchall():
             cursor_statuses[str(resource_type)] = sync_status
+            cursor_errors[str(resource_type)] = error_message
             if last_sync_at and (
                 cursor_last_sync_at is None or last_sync_at > cursor_last_sync_at
             ):
@@ -371,6 +380,7 @@ async def get_sync_status(
         project_sync_status = _normalize_project_sync_status(
             project_sync_status,
             cursor_statuses,
+            cursor_errors,
         )
 
     # Get actual MR and review counts from DB
