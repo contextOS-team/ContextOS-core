@@ -10,20 +10,18 @@ to verify pipeline logic without a real database.
 
 import hashlib
 import uuid
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from src.services.graph_extractor import (
-    ExtractedEntity,
     MentionExtractor,
     TicketRefExtractor,
     run_extractors,
 )
 from src.services.graph_ops import compute_fingerprint
-
-from tests.conftest import TEST_WORKSPACE_ID, TEST_USER_ID, TEST_EMAIL
-
+from tests.conftest import TEST_WORKSPACE_ID
 
 # ============================================================
 # Helpers (same style as test_graph_lens_api.py)
@@ -52,7 +50,7 @@ def _mock_provider_query(providers: list[str]) -> MagicMock:
 
 def _mock_ticket_validation(identifiers: list[str]) -> MagicMock:
     mock = MagicMock()
-    mock.__iter__ = lambda self: iter([(i,) for i in identifiers])
+    mock.__iter__.return_value = iter([(i,) for i in identifiers])
     return mock
 
 
@@ -216,6 +214,8 @@ def _make_graph_node(
     n.source_type = source_type
     n.properties = properties or {}
     n.deleted_at = None
+    n.created_at = datetime(2026, 5, 25, tzinfo=UTC)
+    n.updated_at = datetime(2026, 5, 25, tzinfo=UTC)
     n.fingerprint = compute_fingerprint(entity_type, properties.get("identifier", name) if properties else name)
     return n
 
@@ -246,20 +246,24 @@ def test_workspace_graph_filters_phantom_tickets(
     fake_ticket = _make_graph_node(TICKET_FAKE, "Ticket", "SHA-256", None, {"identifier": "SHA-256"})
     person = _make_graph_node(PERSON_NODE, "Person", "Alice", None, {})
 
-    mock_session.execute.side_effect = [
-        _mock_membership(),  # auth: workspace membership lookup
-        # _get_connected_providers
-        _mock_provider_query(["linear"]),
-        # Step 1: ALL workspace nodes
-        MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[real_ticket, fake_ticket, person])))),
-        # _validate_ticket_identifiers for Linear (only CON-50 is real)
-        _mock_ticket_validation(["CON-50"]),
-        # Step 2: ALL workspace edges
-        MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[
-            _mock_edge(TICKET_A, PERSON_NODE, "mentions"),
-            _mock_edge(TICKET_FAKE, PERSON_NODE, "references"),
-        ])))),
-    ]
+    mock_session.execute.side_effect = _signature_router({
+        "WorkspaceMember:1": [_mock_membership()],
+        "WorkspaceIntegration:1": [_mock_provider_query(["linear"])],
+        "GraphNode:1": [
+            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(
+                return_value=[real_ticket, fake_ticket, person]
+            ))))
+        ],
+        "LinearTicket:1": [_mock_ticket_validation(["CON-50"])],
+        "GraphEdge:1": [
+            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(
+                return_value=[
+                    _mock_edge(TICKET_A, PERSON_NODE, "mentions"),
+                    _mock_edge(TICKET_FAKE, PERSON_NODE, "references"),
+                ]
+            ))))
+        ],
+    })
 
     response = client.get("/api/graph/", headers=valid_auth_header)
 
@@ -288,17 +292,21 @@ def test_workspace_graph_validates_jira_tickets(
     jira_ticket = _make_graph_node(TICKET_A, "Ticket", "PROJ-42", "jira_issue", {"identifier": "PROJ-42"})
     fake_ticket = _make_graph_node(TICKET_FAKE, "Ticket", "FAKE-99", None, {"identifier": "FAKE-99"})
 
-    mock_session.execute.side_effect = [
-        _mock_membership(),  # auth: workspace membership lookup
-        # _get_connected_providers -> only Jira
-        _mock_provider_query(["jira"]),
-        # Step 1: ALL workspace nodes
-        MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[jira_ticket, fake_ticket])))),
-        # _validate_ticket_identifiers for Jira (only PROJ-42 is real)
-        _mock_ticket_validation(["PROJ-42"]),
-        # Step 2: ALL workspace edges
-        MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),
-    ]
+    mock_session.execute.side_effect = _signature_router({
+        "WorkspaceMember:1": [_mock_membership()],
+        "WorkspaceIntegration:1": [_mock_provider_query(["jira"])],
+        "GraphNode:1": [
+            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(
+                return_value=[jira_ticket, fake_ticket]
+            ))))
+        ],
+        "JiraIssue:1": [_mock_ticket_validation(["PROJ-42"])],
+        "GraphEdge:1": [
+            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(
+                return_value=[]
+            ))))
+        ],
+    })
 
     response = client.get("/api/graph/", headers=valid_auth_header)
 
@@ -486,21 +494,21 @@ def test_disconnected_integration_nodes_filtered(
         NOTION_NODE, "NotionPage", "Design Doc", "notion_page", {}
     )
 
-    mock_session.execute.side_effect = [
-        _mock_membership(),  # auth: workspace membership lookup
-        # _get_connected_providers -> Linear only, no Notion
-        _mock_provider_query(["linear"]),
-        # Step 1: ALL workspace nodes
-        MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(
-            return_value=[linear_ticket, notion_page]
-        )))),
-        # _validate_ticket_identifiers for Linear
-        _mock_ticket_validation(["CON-1"]),
-        # Step 2: ALL workspace edges
-        MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(
-            return_value=[_mock_edge(TICKET_A, NOTION_NODE, "references")]
-        )))),
-    ]
+    mock_session.execute.side_effect = _signature_router({
+        "WorkspaceMember:1": [_mock_membership()],
+        "WorkspaceIntegration:1": [_mock_provider_query(["linear"])],
+        "GraphNode:1": [
+            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(
+                return_value=[linear_ticket, notion_page]
+            ))))
+        ],
+        "LinearTicket:1": [_mock_ticket_validation(["CON-1"])],
+        "GraphEdge:1": [
+            MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(
+                return_value=[_mock_edge(TICKET_A, NOTION_NODE, "references")]
+            ))))
+        ],
+    })
 
     response = client.get("/api/graph/", headers=valid_auth_header)
 
