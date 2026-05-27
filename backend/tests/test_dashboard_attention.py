@@ -68,6 +68,15 @@ async def test_attention_skips_jira_context_when_status_category_is_done() -> No
 
 
 @pytest.mark.asyncio
+async def test_attention_skips_jira_context_when_status_category_is_completed() -> None:
+    session = _session_for_context_rows([(_context_page(), None, "completed")])
+
+    items = await get_attention_items(session, UUID(TEST_WORKSPACE_ID))
+
+    assert items == []
+
+
+@pytest.mark.asyncio
 async def test_attention_skips_completed_linear_context_with_no_sources() -> None:
     session = _session_for_context_rows(
         [(_context_page(ticket_identifier="ENG-42"), "completed", None)]

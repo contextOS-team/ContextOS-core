@@ -21,7 +21,7 @@ from src.models.ticket import LinearTicket
 logger = logging.getLogger(__name__)
 
 TERMINAL_LINEAR_STATE_TYPES = {"completed", "canceled"}
-TERMINAL_JIRA_STATUS_CATEGORY_KEYS = {"done"}
+TERMINAL_JIRA_STATUS_CATEGORY_KEYS = {"done", "completed"}
 
 
 def _is_terminal_provider_state(
