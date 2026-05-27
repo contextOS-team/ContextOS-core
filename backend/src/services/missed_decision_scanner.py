@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from inspect import isawaitable
 from uuid import UUID
 
+from sqlalchemy import and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 FIRST_SCAN_LOOKBACK_DAYS = 14
 SOURCE_WINDOW_BATCH_SIZE = 100
+STALE_RUNNING_SCAN_AFTER = timedelta(minutes=10)
 SCAN_STATUS_QUEUED = "queued"
 SCAN_STATUS_RUNNING = "running"
 SCAN_STATUS_SUCCEEDED = "succeeded"
@@ -168,50 +170,53 @@ async def process_missed_decision_source_window(
     """Extract, dedupe, persist, and publish source-backed candidates."""
     candidates_created = 0
     suggestions_published = 0
+
+    drafts = []
     for record in records:
-        drafts = await extract_missed_decision_candidates(record)
-        for draft in drafts:
-            candidate = MissedDecisionCandidate(
-                workspace_id=draft.workspace_id,
-                scan_run_id=scan_run.id,
-                source_type=draft.source_type,
-                source_id=draft.source_id,
-                source_resource_id=draft.source_resource_id,
-                source_quote=draft.source_quote,
-                inferred_decision=draft.inferred_decision,
-                inferred_rationale=draft.inferred_rationale,
-                source_link=draft.source_link,
-                confidence=draft.confidence,
-                quote_fingerprint=quote_fingerprint(draft.source_quote),
-                decision_fingerprint=decision_fingerprint(draft.inferred_decision),
-                evidence=draft.evidence,
-                people=draft.people,
-                affected_systems=draft.affected_systems,
-                action_hints=draft.action_hints,
-            )
-            classification = await classify_missed_decision_candidate(
+        drafts.extend(await extract_missed_decision_candidates(record))
+
+    for draft in drafts:
+        candidate = MissedDecisionCandidate(
+            workspace_id=draft.workspace_id,
+            scan_run_id=scan_run.id,
+            source_type=draft.source_type,
+            source_id=draft.source_id,
+            source_resource_id=draft.source_resource_id,
+            source_quote=draft.source_quote,
+            inferred_decision=draft.inferred_decision,
+            inferred_rationale=draft.inferred_rationale,
+            source_link=draft.source_link,
+            confidence=draft.confidence,
+            quote_fingerprint=quote_fingerprint(draft.source_quote),
+            decision_fingerprint=decision_fingerprint(draft.inferred_decision),
+            evidence=draft.evidence,
+            people=draft.people,
+            affected_systems=draft.affected_systems,
+            action_hints=draft.action_hints,
+        )
+        classification = await classify_missed_decision_candidate(
+            session,
+            candidate,
+        )
+        candidate.match_status = classification.match_status
+        candidate.lifecycle_status = classification.lifecycle_status
+        candidate.suppression_reason = classification.suppression_reason
+        candidate.matched_entity_type = classification.matched_entity_type
+        candidate.matched_entity_id = classification.matched_entity_id
+
+        await _add(session, candidate)
+        await session.flush()
+        candidates_created += 1
+
+        if classification.should_publish_suggestion and is_surfaceable_confidence(
+            candidate.confidence
+        ):
+            suggestion = await publish_missed_decision_suggestion(
                 session,
                 candidate,
             )
-            candidate.match_status = classification.match_status
-            candidate.lifecycle_status = classification.lifecycle_status
-            candidate.suppression_reason = classification.suppression_reason
-            candidate.matched_entity_type = classification.matched_entity_type
-            candidate.matched_entity_id = classification.matched_entity_id
-
-            await _add(session, candidate)
-            await session.flush()
-            candidates_created += 1
-
-            if classification.should_publish_suggestion and is_surfaceable_confidence(
-                candidate.confidence
-            ):
-                suggestion = await publish_missed_decision_suggestion(
-                    session,
-                    candidate,
-                )
-                if suggestion is not None:
-                    suggestions_published += 1
+            if suggestion is not None:
+                suggestions_published += 1
 
     return {
         "candidates_created": candidates_created,
@@ -231,6 +236,7 @@ async def run_missed_decision_scan_once(
     scan_run.started_at = scan_run.started_at or now
     scan_run.error_message = None
     await session.flush()
+    await session.commit()
 
     window = await get_scan_window(
         session,
@@ -245,6 +251,8 @@ async def run_missed_decision_scan_once(
     ):
         scan_run.source_window_start = window.start
     scan_run.source_window_end = scan_run.source_window_end or window.end
+    await session.flush()
+    await session.commit()
 
     try:
         sources_scanned = 0
@@ -265,6 +273,7 @@ async def run_missed_decision_scan_once(
             )
             if not records:
                 break
+            await session.commit()
 
             result = await process_missed_decision_source_window(
                 session,
@@ -276,6 +285,7 @@ async def run_missed_decision_scan_once(
             scan_run.sources_scanned = sources_scanned
             scan_run.candidates_created = candidates_created
             await session.flush()
+            await session.commit()
 
             if len(records) < SOURCE_WINDOW_BATCH_SIZE:
                 break
@@ -293,11 +303,14 @@ async def run_missed_decision_scan_once(
         scan_run.completed_at = _now()
         window.state.last_missed_decision_scan_at = scan_run.source_window_end
         await session.flush()
+        await session.commit()
     except Exception as exc:
+        await session.rollback()
         scan_run.status = SCAN_STATUS_FAILED
         scan_run.error_message = str(exc)[:1000]
         scan_run.completed_at = _now()
         await session.flush()
+        await session.commit()
         logger.warning(
             "Missed-decision scan failed for run %s",
             scan_run.id,
@@ -313,10 +326,20 @@ async def drain_queued_missed_decision_scans(
     limit: int = 10,
 ) -> int:
     """Claim and process queued scan runs."""
+    stale_started_before = _now() - STALE_RUNNING_SCAN_AFTER
     stmt = (
         select(MissedDecisionScanRun)
         .where(
-            MissedDecisionScanRun.status == SCAN_STATUS_QUEUED,
+            or_(
+                MissedDecisionScanRun.status == SCAN_STATUS_QUEUED,
+                and_(
+                    MissedDecisionScanRun.status == SCAN_STATUS_RUNNING,
+                    or_(
+                        MissedDecisionScanRun.started_at.is_(None),  # type: ignore[union-attr]
+                        MissedDecisionScanRun.started_at < stale_started_before,
+                    ),
+                ),
+            ),
             MissedDecisionScanRun.deleted_at.is_(None),  # type: ignore[union-attr]
         )
         .order_by(MissedDecisionScanRun.created_at.asc())  # type: ignore[union-attr]

@@ -28,6 +28,7 @@ from src.models.telegram import TelegramChatWorkspace
 from src.services.missed_decision_scanner import (
     SCAN_STATUS_QUEUED,
     SCAN_STATUS_RUNNING,
+    STALE_RUNNING_SCAN_AFTER,
     drain_queued_missed_decision_scans,
     enqueue_missed_decision_scan,
 )
@@ -357,13 +358,21 @@ async def _has_active_missed_decision_scan(
     workspace_id: UUID,
     source_type: str,
 ) -> bool:
+    stale_started_before = datetime.now(UTC) - STALE_RUNNING_SCAN_AFTER
     stmt = (
         select(MissedDecisionScanRun)
         .where(
             MissedDecisionScanRun.workspace_id == workspace_id,
             MissedDecisionScanRun.source_type == source_type,
-            MissedDecisionScanRun.status.in_(  # type: ignore[attr-defined]
-                [SCAN_STATUS_QUEUED, SCAN_STATUS_RUNNING]
+            (
+                (MissedDecisionScanRun.status == SCAN_STATUS_QUEUED)
+                | (
+                    (MissedDecisionScanRun.status == SCAN_STATUS_RUNNING)
+                    & (
+                        (MissedDecisionScanRun.started_at.is_(None))  # type: ignore[union-attr]
+                        | (MissedDecisionScanRun.started_at >= stale_started_before)
+                    )
+                )
             ),
             MissedDecisionScanRun.deleted_at.is_(None),  # type: ignore[union-attr]
         )
