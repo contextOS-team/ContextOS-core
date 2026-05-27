@@ -55,6 +55,30 @@ CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
 );
 SQL
 
+# 2026-05: two early integration migrations were renamed only to improve
+# lexical ordering. Prod already has their original history versions, so add
+# alias rows before computing pending migrations instead of replaying schemas
+# that already exist.
+psql "$DB_URL" -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
+INSERT INTO supabase_migrations.schema_migrations (version, name)
+SELECT '000040', '000040_github_tables.sql'
+WHERE EXISTS (
+  SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '00004'
+)
+AND NOT EXISTS (
+  SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '000040'
+);
+
+INSERT INTO supabase_migrations.schema_migrations (version, name)
+SELECT '000190', '000190_gitlab_tables.sql'
+WHERE EXISTS (
+  SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '00019'
+)
+AND NOT EXISTS (
+  SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '000190'
+);
+SQL
+
 # Pull the set of applied versions into a sorted file for fast lookup.
 APPLIED=$(mktemp)
 trap 'rm -f "$APPLIED"' EXIT
