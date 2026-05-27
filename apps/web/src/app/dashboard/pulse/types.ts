@@ -51,3 +51,11 @@ export interface NeedsReviewSuggestionsState {
   needsReviewSuggestions: MissedDecisionReviewSuggestion[]
   needsReviewError: string | null
 }
+
+export interface WorkspaceSnapshotItem {
+  id: string
+  label: string
+  value: string
+  detail: string
+  href?: string
+}

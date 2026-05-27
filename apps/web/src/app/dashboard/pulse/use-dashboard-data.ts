@@ -10,10 +10,18 @@ import {
   fetchDecisions,
   getDashboardAttention,
   getDashboardSuggestions,
+  getGithubIndexStatus,
+  getGithubSyncStatus,
+  getIntegrationStatus,
+  getLinearSyncStatus,
   getMissedDecisionReviewSuggestions,
   ignoreMissedDecisionDuplicate,
   saveMissedDecisionAsNewDecision,
   type AttentionItem,
+  type GithubIndexStatus,
+  type GithubSyncStatus,
+  type IntegrationStatusResponse,
+  type LinearSyncStatus,
   type MissedDecisionReviewSuggestion,
   type SuggestionItem,
 } from '@/lib/api'
@@ -24,6 +32,7 @@ import type {
   MissedDecisionReviewActions,
   NeedsReviewSuggestionsState,
   NeedsYouItem,
+  WorkspaceSnapshotItem,
 } from './types'
 
 const EMPTY_DELTA: Delta = {
@@ -39,6 +48,7 @@ interface DashboardDataState extends NeedsReviewSuggestionsState {
   suggestions: SuggestionItem[]
   contextItems: ContextPageRow[]
   needsYouItems: NeedsYouItem[]
+  workspaceSnapshot: WorkspaceSnapshotItem[]
   delta: Delta
   workspaceId: string | null
   isLoading: boolean
@@ -121,6 +131,84 @@ function missedDecisionError(
   return 'Could not load missed-decision suggestions. Refresh the dashboard or open Activity to confirm the source sync completed.'
 }
 
+function formatCount(value: number): string {
+  return new Intl.NumberFormat('en-US').format(value)
+}
+
+function pluralDetail(count: number, singular: string): string {
+  return `${singular}${count === 1 ? '' : 's'}`
+}
+
+function syncedRepoCount(github: GithubSyncStatus | null): number {
+  if (!github) return 0
+  return Object.values(github.repo_sync_status)
+    .filter((row) => row.status.toLowerCase() === 'synced')
+    .length
+}
+
+export function buildWorkspaceSnapshot({
+  integrations,
+  linear,
+  github,
+  githubIndex,
+}: {
+  integrations: IntegrationStatusResponse | null
+  linear: LinearSyncStatus | null
+  github: GithubSyncStatus | null
+  githubIndex: GithubIndexStatus | null
+}): WorkspaceSnapshotItem[] {
+  const items: WorkspaceSnapshotItem[] = []
+
+  if (integrations?.linear.status === 'connected' && linear?.tickets_synced) {
+    items.push({
+      id: 'linear',
+      label: 'Linear',
+      value: formatCount(linear.tickets_synced),
+      detail: `${pluralDetail(linear.tickets_synced, 'ticket')} imported`,
+      href: '/dashboard/context',
+    })
+  }
+
+  const indexedChunks = (githubIndex?.repos ?? [])
+    .reduce((sum, repo) => sum + Math.max(0, repo.chunks), 0)
+  if (integrations?.github.status === 'connected' && indexedChunks > 0) {
+    items.push({
+      id: 'github-code',
+      label: 'GitHub',
+      value: formatCount(indexedChunks),
+      detail: 'code chunks indexed',
+      href: '/dashboard/graph',
+    })
+  }
+
+  const reposSynced = syncedRepoCount(github)
+  if (
+    integrations?.github.status === 'connected'
+    && reposSynced > 0
+    && indexedChunks === 0
+  ) {
+    items.push({
+      id: 'github-repos',
+      label: 'GitHub',
+      value: formatCount(reposSynced),
+      detail: `${pluralDetail(reposSynced, 'repo')} synced`,
+      href: '/dashboard/settings?tab=integrations',
+    })
+  }
+
+  if (integrations?.telegram.status === 'connected') {
+    items.push({
+      id: 'telegram',
+      label: 'Telegram',
+      value: '1',
+      detail: 'chat connected',
+      href: '/dashboard/activity',
+    })
+  }
+
+  return items.slice(0, 3)
+}
+
 function withDashboardTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
@@ -144,6 +232,7 @@ export function useDashboardData(
     needsReviewError: null,
     contextItems: [],
     needsYouItems: [],
+    workspaceSnapshot: [],
     delta: EMPTY_DELTA,
     workspaceId,
     isLoading: false,
@@ -162,6 +251,7 @@ export function useDashboardData(
           needsReviewError: null,
           contextItems: [],
           needsYouItems: [],
+          workspaceSnapshot: [],
           delta: EMPTY_DELTA,
           workspaceId: null,
           isLoading: false,
@@ -180,6 +270,10 @@ export function useDashboardData(
         decisionsResult,
         activityRowsResult,
         missedDecisionsResult,
+        integrationStatusResult,
+        linearStatusResult,
+        githubStatusResult,
+        githubIndexStatusResult,
       ] = await Promise.allSettled([
         withDashboardTimeout(getDashboardAttention(), 'Dashboard attention'),
         withDashboardTimeout(getDashboardSuggestions(3), 'Dashboard suggestions'),
@@ -193,6 +287,10 @@ export function useDashboardData(
           getMissedDecisionReviewSuggestions(5),
           'Missed-decision suggestions'
         ),
+        withDashboardTimeout(getIntegrationStatus(), 'Integration status'),
+        withDashboardTimeout(getLinearSyncStatus(), 'Linear sync status'),
+        withDashboardTimeout(getGithubSyncStatus(), 'GitHub sync status'),
+        withDashboardTimeout(getGithubIndexStatus(), 'GitHub index status'),
       ])
 
       if (cancelled) return
@@ -203,6 +301,10 @@ export function useDashboardData(
       const decisions = settledValue(decisionsResult, null)
       const activityRows = settledValue(activityRowsResult, [])
       const needsReviewSuggestions = settledValue(missedDecisionsResult, [])
+      const integrations = settledValue(integrationStatusResult, null)
+      const linear = settledValue(linearStatusResult, null)
+      const github = settledValue(githubStatusResult, null)
+      const githubIndex = settledValue(githubIndexStatusResult, null)
       const needsYouItems = mapAttentionItems(attention, now)
 
       setData({
@@ -212,6 +314,12 @@ export function useDashboardData(
         needsReviewError: missedDecisionError(missedDecisionsResult),
         contextItems: contextItems.slice(0, 3),
         needsYouItems,
+        workspaceSnapshot: buildWorkspaceSnapshot({
+          integrations,
+          linear,
+          github,
+          githubIndex,
+        }),
         delta: bucketDelta(activityRows, needsYouItems, ''),
         workspaceId,
         isLoading: false,

@@ -12,6 +12,7 @@ import { NeedsReview } from '../needs-review'
 import { RecentDecisions } from '../recent-decisions'
 import { SeenItemsProvider } from '../since-last-visit/use-session-seen-items'
 import type { Delta, NeedsYouItem } from '../types'
+import { WorkspaceSnapshot } from '../workspace-snapshot'
 
 const apiMocks = vi.hoisted(() => ({
   dismissSuggestion: vi.fn(),
@@ -147,6 +148,33 @@ describe('pulse components', () => {
     const { container } = renderWithSeenProvider(<RecentDecisions data={null} lastVisitedAt={null} />)
 
     expect(container.textContent).toBe('')
+  })
+
+  it('renders a compact workspace snapshot for first-run imported data', () => {
+    render(
+      <WorkspaceSnapshot
+        items={[
+          {
+            id: 'linear',
+            label: 'Linear',
+            value: '64',
+            detail: 'tickets imported',
+          },
+          {
+            id: 'github-code',
+            label: 'GitHub',
+            value: '3,053',
+            detail: 'code chunks indexed',
+          },
+        ]}
+      />
+    )
+
+    expect(screen.getByText('Workspace snapshot')).toBeTruthy()
+    expect(screen.getByText('64')).toBeTruthy()
+    expect(screen.getByText('tickets imported')).toBeTruthy()
+    expect(screen.getByText('3,053')).toBeTruthy()
+    expect(screen.getByText('code chunks indexed')).toBeTruthy()
   })
 
   it('tolerates legacy graph-shaped decision data during refresh', () => {

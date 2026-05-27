@@ -2,12 +2,17 @@
 
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { IntegrationStatusResponse, ProviderStatus } from '@/lib/api'
 import {
   DASHBOARD_REQUEST_TIMEOUT_MS,
   useDashboardData,
 } from '../use-dashboard-data'
 
 const apiMocks = vi.hoisted(() => ({
+  getGithubIndexStatus: vi.fn(),
+  getGithubSyncStatus: vi.fn(),
+  getIntegrationStatus: vi.fn(),
+  getLinearSyncStatus: vi.fn(),
   getDashboardAttention: vi.fn(),
   getDashboardSuggestions: vi.fn(),
   getMissedDecisionReviewSuggestions: vi.fn(),
@@ -29,6 +34,10 @@ const activityMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/api', () => ({
+  getGithubIndexStatus: apiMocks.getGithubIndexStatus,
+  getGithubSyncStatus: apiMocks.getGithubSyncStatus,
+  getIntegrationStatus: apiMocks.getIntegrationStatus,
+  getLinearSyncStatus: apiMocks.getLinearSyncStatus,
   getDashboardAttention: apiMocks.getDashboardAttention,
   getDashboardSuggestions: apiMocks.getDashboardSuggestions,
   getMissedDecisionReviewSuggestions: apiMocks.getMissedDecisionReviewSuggestions,
@@ -68,9 +77,66 @@ function Probe() {
         needsReviewError: data.needsReviewError,
         contextItems: data.contextItems.length,
         decisions: data.decisions?.length ?? 0,
+        workspaceSnapshot: data.workspaceSnapshot.length,
       })}
     </output>
   )
+}
+
+function provider(overrides: Partial<ProviderStatus> = {}): ProviderStatus {
+  return {
+    status: 'disconnected',
+    external_name: null,
+    connected_at: null,
+    ...overrides,
+  }
+}
+
+function integrationStatus(
+  overrides: Partial<IntegrationStatusResponse> = {}
+): IntegrationStatusResponse {
+  return {
+    linear: provider(),
+    slack: provider(),
+    fathom: provider(),
+    github: provider(),
+    gitlab: provider(),
+    notion: provider(),
+    telegram: provider(),
+    jira: provider(),
+    ...overrides,
+  }
+}
+
+function mockDefaultDashboardFetches() {
+  apiMocks.getDashboardAttention.mockResolvedValue([])
+  apiMocks.getDashboardSuggestions.mockResolvedValue([])
+  apiMocks.getMissedDecisionReviewSuggestions.mockResolvedValue([])
+  apiMocks.fetchDecisions.mockResolvedValue([])
+  contextMocks.fetchContextPages.mockResolvedValue([])
+  activityMocks.fetchActivityDelta.mockResolvedValue([])
+  activityMocks.bucketDelta.mockReturnValue({
+    decisions: { count: 0, items: [] },
+    sources: { count: 0, items: [] },
+    needsYou: { topUrgentItem: null, items: [] },
+  })
+  apiMocks.getIntegrationStatus.mockResolvedValue(integrationStatus())
+  apiMocks.getLinearSyncStatus.mockResolvedValue({
+    synced_teams: [],
+    sync_status: null,
+    tickets_synced: 0,
+    tickets_count: 0,
+    last_sync_at: null,
+  })
+  apiMocks.getGithubSyncStatus.mockResolvedValue({
+    repo_sync_status: {},
+    last_sync_at: null,
+  })
+  apiMocks.getGithubIndexStatus.mockResolvedValue({
+    status: 'idle',
+    last_indexed_at: null,
+    repos: [],
+  })
 }
 
 describe('useDashboardData', () => {
@@ -80,17 +146,9 @@ describe('useDashboardData', () => {
   })
 
   it('does not fail the dashboard when suggestions are unavailable', async () => {
-    apiMocks.getDashboardAttention.mockResolvedValue([])
+    mockDefaultDashboardFetches()
     apiMocks.getDashboardSuggestions.mockRejectedValue(new Error('Failed to fetch'))
-    apiMocks.getMissedDecisionReviewSuggestions.mockResolvedValue([])
-    apiMocks.fetchDecisions.mockResolvedValue([])
     contextMocks.fetchContextPages.mockResolvedValue([{ id: 'ctx-1' }])
-    activityMocks.fetchActivityDelta.mockResolvedValue([])
-    activityMocks.bucketDelta.mockReturnValue({
-      decisions: { count: 0, items: [] },
-      sources: { count: 0, items: [] },
-      needsYou: { topUrgentItem: null, items: [] },
-    })
 
     render(<Probe />)
 
@@ -105,9 +163,7 @@ describe('useDashboardData', () => {
   })
 
   it('loads workspace decisions for the home Recent decisions feed', async () => {
-    apiMocks.getDashboardAttention.mockResolvedValue([])
-    apiMocks.getDashboardSuggestions.mockResolvedValue([])
-    apiMocks.getMissedDecisionReviewSuggestions.mockResolvedValue([])
+    mockDefaultDashboardFetches()
     apiMocks.fetchDecisions.mockResolvedValue([
       {
         id: 'decision-1',
@@ -118,8 +174,6 @@ describe('useDashboardData', () => {
         properties: { date: '2026-05-25' },
       },
     ])
-    contextMocks.fetchContextPages.mockResolvedValue([])
-    activityMocks.fetchActivityDelta.mockResolvedValue([])
     activityMocks.bucketDelta.mockReturnValue({
       decisions: { count: 1, items: [] },
       sources: { count: 0, items: [] },
@@ -139,17 +193,9 @@ describe('useDashboardData', () => {
 
   it('does not leave the dashboard loading when suggestions never settle', async () => {
     vi.useFakeTimers()
-    apiMocks.getDashboardAttention.mockResolvedValue([])
+    mockDefaultDashboardFetches()
     apiMocks.getDashboardSuggestions.mockReturnValue(new Promise(() => {}))
-    apiMocks.getMissedDecisionReviewSuggestions.mockResolvedValue([])
-    apiMocks.fetchDecisions.mockResolvedValue([])
     contextMocks.fetchContextPages.mockResolvedValue([{ id: 'ctx-1' }])
-    activityMocks.fetchActivityDelta.mockResolvedValue([])
-    activityMocks.bucketDelta.mockReturnValue({
-      decisions: { count: 0, items: [] },
-      sources: { count: 0, items: [] },
-      needsYou: { topUrgentItem: null, items: [] },
-    })
 
     render(<Probe />)
 
@@ -169,6 +215,41 @@ describe('useDashboardData', () => {
     expect(state.needsReviewSuggestions).toBe(0)
     expect(state.needsReviewError).toBeNull()
     expect(state.contextItems).toBe(1)
+  })
+
+  it('builds a first-run snapshot from imported workspace source status', async () => {
+    mockDefaultDashboardFetches()
+    apiMocks.getIntegrationStatus.mockResolvedValue(integrationStatus({
+      linear: provider({ status: 'connected' }),
+      github: provider({ status: 'connected', selected_repos_count: 1 }),
+    }))
+    apiMocks.getLinearSyncStatus.mockResolvedValue({
+      synced_teams: ['team-1'],
+      sync_status: 'complete',
+      tickets_synced: 64,
+      tickets_count: 64,
+      last_sync_at: '2026-05-27T12:29:17Z',
+    })
+    apiMocks.getGithubSyncStatus.mockResolvedValue({
+      repo_sync_status: {
+        'contextOS-team/ContextOS-core': { status: 'synced', synced: 0, total: 0 },
+      },
+      last_sync_at: '2026-05-27T12:41:44Z',
+    })
+    apiMocks.getGithubIndexStatus.mockResolvedValue({
+      status: 'idle',
+      last_indexed_at: '2026-05-27T12:41:45Z',
+      repos: [{ repo: 'contextOS-team/ContextOS-core', chunks: 3053 }],
+    })
+
+    render(<Probe />)
+
+    await waitFor(() => {
+      const state = JSON.parse(screenText())
+
+      expect(state.isLoading).toBe(false)
+      expect(state.workspaceSnapshot).toBe(2)
+    })
   })
 })
 

@@ -7,6 +7,8 @@ export const SOURCE_EVENT_TYPES = [
   'pr_merged',
   'meeting_recorded',
   'page_created',
+  'integration_connected',
+  'sync_completed',
 ] as const
 
 export interface ActivityDeltaRow {

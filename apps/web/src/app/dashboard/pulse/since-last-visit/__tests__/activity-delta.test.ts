@@ -41,6 +41,8 @@ describe('bucketDelta', () => {
         row('source-2', 'pr_merged'),
         row('source-3', 'meeting_recorded'),
         row('source-4', 'page_created'),
+        row('source-5', 'integration_connected'),
+        row('source-6', 'sync_completed'),
       ],
       [],
       'user-1'
@@ -48,21 +50,22 @@ describe('bucketDelta', () => {
 
     expect(result.decisions.count).toBe(2)
     expect(result.decisions.items.map((item) => item.id)).toEqual(['decision-1', 'decision-2'])
-    expect(result.sources.count).toBe(4)
+    expect(result.sources.count).toBe(6)
     expect(result.sources.items.map((item) => item.id)).toEqual([
       'source-1',
       'source-2',
       'source-3',
       'source-4',
+      'source-5',
+      'source-6',
     ])
   })
 
-  it('ignores unknown or unsupported event types', () => {
+  it('ignores unknown or incomplete event types', () => {
     const result = bucketDelta(
       [
         row('ignored-1', 'sync_started'),
-        row('ignored-2', 'integration_connected'),
-        row('ignored-3', 'sync_completed'),
+        row('ignored-2', 'integration_disconnected'),
       ],
       [],
       'user-1'

@@ -12,6 +12,7 @@ import { RecentDecisions } from './pulse/recent-decisions'
 import { useLastVisitedAt } from './pulse/since-last-visit/use-last-visited-at'
 import { SeenItemsProvider } from './pulse/since-last-visit/use-session-seen-items'
 import { useDashboardData } from './pulse/use-dashboard-data'
+import { WorkspaceSnapshot } from './pulse/workspace-snapshot'
 
 export default function DashboardPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null)
@@ -82,6 +83,7 @@ function DashboardSections({
     missedDecisionActions,
     contextItems,
     needsYouItems,
+    workspaceSnapshot,
     delta,
     isLoading,
     error,
@@ -113,12 +115,24 @@ function DashboardSections({
     )
   }
 
+  const hasPrimaryDashboardContent = Boolean(
+    decisions?.length
+    || suggestions.length
+    || needsReviewSuggestions.length
+    || needsReviewError
+    || contextItems.length
+    || needsYouItems.length
+  )
+
   return (
     <>
       <Headline
         delta={delta}
         lastVisitedAt={lastVisitedAt}
       />
+      {!hasPrimaryDashboardContent && (
+        <WorkspaceSnapshot items={workspaceSnapshot} />
+      )}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.32fr)_minmax(320px,0.68fr)]">
         <RecentDecisions data={decisions} lastVisitedAt={lastVisitedAt} />
         <div className="space-y-6">
