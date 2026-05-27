@@ -31,6 +31,7 @@ GROUP_NAME = "gitlab-sync-workers"
 CONSUMER_NAME = f"worker-{socket.gethostname()}-{os.getpid()}"
 BATCH_READ_COUNT = 1  # One sync at a time -- heavy API + DB workload
 BLOCK_MS = 10000  # 10s block
+STALE_PENDING_IDLE_MS = 60 * 60 * 1000  # Avoid stealing long active syncs.
 
 
 def _get_redis() -> aioredis.Redis:
@@ -106,6 +107,30 @@ async def _process_sync_message(message_data: dict) -> None:
     )
 
 
+async def _claim_stale_pending_messages(
+    r: aioredis.Redis,
+) -> list[tuple[str, list[tuple[str, dict]]]]:
+    """Claim old pending jobs left by crashed/restarted workers."""
+    result = await r.xautoclaim(
+        STREAM_KEY,
+        GROUP_NAME,
+        CONSUMER_NAME,
+        STALE_PENDING_IDLE_MS,
+        start_id="0-0",
+        count=BATCH_READ_COUNT,
+    )
+
+    messages = []
+    if isinstance(result, (list, tuple)) and len(result) >= 2:
+        messages = result[1] or []
+
+    if not messages:
+        return []
+
+    logger.info("Reclaimed %d stale pending GitLab sync job(s)", len(messages))
+    return [(STREAM_KEY, messages)]
+
+
 async def run_gitlab_sync_worker() -> None:
     """Run the GitLab MR sync worker loop.
 
@@ -120,13 +145,15 @@ async def run_gitlab_sync_worker() -> None:
     try:
         while True:
             try:
-                messages = await r.xreadgroup(
-                    GROUP_NAME,
-                    CONSUMER_NAME,
-                    {STREAM_KEY: ">"},
-                    count=BATCH_READ_COUNT,
-                    block=BLOCK_MS,
-                )
+                messages = await _claim_stale_pending_messages(r)
+                if not messages:
+                    messages = await r.xreadgroup(
+                        GROUP_NAME,
+                        CONSUMER_NAME,
+                        {STREAM_KEY: ">"},
+                        count=BATCH_READ_COUNT,
+                        block=BLOCK_MS,
+                    )
 
                 if not messages:
                     continue

@@ -762,6 +762,10 @@ class TestRunSync:
                 new_callable=AsyncMock,
             ) as mock_update_config,
             patch(
+                "src.routers.notion.update_cursor_status",
+                new_callable=AsyncMock,
+            ) as mock_cursor,
+            patch(
                 "src.routers.notion.async_session",
                 return_value=mock_cm,
             ),
@@ -775,6 +779,14 @@ class TestRunSync:
             if c[0][2].get("sync_status") == "error"
         ]
         assert len(error_calls) == 1
+        assert error_calls[0][0][2]["sync_error"] == "Token fetch failed"
+
+        error_cursor_calls = [
+            c for c in mock_cursor.call_args_list
+            if c.kwargs.get("sync_status") == "error"
+        ]
+        assert len(error_cursor_calls) == 1
+        assert error_cursor_calls[0].kwargs["error_message"] == "Token fetch failed"
 
     @pytest.mark.asyncio
     async def test_sync_handles_content_fetch_failure_gracefully(self):

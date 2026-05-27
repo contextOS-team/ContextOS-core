@@ -242,6 +242,7 @@ function timestampedSourceRow({
   syncStatus,
   progress,
   progressDetail,
+  attentionDetail,
   now,
 }: {
   provider: 'notion' | 'jira'
@@ -250,6 +251,7 @@ function timestampedSourceRow({
   syncStatus?: string | null
   progress?: number | null
   progressDetail?: string | null
+  attentionDetail?: string | null
   now: Date
 }): SourceRow | null {
   if (integrationStatus.status === 'error') {
@@ -281,7 +283,7 @@ function timestampedSourceRow({
       provider,
       label: PROVIDER_LABELS[provider],
       health: 'attention',
-      detail: 'Sync needs attention',
+      detail: attentionDetail?.trim() || 'Sync needs attention',
       lastSyncAt,
     }
   }
@@ -432,6 +434,7 @@ export function buildSourceRows({
       progress: notion?.sync_total
         ? Math.max(0, Math.min(1, (notion.sync_progress ?? notion.pages_count ?? 0) / notion.sync_total))
         : null,
+      attentionDetail: notion?.sync_error,
       now,
     }),
     timestampedSourceRow({

@@ -673,6 +673,7 @@ export interface NotionSyncStatus {
   pages_count: number
   sync_progress: number | null
   sync_total: number | null
+  sync_error: string | null
   sync_started_at: string | null
   last_sync_at: string | null
 }

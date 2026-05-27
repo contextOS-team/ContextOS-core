@@ -33,6 +33,14 @@ import src.config as config_module
 logger = logging.getLogger(__name__)
 
 
+def _sync_error_message(exc: BaseException) -> str:
+    """Return a useful bounded sync error message for status APIs."""
+    message = str(exc).strip()
+    if not message:
+        message = exc.__class__.__name__
+    return message[:500]
+
+
 def _extract_title(properties: dict) -> str:
     """Extract the page title from Notion page properties.
 
@@ -276,24 +284,25 @@ async def run_full_sync(workspace_id: UUID, user_id: UUID) -> None:
                 )
 
             except Exception as e:
+                error_message = _sync_error_message(e)
                 srl.exception(
                     "Notion full sync failed for workspace %s" % workspace_id
                 )
                 await emit_activity(session, workspace_id, "sync_completed", metadata={
                     "integration": "notion",
                     "error": True,
-                    "error_message": str(e)[:200],
+                    "error_message": error_message[:200],
                 })
                 try:
                     await _update_sync_config(
                         session,
                         workspace_id,
-                        {"sync_status": "error", "sync_error": "sync failed"},
+                        {"sync_status": "error", "sync_error": error_message},
                     )
                     await update_cursor_status(
                         session, workspace_id, "notion", "default",
                         sync_status="error",
-                        error_message="sync failed",
+                        error_message=error_message,
                     )
                     await session.commit()
                 except Exception:

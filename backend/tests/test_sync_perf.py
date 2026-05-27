@@ -410,6 +410,51 @@ class TestTimeoutIsolation:
         assert result["projects"][str(fast_project)]["mrs"] == 3
         assert result["total_mrs"] == 3
 
+    @pytest.mark.asyncio
+    async def test_gitlab_oauth_error_marks_project_error(self):
+        """Token/OAuth failures should be stored as project sync errors."""
+        from src.services.gitlab_common import GitLabOAuthError
+        from src.services.gitlab_sync import sync_projects
+
+        session, _, _ = _mock_session()
+        settings = MagicMock()
+        project_id = 25911339
+
+        with (
+            patch(
+                "src.services.gitlab_sync.sync_single_project",
+                side_effect=GitLabOAuthError(
+                    "No refresh token found -- reconnect GitLab"
+                ),
+            ),
+            patch(
+                "src.services.gitlab_sync.update_cursor_status",
+                new_callable=AsyncMock,
+            ) as update_cursor,
+            patch(
+                "src.services.gitlab_sync._update_project_sync_status",
+                new_callable=AsyncMock,
+            ) as update_project,
+            patch("src.services.gitlab_sync.emit_activity", new_callable=AsyncMock),
+        ):
+            result = await sync_projects(WS_UUID, [project_id], session, settings)
+
+        assert result["projects"][str(project_id)] == {
+            "status": "error",
+            "error": "No refresh token found -- reconnect GitLab",
+        }
+        update_project.assert_any_await(
+            session, WS_UUID, project_id, "error", 0, 0
+        )
+        update_cursor.assert_any_await(
+            session,
+            WS_UUID,
+            "gitlab",
+            str(project_id),
+            sync_status="error",
+            error_message="No refresh token found -- reconnect GitLab",
+        )
+
 
 # ---------------------------------------------------------------------------
 # Test 6: Concurrent code indexing

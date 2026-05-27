@@ -142,7 +142,13 @@ async def sync_projects(
                 await session.commit()
                 results[str(project_id)] = {"status": "timeout"}
 
-            except (httpx.HTTPError, sqlalchemy.exc.SQLAlchemyError, KeyError, ValueError) as e:
+            except (
+                GitLabOAuthError,
+                httpx.HTTPError,
+                sqlalchemy.exc.SQLAlchemyError,
+                KeyError,
+                ValueError,
+            ) as e:
                 await session.rollback()
                 srl.error("Sync failed for project %d: %s" % (project_id, e))
                 await _update_project_sync_status(

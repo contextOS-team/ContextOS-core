@@ -203,12 +203,21 @@ async def get_status(
         "pages_count": pages_count,
         "sync_progress": config.get("sync_progress"),
         "sync_total": config.get("sync_total"),
+        "sync_error": config.get("sync_error"),
         "sync_started_at": config.get("sync_started_at"),
         "last_sync_at": config.get("last_sync_at"),
     }
 
 
 STALE_SYNC_THRESHOLD_SECONDS = 660  # 11 min — slightly more than SYNC_GLOBAL_TIMEOUT_SECONDS
+
+
+def _sync_error_message(exc: BaseException) -> str:
+    """Return a useful bounded sync error message for status APIs."""
+    message = str(exc).strip()
+    if not message:
+        message = exc.__class__.__name__
+    return message[:500]
 
 
 async def _check_sync_preconditions(
@@ -259,7 +268,12 @@ async def _check_sync_preconditions(
                 workspace_id,
             )
             await _update_sync_config(
-                session, workspace_id, {"sync_status": "error"}
+                session,
+                workspace_id,
+                {
+                    "sync_status": "error",
+                    "sync_error": "Previous sync was stuck and has been reset.",
+                },
             )
             await session.flush()
             # Don't allow starting a new sync in this same request.
@@ -460,7 +474,12 @@ async def _run_sync(
         try:
             async with async_session() as session:
                 await _update_sync_config(
-                    session, workspace_id, {"sync_status": "error"}
+                    session,
+                    workspace_id,
+                    {
+                        "sync_status": "error",
+                        "sync_error": "sync timed out",
+                    },
                 )
                 await update_cursor_status(
                     session, workspace_id, "notion", "default",
@@ -701,17 +720,23 @@ async def _run_sync_inner(
                 "Notion sync complete: %d pages" % len(page_ids),
             )
 
-        except Exception:
+        except Exception as exc:
+            error_message = _sync_error_message(exc)
             srl.exception("Notion sync failed")
             try:
                 async with async_session() as session:
                     await _update_sync_config(
-                        session, workspace_id, {"sync_status": "error"}
+                        session,
+                        workspace_id,
+                        {
+                            "sync_status": "error",
+                            "sync_error": error_message,
+                        },
                     )
                     await update_cursor_status(
                         session, workspace_id, "notion", "default",
                         sync_status="error",
-                        error_message="sync failed",
+                        error_message=error_message,
                     )
                     await session.commit()
             except Exception:

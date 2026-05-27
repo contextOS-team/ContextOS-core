@@ -5,6 +5,7 @@ import type {
   IntegrationStatusResponse,
   JiraSyncStatus,
   LinearSyncStatus,
+  NotionSyncStatus,
   ProviderStatus,
 } from '@/lib/api'
 import {
@@ -273,6 +274,33 @@ describe('source sync chrome state', () => {
       health: 'syncing',
       detail: '1 issue synced',
       progress: null,
+    })
+  })
+
+  it('shows Notion sync error detail when available', () => {
+    const notion: NotionSyncStatus = {
+      connected: true,
+      status: 'connected',
+      sync_status: 'error',
+      sync_error: 'Token fetch failed',
+      workspace_name: 'Workspace',
+      pages_count: 0,
+      sync_progress: null,
+      sync_total: null,
+      sync_started_at: null,
+      last_sync_at: null,
+    }
+    const rows = buildSourceRows({
+      integrations: integrationStatus({
+        notion: provider({ status: 'connected' }),
+      }),
+      notion,
+      now: new Date('2026-05-21T12:00:00Z'),
+    })
+
+    expect(rows.find((row) => row.provider === 'notion')).toMatchObject({
+      health: 'attention',
+      detail: 'Token fetch failed',
     })
   })
 
