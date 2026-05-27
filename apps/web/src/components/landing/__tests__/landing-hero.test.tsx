@@ -3,6 +3,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import Hero from '../Hero'
+import { LANDING_HERO } from '../landing-copy'
 
 vi.mock('posthog-js/react', () => ({
   usePostHog: () => ({
@@ -21,10 +22,15 @@ describe('landing hero', () => {
       })
     ).toBeTruthy()
     expect(
-      screen.getByText(
-        'Decisions get made. The reasoning gets scattered. ContextOS reconstructs the trail across Slack, PRs, meetings, docs, and tickets, so your team can see why something exists and what source proves it.'
+      screen.getByText((_content, element) =>
+        element?.tagName.toLowerCase() === 'p' &&
+        element.textContent === LANDING_HERO.subheadline
       )
     ).toBeTruthy()
+    expect(screen.getByText(/ContextOS finds the sources behind important decisions/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'sources' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'sources' })).toBeNull()
+    expect(screen.queryByRole('tooltip')).toBeNull()
     expect(screen.queryByText(/Decision memory for engineering teams/i)).toBeNull()
 
     const primaryLink = screen.getByRole('link', {
@@ -39,6 +45,7 @@ describe('landing hero', () => {
     expect(screen.getByText('15 minutes. Bring one messy decision.')).toBeTruthy()
 
     expect(screen.getByTestId('hero-native-background')).toBeTruthy()
+    expect(screen.queryByTestId('hero-source-evidence-background')).toBeNull()
     expect(screen.queryByTestId('unicorn-scene')).toBeNull()
     expect(screen.queryByText(/Made with unicorn\.studio/i)).toBeNull()
   })

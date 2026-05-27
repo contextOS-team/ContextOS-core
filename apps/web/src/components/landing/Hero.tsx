@@ -4,6 +4,26 @@ import { usePostHog } from "posthog-js/react";
 import { BOOKING_SECTION_HREF } from "./booking";
 import { LANDING_HERO } from "./landing-copy";
 
+function HeroTitle() {
+  return (
+    <>
+      Know{" "}
+      <span className="teal-glow-text relative inline-block text-[var(--color-teal)] after:absolute after:-bottom-1 after:left-0 after:h-[2px] after:w-full after:rounded-full after:bg-[linear-gradient(90deg,transparent,rgba(var(--color-teal-rgb),0.58),transparent)] after:content-['']">
+        why
+      </span>{" "}
+      your company works the way it does.
+    </>
+  );
+}
+
+function HeroSubheadlineBlock() {
+  return (
+    <div className="mx-auto mb-7 max-w-3xl text-lg leading-relaxed text-[#AEB6C2] transition-[opacity,transform] duration-700 md:text-xl">
+      <p>{LANDING_HERO.subheadline}</p>
+    </div>
+  );
+}
+
 function HeroAmbientBackground() {
   return (
     <div
@@ -34,17 +54,17 @@ export default function Hero() {
           }`}
           style={{ transitionDelay: "100ms" }}
         >
-          {LANDING_HERO.h1}
+          <HeroTitle />
         </h1>
 
-        <p
-          className={`mx-auto mb-7 max-w-3xl text-lg leading-relaxed text-[#AEB6C2] transition-[opacity,transform] duration-700 md:text-xl ${
+        <div
+          className={`${
             visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
           }`}
           style={{ transitionDelay: "200ms" }}
         >
-          {LANDING_HERO.subheadline}
-        </p>
+          <HeroSubheadlineBlock />
+        </div>
 
         <div
           className={`flex flex-col items-center transition-[opacity,transform] duration-700 ${

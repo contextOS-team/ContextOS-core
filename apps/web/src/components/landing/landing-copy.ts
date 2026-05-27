@@ -1,13 +1,13 @@
 export const LANDING_SEO = {
   title: "ContextOS | Decision Memory for Engineering Teams",
   description:
-    "ContextOS reconstructs the reasoning behind company decisions across Slack, PRs, meetings, docs, and tickets, then turns the evidence into a verified decision record.",
+    "ContextOS finds the sources behind important decisions so engineering teams can see what was decided, why it happened, who was involved, and which sources prove it.",
 } as const;
 
 export const LANDING_HERO = {
   h1: "Know why your company works the way it does.",
   subheadline:
-    "Decisions get made. The reasoning gets scattered. ContextOS reconstructs the trail across Slack, PRs, meetings, docs, and tickets, so your team can see why something exists and what source proves it.",
+    "ContextOS finds the sources behind important decisions, so your team can see what was decided, why it happened, who was involved, and which sources prove it.",
   primaryCta: "Book a walkthrough",
   secondaryCta: "View example record",
   microcopy: "15 minutes. Bring one messy decision.",

@@ -85,8 +85,8 @@ export default async function LandingOGImage() {
             color: 'rgba(255,255,255,0.68)',
           }}
         >
-          ContextOS reconstructs the reasoning behind past decisions, with evidence
-          from Slack, PRs, meetings, docs, and tickets.
+          ContextOS finds the sources behind important decisions, so teams can see
+          what was decided, why it happened, and which sources prove it.
         </div>
 
         <div
