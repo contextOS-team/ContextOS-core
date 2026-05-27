@@ -48,7 +48,7 @@ def test_normalize_project_sync_status_uses_error_cursor():
 
 def test_normalize_project_sync_status_copies_cursor_error_message():
     status = {
-        "123": {"status": "syncing", "synced": 0, "total": 0},
+        "123": {"status": "error", "synced": 0, "total": 0},
     }
 
     normalized = _normalize_project_sync_status(

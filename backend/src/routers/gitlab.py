@@ -70,16 +70,16 @@ def _normalize_project_sync_status(
             and total > 0
             and synced >= total
         )
+        status = next_row.get("status")
         if (
-            next_row.get("status") == "syncing"
+            status in {"syncing", "error", "failed", "timeout"}
             and cursor_status in {"error", "failed", "timeout"}
         ):
             next_row["status"] = cursor_status
             if cursor_error:
                 next_row["error_message"] = cursor_error
-        elif (
-            next_row.get("status") == "syncing"
-            and (cursor_status == "complete" or has_complete_progress)
+        elif status == "syncing" and (
+            cursor_status == "complete" or has_complete_progress
         ):
             next_row["status"] = "synced"
         normalized[project_id] = next_row
