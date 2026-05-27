@@ -56,27 +56,47 @@ CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
 SQL
 
 # 2026-05: two early integration migrations were renamed only to improve
-# lexical ordering. Prod already has their original history versions, so add
-# alias rows before computing pending migrations instead of replaying schemas
-# that already exist.
+# lexical ordering. Some databases already have their original history versions;
+# normalize those ledger rows before computing pending migrations so deploys
+# don't replay schemas that already exist.
 psql "$DB_URL" -v ON_ERROR_STOP=1 -q <<'SQL' >/dev/null
-INSERT INTO supabase_migrations.schema_migrations (version, name)
-SELECT '000040', '000040_github_tables.sql'
-WHERE EXISTS (
-  SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '00004'
-)
+UPDATE supabase_migrations.schema_migrations
+SET version = '000040',
+    name = '000040_github_tables.sql'
+WHERE version = '00004'
 AND NOT EXISTS (
   SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '000040'
 );
 
-INSERT INTO supabase_migrations.schema_migrations (version, name)
-SELECT '000190', '000190_gitlab_tables.sql'
-WHERE EXISTS (
-  SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '00019'
-)
+DELETE FROM supabase_migrations.schema_migrations
+WHERE version = '00004'
+AND EXISTS (
+  SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '000040'
+);
+
+UPDATE supabase_migrations.schema_migrations
+SET name = '000040_github_tables.sql'
+WHERE version = '000040'
+AND name IS DISTINCT FROM '000040_github_tables.sql';
+
+UPDATE supabase_migrations.schema_migrations
+SET version = '000190',
+    name = '000190_gitlab_tables.sql'
+WHERE version = '00019'
 AND NOT EXISTS (
   SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '000190'
 );
+
+DELETE FROM supabase_migrations.schema_migrations
+WHERE version = '00019'
+AND EXISTS (
+  SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '000190'
+);
+
+UPDATE supabase_migrations.schema_migrations
+SET name = '000190_gitlab_tables.sql'
+WHERE version = '000190'
+AND name IS DISTINCT FROM '000190_gitlab_tables.sql';
 SQL
 
 # Pull the set of applied versions into a sorted file for fast lookup.
