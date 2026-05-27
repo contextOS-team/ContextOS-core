@@ -1,3 +1,8 @@
+// @vitest-environment jsdom
+
+import { createElement } from 'react'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import type { ContextPageSource } from '@/lib/api'
 import {
@@ -8,6 +13,8 @@ import {
   formatVerificationLabel,
   getSourceSignalLabels,
   hasSourceExplanation,
+  sourceDisclosureId,
+  SourcePathDisclosure,
 } from './source-explanations'
 
 function source(overrides: Partial<ContextPageSource> = {}): ContextPageSource {
@@ -56,6 +63,7 @@ describe('source explanation helpers', () => {
   it('formats freshness and verification labels without absent-field fallbacks', () => {
     expect(formatFreshnessLabel('fresh')).toBe('fresh source')
     expect(formatFreshnessLabel('stale')).toBe('stale source')
+    expect(formatFreshnessLabel('superseded')).toBe('superseded source')
     expect(formatFreshnessLabel('unknown')).toBe('unknown freshness')
     expect(formatFreshnessLabel(undefined)).toBeNull()
 
@@ -115,5 +123,41 @@ describe('source explanation helpers', () => {
     expect(hasSourceExplanation(source({ suppress_reason: 'stale duplicate' }))).toBe(
       true
     )
+  })
+
+  it('does not treat signal chips alone as source path disclosure data', () => {
+    const signalOnly = source({ retrieval_signals: ['hybrid_search'] })
+
+    expect(getSourceSignalLabels(signalOnly)).toEqual(['related work'])
+    expect(hasSourceExplanation(signalOnly)).toBe(false)
+  })
+
+  it('generates stable source disclosure ids per viewport', () => {
+    expect(sourceDisclosureId('context-source-desktop', 'Related Work', 2)).toBe(
+      'context-source-desktop-related-work-2'
+    )
+    expect(sourceDisclosureId('context-source-desktop', 'Slack', 0)).not.toBe(
+      sourceDisclosureId('context-source-mobile', 'Slack', 0)
+    )
+  })
+
+  it('renders an accessible disclosure only when path details exist', async () => {
+    render(
+      createElement(SourcePathDisclosure, {
+        source: source({ why_selected: 'Selected through a linked decision.' }),
+        disclosureId: 'source-path-test',
+      })
+    )
+
+    const button = screen.getByRole('button', { name: 'Show source path' })
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(button.getAttribute('aria-controls')).toBe('source-path-test')
+    expect(screen.queryByText('Selected through a linked decision.')).toBeNull()
+
+    await userEvent.click(button)
+
+    expect(button.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('Selected through a linked decision.')).toBeTruthy()
+    expect(document.getElementById('source-path-test')).not.toBeNull()
   })
 })

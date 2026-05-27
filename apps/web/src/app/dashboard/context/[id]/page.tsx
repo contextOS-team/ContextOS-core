@@ -39,6 +39,7 @@ import {
   getSourceSignalLabels,
   hasSourceExplanation,
   RetrievalSignalChip,
+  sourceDisclosureId,
   SourcePathDisclosure,
 } from './source-explanations'
 import type { GenerationState } from '@/lib/context-feed'
@@ -237,8 +238,10 @@ function ContentSection({
 
 function SourceSidebar({
   sources,
+  idPrefix,
 }: {
   sources: ContextPageSource[]
+  idPrefix: string
 }) {
   const grouped = useMemo(() => {
     const groups: Record<string, typeof sources> = {}
@@ -283,6 +286,8 @@ function SourceSidebar({
                 const rowKey = `${source.type}-${source.id}-${i}`
                 const explanationAvailable = hasSourceExplanation(source)
                 const signalLabels = getSourceSignalLabels(source)
+                const hasSignalChips = signalLabels.length > 0
+                const disclosureId = sourceDisclosureId(idPrefix, groupName, i)
                 const inner = (
                   <>
                     <span className="text-muted-foreground shrink-0 mt-0.5">
@@ -296,7 +301,7 @@ function SourceSidebar({
                     </span>
                   </>
                 )
-                if (!explanationAvailable && source.url) {
+                if (!explanationAvailable && !hasSignalChips && source.url) {
                   return (
                     <a
                       key={rowKey}
@@ -322,13 +327,13 @@ function SourceSidebar({
                           href={source.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="ml-1 inline-flex min-h-6 shrink-0 items-center rounded-md px-1.5 text-[11px] font-medium text-primary transition-[color,transform] hover:text-primary/85 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="ml-1 inline-flex min-h-10 shrink-0 items-center rounded-md px-1.5 text-[11px] font-medium text-primary transition-[color,transform] hover:text-primary/85 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           Open source
                         </a>
                       )}
                     </div>
-                    {signalLabels.length > 0 && (
+                    {hasSignalChips && (
                       <div className="mt-1.5 flex flex-wrap gap-1.5">
                         {signalLabels.map((label) => (
                           <RetrievalSignalChip key={label} label={label} />
@@ -337,7 +342,7 @@ function SourceSidebar({
                     )}
                     <SourcePathDisclosure
                       source={source}
-                      disclosureId={`source-path-${groupName}-${i}`}
+                      disclosureId={disclosureId}
                     />
                   </div>
                 )
@@ -742,7 +747,10 @@ export default function ContextDetailPage() {
               {sourceBreakdown && (
                 <p className="text-xs text-muted-foreground mb-3">{sourceBreakdown}</p>
               )}
-              <SourceSidebar sources={page.sources ?? []} />
+              <SourceSidebar
+                sources={page.sources ?? []}
+                idPrefix="context-source-desktop"
+              />
             </div>
 
             {/* View in Graph link */}
@@ -805,7 +813,10 @@ export default function ContextDetailPage() {
       <div className="lg:hidden mt-8">
         <p className="section-label mb-3">Sources ({page.sources?.length ?? 0})</p>
         <div className="rounded-lg border bg-card p-4">
-          <SourceSidebar sources={page.sources ?? []} />
+          <SourceSidebar
+            sources={page.sources ?? []}
+            idPrefix="context-source-mobile"
+          />
         </div>
       </div>
     </div>

@@ -509,10 +509,10 @@ def _format_related_content(
 
             section = (
                 f"#### [{item.source_type}] {item.title}\n"
-                f"**Relevance:** {item.relevance_score:.2f} | **Signals:** {', '.join(item.signals)}\n\n"
-                f"**Retrieval metadata:**\n{metadata_block}\n\n"
+                f"**Relevance:** {item.relevance_score:.2f} | **Signals:** {', '.join(item.signals)}\n"
                 f"{evidence_label}\n"
-                f"```text\n{item.snippet}\n```{annotation}"
+                f"```text\n{item.snippet}\n```{annotation}\n\n"
+                f"**Retrieval metadata:**\n{metadata_block}"
             )
         else:
             section = (

@@ -12,8 +12,6 @@ Covers:
 import re
 from unittest.mock import MagicMock
 
-import pytest
-
 from src.services.synthesis import SYNTHESIS_TEMPLATE, _format_related_content
 
 EXPECTED_SECTIONS = [
@@ -67,7 +65,7 @@ class TestSynthesisTemplateSections:
         ]
         assert len(section_lines) == 7, (
             f"Expected 7 sections, found {len(section_lines)}: "
-            f"{[l.strip()[:40] for l in section_lines]}"
+            f"{[line.strip()[:40] for line in section_lines]}"
         )
 
     def test_template_includes_relevant_code_section(self):
@@ -101,9 +99,15 @@ class TestSynthesisTemplateSections:
 
 
 class TestFormatRelatedContent:
-    """Verify _format_related_content produces correct output for different source types."""
+    """Verify related-content formatting for different source types."""
 
-    def _make_item(self, source_type: str, title: str, snippet: str, score: float = 0.8):
+    def _make_item(
+        self,
+        source_type: str,
+        title: str,
+        snippet: str,
+        score: float = 0.8,
+    ):
         item = MagicMock()
         item.source_type = source_type
         item.title = title
@@ -117,7 +121,7 @@ class TestFormatRelatedContent:
         assert result == "No related content found."
 
     def test_code_chunk_uses_fenced_code_block(self):
-        """code_chunk items should be rendered with triple-backtick fenced code blocks."""
+        """code_chunk items should render with fenced code blocks."""
         item = self._make_item(
             "code_chunk",
             "function: auth (acme/backend:src/auth.py)",
@@ -171,11 +175,12 @@ class TestFormatRelatedContent:
         assert "0.75" in lines[1]
         assert "hybrid_search" in lines[1]
         assert "```" in lines[2] or "```" in lines[3]
+        assert result.index("```text") < result.index("**Retrieval metadata:**")
         assert "calculate_score" in result
 
 
 class TestEnrichedSectionInstructions:
-    """Verify SYNTHESIS_TEMPLATE sections contain conditional graph enrichment instructions.
+    """Verify conditional graph enrichment prompt instructions.
 
     These tests verify SYNTH-01/02/03 requirements: the synthesis prompt
     tells the LLM how to weave graph data into narrative sections.
@@ -217,7 +222,11 @@ class TestEnrichedSectionInstructions:
         discussion provenance annotations ('Discussed in:')."""
         section = _extract_section_text(SYNTHESIS_TEMPLATE, 5)
 
-        assert "Discussed in" in section or "discussion provenance" in section.lower(), (
+        has_discussion_provenance = (
+            "Discussed in" in section
+            or "discussion provenance" in section.lower()
+        )
+        assert has_discussion_provenance, (
             "Section 5 must mention discussion provenance annotations"
         )
 
@@ -226,7 +235,11 @@ class TestEnrichedSectionInstructions:
         instruction mentioning graph data for multi-source engagement."""
         section = _extract_section_text(SYNTHESIS_TEMPLATE, 7)
 
-        assert "cross-source" in section.lower() or "multiple sources" in section.lower(), (
+        mentions_cross_source = (
+            "cross-source" in section.lower()
+            or "multiple sources" in section.lower()
+        )
+        assert mentions_cross_source, (
             "Section 7 must instruct cross-source involvement display"
         )
 
@@ -254,5 +267,5 @@ class TestEnrichedSectionInstructions:
         ]
         assert len(section_lines) == 7, (
             f"Expected 7 sections, found {len(section_lines)}: "
-            f"{[l.strip()[:40] for l in section_lines]}"
+            f"{[line.strip()[:40] for line in section_lines]}"
         )

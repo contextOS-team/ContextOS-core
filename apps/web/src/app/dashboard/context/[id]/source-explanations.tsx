@@ -61,7 +61,7 @@ export function formatFreshnessLabel(value: unknown): string | null {
     case 'stale':
       return 'stale source'
     case 'superseded':
-      return 'Not used'
+      return 'superseded source'
     case 'source_of_record':
       return 'confirmed source of record'
     case 'unknown':
@@ -130,14 +130,31 @@ export function getSourceSignalLabels(source: ContextPageSource): string[] {
 }
 
 export function hasSourceExplanation(source: ContextPageSource): boolean {
+  return hasSourcePathDetails(source)
+}
+
+export function hasSourcePathDetails(source: ContextPageSource): boolean {
+  const sourceFeatures = features(source)
   return Boolean(
     text(source.why_selected) ||
       text(source.suppress_reason) ||
       text(source.route_omission_reason) ||
       text(source.source_explanation) ||
-      getSourceSignalLabels(source).length > 0 ||
-      graphPathSteps(source).length > 0
+      graphPathSteps(source).length > 0 ||
+      formatFreshnessLabel(source.freshness ?? sourceFeatures.freshness_state) ||
+      formatVerificationLabel(
+        source.verification_state ?? sourceFeatures.verification_state
+      )
   )
+}
+
+export function sourceDisclosureId(
+  prefix: string,
+  groupName: string,
+  index: number
+): string {
+  const group = groupName.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')
+  return `${prefix}-${group}-${index}`
 }
 
 export function RetrievalSignalChip({ label }: { label: string }) {
@@ -196,19 +213,11 @@ export function SourcePathDisclosure({
   disclosureId: string
 }) {
   const [open, setOpen] = useState(false)
-  if (!hasSourceExplanation(source)) return null
+  if (!hasSourcePathDetails(source)) return null
 
   const whySelected = text(source.why_selected)
   const suppressedBecause = text(source.suppress_reason ?? source.route_omission_reason)
   const explanation = text(source.source_explanation)
-  const hasPathDetails = Boolean(
-    whySelected ||
-      suppressedBecause ||
-      explanation ||
-      formatGraphPath(source) ||
-      formatFreshnessLabel(source.freshness ?? features(source).freshness_state) ||
-      formatVerificationLabel(source.verification_state ?? features(source).verification_state)
-  )
 
   return (
     <div className="mt-2">
@@ -234,35 +243,23 @@ export function SourcePathDisclosure({
           id={disclosureId}
           className="mt-1.5 space-y-2 rounded-md border border-border/70 bg-card/70 p-2.5 text-xs text-muted-foreground shadow-sm animate-in fade-in-0 slide-in-from-top-1 duration-150 motion-reduce:slide-in-from-top-0"
         >
-          {hasPathDetails ? (
-            <>
-              {whySelected && (
-                <p className="text-foreground/80 text-wrap pretty">{whySelected}</p>
-              )}
-              {suppressedBecause && (
-                <p>
-                  <span className="font-medium text-foreground/80">Not used</span>
-                  {`: ${suppressedBecause}`}
-                </p>
-              )}
-              {!whySelected && explanation && (
-                <p className="text-foreground/80 text-wrap pretty">{explanation}</p>
-              )}
-              <div className="flex flex-wrap gap-x-3 gap-y-1">
-                <FreshnessLabel source={source} />
-                <VerificationLabel source={source} />
-              </div>
-              <GraphPathLine source={source} />
-            </>
-          ) : (
-            <div className="space-y-1">
-              <p className="font-medium text-foreground">No source path available</p>
-              <p>
-                This context page was generated before retrieval explanations were
-                recorded. Regenerate the page to collect source and graph signals.
-              </p>
-            </div>
+          {whySelected && (
+            <p className="text-foreground/80 text-wrap pretty">{whySelected}</p>
           )}
+          {suppressedBecause && (
+            <p>
+              <span className="font-medium text-foreground/80">Not used</span>
+              {`: ${suppressedBecause}`}
+            </p>
+          )}
+          {!whySelected && explanation && (
+            <p className="text-foreground/80 text-wrap pretty">{explanation}</p>
+          )}
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            <FreshnessLabel source={source} />
+            <VerificationLabel source={source} />
+          </div>
+          <GraphPathLine source={source} />
         </div>
       )}
     </div>
