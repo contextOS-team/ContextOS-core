@@ -33,7 +33,7 @@ export default function DecisionGraphSection() {
             style={{ transitionDelay: "100ms" }}
           >
             Slack, meetings, PRs, docs, and tickets stay separate. ContextOS
-            quietly reconstructs the decision that connects them.
+            shows the decision that connects them.
           </p>
         </div>
 

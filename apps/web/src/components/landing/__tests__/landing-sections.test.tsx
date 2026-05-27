@@ -65,7 +65,7 @@ describe('landing section rewrite', () => {
     render(<LandingPage />)
 
     expect(screen.getByLabelText('DecisionGraphDemo')).toBeTruthy()
-    expect(screen.getByText('Decision reconstruction')).toBeTruthy()
+    expect(screen.getByText('Source matching')).toBeTruthy()
     expect(screen.getByLabelText('Sources feeding the decision graph')).toBeTruthy()
     expect(screen.getAllByText('Decision graph').length).toBeGreaterThan(0)
     expect(screen.getByText('Waiting for source agreement...')).toBeTruthy()

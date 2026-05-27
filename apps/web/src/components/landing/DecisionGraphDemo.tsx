@@ -532,7 +532,7 @@ function KnowledgeGraphCore({
             color: verified ? "var(--color-teal)" : "#9CA3AF",
           }}
         >
-          {verified ? "5 sources matched" : "reconstructing"}
+          {verified ? "5 sources matched" : "matching sources"}
         </motion.span>
       </div>
 
@@ -782,7 +782,7 @@ export function DecisionGraphDemo() {
 
       <div className="relative z-10 mb-4 border-b border-white/[0.07] pb-4">
         <p className="font-mono text-xs font-semibold text-[var(--color-teal)]">
-          Decision reconstruction
+          Source matching
         </p>
         <p className="mt-1 text-xs text-[#6B7280]">
           Sources feed the graph until one decision becomes verified.
