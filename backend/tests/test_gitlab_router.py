@@ -17,3 +17,30 @@ def test_normalize_project_sync_status_uses_complete_cursor():
     assert normalized["123"]["status"] == "synced"
     assert normalized["456"]["status"] == "syncing"
     assert status["123"]["status"] == "syncing"
+
+
+def test_normalize_project_sync_status_treats_complete_progress_as_synced():
+    status = {
+        "123": {"status": "syncing", "synced": 10, "total": 10},
+        "456": {"status": "syncing", "synced": 0, "total": 0},
+    }
+
+    normalized = _normalize_project_sync_status(status, {})
+
+    assert normalized["123"]["status"] == "synced"
+    assert normalized["456"]["status"] == "syncing"
+
+
+def test_normalize_project_sync_status_uses_error_cursor():
+    status = {
+        "123": {"status": "syncing", "synced": 0, "total": 0},
+        "456": {"status": "syncing", "synced": 3, "total": 3},
+    }
+
+    normalized = _normalize_project_sync_status(
+        status,
+        {"123": "error", "456": "timeout"},
+    )
+
+    assert normalized["123"]["status"] == "error"
+    assert normalized["456"]["status"] == "timeout"

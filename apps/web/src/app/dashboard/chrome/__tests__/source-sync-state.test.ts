@@ -157,6 +157,69 @@ describe('source sync chrome state', () => {
     }
   })
 
+  it('treats a syncing GitLab row with complete progress as current', () => {
+    const gitlab: GitlabSyncStatus = {
+      project_sync_status: {
+        '1': { status: 'syncing', synced: 10, total: 10 },
+      },
+      total_mrs: 10,
+      total_reviews: 0,
+      is_syncing: true,
+      last_sync_at: '2026-05-21T11:45:00Z',
+    }
+    const rows = buildSourceRows({
+      integrations: integrationStatus({
+        gitlab: provider({
+          status: 'connected',
+          selected_repos_count: 1,
+          last_sync_at: '2026-05-21T11:45:00Z',
+        }),
+      }),
+      gitlab,
+      now: new Date('2026-05-21T12:00:00Z'),
+    })
+
+    const state = deriveChromeSourceState({ kind: 'unknown' }, rows)
+
+    expect(state.kind).toBe('current')
+    expect(rows.find((row) => row.provider === 'gitlab')).toMatchObject({
+      health: 'current',
+      detail: 'Synced 15m ago',
+    })
+  })
+
+  it('does not let complete GitLab progress hide an error row', () => {
+    const gitlab: GitlabSyncStatus = {
+      project_sync_status: {
+        '1': { status: 'synced', synced: 10, total: 10 },
+        '2': { status: 'error', synced: 0, total: 0 },
+      },
+      total_mrs: 10,
+      total_reviews: 0,
+      is_syncing: true,
+      last_sync_at: '2026-05-21T11:45:00Z',
+    }
+    const rows = buildSourceRows({
+      integrations: integrationStatus({
+        gitlab: provider({
+          status: 'connected',
+          selected_repos_count: 2,
+          last_sync_at: '2026-05-21T11:45:00Z',
+        }),
+      }),
+      gitlab,
+      now: new Date('2026-05-21T12:00:00Z'),
+    })
+
+    const state = deriveChromeSourceState({ kind: 'unknown' }, rows)
+
+    expect(state.kind).toBe('attention')
+    expect(rows.find((row) => row.provider === 'gitlab')).toMatchObject({
+      health: 'attention',
+      detail: 'Sync needs attention',
+    })
+  })
+
   it('ignores stale realtime syncing events after provider status is current', () => {
     const github: GithubSyncStatus = {
       repo_sync_status: {

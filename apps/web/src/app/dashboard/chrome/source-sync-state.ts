@@ -182,18 +182,41 @@ function codeProviderRow({
     }
   }
 
-  if (isSyncing || hasAnyStatus(statusMap, SYNCING_STATUSES)) {
+  const syncProgress = statusMap ? progressFromStatusMap(statusMap) : null
+  const sourceIsSyncing = isSyncing || hasAnyStatus(statusMap, SYNCING_STATUSES)
+  const hasAttention = hasAnyStatus(statusMap, ATTENTION_STATUSES)
+  if (hasAttention && (!sourceIsSyncing || syncProgress === 1)) {
+    return {
+      provider,
+      label: PROVIDER_LABELS[provider],
+      health: 'attention',
+      detail: 'Sync needs attention',
+      lastSyncAt,
+    }
+  }
+
+  if (sourceIsSyncing && syncProgress === 1 && lastSyncAt) {
+    const health = baseSyncHealth(lastSyncAt, now)
+    return {
+      provider,
+      label: PROVIDER_LABELS[provider],
+      ...health,
+      lastSyncAt,
+    }
+  }
+
+  if (sourceIsSyncing) {
     return {
       provider,
       label: PROVIDER_LABELS[provider],
       health: 'syncing',
       detail: 'Syncing',
       lastSyncAt,
-      progress: statusMap ? progressFromStatusMap(statusMap) : null,
+      progress: syncProgress,
     }
   }
 
-  if (hasAnyStatus(statusMap, ATTENTION_STATUSES)) {
+  if (hasAttention) {
     return {
       provider,
       label: PROVIDER_LABELS[provider],

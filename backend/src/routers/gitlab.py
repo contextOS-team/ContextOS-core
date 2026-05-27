@@ -49,7 +49,7 @@ def _normalize_project_sync_status(
     project_sync_status: dict,
     cursor_statuses: dict[str, str],
 ) -> dict:
-    """Prefer durable cursor completion over stale JSONB progress rows."""
+    """Prefer durable cursor terminal states over stale JSONB progress rows."""
     normalized = {}
     for project_id, status_row in project_sync_status.items():
         if not isinstance(status_row, dict):
@@ -57,9 +57,23 @@ def _normalize_project_sync_status(
             continue
 
         next_row = dict(status_row)
+        cursor_status = cursor_statuses.get(str(project_id))
+        synced = next_row.get("synced")
+        total = next_row.get("total")
+        has_complete_progress = (
+            isinstance(synced, int)
+            and isinstance(total, int)
+            and total > 0
+            and synced >= total
+        )
         if (
             next_row.get("status") == "syncing"
-            and cursor_statuses.get(str(project_id)) == "complete"
+            and cursor_status in {"error", "failed", "timeout"}
+        ):
+            next_row["status"] = cursor_status
+        elif (
+            next_row.get("status") == "syncing"
+            and (cursor_status == "complete" or has_complete_progress)
         ):
             next_row["status"] = "synced"
         normalized[project_id] = next_row
