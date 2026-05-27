@@ -157,6 +157,33 @@ describe('source sync chrome state', () => {
     }
   })
 
+  it('ignores stale realtime syncing events after provider status is current', () => {
+    const github: GithubSyncStatus = {
+      repo_sync_status: {
+        'org/repo': { status: 'synced', synced: 12, total: 12 },
+      },
+      last_sync_at: '2026-05-21T11:45:00Z',
+    }
+    const rows = buildSourceRows({
+      integrations: integrationStatus({
+        github: provider({
+          status: 'connected',
+          selected_repos_count: 1,
+          last_sync_at: '2026-05-21T11:45:00Z',
+        }),
+      }),
+      github,
+      now: new Date('2026-05-21T12:00:00Z'),
+    })
+
+    const state = deriveChromeSourceState(
+      { kind: 'syncing', provider: 'github', progress: null },
+      rows
+    )
+
+    expect(state.kind).toBe('current')
+  })
+
   it('shows Jira count progress without pretending a percentage is known', () => {
     const jira: JiraSyncStatus = {
       sync_status: 'in_progress',

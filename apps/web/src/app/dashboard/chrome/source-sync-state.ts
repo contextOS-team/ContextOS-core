@@ -435,11 +435,13 @@ export function deriveChromeSourceState(
   if (eventState.kind === 'syncing') {
     const provider = eventState.provider.toLowerCase()
     const source = sources.find((row) => row.provider === provider)
-    return {
-      kind: 'syncing',
-      provider: eventState.provider,
-      progress: eventState.progress ?? source?.progress ?? null,
-      sources,
+    if (!source || source.health === 'syncing') {
+      return {
+        kind: 'syncing',
+        provider: eventState.provider,
+        progress: eventState.progress ?? source?.progress ?? null,
+        sources,
+      }
     }
   }
 
