@@ -38,7 +38,8 @@ CREATE TABLE public.graph_edges (
   target_node_id uuid NOT NULL REFERENCES public.graph_nodes(id) ON DELETE CASCADE,
   relationship_type text NOT NULL CHECK (relationship_type IN (
     'mentions', 'references', 'authored_by', 'assigned_to', 'discussed_in',
-    'implements', 'reviews', 'decided_in', 'blocks', 'same_as', 'parent_of'
+    'implements', 'reviews', 'decided_in', 'blocks', 'same_as', 'parent_of',
+    'has_evidence', 'evidenced_by'
   )),
   properties jsonb DEFAULT '{}',
   deleted_at timestamptz,

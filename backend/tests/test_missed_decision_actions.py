@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -12,10 +13,12 @@ from fastapi.testclient import TestClient
 
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
-from src.models.missed_decision import MissedDecisionCandidate
+from src.models.audit_log import AuditLog
+from src.models.missed_decision import MissedDecisionCandidate, MissedDecisionScanRun
 from src.services.missed_decision_actions import (
     CandidateNotFoundError,
     InvalidCandidateTransitionError,
+    auto_confirm_candidate,
     confirm_candidate,
     defer_candidate,
     ignore_duplicate_candidate,
@@ -64,6 +67,25 @@ def _candidate(**overrides) -> MissedDecisionCandidate:
     }
     values.update(overrides)
     return MissedDecisionCandidate(**values)
+
+
+def _scan_run(**overrides) -> MissedDecisionScanRun:
+    values = {
+        "id": uuid4(),
+        "workspace_id": WORKSPACE_ID,
+        "source_type": "slack_message",
+        "source_resource_id": "C123",
+        "status": "running",
+        "sources_scanned": 4,
+        "sources_total": 10,
+        "candidates_created": 2,
+        "started_at": datetime(2026, 5, 25, 9, 0, tzinfo=UTC),
+        "completed_at": None,
+        "error_message": None,
+        "created_at": datetime(2026, 5, 25, 9, 0, tzinfo=UTC),
+    }
+    values.update(overrides)
+    return MissedDecisionScanRun(**values)
 
 
 @pytest.mark.asyncio
@@ -132,7 +154,10 @@ async def test_confirmed_decision_preserves_action_hint_grounding_metadata() -> 
             "src.services.missed_decision_actions.upsert_node",
             new=AsyncMock(return_value=uuid4()),
         ) as upsert_node,
-        patch("src.services.missed_decision_actions.upsert_edge", new=AsyncMock()),
+        patch(
+            "src.services.missed_decision_actions.upsert_edge",
+            new=AsyncMock(),
+        ) as upsert_edge,
         patch(
             "src.services.missed_decision_actions.resolve_suggestion",
             new=AsyncMock(),
@@ -154,6 +179,156 @@ async def test_confirmed_decision_preserves_action_hint_grounding_metadata() -> 
     assert props["action_hint_grounding"][0]["no_write_boundary"] == (
         "phase_46_metadata_only"
     )
+    assert upsert_edge.await_args.kwargs["relationship_type"] == "evidenced_by"
+
+
+@pytest.mark.asyncio
+async def test_confirm_succeeds_when_evidence_edge_write_fails() -> None:
+    candidate = _candidate()
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([candidate]))
+    session.flush = AsyncMock()
+
+    class Savepoint:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    session.begin_nested = MagicMock(return_value=Savepoint())
+
+    decision_node_id = uuid4()
+    with (
+        patch(
+            "src.services.missed_decision_actions.upsert_node",
+            new=AsyncMock(return_value=decision_node_id),
+        ),
+        patch(
+            "src.services.missed_decision_actions.upsert_edge",
+            new=AsyncMock(side_effect=RuntimeError("edge type unavailable")),
+        ),
+        patch(
+            "src.services.missed_decision_actions.resolve_suggestion",
+            new=AsyncMock(),
+        ),
+    ):
+        result = await confirm_candidate(session, WORKSPACE_ID, USER_ID, candidate.id)
+
+    assert result.decision_node_id == decision_node_id
+    assert candidate.lifecycle_status == "confirmed"
+
+
+@pytest.mark.asyncio
+async def test_auto_confirm_candidate_records_system_action_and_audit() -> None:
+    candidate = _candidate(
+        suggestion_id=None,
+        lifecycle_status="detected",
+        confidence="very_high",
+    )
+    decision_node_id = uuid4()
+    session = AsyncMock()
+    session.flush = AsyncMock()
+
+    with (
+        patch(
+            "src.services.missed_decision_actions.upsert_node",
+            new=AsyncMock(return_value=decision_node_id),
+        ) as upsert_node,
+        patch(
+            "src.services.missed_decision_actions.upsert_edge",
+            new=AsyncMock(return_value=uuid4()),
+        ),
+        patch(
+            "src.services.missed_decision_actions.log_audit_event",
+            new=AsyncMock(),
+        ) as audit,
+        patch(
+            "src.services.missed_decision_actions.resolve_suggestion",
+            new=AsyncMock(),
+        ) as resolve,
+    ):
+        result = await auto_confirm_candidate(session, candidate)
+
+    assert result.decision_node_id == decision_node_id
+    assert candidate.lifecycle_status == "confirmed"
+    assert candidate.resolved_at is not None
+    assert candidate.matched_entity_type == "graph_node"
+    assert candidate.matched_entity_id == decision_node_id
+    action = candidate.evidence["review_actions"][-1]
+    assert action["action"] == "auto_confirm"
+    assert action["actor_type"] == "system"
+    assert "actor_user_id" not in action
+    assert action["autosave_policy_version"] == "conservative_v1"
+    props = upsert_node.await_args.kwargs["properties"]
+    assert props["autosave_policy_version"] == "conservative_v1"
+    audit.assert_awaited_once()
+    assert audit.await_args.kwargs["user_id"] is None
+    assert audit.await_args.kwargs["details"]["autosave_policy_version"] == (
+        "conservative_v1"
+    )
+    resolve.assert_not_awaited()
+    session.flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_auto_confirm_candidate_uses_source_metadata_for_attribution() -> None:
+    candidate = _candidate(
+        suggestion_id=None,
+        lifecycle_status="detected",
+        confidence="very_high",
+        people=[],
+        evidence={
+            "source_metadata": {
+                "from_first_name": "Daulet",
+                "from_username": "dxulet",
+                "chat_title": "contextOS team",
+            }
+        },
+    )
+    session = AsyncMock()
+    session.flush = AsyncMock()
+
+    with (
+        patch(
+            "src.services.missed_decision_actions.upsert_node",
+            new=AsyncMock(return_value=uuid4()),
+        ) as upsert_node,
+        patch(
+            "src.services.missed_decision_actions.upsert_edge",
+            new=AsyncMock(return_value=uuid4()),
+        ),
+        patch(
+            "src.services.missed_decision_actions.log_audit_event",
+            new=AsyncMock(),
+        ),
+    ):
+        await auto_confirm_candidate(session, candidate)
+
+    props = upsert_node.await_args.kwargs["properties"]
+    assert props["author_name"] == "Daulet"
+    assert props["person_name"] == "Daulet"
+    assert props["participants"] == ["Daulet"]
+    assert props["source_context"] == "contextOS team"
+
+
+def test_graph_edge_migration_allows_missed_decision_evidence_relationships() -> None:
+    initial_schema = Path("../supabase/migrations/00027_graph_tables.sql").read_text()
+    patch_schema = Path(
+        "../supabase/migrations/00044_graph_edge_missed_decision_evidence_relationships.sql"
+    ).read_text()
+
+    for relationship_type in ("has_evidence", "evidenced_by"):
+        assert f"'{relationship_type}'" in initial_schema
+        assert f"'{relationship_type}'" in patch_schema
+
+
+def test_audit_log_user_id_does_not_reference_unmapped_users_table() -> None:
+    assert not AuditLog.__table__.c.user_id.foreign_keys
+
+
+def test_audit_log_ip_address_uses_postgres_inet_type() -> None:
+    assert AuditLog.__table__.c.ip_address.type.__class__.__name__ == "INET"
 
 
 @pytest.mark.asyncio
@@ -225,6 +400,79 @@ def test_review_endpoint_returns_candidate_payload() -> None:
     assert body[0]["id"] == str(candidate.id)
     assert body[0]["source_quote"] == candidate.source_quote
     assert "confirm" in body[0]["legal_actions"]
+
+
+def test_scans_endpoint_returns_latest_workspace_scan_per_source() -> None:
+    now = datetime.now(UTC)
+    latest_slack = _scan_run(
+        id=uuid4(),
+        source_type="slack_message",
+        sources_scanned=4,
+        sources_total=10,
+        candidates_created=2,
+        created_at=datetime(2026, 5, 25, 9, 5, tzinfo=UTC),
+    )
+    older_slack = _scan_run(
+        id=uuid4(),
+        source_type="slack_message",
+        sources_scanned=10,
+        sources_total=10,
+        candidates_created=0,
+        created_at=datetime(2026, 5, 25, 9, 0, tzinfo=UTC),
+    )
+    failed_notion = _scan_run(
+        id=uuid4(),
+        source_type="notion_page",
+        status="failed",
+        sources_scanned=1,
+        sources_total=None,
+        candidates_created=0,
+        error_message="Extractor paused after provider timeout",
+        completed_at=now,
+        created_at=datetime(2026, 5, 25, 8, 0, tzinfo=UTC),
+    )
+    stale_failed_telegram = _scan_run(
+        id=uuid4(),
+        source_type="telegram_message",
+        status="failed",
+        completed_at=now - timedelta(minutes=20),
+        created_at=datetime(2026, 5, 25, 8, 0, tzinfo=UTC),
+    )
+    other_workspace = _scan_run(workspace_id=uuid4(), source_type="telegram_message")
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        return_value=_result([
+            latest_slack,
+            older_slack,
+            failed_notion,
+            stale_failed_telegram,
+            other_workspace,
+        ])
+    )
+
+    response = _client(session).get("/api/missed-decisions/scans")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body] == [
+        str(latest_slack.id),
+        str(failed_notion.id),
+    ]
+    assert body[0] == {
+        "id": str(latest_slack.id),
+        "source_type": "slack_message",
+        "status": "running",
+        "sources_scanned": 4,
+        "sources_total": 10,
+        "progress_percent": 40,
+        "candidates_created": 2,
+        "started_at": "2026-05-25T09:00:00Z",
+        "completed_at": None,
+        "error_message": None,
+    }
+    assert body[1]["status"] == "failed"
+    assert body[1]["progress_percent"] is None
+    assert body[1]["error_message"] == "Extractor paused after provider timeout"
 
 
 def test_confirm_endpoint_returns_decision_node_id() -> None:

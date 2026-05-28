@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import quote
 from uuid import UUID
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -15,6 +16,7 @@ from src.models.meeting import MeetingTranscript
 from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
 from src.models.telegram import TelegramMessage
+from src.services.slack_events import resolve_slack_permalink, slack_archive_url
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,85 @@ def _source_link(
     )
 
 
+def _telegram_source_link(row: TelegramMessage) -> str | None:
+    raw = row.raw_data or {}
+    message = raw.get("message") if isinstance(raw, dict) else None
+    for container in (message, raw):
+        if not isinstance(container, dict):
+            continue
+        for key in ("link", "url", "message_link", "permalink"):
+            value = container.get(key)
+            if isinstance(value, str) and value.startswith(("http://", "https://")):
+                return value
+    chat = message.get("chat") if isinstance(message, dict) else None
+    username = chat.get("username") if isinstance(chat, dict) else None
+    if username:
+        return f"https://t.me/{username}/{row.message_id}"
+
+    chat_id = str(row.chat_id)
+    if chat_id.startswith("-100"):
+        return f"https://t.me/c/{chat_id[4:]}/{row.message_id}"
+    return None
+
+
+def _fathom_source_link(row: MeetingTranscript) -> str | None:
+    raw = row.raw_data or {}
+    for key in (
+        "url",
+        "share_url",
+        "recording_url",
+        "recording_share_url",
+        "meeting_url",
+        "summary_url",
+    ):
+        value = raw.get(key)
+        if isinstance(value, str) and value.startswith(("http://", "https://")):
+            return value
+    return None
+
+
+async def _slack_source_links(
+    session: AsyncSession,
+    workspace_id: UUID,
+    rows: list[SlackMessage],
+) -> dict[UUID, str | None]:
+    if not rows:
+        return {}
+
+    token: str | None = None
+    try:
+        from src.services.slack_oauth import SlackOAuthError, get_bot_token
+
+        token = await get_bot_token(session, workspace_id)
+    except (SlackOAuthError, RuntimeError):
+        token = None
+
+    resolved = await asyncio.gather(
+        *(
+            resolve_slack_permalink(
+                session,
+                workspace_id,
+                row.channel_id,
+                row.slack_ts,
+                token=token,
+            )
+            for row in rows
+            if token and row.channel_id and row.slack_ts
+        ),
+        return_exceptions=True,
+    )
+    resolved_iter = iter(resolved)
+    links: dict[UUID, str | None] = {}
+    for row in rows:
+        permalink: str | None = None
+        if token and row.channel_id and row.slack_ts:
+            maybe_permalink = next(resolved_iter, None)
+            if isinstance(maybe_permalink, str):
+                permalink = maybe_permalink
+        links[row.id] = permalink or slack_archive_url(row.channel_id, row.slack_ts)
+    return links
+
+
 def _apply_cursor(
     stmt,
     timestamp_column,
@@ -92,6 +173,12 @@ def _apply_cursor(
 
 def _has_text(*columns):
     return or_(*(and_(column.is_not(None), column != "") for column in columns))
+
+
+async def _count_rows(session: AsyncSession, stmt) -> int:
+    result = await session.execute(stmt)
+    value = result.scalar_one()
+    return int(value or 0)
 
 
 async def _load_slack(
@@ -127,6 +214,7 @@ async def _load_slack(
     ).limit(limit)
     result = await session.execute(stmt)
     rows = result.scalars().all()
+    source_links = await _slack_source_links(session, workspace_id, list(rows))
     records: list[MissedDecisionSourceRecord] = []
     for row in rows:
         timestamp = row.slack_created_at or row.created_at or start
@@ -141,18 +229,39 @@ async def _load_slack(
                     workspace_id,
                     row.id,
                     timestamp,
-                    None,
+                    source_links.get(row.id),
                 ),
                 source_created_at=timestamp,
                 metadata={
                     "channel_id": row.channel_id,
                     "channel_name": row.channel_name,
+                    "user_name": row.user_name,
                     "slack_ts": row.slack_ts,
                     "thread_ts": row.thread_ts,
                 },
             )
         )
     return records
+
+
+async def _count_slack(
+    session: AsyncSession,
+    workspace_id: UUID,
+    start: datetime,
+    end: datetime,
+    *,
+    source_resource_id: str | None,
+) -> int:
+    stmt = select(func.count()).select_from(SlackMessage).where(
+        SlackMessage.workspace_id == workspace_id,
+        SlackMessage.deleted_at.is_(None),  # type: ignore[union-attr]
+        SlackMessage.slack_created_at >= start,  # type: ignore[operator]
+        SlackMessage.slack_created_at <= end,  # type: ignore[operator]
+        _has_text(SlackMessage.text),
+    )
+    if source_resource_id:
+        stmt = stmt.where(SlackMessage.channel_id == source_resource_id)
+    return await _count_rows(session, stmt)
 
 
 async def _load_telegram(
@@ -197,21 +306,44 @@ async def _load_telegram(
                 source_type="telegram_message",
                 source_id=row.id,
                 text=row.text,
-                source_link=build_internal_source_reference(
+                source_link=_source_link(
                     "telegram_message",
                     workspace_id,
                     row.id,
                     timestamp,
+                    _telegram_source_link(row),
                 ),
                 source_created_at=timestamp,
                 metadata={
                     "chat_id": row.chat_id,
                     "chat_title": row.chat_title,
+                    "from_first_name": row.from_first_name,
+                    "from_username": row.from_username,
                     "message_id": row.message_id,
                 },
             )
         )
     return records
+
+
+async def _count_telegram(
+    session: AsyncSession,
+    workspace_id: UUID,
+    start: datetime,
+    end: datetime,
+    *,
+    source_resource_id: str | None,
+) -> int:
+    stmt = select(func.count()).select_from(TelegramMessage).where(
+        TelegramMessage.workspace_id == workspace_id,
+        TelegramMessage.deleted_at.is_(None),  # type: ignore[union-attr]
+        TelegramMessage.telegram_date >= start,  # type: ignore[operator]
+        TelegramMessage.telegram_date <= end,  # type: ignore[operator]
+        _has_text(TelegramMessage.text),
+    )
+    if source_resource_id:
+        stmt = stmt.where(TelegramMessage.chat_id == int(source_resource_id))
+    return await _count_rows(session, stmt)
 
 
 async def _load_notion(
@@ -267,10 +399,34 @@ async def _load_notion(
                     row.url,
                 ),
                 source_created_at=timestamp,
-                metadata={"notion_id": row.notion_id, "title": row.title},
+                metadata={
+                    "notion_id": row.notion_id,
+                    "title": row.title,
+                    "source_context": row.title or row.url,
+                },
             )
         )
     return records
+
+
+async def _count_notion(
+    session: AsyncSession,
+    workspace_id: UUID,
+    start: datetime,
+    end: datetime,
+    *,
+    source_resource_id: str | None,
+) -> int:
+    stmt = select(func.count()).select_from(NotionPage).where(
+        NotionPage.workspace_id == workspace_id,
+        NotionPage.deleted_at.is_(None),  # type: ignore[union-attr]
+        NotionPage.notion_updated_at >= start,  # type: ignore[operator]
+        NotionPage.notion_updated_at <= end,  # type: ignore[operator]
+        _has_text(NotionPage.content, NotionPage.title),
+    )
+    if source_resource_id:
+        stmt = stmt.where(NotionPage.notion_id == source_resource_id)
+    return await _count_rows(session, stmt)
 
 
 async def _load_meetings(
@@ -319,11 +475,12 @@ async def _load_meetings(
                 source_type="fathom_transcript",
                 source_id=row.id,
                 text=text,
-                source_link=build_internal_source_reference(
+                source_link=_source_link(
                     "fathom_transcript",
                     workspace_id,
                     row.id,
                     timestamp,
+                    _fathom_source_link(row),
                 ),
                 source_created_at=timestamp,
                 metadata={
@@ -334,6 +491,27 @@ async def _load_meetings(
             )
         )
     return records
+
+
+async def _count_meetings(
+    session: AsyncSession,
+    workspace_id: UUID,
+    start: datetime,
+    end: datetime,
+    *,
+    source_resource_id: str | None,
+) -> int:
+    stmt = select(func.count()).select_from(MeetingTranscript).where(
+        MeetingTranscript.workspace_id == workspace_id,
+        MeetingTranscript.deleted_at.is_(None),  # type: ignore[union-attr]
+        MeetingTranscript.source == "fathom",
+        MeetingTranscript.meeting_date >= start,  # type: ignore[operator]
+        MeetingTranscript.meeting_date <= end,  # type: ignore[operator]
+        _has_text(MeetingTranscript.transcript, MeetingTranscript.summary),
+    )
+    if source_resource_id:
+        stmt = stmt.where(MeetingTranscript.id == UUID(source_resource_id))
+    return await _count_rows(session, stmt)
 
 
 async def load_source_window(
@@ -394,3 +572,48 @@ async def load_source_window(
             limit=limit,
         )
     return []
+
+
+async def count_source_window(
+    session: AsyncSession,
+    workspace_id: UUID,
+    source_type: str,
+    start: datetime,
+    end: datetime,
+    *,
+    source_resource_id: str | None = None,
+) -> int:
+    """Count source records for a scan window using the loader predicates."""
+    if source_type == "slack_message":
+        return await _count_slack(
+            session,
+            workspace_id,
+            start,
+            end,
+            source_resource_id=source_resource_id,
+        )
+    if source_type == "telegram_message":
+        return await _count_telegram(
+            session,
+            workspace_id,
+            start,
+            end,
+            source_resource_id=source_resource_id,
+        )
+    if source_type == "notion_page":
+        return await _count_notion(
+            session,
+            workspace_id,
+            start,
+            end,
+            source_resource_id=source_resource_id,
+        )
+    if source_type in {"fathom_transcript", "meeting_transcript"}:
+        return await _count_meetings(
+            session,
+            workspace_id,
+            start,
+            end,
+            source_resource_id=source_resource_id,
+        )
+    return 0

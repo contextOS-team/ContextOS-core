@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from inspect import isawaitable
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,12 +13,23 @@ from sqlmodel import select
 
 from src.models.graph_node import GraphNode
 from src.models.missed_decision import MissedDecisionCandidate
+from src.services.audit import log_audit_event
 from src.services.graph_ops import upsert_edge, upsert_node
+from src.services.missed_decision_attribution import (
+    candidate_author_name,
+    candidate_people,
+    candidate_source_channel,
+    candidate_source_context,
+    candidate_source_timestamp,
+)
+from src.services.missed_decision_autosave import AUTOSAVE_POLICY_VERSION
 from src.services.missed_decision_dedupe import (
     SUPPRESSION_DUPLICATE_NO_NEW_EVIDENCE,
 )
 from src.services.suggestion_quality import NO_WRITE_BOUNDARY, SuggestionGroundingTrace
 from src.services.suggestions import resolve_suggestion, snooze_suggestion
+
+logger = logging.getLogger(__name__)
 
 LIFECYCLE_SURFACED = "surfaced"
 LIFECYCLE_SUPPRESSED = "suppressed"
@@ -71,6 +84,39 @@ async def _load_candidate(
     return candidate
 
 
+async def _best_effort_evidence_edge(
+    session: AsyncSession,
+    *,
+    workspace_id: UUID,
+    source_node_id: UUID,
+    target_node_id: UUID,
+    relationship_type: str,
+    properties: dict,
+) -> None:
+    """Persist graph evidence edge without blocking the review action."""
+    try:
+        savepoint = session.begin_nested()
+        if isawaitable(savepoint):
+            savepoint = await savepoint
+        async with savepoint:
+            await upsert_edge(
+                session=session,
+                workspace_id=workspace_id,
+                source_node_id=source_node_id,
+                target_node_id=target_node_id,
+                relationship_type=relationship_type,
+                properties=properties,
+            )
+    except Exception:
+        logger.debug(
+            "missed_decision_evidence_edge_failed workspace=%s node=%s relationship=%s",
+            workspace_id,
+            source_node_id,
+            relationship_type,
+            exc_info=True,
+        )
+
+
 def _ensure_actionable(candidate: MissedDecisionCandidate, action: str) -> None:
     if candidate.lifecycle_status in TERMINAL_LIFECYCLES:
         raise InvalidCandidateTransitionError(
@@ -96,6 +142,27 @@ def _record_action(
             "action": action,
             "actor_user_id": str(user_id),
             "reason": reason,
+            "created_at": _now().isoformat(),
+            "action_hints": candidate.action_hints or [],
+        }
+    )
+    evidence["review_actions"] = actions
+    candidate.evidence = evidence
+
+
+def _record_system_action(
+    candidate: MissedDecisionCandidate,
+    *,
+    action: str,
+    policy_version: str,
+) -> None:
+    evidence = dict(candidate.evidence or {})
+    actions = list(evidence.get("review_actions") or [])
+    actions.append(
+        {
+            "action": action,
+            "actor_type": "system",
+            "autosave_policy_version": policy_version,
             "created_at": _now().isoformat(),
             "action_hints": candidate.action_hints or [],
         }
@@ -158,7 +225,16 @@ async def list_review_candidates(
     ]
 
 
-def _decision_properties(candidate: MissedDecisionCandidate) -> dict:
+def _decision_properties(
+    candidate: MissedDecisionCandidate,
+    *,
+    autosave_policy_version: str | None = None,
+) -> dict:
+    people = candidate_people(candidate)
+    author_name = candidate_author_name(candidate)
+    source_channel = candidate_source_channel(candidate)
+    source_context = candidate_source_context(candidate)
+    source_timestamp = candidate_source_timestamp(candidate)
     grounding = SuggestionGroundingTrace(
         source_type=candidate.source_type,
         source_id=str(candidate.source_id),
@@ -169,19 +245,23 @@ def _decision_properties(candidate: MissedDecisionCandidate) -> dict:
         metadata={"candidate_id": str(candidate.id)},
     )
     action_hint_grounding = grounding.action_hint_grounding()
-    return {
+    properties = {
         "description": candidate.inferred_decision,
         "rationale": candidate.inferred_rationale,
         "source_quote": candidate.source_quote,
         "source_link": candidate.source_link,
         "confidence": candidate.confidence,
-        "person_name": (candidate.people or [None])[0],
-        "participants": candidate.people or [],
+        "author_name": author_name,
+        "person_name": people[0] if people else None,
+        "participants": people,
         "affected_systems": candidate.affected_systems or [],
         "candidate_id": str(candidate.id),
         "scan_run_id": str(candidate.scan_run_id) if candidate.scan_run_id else None,
         "source_type": candidate.source_type,
         "source_id": str(candidate.source_id),
+        "source_channel": source_channel,
+        "source_context": source_context,
+        "date": source_timestamp,
         "action_hints": candidate.action_hints or [],
         "action_hint_grounding": action_hint_grounding,
         "grounding_explanation": {
@@ -198,11 +278,16 @@ def _decision_properties(candidate: MissedDecisionCandidate) -> dict:
         "status": "confirmed",
         "model": "missed_decision:v1",
     }
+    if autosave_policy_version:
+        properties["autosave_policy_version"] = autosave_policy_version
+    return properties
 
 
 async def promote_candidate_to_decision(
     session: AsyncSession,
     candidate: MissedDecisionCandidate,
+    *,
+    autosave_policy_version: str | None = None,
 ) -> UUID:
     """Promote a confirmed candidate into source-backed Decision memory."""
     decision_node_id = await upsert_node(
@@ -213,9 +298,12 @@ async def promote_candidate_to_decision(
         name=candidate.inferred_decision,
         source_type=candidate.source_type,
         source_id=candidate.source_id,
-        properties=_decision_properties(candidate),
+        properties=_decision_properties(
+            candidate,
+            autosave_policy_version=autosave_policy_version,
+        ),
     )
-    await upsert_edge(
+    await _best_effort_evidence_edge(
         session=session,
         workspace_id=candidate.workspace_id,
         source_node_id=decision_node_id,
@@ -230,6 +318,49 @@ async def promote_candidate_to_decision(
         },
     )
     return decision_node_id
+
+
+async def auto_confirm_candidate(
+    session: AsyncSession,
+    candidate: MissedDecisionCandidate,
+    *,
+    policy_version: str = AUTOSAVE_POLICY_VERSION,
+) -> CandidateActionResult:
+    """Confirm a safe candidate as Decision memory without creating review work."""
+    decision_node_id = await promote_candidate_to_decision(
+        session,
+        candidate,
+        autosave_policy_version=policy_version,
+    )
+    candidate.lifecycle_status = LIFECYCLE_CONFIRMED
+    candidate.resolved_at = _now()
+    candidate.matched_entity_type = "graph_node"
+    candidate.matched_entity_id = decision_node_id
+    _record_system_action(
+        candidate,
+        action="auto_confirm",
+        policy_version=policy_version,
+    )
+    await log_audit_event(
+        session,
+        workspace_id=candidate.workspace_id,
+        action="missed_decision.auto_confirm",
+        user_id=None,
+        resource_type="missed_decision_candidate",
+        resource_id=candidate.id,
+        details={
+            "candidate_id": str(candidate.id),
+            "decision_node_id": str(decision_node_id),
+            "autosave_policy_version": policy_version,
+            "source_type": candidate.source_type,
+            "source_id": str(candidate.source_id),
+        },
+    )
+    await session.flush()
+    return CandidateActionResult(
+        candidate=candidate,
+        decision_node_id=decision_node_id,
+    )
 
 
 async def confirm_candidate(
@@ -339,7 +470,7 @@ async def add_candidate_as_evidence(
     props["missed_decision_evidence"] = evidence
     node.properties = props
 
-    await upsert_edge(
+    await _best_effort_evidence_edge(
         session=session,
         workspace_id=workspace_id,
         source_node_id=node.id,

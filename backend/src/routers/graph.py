@@ -24,6 +24,9 @@ from src.models.graph_node import GraphNode
 from src.models.identity_mapping import IdentityMapping
 from src.models.integration import WorkspaceIntegration
 from src.models.jira import JiraIssue
+from src.models.meeting import MeetingTranscript
+from src.models.slack import SlackMessage
+from src.models.telegram import TelegramChatWorkspace, TelegramMessage
 from src.models.ticket import LinearTicket
 from src.services.dashboard_sprint import (
     get_active_sprint,
@@ -124,7 +127,7 @@ PROVIDER_TO_SOURCE_TYPES: dict[str, list[str]] = {
     "github": ["github_pr", "github_review", "github_commit"],
     "gitlab": ["gitlab_mr", "gitlab_note"],
     "notion": ["notion_page"],
-    "fathom": ["meeting_transcript"],
+    "fathom": ["meeting_transcript", "fathom_transcript"],
     "telegram": ["telegram_message", "messages_digest"],
 }
 
@@ -155,7 +158,24 @@ async def _get_connected_providers(
         WorkspaceIntegration.status == "connected",
     )
     int_result = await session.execute(int_stmt)
-    return {i.provider for i in int_result.scalars().all()}
+    providers = {i.provider for i in int_result.scalars().all()}
+
+    # Telegram pairing is backed by telegram_chat_workspace, not
+    # workspace_integrations. Include it here so Telegram-backed Decision
+    # nodes are not filtered out of /api/graph/decisions after confirmation.
+    tg_stmt = (
+        select(TelegramChatWorkspace.chat_id)
+        .where(
+            TelegramChatWorkspace.workspace_id == workspace_id,
+            TelegramChatWorkspace.removed_at.is_(None),  # type: ignore[union-attr]
+        )
+        .limit(1)
+    )
+    tg_result = await session.execute(tg_stmt)
+    if tg_result.scalar_one_or_none() is not None:
+        providers.add("telegram")
+
+    return providers
 
 
 def _allowed_source_types(connected_providers: set[str]) -> set[str]:
@@ -177,16 +197,204 @@ def _iso_timestamp(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
 
-def _node_response(node: GraphNode, *, depth: int = 0) -> GraphNodeResponse:
+def _node_response(
+    node: GraphNode,
+    *,
+    depth: int = 0,
+    properties: dict | None = None,
+) -> GraphNodeResponse:
     return GraphNodeResponse(
         id=str(node.id),
         entity_type=node.entity_type,
         name=node.name,
         depth=depth,
-        properties=node.properties if node.properties else {},
+        properties=properties if properties is not None else (node.properties or {}),
         created_at=_iso_timestamp(node.created_at),
         updated_at=_iso_timestamp(node.updated_at),
     )
+
+
+def _text_value(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    seen: set[str] = set()
+    items: list[str] = []
+    for item in value:
+        text_value = _text_value(item)
+        if text_value is None or text_value in seen:
+            continue
+        seen.add(text_value)
+        items.append(text_value)
+    return items
+
+
+def _decision_source_key(node: GraphNode) -> tuple[str, UUID] | None:
+    props = node.properties or {}
+    source_type = node.source_type or _text_value(props.get("source_type"))
+    source_id = node.source_id
+    if source_id is None:
+        raw_source_id = _text_value(props.get("source_id"))
+        if raw_source_id:
+            try:
+                source_id = UUID(raw_source_id)
+            except ValueError:
+                source_id = None
+    if source_type is None or source_id is None:
+        return None
+    if source_type not in {
+        "slack_message",
+        "telegram_message",
+        "fathom_transcript",
+        "meeting_transcript",
+    }:
+        return None
+    return source_type, source_id
+
+
+def _set_if_missing(properties: dict, key: str, value: object) -> None:
+    if value is None:
+        return
+    existing = properties.get(key)
+    if isinstance(existing, str) and existing.strip():
+        return
+    if isinstance(existing, list) and _string_list(existing):
+        return
+    if existing not in (None, "", []):
+        return
+    properties[key] = value
+
+
+def _apply_source_attribution(properties: dict, attribution: dict) -> dict:
+    hydrated = dict(properties)
+    author_name = _text_value(attribution.get("author_name"))
+    participants = _string_list(attribution.get("participants"))
+    people = participants or ([author_name] if author_name else [])
+
+    _set_if_missing(hydrated, "author_name", author_name)
+    if people:
+        _set_if_missing(hydrated, "person_name", people[0])
+        _set_if_missing(hydrated, "participants", people)
+    _set_if_missing(
+        hydrated,
+        "source_channel",
+        _text_value(attribution.get("source_channel")),
+    )
+    _set_if_missing(
+        hydrated,
+        "source_context",
+        _text_value(attribution.get("source_context")),
+    )
+    _set_if_missing(hydrated, "date", _text_value(attribution.get("date")))
+    return hydrated
+
+
+async def _decision_source_attribution(
+    session: AsyncSession,
+    workspace_id: UUID,
+    nodes: list[GraphNode],
+) -> dict[UUID, dict]:
+    ids_by_type: dict[str, set[UUID]] = {}
+    keys_by_node: dict[UUID, tuple[str, UUID]] = {}
+    for node in nodes:
+        key = _decision_source_key(node)
+        if key is None:
+            continue
+        source_type, source_id = key
+        ids_by_type.setdefault(source_type, set()).add(source_id)
+        keys_by_node[node.id] = key
+
+    if not ids_by_type:
+        return {}
+
+    attribution_by_source: dict[tuple[str, UUID], dict] = {}
+
+    slack_ids = ids_by_type.get("slack_message")
+    if slack_ids:
+        stmt = select(SlackMessage).where(
+            SlackMessage.workspace_id == workspace_id,
+            SlackMessage.id.in_(slack_ids),
+            SlackMessage.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        result = await session.execute(stmt)
+        for row in result.scalars().all():
+            attribution_by_source[("slack_message", row.id)] = {
+                "author_name": row.user_name,
+                "participants": [row.user_name] if row.user_name else [],
+                "source_channel": row.channel_name,
+                "source_context": row.channel_name,
+                "date": _iso_timestamp(row.slack_created_at),
+            }
+
+    telegram_ids = ids_by_type.get("telegram_message")
+    if telegram_ids:
+        stmt = select(TelegramMessage).where(
+            TelegramMessage.workspace_id == workspace_id,
+            TelegramMessage.id.in_(telegram_ids),
+            TelegramMessage.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        result = await session.execute(stmt)
+        for row in result.scalars().all():
+            author_name = row.from_first_name or row.from_username
+            attribution_by_source[("telegram_message", row.id)] = {
+                "author_name": author_name,
+                "participants": [author_name] if author_name else [],
+                "source_context": row.chat_title,
+                "date": _iso_timestamp(row.telegram_date),
+            }
+
+    meeting_ids = ids_by_type.get("fathom_transcript", set()) | ids_by_type.get(
+        "meeting_transcript", set()
+    )
+    if meeting_ids:
+        stmt = select(MeetingTranscript).where(
+            MeetingTranscript.workspace_id == workspace_id,
+            MeetingTranscript.id.in_(meeting_ids),
+            MeetingTranscript.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        result = await session.execute(stmt)
+        for row in result.scalars().all():
+            attribution = {
+                "participants": row.participants or [],
+                "source_context": row.title,
+                "date": _iso_timestamp(row.meeting_date),
+            }
+            attribution_by_source[("fathom_transcript", row.id)] = attribution
+            attribution_by_source[("meeting_transcript", row.id)] = attribution
+
+    return {
+        node_id: attribution
+        for node_id, source_key in keys_by_node.items()
+        if (attribution := attribution_by_source.get(source_key)) is not None
+    }
+
+
+async def _decision_node_responses(
+    session: AsyncSession,
+    workspace_id: UUID,
+    nodes: list[GraphNode],
+) -> list[GraphNodeResponse]:
+    attribution_by_node = await _decision_source_attribution(
+        session,
+        workspace_id,
+        nodes,
+    )
+    responses: list[GraphNodeResponse] = []
+    for node in nodes:
+        attribution = attribution_by_node.get(node.id)
+        properties = (
+            _apply_source_attribution(node.properties or {}, attribution)
+            if attribution
+            else None
+        )
+        responses.append(_node_response(node, properties=properties))
+    return responses
 
 
 def _decision_recency_sort_key(node: GraphNode) -> tuple[str, str, str]:
@@ -785,7 +993,7 @@ async def get_decisions(
     ]
     decisions = sorted(decisions, key=_decision_recency_sort_key, reverse=True)[:limit]
 
-    return [_node_response(node) for node in decisions]
+    return await _decision_node_responses(session, user.workspace_id, decisions)
 
 
 @router.get("/decisions/{decision_id}", response_model=GraphNodeResponse)
@@ -817,7 +1025,7 @@ async def get_decision(
             detail="Decision not found",
         )
 
-    return _node_response(decision)
+    return (await _decision_node_responses(session, user.workspace_id, [decision]))[0]
 
 
 @router.get("/lens/my-work")

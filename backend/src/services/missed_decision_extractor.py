@@ -136,6 +136,12 @@ def validate_missed_decision_candidates(
 ) -> list[MissedDecisionCandidateDraft]:
     """Drop incomplete, hallucinated, or unlinked candidates."""
     drafts: list[MissedDecisionCandidateDraft] = []
+    source_resource_id = (
+        record.metadata.get("channel_id")
+        or record.metadata.get("chat_id")
+        or record.metadata.get("notion_id")
+        or record.metadata.get("fathom_id")
+    )
     for raw in extraction.candidates:
         source_quote = raw.source_quote.strip()
         inferred_decision = raw.inferred_decision.strip()
@@ -163,9 +169,7 @@ def validate_missed_decision_candidates(
                 source_type=record.source_type,
                 source_id=record.source_id,
                 source_resource_id=(
-                    str(record.metadata.get("channel_id"))
-                    if record.metadata.get("channel_id") is not None
-                    else None
+                    str(source_resource_id) if source_resource_id is not None else None
                 ),
                 source_quote=source_quote,
                 inferred_decision=inferred_decision,

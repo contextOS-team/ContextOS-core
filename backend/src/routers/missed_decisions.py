@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy import and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
-from src.models.missed_decision import MissedDecisionCandidate
+from src.models.missed_decision import MissedDecisionCandidate, MissedDecisionScanRun
 from src.services.missed_decision_actions import (
     CandidateActionResult,
     CandidateNotFoundError,
@@ -22,6 +24,12 @@ from src.services.missed_decision_actions import (
     ignore_duplicate_candidate,
     list_review_candidates,
     reject_candidate,
+)
+from src.services.missed_decision_attribution import (
+    candidate_author_name,
+    candidate_people,
+    candidate_source_channel,
+    candidate_source_context,
 )
 
 router = APIRouter(prefix="/api/missed-decisions", tags=["missed-decisions"])
@@ -37,6 +45,21 @@ class RejectCandidateRequest(BaseModel):
     """Optional body for rejecting a candidate."""
 
     reason: str | None = None
+
+
+class MissedDecisionScanStatus(BaseModel):
+    """Dashboard-safe missed-decision scan progress payload."""
+
+    id: str
+    source_type: str
+    status: str
+    sources_scanned: int
+    sources_total: int | None
+    progress_percent: int | None
+    candidates_created: int
+    started_at: str | None
+    completed_at: str | None
+    error_message: str | None
 
 
 def _legal_actions(candidate: MissedDecisionCandidate) -> list[str]:
@@ -63,7 +86,10 @@ def _serialize_candidate(candidate: MissedDecisionCandidate) -> dict:
         "source_quote": candidate.source_quote,
         "source_link": candidate.source_link,
         "confidence": candidate.confidence,
-        "people": candidate.people or [],
+        "people": candidate_people(candidate),
+        "author_name": candidate_author_name(candidate),
+        "source_channel": candidate_source_channel(candidate),
+        "source_context": candidate_source_context(candidate),
         "affected_systems": candidate.affected_systems or [],
         "possible_existing_match": {
             "match_status": candidate.match_status,
@@ -90,6 +116,37 @@ def _serialize_action_result(
     return _serialize_candidate(result)
 
 
+def _iso_timestamp(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _progress_percent(scan_run: MissedDecisionScanRun) -> int | None:
+    total = scan_run.sources_total
+    if total is None or total <= 0:
+        return None
+    scanned = max(0, scan_run.sources_scanned)
+    return max(0, min(100, round((scanned / total) * 100)))
+
+
+def _serialize_scan_status(scan_run: MissedDecisionScanRun) -> dict:
+    return {
+        "id": str(scan_run.id),
+        "source_type": scan_run.source_type,
+        "status": scan_run.status,
+        "sources_scanned": scan_run.sources_scanned,
+        "sources_total": scan_run.sources_total,
+        "progress_percent": _progress_percent(scan_run),
+        "candidates_created": scan_run.candidates_created,
+        "started_at": _iso_timestamp(scan_run.started_at),
+        "completed_at": _iso_timestamp(scan_run.completed_at),
+        "error_message": scan_run.error_message,
+    }
+
+
 async def _translate_errors(coro):
     try:
         return await coro
@@ -114,6 +171,60 @@ async def review(
     """List workspace-scoped missed-decision candidates needing review."""
     candidates = await list_review_candidates(session, user.workspace_id, limit=limit)
     return [_serialize_candidate(candidate) for candidate in candidates]
+
+
+@router.get("/scans", response_model=list[MissedDecisionScanStatus])
+async def scans(
+    user: UserContext = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """Return latest active or recently completed missed-decision scans."""
+    recent_cutoff = datetime.now(UTC) - timedelta(minutes=10)
+    stmt = (
+        select(MissedDecisionScanRun)
+        .where(
+            MissedDecisionScanRun.workspace_id == user.workspace_id,
+            MissedDecisionScanRun.deleted_at.is_(None),  # type: ignore[union-attr]
+            or_(
+                MissedDecisionScanRun.status.in_(  # type: ignore[attr-defined]
+                    ["queued", "running"]
+                ),
+                and_(
+                    MissedDecisionScanRun.status == "failed",
+                    MissedDecisionScanRun.completed_at.is_not(None),  # type: ignore[union-attr]
+                    MissedDecisionScanRun.completed_at >= recent_cutoff,  # type: ignore[operator]
+                ),
+                and_(
+                    MissedDecisionScanRun.status == "succeeded",
+                    MissedDecisionScanRun.completed_at.is_not(None),  # type: ignore[union-attr]
+                    MissedDecisionScanRun.completed_at >= recent_cutoff,  # type: ignore[operator]
+                ),
+            ),
+        )
+        .order_by(
+            MissedDecisionScanRun.source_type.asc(),  # type: ignore[union-attr]
+            MissedDecisionScanRun.created_at.desc(),  # type: ignore[union-attr]
+        )
+    )
+    result = await session.execute(stmt)
+    seen_sources: set[str] = set()
+    latest: list[MissedDecisionScanRun] = []
+    for run in result.scalars().all():
+        if run.workspace_id != user.workspace_id:
+            continue
+        if run.status in {"failed", "succeeded"}:
+            completed_at = run.completed_at
+            if completed_at is None:
+                continue
+            if completed_at.tzinfo is None:
+                completed_at = completed_at.replace(tzinfo=UTC)
+            if completed_at < recent_cutoff:
+                continue
+        if run.source_type in seen_sources:
+            continue
+        seen_sources.add(run.source_type)
+        latest.append(run)
+    return [_serialize_scan_status(scan_run) for scan_run in latest]
 
 
 @router.post("/{candidate_id}/confirm")

@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS public.missed_decision_scan_runs (
   source_window_start TIMESTAMPTZ,
   source_window_end TIMESTAMPTZ,
   sources_scanned INTEGER NOT NULL DEFAULT 0,
+  sources_total INTEGER,
   candidates_created INTEGER NOT NULL DEFAULT 0,
   attempts INTEGER NOT NULL DEFAULT 0,
   error_message TEXT,

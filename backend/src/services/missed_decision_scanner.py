@@ -17,6 +17,8 @@ from src.models.missed_decision import (
     MissedDecisionScanRun,
     MissedDecisionScanState,
 )
+from src.services.missed_decision_actions import auto_confirm_candidate
+from src.services.missed_decision_autosave import should_auto_save_missed_decision
 from src.services.missed_decision_dedupe import (
     classify_missed_decision_candidate,
     decision_fingerprint,
@@ -28,6 +30,7 @@ from src.services.missed_decision_extractor import (
 )
 from src.services.missed_decision_sources import (
     MissedDecisionSourceRecord,
+    count_source_window,
     load_source_window,
 )
 from src.services.missed_decision_suggestions import (
@@ -38,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 FIRST_SCAN_LOOKBACK_DAYS = 14
 SOURCE_WINDOW_BATCH_SIZE = 100
+PROGRESS_COMMIT_INTERVAL = 5
 STALE_RUNNING_SCAN_AFTER = timedelta(minutes=10)
 SCAN_STATUS_QUEUED = "queued"
 SCAN_STATUS_RUNNING = "running"
@@ -56,6 +60,28 @@ class ScanWindow:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _updated_at_cutoff(value: datetime) -> datetime:
+    return value.replace(tzinfo=None)
+
+
+def running_scan_is_stale_filter(stale_before: datetime):
+    """Return SQL condition for a running scan with no recent heartbeat."""
+    updated_at_stale_before = _updated_at_cutoff(stale_before)
+    return and_(
+        MissedDecisionScanRun.status == SCAN_STATUS_RUNNING,
+        or_(
+            MissedDecisionScanRun.started_at.is_(None),  # type: ignore[union-attr]
+            and_(
+                MissedDecisionScanRun.started_at < stale_before,
+                or_(
+                    MissedDecisionScanRun.updated_at.is_(None),  # type: ignore[union-attr]
+                    MissedDecisionScanRun.updated_at < updated_at_stale_before,
+                ),
+            ),
+        ),
+    )
 
 
 async def _add(session: AsyncSession, instance: object) -> None:
@@ -85,6 +111,27 @@ async def _get_scan_state(
         )
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
+
+
+async def _has_queued_or_running_scan(
+    session: AsyncSession,
+    workspace_id: UUID,
+    source_type: str,
+) -> bool:
+    stmt = (
+        select(MissedDecisionScanRun.id)
+        .where(
+            MissedDecisionScanRun.workspace_id == workspace_id,
+            MissedDecisionScanRun.source_type == source_type,
+            MissedDecisionScanRun.status.in_(  # type: ignore[attr-defined]
+                [SCAN_STATUS_QUEUED, SCAN_STATUS_RUNNING]
+            ),
+            MissedDecisionScanRun.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        .limit(1)
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none() is not None
 
 
 async def get_scan_window(
@@ -133,6 +180,12 @@ async def enqueue_missed_decision_scan(
         if isawaitable(savepoint):
             savepoint = await savepoint
         async with savepoint:
+            if await _has_queued_or_running_scan(
+                session,
+                workspace_id,
+                source_type,
+            ):
+                return None
             window = await get_scan_window(
                 session,
                 workspace_id,
@@ -170,6 +223,7 @@ async def process_missed_decision_source_window(
     """Extract, dedupe, persist, and publish source-backed candidates."""
     candidates_created = 0
     suggestions_published = 0
+    decisions_auto_saved = 0
 
     drafts = []
     for record in records:
@@ -208,7 +262,10 @@ async def process_missed_decision_source_window(
         await session.flush()
         candidates_created += 1
 
-        if classification.should_publish_suggestion and is_surfaceable_confidence(
+        if should_auto_save_missed_decision(candidate, classification):
+            await auto_confirm_candidate(session, candidate)
+            decisions_auto_saved += 1
+        elif classification.should_publish_suggestion and is_surfaceable_confidence(
             candidate.confidence
         ):
             suggestion = await publish_missed_decision_suggestion(
@@ -220,6 +277,7 @@ async def process_missed_decision_source_window(
 
     return {
         "candidates_created": candidates_created,
+        "decisions_auto_saved": decisions_auto_saved,
         "suggestions_published": suggestions_published,
     }
 
@@ -254,6 +312,18 @@ async def run_missed_decision_scan_once(
     await session.flush()
     await session.commit()
 
+    if scan_run.sources_total is None:
+        scan_run.sources_total = await count_source_window(
+            session,
+            scan_run.workspace_id,
+            scan_run.source_type,
+            scan_run.source_window_start,
+            scan_run.source_window_end,
+            source_resource_id=scan_run.source_resource_id,
+        )
+        await session.flush()
+        await session.commit()
+
     try:
         sources_scanned = 0
         candidates_created = 0
@@ -275,17 +345,21 @@ async def run_missed_decision_scan_once(
                 break
             await session.commit()
 
-            result = await process_missed_decision_source_window(
-                session,
-                scan_run,
-                records,
-            )
-            sources_scanned += len(records)
-            candidates_created += int(result.get("candidates_created", 0))
-            scan_run.sources_scanned = sources_scanned
-            scan_run.candidates_created = candidates_created
-            await session.flush()
-            await session.commit()
+            for start_index in range(0, len(records), PROGRESS_COMMIT_INTERVAL):
+                progress_chunk = records[
+                    start_index : start_index + PROGRESS_COMMIT_INTERVAL
+                ]
+                result = await process_missed_decision_source_window(
+                    session,
+                    scan_run,
+                    progress_chunk,
+                )
+                sources_scanned += len(progress_chunk)
+                candidates_created += int(result.get("candidates_created", 0))
+                scan_run.sources_scanned = sources_scanned
+                scan_run.candidates_created = candidates_created
+                await session.flush()
+                await session.commit()
 
             if len(records) < SOURCE_WINDOW_BATCH_SIZE:
                 break
@@ -332,22 +406,27 @@ async def drain_queued_missed_decision_scans(
         .where(
             or_(
                 MissedDecisionScanRun.status == SCAN_STATUS_QUEUED,
-                and_(
-                    MissedDecisionScanRun.status == SCAN_STATUS_RUNNING,
-                    or_(
-                        MissedDecisionScanRun.started_at.is_(None),  # type: ignore[union-attr]
-                        MissedDecisionScanRun.started_at < stale_started_before,
-                    ),
-                ),
+                running_scan_is_stale_filter(stale_started_before),
             ),
             MissedDecisionScanRun.deleted_at.is_(None),  # type: ignore[union-attr]
         )
-        .order_by(MissedDecisionScanRun.created_at.asc())  # type: ignore[union-attr]
+        .order_by(MissedDecisionScanRun.created_at.desc())  # type: ignore[union-attr]
         .limit(limit)
         .with_for_update(skip_locked=True)
     )
     result = await session.execute(stmt)
-    runs = list(result.scalars().all())
+    claimed_keys: set[tuple[UUID, str]] = set()
+    runs: list[MissedDecisionScanRun] = []
+    for run in result.scalars().all():
+        key = (run.workspace_id, run.source_type)
+        if key in claimed_keys:
+            run.status = SCAN_STATUS_FAILED
+            run.error_message = "Superseded by a newer active scan for this source."
+            run.completed_at = _now()
+            continue
+        claimed_keys.add(key)
+        runs.append(run)
+
     for run in runs:
         run.status = SCAN_STATUS_RUNNING
         run.started_at = _now()

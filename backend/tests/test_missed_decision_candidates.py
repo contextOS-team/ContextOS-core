@@ -12,7 +12,9 @@ from src.models.graph_node import GraphNode
 from src.models.missed_decision import MissedDecisionCandidate, MissedDecisionScanRun
 from src.models.suggestion import Suggestion
 from src.services import missed_decision_scanner as scanner
+from src.services.missed_decision_autosave import should_auto_save_missed_decision
 from src.services.missed_decision_dedupe import (
+    DedupeClassification,
     classify_missed_decision_candidate,
     decision_fingerprint,
     quote_fingerprint,
@@ -127,6 +129,16 @@ def _candidate(**overrides) -> MissedDecisionCandidate:
     )
 
 
+def _classification(**overrides) -> DedupeClassification:
+    values = {
+        "match_status": "no_match",
+        "lifecycle_status": "detected",
+        "should_publish_suggestion": True,
+    }
+    values.update(overrides)
+    return DedupeClassification(**values)
+
+
 def test_validation_drops_incomplete_and_hallucinated_candidates() -> None:
     record = _record()
     raw = RawMissedDecisionExtractionResult(
@@ -181,6 +193,99 @@ def test_prompt_injection_guardrail_and_confidence_tiers() -> None:
     assert drafts[0].affected_systems == ["actions"]
     assert drafts[0].source_link.startswith("/dashboard/source-reference")
     assert drafts[1].confidence == CONFIDENCE_NEEDS_REVIEW
+
+
+def test_conservative_autosave_accepts_clear_safe_no_match_candidate() -> None:
+    candidate = _candidate(
+        confidence=CONFIDENCE_VERY_HIGH,
+        people=["Daulet"],
+        affected_systems=["dashboard"],
+        evidence={"source_metadata": {"channel_name": "product"}},
+    )
+
+    assert should_auto_save_missed_decision(candidate, _classification())
+
+
+def test_conservative_autosave_rejects_risky_quote() -> None:
+    candidate = _candidate(
+        source_quote="We decided the production rollback needs an owner.",
+        confidence=CONFIDENCE_VERY_HIGH,
+        people=["Daulet"],
+        affected_systems=["infra"],
+        evidence={"source_metadata": {"channel_name": "ops"}},
+    )
+
+    assert not should_auto_save_missed_decision(candidate, _classification())
+
+
+def test_conservative_autosave_rejects_missing_affected_system() -> None:
+    candidate = _candidate(
+        confidence=CONFIDENCE_VERY_HIGH,
+        people=["Daulet"],
+        affected_systems=[],
+        evidence={"source_metadata": {"channel_name": "product"}},
+    )
+
+    assert not should_auto_save_missed_decision(candidate, _classification())
+
+
+def test_conservative_autosave_accepts_source_context_without_people() -> None:
+    candidate = _candidate(
+        confidence=CONFIDENCE_VERY_HIGH,
+        people=[],
+        affected_systems=["dashboard"],
+        evidence={"source_metadata": {"channel_name": "product"}},
+    )
+
+    assert should_auto_save_missed_decision(candidate, _classification())
+
+
+def test_conservative_autosave_rejects_missing_attribution_context() -> None:
+    candidate = _candidate(
+        confidence=CONFIDENCE_VERY_HIGH,
+        people=[],
+        affected_systems=["dashboard"],
+        evidence={"source_metadata": {}},
+    )
+
+    assert not should_auto_save_missed_decision(candidate, _classification())
+
+
+@pytest.mark.parametrize("match_status", ["weak_match", "strong_match"])
+def test_conservative_autosave_rejects_existing_matches(match_status: str) -> None:
+    candidate = _candidate(
+        confidence=CONFIDENCE_VERY_HIGH,
+        people=["Daulet"],
+        affected_systems=["dashboard"],
+        evidence={"source_metadata": {"channel_name": "product"}},
+    )
+
+    assert not should_auto_save_missed_decision(
+        candidate,
+        _classification(match_status=match_status),
+    )
+
+
+@pytest.mark.parametrize(
+    "source_link",
+    [
+        "https://example.com/archives/C123/p456",
+        "notaurl",
+        "/dashboard/source-reference?source_type=slack_message",
+    ],
+)
+def test_conservative_autosave_rejects_unrecognized_or_malformed_source_link(
+    source_link: str,
+) -> None:
+    candidate = _candidate(
+        source_link=source_link,
+        confidence=CONFIDENCE_VERY_HIGH,
+        people=["Daulet"],
+        affected_systems=["dashboard"],
+        evidence={"source_metadata": {"channel_name": "product"}},
+    )
+
+    assert not should_auto_save_missed_decision(candidate, _classification())
 
 
 @pytest.mark.asyncio
@@ -303,6 +408,24 @@ async def test_publish_missed_decision_suggestion_references_candidate() -> None
 
 
 @pytest.mark.asyncio
+async def test_publish_missed_decision_suggestion_uses_source_metadata_people() -> None:
+    candidate = _candidate(
+        people=[],
+        evidence={"source_metadata": {"user_name": "Daulet"}},
+    )
+    candidate.id = uuid4()
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.execute = AsyncMock(return_value=_result([]))
+    session.flush = AsyncMock()
+
+    suggestion = await publish_missed_decision_suggestion(session, candidate)
+
+    assert suggestion is not None
+    assert suggestion.details["people"] == ["Daulet"]
+
+
+@pytest.mark.asyncio
 async def test_publish_missed_decision_suggestion_flushes_new_suggestion_first() -> (
     None
 ):
@@ -380,6 +503,11 @@ async def test_suppressed_candidate_is_not_published_from_scanner(
         return [draft]
 
     monkeypatch.setattr(scanner, "extract_missed_decision_candidates", fake_extract)
+    monkeypatch.setattr(
+        scanner,
+        "auto_confirm_candidate",
+        AsyncMock(side_effect=AssertionError("duplicates must not auto-save")),
+    )
 
     result = await scanner.process_missed_decision_source_window(session, run, [record])
 
@@ -387,11 +515,12 @@ async def test_suppressed_candidate_is_not_published_from_scanner(
     assert added.lifecycle_status == "suppressed"
     assert added.suppression_reason == "duplicate_no_new_evidence"
     assert result["candidates_created"] == 1
+    assert result["decisions_auto_saved"] == 0
     assert result["suggestions_published"] == 0
 
 
 @pytest.mark.asyncio
-async def test_scanner_persists_candidate_and_publishes_suggestion(
+async def test_scanner_auto_saves_safe_very_high_candidate_without_suggestion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     record = _record()
@@ -403,6 +532,53 @@ async def test_scanner_persists_candidate_and_publishes_suggestion(
         confidence=CONFIDENCE_VERY_HIGH,
         people=["Daulet"],
         affected_systems=["dashboard"],
+        evidence={"source_metadata": {"channel_name": "product"}},
+    )
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([]))
+    run = MissedDecisionScanRun(
+        id=uuid4(),
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        status="running",
+    )
+
+    async def fake_extract(_record):
+        return [draft]
+
+    async def fake_auto_confirm(_session, candidate, **_kwargs):
+        candidate.lifecycle_status = "confirmed"
+        return None
+
+    monkeypatch.setattr(scanner, "extract_missed_decision_candidates", fake_extract)
+    monkeypatch.setattr(scanner, "auto_confirm_candidate", fake_auto_confirm)
+
+    result = await scanner.process_missed_decision_source_window(session, run, [record])
+
+    added_types = [type(call.args[0]) for call in session.add.call_args_list]
+    assert MissedDecisionCandidate in added_types
+    assert Suggestion not in added_types
+    assert result["candidates_created"] == 1
+    assert result["decisions_auto_saved"] == 1
+    assert result["suggestions_published"] == 0
+
+
+@pytest.mark.asyncio
+async def test_scanner_persists_high_candidate_and_publishes_suggestion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _record()
+    draft = _draft(
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        source_id=record.source_id,
+        source_link=record.source_link,
+        confidence=CONFIDENCE_HIGH,
+        people=["Daulet"],
+        affected_systems=["dashboard"],
+        evidence={"source_metadata": {"channel_name": "product"}},
     )
     session = AsyncMock()
     session.add = MagicMock()
@@ -419,6 +595,11 @@ async def test_scanner_persists_candidate_and_publishes_suggestion(
         return [draft]
 
     monkeypatch.setattr(scanner, "extract_missed_decision_candidates", fake_extract)
+    monkeypatch.setattr(
+        scanner,
+        "auto_confirm_candidate",
+        AsyncMock(side_effect=AssertionError("high confidence requires review")),
+    )
 
     result = await scanner.process_missed_decision_source_window(session, run, [record])
 
@@ -426,6 +607,58 @@ async def test_scanner_persists_candidate_and_publishes_suggestion(
     assert MissedDecisionCandidate in added_types
     assert Suggestion in added_types
     assert result["candidates_created"] == 1
+    assert result["decisions_auto_saved"] == 0
+    assert result["suggestions_published"] == 1
+
+
+@pytest.mark.asyncio
+async def test_scanner_publishes_risky_very_high_candidate_for_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _record(
+        "We decided the production rollback needs a named owner before launch."
+    )
+    draft = _draft(
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        source_id=record.source_id,
+        source_quote="We decided the production rollback needs a named owner",
+        inferred_decision="Name an owner for production rollback",
+        inferred_rationale="Production rollback ownership must be explicit.",
+        source_link=record.source_link,
+        confidence=CONFIDENCE_VERY_HIGH,
+        people=["Daulet"],
+        affected_systems=["infra"],
+        evidence={"source_metadata": {"channel_name": "ops"}},
+    )
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([]))
+    run = MissedDecisionScanRun(
+        id=uuid4(),
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        status="running",
+    )
+
+    async def fake_extract(_record):
+        return [draft]
+
+    monkeypatch.setattr(scanner, "extract_missed_decision_candidates", fake_extract)
+    monkeypatch.setattr(
+        scanner,
+        "auto_confirm_candidate",
+        AsyncMock(side_effect=AssertionError("risky candidates require review")),
+    )
+
+    result = await scanner.process_missed_decision_source_window(session, run, [record])
+
+    added_types = [type(call.args[0]) for call in session.add.call_args_list]
+    assert MissedDecisionCandidate in added_types
+    assert Suggestion in added_types
+    assert result["candidates_created"] == 1
+    assert result["decisions_auto_saved"] == 0
     assert result["suggestions_published"] == 1
 
 

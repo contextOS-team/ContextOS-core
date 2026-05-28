@@ -359,6 +359,7 @@ async def _has_active_missed_decision_scan(
     source_type: str,
 ) -> bool:
     stale_started_before = datetime.now(UTC) - STALE_RUNNING_SCAN_AFTER
+    stale_updated_before = stale_started_before.replace(tzinfo=None)
     stmt = (
         select(MissedDecisionScanRun)
         .where(
@@ -369,8 +370,8 @@ async def _has_active_missed_decision_scan(
                 | (
                     (MissedDecisionScanRun.status == SCAN_STATUS_RUNNING)
                     & (
-                        (MissedDecisionScanRun.started_at.is_(None))  # type: ignore[union-attr]
-                        | (MissedDecisionScanRun.started_at >= stale_started_before)
+                        (MissedDecisionScanRun.started_at >= stale_started_before)
+                        | (MissedDecisionScanRun.updated_at >= stale_updated_before)
                     )
                 )
             ),

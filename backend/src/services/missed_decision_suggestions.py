@@ -10,6 +10,7 @@ from sqlmodel import select
 
 from src.models.missed_decision import MissedDecisionCandidate
 from src.models.suggestion import Suggestion
+from src.services.missed_decision_attribution import candidate_people
 from src.services.missed_decision_extractor import is_surfaceable_confidence
 from src.services.suggestion_quality import (
     NO_WRITE_BOUNDARY,
@@ -128,7 +129,7 @@ def build_missed_decision_suggestion(
         details={
             "candidate_id": str(candidate_id),
             "confidence": candidate.confidence,
-            "people": candidate.people or [],
+            "people": candidate_people(candidate),
             "affected_systems": candidate.affected_systems or [],
             "match_status": candidate.match_status,
             "action_hints": candidate.action_hints or [],

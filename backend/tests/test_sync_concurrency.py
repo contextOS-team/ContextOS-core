@@ -391,5 +391,6 @@ class TestPollingScheduler:
         )
 
         assert "source_resource_id IS NULL" not in active_scan_sql
+        assert "missed_decision_scan_runs.updated_at >=" in active_scan_sql
         mock_enqueue.assert_not_awaited()
         mock_session.commit.assert_not_awaited()

@@ -62,6 +62,7 @@ class MissedDecisionScanRun(BaseModel, table=True):
         sa_column=Column(DateTime(timezone=True), nullable=True),
     )
     sources_scanned: int = Field(default=0, nullable=False)
+    sources_total: int | None = Field(default=None, nullable=True)
     candidates_created: int = Field(default=0, nullable=False)
     attempts: int = Field(default=0, nullable=False)
     error_message: str | None = Field(default=None)
