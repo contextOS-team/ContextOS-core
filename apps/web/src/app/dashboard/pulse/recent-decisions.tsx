@@ -28,6 +28,14 @@ function decisionNodesFromData(data: unknown): ApiNode[] {
   return Array.isArray(legacyNodes) ? (legacyNodes as ApiNode[]) : []
 }
 
+export function getRecentDecisionItems(data: ApiNode[] | null): DecisionNodeView[] {
+  return decisionNodesFromData(data)
+    .filter((node) => node.entity_type === 'Decision')
+    .map(toDecisionView)
+    .sort(sortDecisions)
+    .slice(0, 2)
+}
+
 function DecisionCard({
   decision,
   lastVisitedAt,
@@ -103,13 +111,7 @@ function DecisionCard({
 }
 
 export function RecentDecisions({ data, lastVisitedAt }: RecentDecisionsProps) {
-  const decisions = useMemo(() => {
-    return decisionNodesFromData(data)
-      .filter((node) => node.entity_type === 'Decision')
-      .map(toDecisionView)
-      .sort(sortDecisions)
-      .slice(0, 2)
-  }, [data])
+  const decisions = useMemo(() => getRecentDecisionItems(data), [data])
 
   if (decisions.length === 0) return null
 

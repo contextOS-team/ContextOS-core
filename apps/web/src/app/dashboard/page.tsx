@@ -4,11 +4,13 @@ import { useEffect, useState } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { createClient } from '@/lib/supabase/client'
 import { ActiveContext } from './pulse/active-context'
+import { DecisionScanProgress } from './pulse/decision-scan-progress'
 import { Headline } from './pulse/headline'
 import { NeedsYou } from './pulse/needs-you'
 import { NeedsReview } from './pulse/needs-review'
 import { NeedsReviewSuggestions } from './pulse/needs-review-suggestions'
 import { RecentDecisions } from './pulse/recent-decisions'
+import { SourceUpdates } from './pulse/source-updates'
 import { useLastVisitedAt } from './pulse/since-last-visit/use-last-visited-at'
 import { SeenItemsProvider } from './pulse/since-last-visit/use-session-seen-items'
 import { useDashboardData } from './pulse/use-dashboard-data'
@@ -80,6 +82,7 @@ function DashboardSections({
     suggestions,
     needsReviewSuggestions,
     needsReviewError,
+    missedDecisionScans,
     missedDecisionActions,
     contextItems,
     needsYouItems,
@@ -115,13 +118,42 @@ function DashboardSections({
     )
   }
 
-  const hasPrimaryDashboardContent = Boolean(
-    decisions?.length
-    || suggestions.length
+  const hasRightRailContent = Boolean(
+    missedDecisionScans.length
     || needsReviewSuggestions.length
     || needsReviewError
+    || suggestions.length
     || contextItems.length
     || needsYouItems.length
+  )
+  const primaryColumn = (
+    <div className="space-y-6">
+      <RecentDecisions data={decisions} lastVisitedAt={lastVisitedAt} />
+      <SourceUpdates items={delta.sources.items} />
+      <WorkspaceSnapshot items={workspaceSnapshot} />
+    </div>
+  )
+
+  const rightRail = (
+    <div className="space-y-6">
+      <DecisionScanProgress scans={missedDecisionScans} />
+      {needsReviewSuggestions.length > 0 || needsReviewError ? (
+        <NeedsReviewSuggestions
+          suggestions={needsReviewSuggestions}
+          error={needsReviewError}
+          workspaceId={workspaceId}
+          onSaveAsNewDecision={missedDecisionActions.saveAsNewDecision}
+          onAddAsEvidence={missedDecisionActions.addAsEvidence}
+          onDefer={missedDecisionActions.defer}
+          onDismiss={missedDecisionActions.dismiss}
+          onIgnoreDuplicate={missedDecisionActions.ignoreDuplicate}
+        />
+      ) : (
+        <NeedsReview items={suggestions} />
+      )}
+      <ActiveContext items={contextItems} lastVisitedAt={lastVisitedAt} />
+      <NeedsYou items={needsYouItems} lastVisitedAt={lastVisitedAt} />
+    </div>
   )
 
   return (
@@ -130,30 +162,14 @@ function DashboardSections({
         delta={delta}
         lastVisitedAt={lastVisitedAt}
       />
-      {!hasPrimaryDashboardContent && (
-        <WorkspaceSnapshot items={workspaceSnapshot} />
-      )}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.32fr)_minmax(320px,0.68fr)]">
-        <RecentDecisions data={decisions} lastVisitedAt={lastVisitedAt} />
-        <div className="space-y-6">
-          {needsReviewSuggestions.length > 0 || needsReviewError ? (
-            <NeedsReviewSuggestions
-              suggestions={needsReviewSuggestions}
-              error={needsReviewError}
-              workspaceId={workspaceId}
-              onSaveAsNewDecision={missedDecisionActions.saveAsNewDecision}
-              onAddAsEvidence={missedDecisionActions.addAsEvidence}
-              onDefer={missedDecisionActions.defer}
-              onDismiss={missedDecisionActions.dismiss}
-              onIgnoreDuplicate={missedDecisionActions.ignoreDuplicate}
-            />
-          ) : (
-            <NeedsReview items={suggestions} />
-          )}
-          <ActiveContext items={contextItems} lastVisitedAt={lastVisitedAt} />
-          <NeedsYou items={needsYouItems} lastVisitedAt={lastVisitedAt} />
+      {hasRightRailContent ? (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+          {primaryColumn}
+          {rightRail}
         </div>
-      </div>
+      ) : (
+        primaryColumn
+      )}
     </>
   )
 }

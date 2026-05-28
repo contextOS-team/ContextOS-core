@@ -8,8 +8,13 @@ vi.mock('@/lib/supabase/client', () => ({
   createClient: () => createClientMock(),
 }))
 
-function row(id: string, event_type: string, created_at = '2026-05-20T12:00:00Z') {
-  return { id, event_type, created_at }
+function row(
+  id: string,
+  event_type: string,
+  created_at = '2026-05-20T12:00:00Z',
+  metadata?: Record<string, unknown> | null
+) {
+  return { id, event_type, created_at, metadata }
 }
 
 function needsYou(overrides: Partial<NeedsYouItem> = {}): NeedsYouItem {
@@ -42,7 +47,10 @@ describe('bucketDelta', () => {
         row('source-3', 'meeting_recorded'),
         row('source-4', 'page_created'),
         row('source-5', 'integration_connected'),
-        row('source-6', 'sync_completed'),
+        row('source-6', 'sync_completed', '2026-05-20T12:00:00Z', {
+          integration: 'linear',
+          items_count: 64,
+        }),
       ],
       [],
       'user-1'
@@ -59,6 +67,15 @@ describe('bucketDelta', () => {
       'source-5',
       'source-6',
     ])
+    expect(result.sources.items.at(-1)).toEqual({
+      id: 'source-6',
+      eventType: 'sync_completed',
+      createdAt: '2026-05-20T12:00:00Z',
+      metadata: {
+        integration: 'linear',
+        items_count: 64,
+      },
+    })
   })
 
   it('ignores unknown or incomplete event types', () => {

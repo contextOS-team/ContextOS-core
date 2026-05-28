@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -19,7 +20,8 @@ import type {
   MissedDecisionReviewSuggestion,
 } from '@/lib/api'
 
-const SUPPORT_COPY = 'Decisions found in recent syncs that need a quick call.'
+const SECTION_LABEL = 'Needs review'
+const SUPPORT_COPY = 'Missed-decision candidates that need confirmation before becoming decision memory.'
 const ERROR_COPY = 'Could not load missed-decision suggestions. Refresh the dashboard or open Activity to confirm the source sync completed.'
 const ACTION_ERROR_COPY = 'Could not update this suggestion. Try again.'
 
@@ -61,6 +63,7 @@ function sourceLabel(sourceLink: string): string {
     const host = new URL(sourceLink).hostname.toLowerCase()
     if (host.includes('slack')) return 'Slack source'
     if (host.includes('notion')) return 'Notion source'
+    if (host.includes('t.me') || host.includes('telegram')) return 'Telegram source'
     if (host.includes('fathom')) return 'Fathom source'
     if (host.includes('github')) return 'GitHub source'
     if (host.includes('gitlab')) return 'GitLab source'
@@ -69,6 +72,14 @@ function sourceLabel(sourceLink: string): string {
   }
 
   return 'Source'
+}
+
+function sourceActionLabel(sourceLink: string): string {
+  return `Open ${sourceLabel(sourceLink).toLowerCase()}`
+}
+
+function isExternalSource(sourceLink: string): boolean {
+  return sourceLink.startsWith('http://') || sourceLink.startsWith('https://')
 }
 
 function visibleSuggestions(
@@ -196,12 +207,16 @@ function MissedDecisionSuggestionRow({
         <div className="pulse-meta">
           <a
             href={suggestion.source_link}
-            className="pulse-tag transition-colors hover:text-[var(--pulse-foreground)]"
+            target={isExternalSource(suggestion.source_link) ? '_blank' : undefined}
+            rel={isExternalSource(suggestion.source_link) ? 'noreferrer' : undefined}
+            className="pulse-meta-item shrink-0 gap-1.5 rounded-md border border-[var(--pulse-attention)]/40 bg-[var(--pulse-attention)]/10 px-2 py-1 text-xs font-medium text-[var(--pulse-attention)] transition-colors hover:border-[var(--pulse-attention)]/70 hover:bg-[var(--pulse-attention)]/16 hover:text-[var(--pulse-attention)]"
+            aria-label={sourceActionLabel(suggestion.source_link)}
           >
-            {sourceLabel(suggestion.source_link)}
+            <ExternalLink className="size-3" aria-hidden="true" />
+            {sourceActionLabel(suggestion.source_link)}
           </a>
-          <span>{confidenceLabel(suggestion.confidence)}</span>
-          {people && <span>{people}</span>}
+          <span className="pulse-meta-item">{confidenceLabel(suggestion.confidence)}</span>
+          {people && <span className="pulse-meta-item">{people}</span>}
         </div>
 
         {systems.length > 0 && (
@@ -320,7 +335,7 @@ export function NeedsReviewSuggestions({
   return (
     <section className="space-y-3">
       <div className="space-y-1">
-        <h2 className="pulse-section-label">Needs review</h2>
+        <h2 className="pulse-section-label">{SECTION_LABEL}</h2>
         <p className="text-sm leading-6 text-[var(--pulse-muted)]">
           {SUPPORT_COPY}
         </p>

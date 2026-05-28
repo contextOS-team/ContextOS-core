@@ -9,6 +9,7 @@ import {
   addMissedDecisionAsEvidence,
   deferMissedDecision,
   dismissMissedDecision,
+  getMissedDecisionScanStatus,
   getMissedDecisionReviewSuggestions,
   ignoreMissedDecisionDuplicate,
   saveMissedDecisionAsNewDecision,
@@ -97,6 +98,7 @@ function DashboardProbe() {
         error: data.error,
         needsReviewError: data.needsReviewError,
         needsReviewSuggestions: data.needsReviewSuggestions.length,
+        missedDecisionScans: data.missedDecisionScans.length,
       })}
     </output>
   )
@@ -119,6 +121,7 @@ describe('missed-decision API helpers', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await getMissedDecisionReviewSuggestions()
+    await getMissedDecisionScanStatus()
     await saveMissedDecisionAsNewDecision('candidate-1')
     await addMissedDecisionAsEvidence('candidate-1')
     await deferMissedDecision('candidate-1')
@@ -134,26 +137,33 @@ describe('missed-decision API helpers', () => {
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
+      'http://localhost:8000/api/missed-decisions/scans',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer token-1' }),
+      })
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
       'http://localhost:8000/api/missed-decisions/candidate-1/confirm',
       expect.objectContaining({ method: 'POST' })
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
+      4,
       'http://localhost:8000/api/missed-decisions/candidate-1/add-evidence',
       expect.objectContaining({ method: 'POST' })
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      5,
       'http://localhost:8000/api/missed-decisions/candidate-1/defer',
       expect.objectContaining({ method: 'POST' })
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
+      6,
       'http://localhost:8000/api/missed-decisions/candidate-1/reject',
       expect.objectContaining({ method: 'POST' })
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
-      6,
+      7,
       'http://localhost:8000/api/missed-decisions/candidate-1/ignore-duplicate',
       expect.objectContaining({ method: 'POST' })
     )
@@ -179,13 +189,45 @@ describe('useDashboardData missed-decision integration', () => {
     vi.clearAllMocks()
   })
 
-  it('keeps missed-decision fetch failures local to the Needs review section', async () => {
+  it('keeps missed-decision fetch failures local to the review exceptions section', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
         const path = new URL(String(input)).pathname
         if (path === '/api/dashboard/attention') return Promise.resolve(makeResponse([]))
         if (path === '/api/suggestions') return Promise.resolve(makeResponse([]))
+        if (path === '/api/integrations/status') {
+          const disconnected = {
+            status: 'disconnected',
+            external_name: null,
+            connected_at: null,
+          }
+          return Promise.resolve(makeResponse({
+            linear: disconnected,
+            slack: disconnected,
+            fathom: disconnected,
+            github: disconnected,
+            gitlab: disconnected,
+            notion: disconnected,
+            telegram: disconnected,
+            jira: disconnected,
+          }))
+        }
+        if (path === '/api/linear/sync/status') {
+          return Promise.resolve(makeResponse({
+            synced_teams: [],
+            sync_status: null,
+            tickets_synced: 0,
+            tickets_count: 0,
+            last_sync_at: null,
+          }))
+        }
+        if (path === '/api/github/sync/status') {
+          return Promise.resolve(makeResponse({ repo_sync_status: {}, last_sync_at: null }))
+        }
+        if (path === '/api/github/index/status') {
+          return Promise.resolve(makeResponse({ status: 'idle', last_indexed_at: null, repos: [] }))
+        }
         if (path === '/api/graph/lens/my-work') {
           return Promise.resolve(makeResponse({
             lens: 'my_work',
@@ -204,6 +246,7 @@ describe('useDashboardData missed-decision integration', () => {
             json: async () => ({}),
           } as Response)
         }
+        if (path === '/api/missed-decisions/scans') return Promise.resolve(makeResponse([]))
         return Promise.resolve(makeResponse([]))
       })
     )
@@ -261,7 +304,7 @@ describe('NeedsReviewSuggestions', () => {
     )
 
     expect(screen.getByText('Needs review')).toBeTruthy()
-    expect(screen.getByText('Decisions found in recent syncs that need a quick call.')).toBeTruthy()
+    expect(screen.getByText('Missed-decision candidates that need confirmation before becoming decision memory.')).toBeTruthy()
     expect(screen.getByText('Decision 1')).toBeTruthy()
     expect(screen.getByText('Decision 2')).toBeTruthy()
     expect(screen.getByText('Decision 3')).toBeTruthy()
@@ -297,7 +340,9 @@ describe('NeedsReviewSuggestions', () => {
 
     expect(screen.getByText('Use the regional rollout guardrail')).toBeTruthy()
     expect(screen.getByText(/Ship it to Region A first/)).toBeTruthy()
-    expect(screen.getByText('Slack source')).toBeTruthy()
+    const sourceLink = screen.getByRole('link', { name: 'Open slack source' })
+    expect(sourceLink.getAttribute('href')).toBe('https://slack.com/archives/C123/p1716211200000000')
+    expect(sourceLink.getAttribute('target')).toBe('_blank')
     expect(screen.getByText('high confidence')).toBeTruthy()
     expect(screen.getByText('Daulet, Vasiliy')).toBeTruthy()
     expect(screen.getByText('RegionApp')).toBeTruthy()
@@ -308,6 +353,22 @@ describe('NeedsReviewSuggestions', () => {
     expect(screen.getByRole('button', { name: 'Dismiss candidate' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Ignore duplicate' })).toBeTruthy()
     expect(screen.queryByText(/Link existing/i)).toBeNull()
+  })
+
+  it('labels Telegram provider links directly', () => {
+    render(
+      <NeedsReviewSuggestions
+        suggestions={[candidate({ source_link: 'https://t.me/c/3644773967/1356' })]}
+        onSaveAsNewDecision={vi.fn()}
+        onAddAsEvidence={vi.fn()}
+        onDefer={vi.fn()}
+        onDismiss={vi.fn()}
+        onIgnoreDuplicate={vi.fn()}
+      />
+    )
+
+    const sourceLink = screen.getByRole('link', { name: 'Open telegram source' })
+    expect(sourceLink.getAttribute('href')).toBe('https://t.me/c/3644773967/1356')
   })
 
   it('calls action callbacks and confirms destructive actions before finalizing', async () => {
@@ -380,18 +441,24 @@ describe('NeedsReviewSuggestions', () => {
 })
 
 describe('dashboard missed-decision composition', () => {
-  it('keeps Recent decisions primary and places missed-decision review in the right rail', () => {
+  it('keeps source activity and Recent decisions primary while missed-decision review stays in the right rail', () => {
     const source = readFileSync(
       path.join(process.cwd(), 'src/app/dashboard/page.tsx'),
       'utf8'
     )
     const recentIndex = source.indexOf('<RecentDecisions data={decisions}')
+    const sourceUpdatesIndex = source.indexOf('<SourceUpdates')
+    const snapshotIndex = source.indexOf('<WorkspaceSnapshot')
+    const scanProgressIndex = source.indexOf('<DecisionScanProgress')
     const reviewIndex = source.indexOf('<NeedsReviewSuggestions')
     const activeContextIndex = source.indexOf('<ActiveContext')
     const needsYouIndex = source.indexOf('<NeedsYou')
 
     expect(recentIndex).toBeGreaterThan(-1)
-    expect(reviewIndex).toBeGreaterThan(recentIndex)
+    expect(sourceUpdatesIndex).toBeGreaterThan(recentIndex)
+    expect(snapshotIndex).toBeGreaterThan(sourceUpdatesIndex)
+    expect(scanProgressIndex).toBeGreaterThan(snapshotIndex)
+    expect(reviewIndex).toBeGreaterThan(scanProgressIndex)
     expect(activeContextIndex).toBeGreaterThan(reviewIndex)
     expect(needsYouIndex).toBeGreaterThan(activeContextIndex)
     expect(source).not.toContain('<RecentDecisions data={needsReviewSuggestions}')

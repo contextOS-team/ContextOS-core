@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { ApiNode } from '@/components/graph/types'
 import {
@@ -14,6 +14,7 @@ import {
   getGithubSyncStatus,
   getIntegrationStatus,
   getLinearSyncStatus,
+  getMissedDecisionScanStatus,
   getMissedDecisionReviewSuggestions,
   ignoreMissedDecisionDuplicate,
   saveMissedDecisionAsNewDecision,
@@ -22,7 +23,9 @@ import {
   type GithubSyncStatus,
   type IntegrationStatusResponse,
   type LinearSyncStatus,
+  type MissedDecisionActionResponse,
   type MissedDecisionReviewSuggestion,
+  type MissedDecisionScanStatus,
   type SuggestionItem,
 } from '@/lib/api'
 import { fetchContextPages, type ContextPageRow } from '@/lib/context-feed'
@@ -131,6 +134,20 @@ function missedDecisionError(
   return 'Could not load missed-decision suggestions. Refresh the dashboard or open Activity to confirm the source sync completed.'
 }
 
+function hasActiveScan(scans: MissedDecisionScanStatus[]): boolean {
+  return scans.some((scan) => scan.status === 'queued' || scan.status === 'running')
+}
+
+function activeCandidateSignature(scans: MissedDecisionScanStatus[]): string {
+  return scans
+    .filter((scan) => (
+      (scan.status === 'queued' || scan.status === 'running')
+      && scan.candidates_created > 0
+    ))
+    .map((scan) => `${scan.id}:${scan.candidates_created}`)
+    .join('|')
+}
+
 function formatCount(value: number): string {
   return new Intl.NumberFormat('en-US').format(value)
 }
@@ -144,6 +161,35 @@ function syncedRepoCount(github: GithubSyncStatus | null): number {
   return Object.values(github.repo_sync_status)
     .filter((row) => row.status.toLowerCase() === 'synced')
     .length
+}
+
+function missedDecisionActionToDecisionNode(
+  result: MissedDecisionActionResponse
+): ApiNode | null {
+  if (!result.decision_node_id) return null
+
+  return {
+    id: result.decision_node_id,
+    entity_type: 'Decision',
+    name: result.inferred_decision,
+    depth: 0,
+    created_at: new Date().toISOString(),
+    properties: {
+      description: result.inferred_decision,
+      rationale: result.inferred_rationale,
+      source_quote: result.source_quote,
+      source_link: result.source_link,
+      confidence: result.confidence,
+      author_name: result.author_name,
+      participants: result.people,
+      source_channel: result.source_channel,
+      source_context: result.source_context,
+      affected_systems: result.affected_systems,
+      candidate_id: result.id,
+      status: 'confirmed',
+      model: 'missed_decision:v1',
+    },
+  }
 }
 
 export function buildWorkspaceSnapshot({
@@ -225,11 +271,14 @@ export function useDashboardData(
   workspaceId: string | null,
   lastVisitedAt: Date | null
 ): DashboardData {
+  const refreshedCompletedScanIds = useRef<Set<string>>(new Set())
+  const refreshedCandidateProgressSignature = useRef('')
   const [data, setData] = useState<DashboardDataState>({
     decisions: null,
     suggestions: [],
     needsReviewSuggestions: [],
     needsReviewError: null,
+    missedDecisionScans: [],
     contextItems: [],
     needsYouItems: [],
     workspaceSnapshot: [],
@@ -249,6 +298,7 @@ export function useDashboardData(
           suggestions: [],
           needsReviewSuggestions: [],
           needsReviewError: null,
+          missedDecisionScans: [],
           contextItems: [],
           needsYouItems: [],
           workspaceSnapshot: [],
@@ -270,6 +320,7 @@ export function useDashboardData(
         decisionsResult,
         activityRowsResult,
         missedDecisionsResult,
+        missedDecisionScansResult,
         integrationStatusResult,
         linearStatusResult,
         githubStatusResult,
@@ -287,6 +338,10 @@ export function useDashboardData(
           getMissedDecisionReviewSuggestions(5),
           'Missed-decision suggestions'
         ),
+        withDashboardTimeout(
+          getMissedDecisionScanStatus(),
+          'Missed-decision scan status'
+        ),
         withDashboardTimeout(getIntegrationStatus(), 'Integration status'),
         withDashboardTimeout(getLinearSyncStatus(), 'Linear sync status'),
         withDashboardTimeout(getGithubSyncStatus(), 'GitHub sync status'),
@@ -301,6 +356,7 @@ export function useDashboardData(
       const decisions = settledValue(decisionsResult, null)
       const activityRows = settledValue(activityRowsResult, [])
       const needsReviewSuggestions = settledValue(missedDecisionsResult, [])
+      const missedDecisionScans = settledValue(missedDecisionScansResult, [])
       const integrations = settledValue(integrationStatusResult, null)
       const linear = settledValue(linearStatusResult, null)
       const github = settledValue(githubStatusResult, null)
@@ -312,6 +368,7 @@ export function useDashboardData(
         suggestions,
         needsReviewSuggestions,
         needsReviewError: missedDecisionError(missedDecisionsResult),
+        missedDecisionScans,
         contextItems: contextItems.slice(0, 3),
         needsYouItems,
         workspaceSnapshot: buildWorkspaceSnapshot({
@@ -339,6 +396,77 @@ export function useDashboardData(
     }
   }, [workspaceId, lastVisitedAt])
 
+  useEffect(() => {
+    refreshedCompletedScanIds.current.clear()
+    refreshedCandidateProgressSignature.current = ''
+  }, [workspaceId])
+
+  useEffect(() => {
+    if (!workspaceId || !hasActiveScan(data.missedDecisionScans)) return
+    let cancelled = false
+
+    async function pollScans() {
+      let scans: MissedDecisionScanStatus[]
+      try {
+        scans = await getMissedDecisionScanStatus()
+      } catch {
+        return
+      }
+
+      if (cancelled) return
+
+      const newlyCompleted = scans.filter(
+        (scan) => scan.status === 'succeeded'
+          && !refreshedCompletedScanIds.current.has(scan.id)
+      )
+      const candidateSignature = activeCandidateSignature(scans)
+      const hasNewCandidateProgress = Boolean(
+        candidateSignature
+        && candidateSignature !== refreshedCandidateProgressSignature.current
+      )
+      if (newlyCompleted.length === 0 && !hasNewCandidateProgress) {
+        setData((current) => ({
+          ...current,
+          missedDecisionScans: scans,
+        }))
+        return
+      }
+
+      try {
+        const suggestions = await getMissedDecisionReviewSuggestions(5)
+        if (cancelled) return
+        for (const scan of newlyCompleted) {
+          refreshedCompletedScanIds.current.add(scan.id)
+        }
+        if (candidateSignature) {
+          refreshedCandidateProgressSignature.current = candidateSignature
+        }
+        setData((current) => ({
+          ...current,
+          missedDecisionScans: scans,
+          needsReviewSuggestions: suggestions,
+          needsReviewError: null,
+        }))
+      } catch {
+        if (cancelled) return
+        setData((current) => ({
+          ...current,
+          missedDecisionScans: scans,
+          needsReviewError: 'Could not load missed-decision suggestions. Refresh the dashboard or open Activity to confirm the source sync completed.',
+        }))
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void pollScans()
+    }, 5_000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [workspaceId, data.missedDecisionScans])
+
   const removeMissedDecision = useCallback((candidateId: string) => {
     setData((current) => ({
       ...current,
@@ -349,8 +477,24 @@ export function useDashboardData(
   }, [])
 
   const saveAsNewDecision = useCallback(async (candidateId: string) => {
-    await saveMissedDecisionAsNewDecision(candidateId)
+    const result = await saveMissedDecisionAsNewDecision(candidateId)
     removeMissedDecision(candidateId)
+    const optimisticDecision = missedDecisionActionToDecisionNode(result)
+    if (optimisticDecision) {
+      setData((current) => ({
+        ...current,
+        decisions: [
+          optimisticDecision,
+          ...(current.decisions ?? []).filter((node) => node.id !== optimisticDecision.id),
+        ].slice(0, 20),
+      }))
+    }
+    try {
+      const decisions = await fetchDecisions(20)
+      setData((current) => ({ ...current, decisions }))
+    } catch {
+      // The action succeeded; keep the optimistic decision visible if refresh fails.
+    }
     toast.success('Saved as decision receipt.')
   }, [removeMissedDecision])
 

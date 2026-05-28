@@ -15,6 +15,13 @@ export interface ActivityDeltaRow {
   id: string
   event_type: string
   created_at: string
+  metadata?: Record<string, unknown> | null
+}
+
+function metadataFor(row: ActivityDeltaRow): Record<string, unknown> {
+  return row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+    ? row.metadata
+    : {}
 }
 
 /**
@@ -38,7 +45,12 @@ export function bucketDelta(
 
   const sources = rows
     .filter((row) => SOURCE_EVENT_TYPES.includes(row.event_type as (typeof SOURCE_EVENT_TYPES)[number]))
-    .map((row) => ({ id: row.id, createdAt: row.created_at }))
+    .map((row) => ({
+      id: row.id,
+      eventType: row.event_type,
+      createdAt: row.created_at,
+      metadata: metadataFor(row),
+    }))
 
   const assignedNeedsYouItems = needsYouItems
     .filter((item) => item.assignedToCurrentUser)

@@ -5,6 +5,7 @@ export interface DecisionNodeView {
   title: string
   rationale: string | null
   sourceQuote: string | null
+  sourceLink: string | null
   sourceChannel: string | null
   authorName: string | null
   participants: string[]
@@ -57,6 +58,7 @@ export function toDecisionView(node: ApiNode): DecisionNodeView {
     title: asString(props.description) ?? node.name,
     rationale: asString(props.rationale),
     sourceQuote: asString(props.source_quote),
+    sourceLink: asString(props.source_link),
     sourceChannel: asString(props.source_channel),
     authorName: asString(props.author_name) ?? asString(props.person_name) ?? participants[0] ?? null,
     participants,

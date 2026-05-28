@@ -11,6 +11,7 @@ import { NeedsYou } from '../needs-you'
 import { NeedsReview } from '../needs-review'
 import { RecentDecisions } from '../recent-decisions'
 import { SeenItemsProvider } from '../since-last-visit/use-session-seen-items'
+import { SourceUpdates } from '../source-updates'
 import type { Delta, NeedsYouItem } from '../types'
 import { WorkspaceSnapshot } from '../workspace-snapshot'
 
@@ -28,7 +29,15 @@ vi.mock('@/lib/api', () => ({
 
 const deltaWithTuesdayNeed: Delta = {
   decisions: { count: 1, items: [{ id: 'd1', createdAt: '2026-05-20T12:00:00Z' }] },
-  sources: { count: 1, items: [{ id: 's1', createdAt: '2026-05-20T12:00:00Z' }] },
+  sources: {
+    count: 1,
+    items: [{
+      id: 's1',
+      eventType: 'sync_completed',
+      createdAt: '2026-05-20T12:00:00Z',
+      metadata: { integration: 'linear', items_count: 12 },
+    }],
+  },
   needsYou: {
     topUrgentItem: { person: 'Vasiliy', ticketId: 'RD-781', sinceDay: 'Tuesday' },
     items: [],
@@ -175,6 +184,36 @@ describe('pulse components', () => {
     expect(screen.getByText('tickets imported')).toBeTruthy()
     expect(screen.getByText('3,053')).toBeTruthy()
     expect(screen.getByText('code chunks indexed')).toBeTruthy()
+  })
+
+  it('renders source updates as primary dashboard content', () => {
+    render(
+      <SourceUpdates
+        items={[
+          {
+            id: 'source-1',
+            eventType: 'sync_completed',
+            createdAt: '2026-05-20T12:00:00Z',
+            metadata: { integration: 'github', items_count: 2 },
+          },
+          {
+            id: 'source-2',
+            eventType: 'integration_connected',
+            createdAt: '2026-05-20T11:00:00Z',
+            metadata: { integration: 'telegram', chat_title: 'contextOS team' },
+          },
+        ]}
+      />
+    )
+
+    expect(screen.getByText('Source updates')).toBeTruthy()
+    expect(screen.getByText('Latest imported activity since your last visit.')).toBeTruthy()
+    expect(screen.getByText('GitHub sync completed')).toBeTruthy()
+    expect(screen.getByText('2 pull requests imported.')).toBeTruthy()
+    expect(screen.getByText('Telegram connected')).toBeTruthy()
+    expect(screen.getByText('contextOS team is now available as a source.')).toBeTruthy()
+    expect(screen.getAllByRole('link', { name: /activity/i })[0].getAttribute('href'))
+      .toBe('/dashboard/activity')
   })
 
   it('tolerates legacy graph-shaped decision data during refresh', () => {

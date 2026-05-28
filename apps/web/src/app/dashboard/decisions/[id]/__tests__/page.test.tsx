@@ -27,6 +27,7 @@ function decision(): ApiNode {
       date: '2026-04-22',
       source: 'slack',
       source_channel: 'dev-room',
+      source_link: 'https://t.me/c/3644773967/1356',
       rationale: 'The team agreed the task includes adding a specific button.',
     },
   }
@@ -45,5 +46,16 @@ describe('DecisionDetailPage', () => {
       await screen.findByText('Add a new button to the interface as part of the task implementation.')
     ).toBeTruthy()
     expect(apiMocks.fetchDecision).toHaveBeenCalledWith('decision-1')
+  })
+
+  it('renders the preserved source link for saved decision receipts', async () => {
+    render(<DecisionDetailPage />)
+
+    const sourceLink = await screen.findByRole('link', {
+      name: 'Open Telegram source',
+    })
+
+    expect(sourceLink.getAttribute('href')).toBe('https://t.me/c/3644773967/1356')
+    expect(sourceLink.getAttribute('target')).toBe('_blank')
   })
 })

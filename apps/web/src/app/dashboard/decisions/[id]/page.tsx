@@ -3,11 +3,31 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ExternalLink } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { fetchDecision } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 import { formatDecisionChannels, getDecisionPeople, toDecisionView, type DecisionNodeView } from '../decision-node'
+
+function isExternalSource(sourceLink: string): boolean {
+  return sourceLink.startsWith('http://') || sourceLink.startsWith('https://')
+}
+
+function sourceLabel(sourceLink: string): string {
+  if (sourceLink.startsWith('/')) return 'source reference'
+
+  try {
+    const host = new URL(sourceLink).hostname.toLowerCase()
+    if (host.includes('slack')) return 'Slack source'
+    if (host.includes('notion')) return 'Notion source'
+    if (host.includes('t.me') || host.includes('telegram')) return 'Telegram source'
+    if (host.includes('fathom')) return 'Fathom source'
+  } catch {
+    return 'source'
+  }
+
+  return 'source'
+}
 
 export default function DecisionDetailPage() {
   const params = useParams<{ id: string }>()
@@ -178,6 +198,23 @@ export default function DecisionDetailPage() {
                 <div>
                   <dt className="decision-detail-term">Seen</dt>
                   <dd className="mt-1 text-foreground">{relativeTime}</dd>
+                </div>
+              )}
+              {decision.sourceLink && (
+                <div>
+                  <dt className="decision-detail-term">Link</dt>
+                  <dd className="mt-1">
+                    <a
+                      href={decision.sourceLink}
+                      target={isExternalSource(decision.sourceLink) ? '_blank' : undefined}
+                      rel={isExternalSource(decision.sourceLink) ? 'noreferrer' : undefined}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-[var(--pulse-attention)]/35 bg-[var(--pulse-attention)]/10 px-2.5 py-1.5 text-xs font-medium text-[var(--pulse-attention)] transition-colors hover:border-[var(--pulse-attention)]/70 hover:bg-[var(--pulse-attention)]/16"
+                      aria-label={`Open ${sourceLabel(decision.sourceLink)}`}
+                    >
+                      <ExternalLink className="size-3" aria-hidden="true" />
+                      Open {sourceLabel(decision.sourceLink)}
+                    </a>
+                  </dd>
                 </div>
               )}
               {confidence && (

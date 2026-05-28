@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IntegrationStatusResponse, ProviderStatus } from '@/lib/api'
 import {
@@ -15,6 +15,7 @@ const apiMocks = vi.hoisted(() => ({
   getLinearSyncStatus: vi.fn(),
   getDashboardAttention: vi.fn(),
   getDashboardSuggestions: vi.fn(),
+  getMissedDecisionScanStatus: vi.fn(),
   getMissedDecisionReviewSuggestions: vi.fn(),
   fetchDecisions: vi.fn(),
   addMissedDecisionAsEvidence: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('@/lib/api', () => ({
   getLinearSyncStatus: apiMocks.getLinearSyncStatus,
   getDashboardAttention: apiMocks.getDashboardAttention,
   getDashboardSuggestions: apiMocks.getDashboardSuggestions,
+  getMissedDecisionScanStatus: apiMocks.getMissedDecisionScanStatus,
   getMissedDecisionReviewSuggestions: apiMocks.getMissedDecisionReviewSuggestions,
   fetchDecisions: apiMocks.fetchDecisions,
   addMissedDecisionAsEvidence: apiMocks.addMissedDecisionAsEvidence,
@@ -73,6 +75,7 @@ function Probe() {
         error: data.error,
         isLoading: data.isLoading,
         suggestions: data.suggestions.length,
+        missedDecisionScans: data.missedDecisionScans,
         needsReviewSuggestions: data.needsReviewSuggestions.length,
         needsReviewError: data.needsReviewError,
         contextItems: data.contextItems.length,
@@ -80,6 +83,28 @@ function Probe() {
         workspaceSnapshot: data.workspaceSnapshot.length,
       })}
     </output>
+  )
+}
+
+function ActionProbe() {
+  const data = useDashboardData('workspace-1', null)
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => void data.missedDecisionActions.saveAsNewDecision('candidate-1')}
+      >
+        Save
+      </button>
+      <output data-testid="dashboard-state">
+        {JSON.stringify({
+          isLoading: data.isLoading,
+          decisions: data.decisions?.length ?? 0,
+          needsReviewSuggestions: data.needsReviewSuggestions.length,
+        })}
+      </output>
+    </>
   )
 }
 
@@ -111,6 +136,7 @@ function integrationStatus(
 function mockDefaultDashboardFetches() {
   apiMocks.getDashboardAttention.mockResolvedValue([])
   apiMocks.getDashboardSuggestions.mockResolvedValue([])
+  apiMocks.getMissedDecisionScanStatus.mockResolvedValue([])
   apiMocks.getMissedDecisionReviewSuggestions.mockResolvedValue([])
   apiMocks.fetchDecisions.mockResolvedValue([])
   contextMocks.fetchContextPages.mockResolvedValue([])
@@ -250,6 +276,161 @@ describe('useDashboardData', () => {
       expect(state.isLoading).toBe(false)
       expect(state.workspaceSnapshot).toBe(2)
     })
+  })
+
+  it('polls active missed-decision scans and refreshes review suggestions once when they complete', async () => {
+    vi.useFakeTimers()
+    mockDefaultDashboardFetches()
+    const runningScan = {
+      id: 'scan-1',
+      source_type: 'slack_message',
+      status: 'running',
+      sources_scanned: 5,
+      sources_total: 10,
+      progress_percent: 50,
+      candidates_created: 0,
+      started_at: '2026-05-25T09:00:00Z',
+      completed_at: null,
+      error_message: null,
+    }
+    const succeededScan = {
+      ...runningScan,
+      status: 'succeeded',
+      sources_scanned: 10,
+      progress_percent: 100,
+      candidates_created: 1,
+      completed_at: '2026-05-25T09:01:00Z',
+    }
+    apiMocks.getMissedDecisionScanStatus
+      .mockResolvedValueOnce([runningScan])
+      .mockResolvedValueOnce([succeededScan])
+    apiMocks.getMissedDecisionReviewSuggestions
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'candidate-1' }])
+
+    render(<Probe />)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    let state = JSON.parse(screenText())
+    expect(state.isLoading).toBe(false)
+    expect(state.missedDecisionScans[0].status).toBe('running')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+      await Promise.resolve()
+    })
+
+    state = JSON.parse(screenText())
+    expect(state.missedDecisionScans[0].status).toBe('succeeded')
+    expect(state.needsReviewSuggestions).toBe(1)
+
+    expect(apiMocks.getMissedDecisionScanStatus).toHaveBeenCalledTimes(2)
+    expect(apiMocks.getMissedDecisionReviewSuggestions).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes review suggestions while an active scan starts finding candidates', async () => {
+    vi.useFakeTimers()
+    mockDefaultDashboardFetches()
+    const runningScan = {
+      id: 'scan-1',
+      source_type: 'telegram_message',
+      status: 'running',
+      sources_scanned: 20,
+      sources_total: 70,
+      progress_percent: 29,
+      candidates_created: 2,
+      started_at: '2026-05-25T09:00:00Z',
+      completed_at: null,
+      error_message: null,
+    }
+    apiMocks.getMissedDecisionScanStatus
+      .mockResolvedValueOnce([runningScan])
+      .mockResolvedValueOnce([runningScan])
+      .mockResolvedValueOnce([runningScan])
+    apiMocks.getMissedDecisionReviewSuggestions
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'candidate-1' }])
+
+    render(<Probe />)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(JSON.parse(screenText()).needsReviewSuggestions).toBe(0)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+      await Promise.resolve()
+    })
+
+    expect(JSON.parse(screenText()).needsReviewSuggestions).toBe(1)
+    expect(apiMocks.getMissedDecisionReviewSuggestions).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+      await Promise.resolve()
+    })
+
+    expect(apiMocks.getMissedDecisionReviewSuggestions).toHaveBeenCalledTimes(2)
+  })
+
+  it('replaces a saved missed-decision review row with a recent decision', async () => {
+    mockDefaultDashboardFetches()
+    apiMocks.getMissedDecisionReviewSuggestions.mockResolvedValue([{ id: 'candidate-1' }])
+    apiMocks.fetchDecisions
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'decision-1',
+          entity_type: 'Decision',
+          name: 'Use the regional rollout guardrail',
+          depth: 0,
+          created_at: '2026-05-28T10:44:09Z',
+          properties: {
+            description: 'Use the regional rollout guardrail',
+            source_quote: 'Ship it to Region A first.',
+          },
+        },
+      ])
+    apiMocks.saveMissedDecisionAsNewDecision.mockResolvedValue({
+      id: 'candidate-1',
+      workspace_id: 'workspace-1',
+      status: 'confirmed',
+      suggestion_id: 'suggestion-1',
+      title: 'Use the regional rollout guardrail',
+      inferred_decision: 'Use the regional rollout guardrail',
+      inferred_rationale: 'The source says the staged rollout is required before expansion.',
+      source_quote: 'Ship it to Region A first.',
+      source_link: 'https://t.me/c/3644773967/1356',
+      confidence: 'high',
+      people: ['Daulet'],
+      affected_systems: ['RegionApp'],
+      possible_existing_match: null,
+      legal_actions: [],
+      decision_node_id: 'decision-1',
+    })
+
+    render(<ActionProbe />)
+
+    await waitFor(() => {
+      const state = JSON.parse(screenText())
+      expect(state.isLoading).toBe(false)
+      expect(state.needsReviewSuggestions).toBe(1)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      const state = JSON.parse(screenText())
+      expect(state.needsReviewSuggestions).toBe(0)
+      expect(state.decisions).toBe(1)
+    })
+    expect(apiMocks.saveMissedDecisionAsNewDecision).toHaveBeenCalledWith('candidate-1')
+    expect(apiMocks.fetchDecisions).toHaveBeenCalledTimes(2)
   })
 })
 

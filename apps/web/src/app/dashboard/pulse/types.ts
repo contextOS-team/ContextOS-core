@@ -1,4 +1,4 @@
-import type { MissedDecisionReviewSuggestion } from '@/lib/api'
+import type { MissedDecisionReviewSuggestion, MissedDecisionScanStatus } from '@/lib/api'
 
 export interface NeedsYouItem {
   id: string
@@ -22,12 +22,19 @@ export interface Delta {
   }
   sources: {
     count: number
-    items: ReadonlyArray<{ id: string; createdAt: string }>
+    items: ReadonlyArray<SourceUpdateItem>
   }
   needsYou: {
     topUrgentItem: TopUrgentItem | null
     items: ReadonlyArray<NeedsYouItem>
   }
+}
+
+export interface SourceUpdateItem {
+  id: string
+  eventType: string
+  createdAt: string
+  metadata: Record<string, unknown>
 }
 
 export interface HeadlineCopy {
@@ -50,6 +57,7 @@ export interface MissedDecisionReviewActions {
 export interface NeedsReviewSuggestionsState {
   needsReviewSuggestions: MissedDecisionReviewSuggestion[]
   needsReviewError: string | null
+  missedDecisionScans: MissedDecisionScanStatus[]
 }
 
 export interface WorkspaceSnapshotItem {

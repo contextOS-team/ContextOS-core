@@ -167,6 +167,9 @@ export interface MissedDecisionReviewSuggestion {
   source_link: string
   confidence: MissedDecisionConfidence
   people: string[]
+  author_name?: string | null
+  source_channel?: string | null
+  source_context?: string | null
   affected_systems: string[]
   possible_existing_match: MissedDecisionPossibleExistingMatch | null
   legal_actions: MissedDecisionLegalAction[]
@@ -177,12 +180,41 @@ export interface MissedDecisionActionResponse
   decision_node_id?: string | null
 }
 
+export type MissedDecisionScanSourceType =
+  | 'slack_message'
+  | 'notion_page'
+  | 'telegram_message'
+  | 'fathom_transcript'
+
+export type MissedDecisionScanRunStatus =
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+
+export interface MissedDecisionScanStatus {
+  id: string
+  source_type: MissedDecisionScanSourceType
+  status: MissedDecisionScanRunStatus
+  sources_scanned: number
+  sources_total: number | null
+  progress_percent: number | null
+  candidates_created: number
+  started_at: string | null
+  completed_at: string | null
+  error_message: string | null
+}
+
 export function getMissedDecisionReviewSuggestions(
   limit = 5
 ): Promise<MissedDecisionReviewSuggestion[]> {
   return apiFetch<MissedDecisionReviewSuggestion[]>(
     `/api/missed-decisions/review?limit=${limit}`
   )
+}
+
+export function getMissedDecisionScanStatus(): Promise<MissedDecisionScanStatus[]> {
+  return apiFetch<MissedDecisionScanStatus[]>('/api/missed-decisions/scans')
 }
 
 export function saveMissedDecisionAsNewDecision(
@@ -1082,10 +1114,9 @@ export const fetchWorkspaceGraph = cache(
     apiFetch<WorkspaceGraphResponse>(`/api/graph/?limit=${limit}`)
 )
 
-export const fetchDecisions = cache(
-  (limit: number = 500): Promise<ApiNode[]> =>
-    apiFetch<ApiNode[]>(`/api/graph/decisions?limit=${limit}`)
-)
+export function fetchDecisions(limit: number = 500): Promise<ApiNode[]> {
+  return apiFetch<ApiNode[]>(`/api/graph/decisions?limit=${limit}`)
+}
 
 export const fetchDecision = cache(
   (decisionId: string): Promise<ApiNode> =>
