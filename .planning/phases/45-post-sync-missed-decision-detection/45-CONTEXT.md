@@ -48,9 +48,9 @@ This phase depends on Phase 44's durable suggestion model and bounded dashboard 
 - **D-18:** Candidate lifecycle should stay compact: `detected`, `surfaced`, `suppressed`, `linked`, `confirmed`, `rejected`, `deferred`. Operational scan/run state belongs on scan jobs/runs, not the main product lifecycle.
 - **D-19:** Review UI actions are Confirm, Reject, Defer, and evidence/duplicate actions. Do not introduce task/doc/PR-comment writes in this phase.
 - **D-20:** User-facing labels should be `Add as evidence`, `Ignore duplicate`, and `Save as new decision`; avoid "Link existing" as user-facing language.
-- **D-21:** Missed-decision suggestions appear in a bounded post-sync `Needs review` suggestions area on the dashboard, not inside Recent decisions.
-- **D-22:** Recent decisions stays reserved for confirmed Decision nodes. Missed-decision suggestions are unconfirmed candidates and need a separate review surface.
-- **D-23:** Show the Needs review section after sync completion when open suggestions exist. Display the top 3-5 suggestions with actions: Confirm, Add as evidence, Defer, Reject/Ignore duplicate, plus a later View all route. Hide the section when there are no open suggestions.
+- **D-21:** ContextOS should auto-save clear, high-confidence missed decisions by default. Only low-confidence, duplicate-looking, incomplete, sensitive, contradicted, or otherwise risky candidates belong in a bounded post-sync `Review exceptions` area on the dashboard, not inside Recent decisions.
+- **D-22:** Recent decisions stays reserved for trusted Decision nodes. Review exceptions are unconfirmed candidates that need human confirmation before they become decision memory or attached evidence.
+- **D-23:** Show the Review exceptions section after sync completion only when exception candidates exist. Display the top 3-5 exceptions with actions: Confirm, Add as evidence, Defer, Reject/Ignore duplicate, plus a later View all route. Hide the section when there are no open exceptions.
 
 ### Confirmed Outcome
 - **D-24:** When the user confirms a missed decision, first promote/create it as a confirmed Decision node / Decision Receipt and preserve the source trail.

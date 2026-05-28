@@ -33,10 +33,10 @@ Source of truth: `apps/web/components.json`, `apps/web/src/app/globals.css`, `ap
 | Surface | Contract |
 |---------|----------|
 | Primary screen | Dashboard home pulse surface after source sync completion. |
-| First viewport hierarchy | The existing headline remains the first focal point, `Recent decisions` remains the primary confirmed-memory section, and missed-decision candidates appear as a bounded `Needs review` section in the right rail above `Active context` / `Needs you`. On mobile, `Needs review` appears after `Recent decisions` and before `Active context`. |
-| Section visibility | Hide `Needs review` entirely when there are no open missed-decision suggestions. Do not render a celebratory empty card. |
-| Section label | `Needs review` |
-| Section support copy | `Decisions found in recent syncs that need a quick call.` |
+| First viewport hierarchy | The existing headline remains the first focal point, `Recent decisions` remains the primary trusted-memory section, and exceptional missed-decision candidates appear as a bounded `Review exceptions` section in the right rail above `Active context` / `Needs you`. On mobile, `Review exceptions` appears after `Recent decisions` and before `Active context`. |
+| Section visibility | Hide `Review exceptions` entirely when there are no open exception candidates. Do not render a celebratory empty card. |
+| Section label | `Review exceptions` |
+| Section support copy | `ContextOS auto-saves clear decisions. These need confirmation.` |
 | Item count | Show top 3 suggestions by priority/confidence on the dashboard. Hard cap at 5 only if Phase 44 exposes a compact ranking API and the right rail still fits without pushing `Recent decisions` below the first viewport on desktop. |
 | Focal point inside item | The inferred decision sentence is the row title. The exact source quote is the proof anchor below it. Confidence, people, affected system, and source chips are secondary metadata. |
 | Relationship to Recent decisions | Never place missed-decision candidates inside `Recent decisions`. Only confirmed Decision nodes / Decision Receipts belong there. |
@@ -49,7 +49,7 @@ Source of truth: `apps/web/components.json`, `apps/web/src/app/globals.css`, `ap
 
 | Step | Contract |
 |------|----------|
-| Sync completes | If the scanner finds open high-confidence candidates, the dashboard shows `Needs review` on the next data refresh. Provider sync success must not visually depend on scanner success. |
+| Sync completes | If the scanner finds candidates that are not safe to auto-save, the dashboard shows `Review exceptions` on the next data refresh. Provider sync success must not visually depend on scanner success. |
 | User scans candidate | Row shows decision title, quote, source chip, confidence tier, people, affected system/workstream, and possible existing match. |
 | No existing match | Primary action is `Save as new decision`. Secondary actions are `Defer` and `Dismiss candidate`. |
 | Useful existing match | Primary action is `Add as evidence`. Secondary actions are `Save as new decision`, `Defer`, and `Ignore duplicate`. |
@@ -120,8 +120,8 @@ Accent must not be used for every link, every hover state, card borders, confide
 |---------|------|
 | Primary CTA | Save as new decision |
 | Secondary CTA | Add as evidence |
-| Empty state heading | No decisions need review |
-| Empty state body | When a sync finds a high-confidence missed decision, it will appear here with the original source quote. |
+| Empty state heading | No review exceptions |
+| Empty state body | ContextOS auto-saved clear decisions. Unclear or duplicate-looking candidates will appear here with the original source quote. |
 | Error state | Could not load missed-decision suggestions. Refresh the dashboard or open Activity to confirm the source sync completed. |
 | Destructive confirmation | Ignore duplicate: Keep the existing decision and hide this candidate. Dismiss candidate: Dismiss this candidate without creating decision memory. |
 
@@ -138,7 +138,7 @@ Additional copy rules:
 
 | Component | Contract |
 |-----------|----------|
-| `NeedsReviewSuggestions` | Right-rail section using the existing `pulse-surface` token system. No wrapper card around the whole dashboard section beyond the bounded list panel. Hidden when empty. |
+| `NeedsReviewSuggestions` | Right-rail exception section using the existing `pulse-surface` token system. No wrapper card around the whole dashboard section beyond the bounded list panel. Hidden when empty. |
 | `MissedDecisionSuggestionRow` | Dense row, radius 8px max, background `var(--pulse-panel)`, no decorative shadow beyond existing pulse list treatment. Title first, quote second, metadata third, actions last. |
 | Source quote block | Required for every user-visible candidate. Use a 1px neutral left rule and two-line clamp by default. If the candidate lacks quote/source link, it must not surface in this section. |
 | Source/evidence chips | Neutral chips with provider/source label and optional timestamp or count. Examples: `Slack thread - 14 messages`, `Notion page`, `Fathom transcript`, `Telegram chat`, `PR #418`. |
@@ -155,7 +155,7 @@ Additional copy rules:
 
 | State | UI Contract |
 |-------|-------------|
-| No open suggestions | Section absent. Dashboard rhythm closes naturally; `Recent decisions` remains lead. |
+| No open exceptions | Section absent. Dashboard rhythm closes naturally; `Recent decisions` remains lead. |
 | Suggestions loading | Label plus neutral skeleton rows. Skeletons use existing shadcn `skeleton` and do not imply decisions exist. |
 | Scanner pending after sync | If exposed, show one neutral line: `Checking recent sources for missed decisions.` Use progress only if backed by real scanner progress. No spinner. |
 | Candidate surfaced | Show only if it has exact source quote/passage, inferred decision, inferred rationale, source link, and workspace-scoped suggestion state. |
