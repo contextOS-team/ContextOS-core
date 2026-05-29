@@ -583,6 +583,65 @@ class TestPolling:
         assert "last_user_poll_at" not in integration.config
 
     @pytest.mark.asyncio
+    async def test_H2_rate_limited_conversation_does_not_advance_cursor(
+        self,
+    ) -> None:
+        """Test H2: one rate-limited channel makes the poll cursor unsafe to advance."""
+        from src.services.slack_messages import poll_user_messages
+
+        last_poll = "2026-05-28T00:00:00"
+        integration = _mock_integration(
+            {"include_dms": True, "last_user_poll_at": last_poll}
+        )
+        session = _mock_session_with_integration(integration)
+
+        mock_client = AsyncMock()
+        history_calls: list[str] = []
+
+        async def _fake_get(url: str, params: dict | None = None, headers=None):
+            if "users.conversations" in url:
+                return _make_http_resp(_make_dm_list_response(["C_OK", "C_B2B"]))
+            channel = (params or {}).get("channel")
+            history_calls.append(channel)
+            if channel == "C_B2B":
+                return _make_http_resp({"ok": False, "error": "rate_limited"})
+            return _make_http_resp(
+                _make_history_response(
+                    [_make_message("1779954652.130819", text="captured before limit")]
+                )
+            )
+
+        mock_client.get = AsyncMock(side_effect=_fake_get)
+
+        with (
+            patch(
+                "src.services.slack_messages.get_user_token",
+                new_callable=AsyncMock,
+                return_value="xoxp-token",
+            ),
+            patch(
+                "src.services.slack_messages.httpx.AsyncClient"
+            ) as mock_httpx,
+            patch(
+                "src.services.slack_messages._upsert_messages",
+                new_callable=AsyncMock,
+                return_value=(1, 0),
+            ) as upsert_mock,
+        ):
+            mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await poll_user_messages(session, UUID(TEST_WORKSPACE_ID))
+
+        assert history_calls == ["C_OK", "C_B2B"]
+        upsert_mock.assert_awaited_once()
+        assert result["ingested"] == 1
+        assert result["reason"] == "partial_failure"
+        assert result["failed_conversations"] == ["C_B2B"]
+        assert integration.config["last_user_poll_at"] == last_poll
+        session.commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_I_updates_last_user_poll_at_on_success(self) -> None:
         """Test I: success updates last_user_poll_at + flips dms_backfill_done."""
         from datetime import datetime, timedelta

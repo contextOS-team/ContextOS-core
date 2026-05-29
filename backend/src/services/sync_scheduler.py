@@ -521,7 +521,7 @@ async def _run_polling_cycle() -> None:
             try:
                 async with async_session() as session:
                     result = await poll_user_messages(session, ws_id)
-                    if result.get("reason") is None and result.get("ingested", 0) > 0:
+                    if result.get("ingested", 0) > 0:
                         await enqueue_missed_decision_scan(
                             session,
                             ws_id,

@@ -24,7 +24,9 @@ Return shape:
         "ingested": int,   # newly upserted messages
         "skipped":  int,   # filtered or already-present (dedup updates)
         "reason":   str | None,  # "dms_disabled" | "needs_reauth" |
-                                 # "not_connected" | None on success
+                                 # "not_connected" | "partial_failure" |
+                                 # None on success
+        "failed_conversations": list[str],  # present when reason=partial_failure
     }
 
 The `include_dms` config gate controls ALL user-token polling (DMs and
@@ -92,6 +94,15 @@ class _NeedsReauth(Exception):
     """Internal sentinel raised when Slack reports an auth failure."""
 
 
+class _ConversationFetchIncomplete(Exception):
+    """Raised when a conversation fetch failed and the poll cursor is unsafe."""
+
+    def __init__(self, conv_id: str, error: str) -> None:
+        super().__init__(f"{conv_id}: {error}")
+        self.conv_id = conv_id
+        self.error = error
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -132,6 +143,7 @@ async def poll_user_messages(
     ingested = 0
     skipped = 0
     needs_reauth_hit = False
+    failed_conversations: list[str] = []
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -152,6 +164,17 @@ async def poll_user_messages(
                         else None
                     ),
                 )
+            except _ConversationFetchIncomplete as exc:
+                logger.warning(
+                    "Slack conversation fetch incomplete for %s in workspace %s: %s",
+                    exc.conv_id,
+                    workspace_id,
+                    exc.error,
+                )
+                failed_conversations.append(exc.conv_id)
+                if exc.error == "rate_limited":
+                    break
+                continue
             except _NeedsReauth:
                 logger.warning(
                     "Slack invalid_auth during conversations.history for ws %s"
@@ -172,6 +195,15 @@ async def poll_user_messages(
                     replies = await _fetch_thread_replies(
                         client, user_token, conv_id, thread_ts
                     )
+                except _ConversationFetchIncomplete as exc:
+                    logger.warning(
+                        "Slack thread fetch incomplete for %s in workspace %s: %s",
+                        exc.conv_id,
+                        workspace_id,
+                        exc.error,
+                    )
+                    failed_conversations.append(exc.conv_id)
+                    break
                 except _NeedsReauth:
                     needs_reauth_hit = True
                     break
@@ -194,6 +226,14 @@ async def poll_user_messages(
             "ingested": ingested,
             "skipped": skipped,
             "reason": "needs_reauth",
+        }
+
+    if failed_conversations:
+        return {
+            "ingested": ingested,
+            "skipped": skipped,
+            "reason": "partial_failure",
+            "failed_conversations": failed_conversations,
         }
 
     # Persist poll bookkeeping (preserve other keys).
@@ -370,7 +410,7 @@ async def _fetch_history(
             logger.error(
                 "conversations.history failed for %s: %s", conv_id, error
             )
-            return messages
+            raise _ConversationFetchIncomplete(conv_id, error)
 
         for msg in data.get("messages", []):
             messages.append(msg)
@@ -439,7 +479,7 @@ async def _fetch_thread_replies(
                 "conversations.replies failed for %s/%s: %s",
                 conv_id, thread_ts, error,
             )
-            return replies
+            raise _ConversationFetchIncomplete(conv_id, error)
 
         for msg in data.get("messages", []):
             replies.append(msg)

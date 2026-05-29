@@ -252,6 +252,96 @@ class TestSlackPollingIntegration:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("reason", ["partial_failure", "needs_reauth"])
+    async def test_B2_incomplete_slack_poll_without_ingested_rows_does_not_enqueue_scan(
+        self, monkeypatch: pytest.MonkeyPatch, reason: str
+    ) -> None:
+        from src.services import sync_scheduler
+
+        slack_ws = uuid4()
+
+        _patch_workspaces(monkeypatch, {Provider.SLACK: [slack_ws]})
+        monkeypatch.setattr(
+            sync_scheduler, "_expire_stale_generations", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            sync_scheduler, "reconcile_notion", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            sync_scheduler,
+            "_check_code_index_freshness",
+            AsyncMock(return_value=None),
+        )
+        monkeypatch.setattr(
+            sync_scheduler, "_emit_daily_digest", AsyncMock(return_value=None)
+        )
+
+        poll_mock = AsyncMock(
+            return_value={
+                "ingested": 0,
+                "skipped": 0,
+                "reason": reason,
+                "failed_conversations": ["C_B2B"],
+            }
+        )
+        enqueue_mock = AsyncMock(return_value=MagicMock())
+        monkeypatch.setattr("src.services.sync_scheduler.poll_user_messages", poll_mock)
+        monkeypatch.setattr(
+            "src.services.sync_scheduler.enqueue_missed_decision_scan",
+            enqueue_mock,
+        )
+
+        await _run_one_cycle(monkeypatch)
+
+        enqueue_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reason", [None, "partial_failure", "needs_reauth"])
+    async def test_B3_slack_poll_enqueues_scan_for_committed_rows(
+        self, monkeypatch: pytest.MonkeyPatch, reason: str | None
+    ) -> None:
+        from src.services import sync_scheduler
+
+        slack_ws = uuid4()
+
+        _patch_workspaces(monkeypatch, {Provider.SLACK: [slack_ws]})
+        monkeypatch.setattr(
+            sync_scheduler, "_expire_stale_generations", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            sync_scheduler, "reconcile_notion", AsyncMock(return_value=None)
+        )
+        monkeypatch.setattr(
+            sync_scheduler,
+            "_check_code_index_freshness",
+            AsyncMock(return_value=None),
+        )
+        monkeypatch.setattr(
+            sync_scheduler, "_emit_daily_digest", AsyncMock(return_value=None)
+        )
+
+        poll_mock = AsyncMock(
+            return_value={
+                "ingested": 1,
+                "skipped": 0,
+                "reason": reason,
+                "failed_conversations": ["C_B2B"] if reason else [],
+            }
+        )
+        enqueue_mock = AsyncMock(return_value=MagicMock())
+        monkeypatch.setattr("src.services.sync_scheduler.poll_user_messages", poll_mock)
+        monkeypatch.setattr(
+            "src.services.sync_scheduler.enqueue_missed_decision_scan",
+            enqueue_mock,
+        )
+
+        await _run_one_cycle(monkeypatch)
+
+        enqueue_mock.assert_awaited_once()
+        assert enqueue_mock.await_args.args[1] == slack_ws
+        assert enqueue_mock.await_args.args[2] == "slack_message"
+
+    @pytest.mark.asyncio
     async def test_C_does_not_poll_non_slack_providers(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
