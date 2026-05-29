@@ -5,24 +5,12 @@ import { CheckCircle2, Loader2, PauseCircle, Search, Timer } from 'lucide-react'
 import { motion, useReducedMotion } from 'motion/react'
 import type { MissedDecisionScanStatus } from '@/lib/api'
 
-/* ---------------------------------------------------------------------------
- * ANIMATION STORYBOARD
- *
- * Read top-to-bottom. Each `at` value is ms after card mount or scan change.
- *
- *    0ms   card fades in, y 8 -> 0
- *  120ms   provider row appears
- *  220ms   progress bar fills
- *  360ms   candidate count ticks in
- *  520ms   completed state settles before backend hides recent scan
- * ------------------------------------------------------------------------ */
-
 const TIMING = {
-  cardAppear: 0,       // card fades in
-  providerRow: 120,    // source row appears
-  progressFill: 220,   // progress bar animates
-  candidateCount: 360, // candidate count appears
-  completionSettle: 520, // completed state settles
+  cardAppear: 0,
+  providerRow: 120,
+  progressFill: 220,
+  candidateCount: 360,
+  completionSettle: 520,
 }
 
 const CARD = {
@@ -114,18 +102,38 @@ function headingFor(scan: MissedDecisionScanStatus): string {
   return 'No missed decisions in this scan'
 }
 
+function pluralize(count: number, singular: string): string {
+  return `${count} ${singular}${count === 1 ? '' : 's'}`
+}
+
+function candidateBreakdown(scan: MissedDecisionScanStatus): string {
+  const parts: string[] = []
+  if (scan.candidates_created > 0) {
+    parts.push(pluralize(scan.candidates_created, 'candidate') + ' found')
+  }
+  if (scan.review_candidates > 0 || scan.candidates_created === 0) {
+    parts.push(`${scan.review_candidates} need review`)
+  }
+  if (scan.auto_saved > 0) {
+    parts.push(`${scan.auto_saved} auto-saved`)
+  }
+  if (scan.suppressed > 0) {
+    parts.push(`${scan.suppressed} suppressed`)
+  }
+  return parts.join(' · ')
+}
+
 function detailFor(scan: MissedDecisionScanStatus): string {
   const meta = sourceMeta(scan)
   if (scan.status === 'failed') {
     return scan.error_message?.slice(0, 120) || 'ContextOS will retry from the last safe checkpoint.'
   }
+  if (scan.candidates_created > 0) {
+    return candidateBreakdown(scan)
+  }
   if (scan.sources_total && scan.sources_total > 0) {
     const checked = `${scan.sources_scanned} of ${scan.sources_total} ${meta.unit} checked`
-    const suffix = scan.candidates_created === 1 ? '' : 's'
-    const candidateCopy = scan.candidates_created > 0
-      ? `${scan.candidates_created} candidate${suffix} found`
-      : '0 candidates so far'
-    return `${checked} · ${candidateCopy}`
+    return `${checked} · ${candidateBreakdown(scan)}`
   }
   if (scan.status === 'queued') return `${meta.label} is next in the scanner queue`
   if (scan.status === 'running') return `Checking ${meta.label} sources for missed decisions`
@@ -144,9 +152,7 @@ export function DecisionScanProgress({ scans }: DecisionScanProgressProps) {
   const reduceMotion = useReducedMotion()
   const scan = useMemo(() => primaryScan(scans), [scans])
   const [stage, setStage] = useState(0)
-  const scanKey = scan
-    ? `${scan.id}:${scan.status}:${scan.sources_scanned}:${scan.candidates_created}`
-    : 'empty'
+  const scanIdentityKey = scan?.id ?? 'empty'
 
   useEffect(() => {
     if (!scan) return
@@ -167,7 +173,7 @@ export function DecisionScanProgress({ scans }: DecisionScanProgressProps) {
     return () => {
       timers.forEach(window.clearTimeout)
     }
-  }, [scan, scanKey, reduceMotion])
+  }, [scanIdentityKey, reduceMotion])
 
   if (!scan) return null
 
@@ -206,7 +212,6 @@ export function DecisionScanProgress({ scans }: DecisionScanProgressProps) {
           <div className="space-y-1">
             <h2 className="pulse-section-label">{headingFor(scan)}</h2>
             <motion.p
-              key={`${scan.id}:${scan.candidates_created}:${scan.sources_scanned}`}
               className="text-sm leading-5 text-[var(--pulse-muted)]"
               initial={{ opacity: 0, y: COUNT.offsetY }}
               animate={{

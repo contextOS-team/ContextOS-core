@@ -30,7 +30,16 @@ function decisionNodesFromData(data: unknown): ApiNode[] {
 
 export function getRecentDecisionItems(data: ApiNode[] | null): DecisionNodeView[] {
   return decisionNodesFromData(data)
-    .filter((node) => node.entity_type === 'Decision')
+    .filter((node) => {
+      if (node.entity_type !== 'Decision') return false
+      const status = node.properties?.status
+      return (
+        status === undefined
+        || status === null
+        || status === 'active'
+        || status === 'confirmed'
+      )
+    })
     .map(toDecisionView)
     .sort(sortDecisions)
     .slice(0, 2)

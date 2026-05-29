@@ -9,6 +9,7 @@ import {
   addMissedDecisionAsEvidence,
   deferMissedDecision,
   dismissMissedDecision,
+  getDashboardSuggestions,
   getMissedDecisionScanStatus,
   getMissedDecisionReviewSuggestions,
   ignoreMissedDecisionDuplicate,
@@ -64,12 +65,24 @@ function candidate(
     confidence: overrides.confidence ?? 'high',
     people: overrides.people ?? ['Daulet', 'Vasiliy'],
     affected_systems: overrides.affected_systems ?? ['RegionApp'],
+    review_context: overrides.review_context ?? {
+      business_category: 'deployment_timing',
+      affected_object: 'RegionApp release',
+      expected_artifact_type: 'deployment_checklist',
+      expected_artifact: 'Deployment checklist should document the regional rollout guardrail.',
+      impact_level: 'medium',
+      impact_reason: 'Forgetting this would change release execution.',
+      searched_sources: ['Decision memory', 'Tickets', 'PRs', 'Docs'],
+    },
     possible_existing_match: overrides.possible_existing_match ?? {
       match_status: 'weak_match',
       entity_type: 'Decision',
       entity_id: 'decision-77',
       title: 'Use regional rollout guardrails',
+      href: '/dashboard/decisions/decision-77',
+      match_reason: 'Similar rollout decision already exists.',
     },
+    recommended_action: overrides.recommended_action ?? 'add_as_evidence',
     legal_actions: overrides.legal_actions ?? [
       'confirm',
       'add_evidence',
@@ -123,7 +136,7 @@ describe('missed-decision API helpers', () => {
     await getMissedDecisionReviewSuggestions()
     await getMissedDecisionScanStatus()
     await saveMissedDecisionAsNewDecision('candidate-1')
-    await addMissedDecisionAsEvidence('candidate-1')
+    await addMissedDecisionAsEvidence('candidate-1', 'decision-77')
     await deferMissedDecision('candidate-1')
     await dismissMissedDecision('candidate-1')
     await ignoreMissedDecisionDuplicate('candidate-1')
@@ -150,7 +163,10 @@ describe('missed-decision API helpers', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,
       'http://localhost:8000/api/missed-decisions/candidate-1/add-evidence',
-      expect.objectContaining({ method: 'POST' })
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ target_decision_id: 'decision-77' }),
+      })
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       5,
@@ -166,6 +182,20 @@ describe('missed-decision API helpers', () => {
       7,
       'http://localhost:8000/api/missed-decisions/candidate-1/ignore-duplicate',
       expect.objectContaining({ method: 'POST' })
+    )
+  })
+
+  it('fetches generic dashboard suggestions with missed-decision exclusions', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(makeResponse([]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getDashboardSuggestions(3, { excludeTypes: ['missed_decision'] })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:8000/api/suggestions?limit=3&exclude_type=missed_decision',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer token-1' }),
+      })
     )
   })
 })
@@ -326,10 +356,12 @@ describe('NeedsReviewSuggestions', () => {
     expect(screen.queryByText('Decision 6')).toBeNull()
   })
 
-  it('renders source-backed candidate details and approved action labels', () => {
+  it('renders source-backed candidate details, recommendation, match link, and bounded actions', async () => {
+    const user = userEvent.setup()
+    const longQuote = 'Ship it to Region A first, then expand after support confirms. '.repeat(8)
     render(
       <NeedsReviewSuggestions
-        suggestions={[candidate()]}
+        suggestions={[candidate({ source_quote: longQuote })]}
         onSaveAsNewDecision={vi.fn()}
         onAddAsEvidence={vi.fn()}
         onDefer={vi.fn()}
@@ -339,20 +371,63 @@ describe('NeedsReviewSuggestions', () => {
     )
 
     expect(screen.getByText('Use the regional rollout guardrail')).toBeTruthy()
+    expect(screen.getByText(/Recommended action/i)).toBeTruthy()
+    expect(screen.getByText(/Add as evidence/i)).toBeTruthy()
+    expect(screen.getByText(/Similar rollout decision already exists/)).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Use regional rollout guardrails/i }).getAttribute('href'))
+      .toBe('/dashboard/decisions/decision-77')
     expect(screen.getByText(/Ship it to Region A first/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Show full quote/i })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: /Show full quote/i }))
+    expect(screen.getByRole('button', { name: /Collapse quote/i })).toBeTruthy()
     const sourceLink = screen.getByRole('link', { name: 'Open slack source' })
     expect(sourceLink.getAttribute('href')).toBe('https://slack.com/archives/C123/p1716211200000000')
     expect(sourceLink.getAttribute('target')).toBe('_blank')
     expect(screen.getByText('high confidence')).toBeTruthy()
     expect(screen.getByText('Daulet, Vasiliy')).toBeTruthy()
     expect(screen.getByText('RegionApp')).toBeTruthy()
-    expect(screen.getByText('Possible existing decision: Use regional rollout guardrails')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Save as new decision' })).toBeTruthy()
+    expect(screen.getByText('Missing artifact')).toBeTruthy()
+    expect(screen.getByText('Deployment checklist')).toBeTruthy()
+    expect(screen.getByText('RegionApp release')).toBeTruthy()
+    expect(screen.getByText('Decision memory, Tickets, PRs, Docs')).toBeTruthy()
+    expect(screen.getByText('medium impact')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Add as evidence' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Defer' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Dismiss candidate' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Ignore duplicate' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Save as new decision' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Defer' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Dismiss candidate' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ignore duplicate' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Candidate actions' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: /view all/i }).getAttribute('href'))
+      .toBe('/dashboard/suggestions')
     expect(screen.queryByText(/Link existing/i)).toBeNull()
+  })
+
+  it('does not render raw matched entity ids when match title is missing', () => {
+    const rawId = '353d3ff0-73df-4593-a53c-5c43f86ecb60'
+    render(
+      <NeedsReviewSuggestions
+        suggestions={[
+          candidate({
+            possible_existing_match: {
+              match_status: 'weak_match',
+              entity_type: 'Decision',
+              entity_id: rawId,
+              title: null,
+              href: null,
+              match_reason: null,
+            },
+          }),
+        ]}
+        onSaveAsNewDecision={vi.fn()}
+        onAddAsEvidence={vi.fn()}
+        onDefer={vi.fn()}
+        onDismiss={vi.fn()}
+        onIgnoreDuplicate={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText(rawId)).toBeNull()
+    expect(screen.queryByText(/Possible existing decision/i)).toBeNull()
   })
 
   it('labels Telegram provider links directly', () => {
@@ -369,6 +444,45 @@ describe('NeedsReviewSuggestions', () => {
 
     const sourceLink = screen.getByRole('link', { name: 'Open telegram source' })
     expect(sourceLink.getAttribute('href')).toBe('https://t.me/c/3644773967/1356')
+  })
+
+  it('does not offer add evidence when the existing match is not a Decision target', async () => {
+    const user = userEvent.setup()
+    const onAddAsEvidence = vi.fn()
+    const onSaveAsNewDecision = vi.fn().mockResolvedValue(undefined)
+    render(
+      <NeedsReviewSuggestions
+        suggestions={[
+          candidate({
+            possible_existing_match: {
+              match_status: 'weak_match',
+              entity_type: 'Ticket',
+              entity_id: 'ticket-1',
+              title: 'REG-123 Add rollout guardrail',
+              href: 'https://linear.example/REG-123',
+              match_reason: 'Ticket mentions the same rollout area.',
+            },
+            recommended_action: 'inspect_existing_match',
+            legal_actions: ['confirm', 'add_evidence', 'defer', 'reject'],
+          }),
+        ]}
+        onSaveAsNewDecision={onSaveAsNewDecision}
+        onAddAsEvidence={onAddAsEvidence}
+        onDefer={vi.fn()}
+        onDismiss={vi.fn()}
+        onIgnoreDuplicate={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByRole('button', { name: 'Add as evidence' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Save as new decision' })).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Save as new decision' }))
+    expect(onSaveAsNewDecision).toHaveBeenCalledWith('candidate-1')
+
+    await user.click(screen.getByRole('button', { name: 'Candidate actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Add as evidence' })).toBeNull()
+    expect(onAddAsEvidence).not.toHaveBeenCalled()
   })
 
   it('calls action callbacks and confirms destructive actions before finalizing', async () => {
@@ -390,15 +504,23 @@ describe('NeedsReviewSuggestions', () => {
       />
     )
 
-    await user.click(screen.getByRole('button', { name: 'Save as new decision' }))
     await user.click(screen.getByRole('button', { name: 'Add as evidence' }))
-    await user.click(screen.getByRole('button', { name: 'Defer' }))
 
+    expect(onAddAsEvidence).toHaveBeenCalledWith('candidate-1', 'decision-77')
+
+    await user.click(screen.getByRole('button', { name: 'Candidate actions' }))
+    expect(await screen.findByRole('menuitem', { name: 'Not a product decision' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'Too low impact' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'Wrong affected system' })).toBeTruthy()
+    await user.click(await screen.findByRole('menuitem', { name: 'Save as new decision' }))
     expect(onSaveAsNewDecision).toHaveBeenCalledWith('candidate-1')
-    expect(onAddAsEvidence).toHaveBeenCalledWith('candidate-1')
+
+    await user.click(screen.getByRole('button', { name: 'Candidate actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Defer' }))
     expect(onDefer).toHaveBeenCalledWith('candidate-1')
 
-    await user.click(screen.getByRole('button', { name: 'Dismiss candidate' }))
+    await user.click(screen.getByRole('button', { name: 'Candidate actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Dismiss candidate' }))
     let dialog = await screen.findByRole('alertdialog')
     expect(within(dialog).getByText('Dismiss this candidate without creating decision memory.')).toBeTruthy()
     await user.click(within(dialog).getByRole('button', { name: 'Dismiss candidate' }))
@@ -407,9 +529,61 @@ describe('NeedsReviewSuggestions', () => {
       expect(onDismiss).toHaveBeenCalledWith('candidate-1')
     })
 
-    await user.click(screen.getByRole('button', { name: 'Ignore duplicate' }))
+    await user.click(screen.getByRole('button', { name: 'Candidate actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Ignore duplicate' }))
     dialog = await screen.findByRole('alertdialog')
     expect(within(dialog).getByText('Keep the existing decision and hide this candidate.')).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Ignore duplicate' }))
+
+    await waitFor(() => {
+      expect(onIgnoreDuplicate).toHaveBeenCalledWith('candidate-1')
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Candidate actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Not a product decision' }))
+
+    await waitFor(() => {
+      expect(onDismiss).toHaveBeenCalledWith(
+        'candidate-1',
+        'not_product_or_engineering_decision'
+      )
+    })
+  })
+
+  it('confirms a primary ignore duplicate action before suppressing', async () => {
+    const user = userEvent.setup()
+    const onIgnoreDuplicate = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <NeedsReviewSuggestions
+        suggestions={[
+          candidate({
+            possible_existing_match: {
+              match_status: 'strong_match',
+              entity_type: 'missed_decision_candidate',
+              entity_id: 'candidate-previous',
+              title: 'Use the regional rollout guardrail',
+              href: null,
+              match_reason: 'Same decision was already captured.',
+            },
+            recommended_action: 'ignore_duplicate',
+            legal_actions: ['ignore_duplicate', 'defer', 'reject'],
+          }),
+        ]}
+        onSaveAsNewDecision={vi.fn()}
+        onAddAsEvidence={vi.fn()}
+        onDefer={vi.fn()}
+        onDismiss={vi.fn()}
+        onIgnoreDuplicate={onIgnoreDuplicate}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Ignore duplicate' }))
+
+    expect(onIgnoreDuplicate).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByText('Keep the existing decision and hide this candidate.')).toBeTruthy()
+
     await user.click(within(dialog).getByRole('button', { name: 'Ignore duplicate' }))
 
     await waitFor(() => {
@@ -422,7 +596,7 @@ describe('NeedsReviewSuggestions', () => {
 
     render(
       <NeedsReviewSuggestions
-        suggestions={[candidate()]}
+        suggestions={[candidate({ recommended_action: 'save_as_new_decision' })]}
         onSaveAsNewDecision={vi.fn().mockRejectedValue(new Error('nope'))}
         onAddAsEvidence={vi.fn()}
         onDefer={vi.fn()}
@@ -462,5 +636,6 @@ describe('dashboard missed-decision composition', () => {
     expect(activeContextIndex).toBeGreaterThan(reviewIndex)
     expect(needsYouIndex).toBeGreaterThan(activeContextIndex)
     expect(source).not.toContain('<RecentDecisions data={needsReviewSuggestions}')
+    expect(source).not.toContain(') : (\n        <NeedsReview items={suggestions} />')
   })
 })

@@ -137,7 +137,7 @@ function DashboardSections({
   const rightRail = (
     <div className="space-y-6">
       <DecisionScanProgress scans={missedDecisionScans} />
-      {needsReviewSuggestions.length > 0 || needsReviewError ? (
+      {(needsReviewSuggestions.length > 0 || needsReviewError) && (
         <NeedsReviewSuggestions
           suggestions={needsReviewSuggestions}
           error={needsReviewError}
@@ -148,9 +148,8 @@ function DashboardSections({
           onDismiss={missedDecisionActions.dismiss}
           onIgnoreDuplicate={missedDecisionActions.ignoreDuplicate}
         />
-      ) : (
-        <NeedsReview items={suggestions} />
       )}
+      <NeedsReview items={suggestions} />
       <ActiveContext items={contextItems} lastVisitedAt={lastVisitedAt} />
       <NeedsYou items={needsYouItems} lastVisitedAt={lastVisitedAt} />
     </div>

@@ -85,8 +85,15 @@ export interface SuggestionItem {
   updated_at: string | null
 }
 
-export function getDashboardSuggestions(limit = 3): Promise<SuggestionItem[]> {
-  return apiFetch<SuggestionItem[]>(`/api/suggestions?limit=${limit}`)
+export function getDashboardSuggestions(
+  limit = 3,
+  options: { excludeTypes?: SuggestionItem['type'][] } = {}
+): Promise<SuggestionItem[]> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  for (const type of options.excludeTypes ?? []) {
+    params.append('exclude_type', type)
+  }
+  return apiFetch<SuggestionItem[]>(`/api/suggestions?${params.toString()}`)
 }
 
 export function getAllSuggestions(limit = 100): Promise<SuggestionItem[]> {
@@ -153,7 +160,34 @@ export interface MissedDecisionPossibleExistingMatch {
   entity_type: string | null
   entity_id: string | null
   title?: string | null
+  href?: string | null
+  match_reason?: string | null
 }
+
+export interface MissedDecisionReviewContext {
+  business_category?: string | null
+  affected_object?: string | null
+  affected_objects?: string[]
+  expected_artifact_type?: string | null
+  expected_artifact?: string | null
+  impact_level?: string | null
+  impact_reason?: string | null
+  searched_sources?: string[]
+  missing_artifact_status?: string | null
+  missing_artifact_reason?: string | null
+  quality_gate?: {
+    passed?: boolean | null
+    suppress_reason?: string | null
+    artifact_search?: string | null
+  }
+}
+
+export type MissedDecisionRecommendedAction =
+  | 'save_as_new_decision'
+  | 'add_as_evidence'
+  | 'inspect_existing_match'
+  | 'ignore_duplicate'
+  | string
 
 export interface MissedDecisionReviewSuggestion {
   id: string
@@ -171,7 +205,9 @@ export interface MissedDecisionReviewSuggestion {
   source_channel?: string | null
   source_context?: string | null
   affected_systems: string[]
+  review_context: MissedDecisionReviewContext
   possible_existing_match: MissedDecisionPossibleExistingMatch | null
+  recommended_action?: MissedDecisionRecommendedAction | null
   legal_actions: MissedDecisionLegalAction[]
 }
 
@@ -195,11 +231,17 @@ export type MissedDecisionScanRunStatus =
 export interface MissedDecisionScanStatus {
   id: string
   source_type: MissedDecisionScanSourceType
+  source_resource_id: string | null
   status: MissedDecisionScanRunStatus
+  source_window_start: string | null
+  source_window_end: string | null
   sources_scanned: number
   sources_total: number | null
   progress_percent: number | null
   candidates_created: number
+  review_candidates: number
+  auto_saved: number
+  suppressed: number
   started_at: string | null
   completed_at: string | null
   error_message: string | null
@@ -227,11 +269,15 @@ export function saveMissedDecisionAsNewDecision(
 }
 
 export function addMissedDecisionAsEvidence(
-  candidateId: string
+  candidateId: string,
+  targetDecisionId?: string | null
 ): Promise<MissedDecisionActionResponse> {
   return apiFetch<MissedDecisionActionResponse>(
     `/api/missed-decisions/${encodeURIComponent(candidateId)}/add-evidence`,
-    { method: 'POST' }
+    {
+      method: 'POST',
+      body: JSON.stringify({ target_decision_id: targetDecisionId ?? null }),
+    }
   )
 }
 

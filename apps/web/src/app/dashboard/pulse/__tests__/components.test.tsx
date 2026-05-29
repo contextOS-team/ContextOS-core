@@ -243,6 +243,64 @@ describe('pulse components', () => {
       .toBe('/dashboard/decisions')
   })
 
+  it('keeps candidate-like unconfirmed decisions out of Recent decisions', () => {
+    const unconfirmedCandidate = {
+      id: 'candidate-node',
+      entity_type: 'Decision',
+      name: 'Candidate-like decision',
+      depth: 0,
+      created_at: '2026-05-20T12:00:00Z',
+      properties: {
+        status: 'candidate',
+        source_quote: 'This is still only a candidate.',
+      },
+    } satisfies ApiNode
+    const confirmed = {
+      id: 'confirmed-node',
+      entity_type: 'Decision',
+      name: 'Confirmed decision',
+      depth: 0,
+      created_at: '2026-05-19T12:00:00Z',
+      properties: {
+        status: 'confirmed',
+        source_quote: 'This is confirmed.',
+      },
+    } satisfies ApiNode
+    const active = {
+      id: 'active-node',
+      entity_type: 'Decision',
+      name: 'Active extracted decision',
+      depth: 0,
+      created_at: '2026-05-20T11:00:00Z',
+      properties: {
+        status: 'active',
+        source_quote: 'This normal extracted decision is active.',
+      },
+    } satisfies ApiNode
+    const legacy = {
+      id: 'legacy-node',
+      entity_type: 'Decision',
+      name: 'Legacy confirmed decision',
+      depth: 0,
+      created_at: '2026-05-18T12:00:00Z',
+      properties: {
+        source_quote: 'Legacy decisions did not carry a status property.',
+      },
+    } satisfies ApiNode
+
+    renderWithSeenProvider(
+      <RecentDecisions
+        data={[unconfirmedCandidate, active, confirmed, legacy]}
+        lastVisitedAt={null}
+      />
+    )
+
+    expect(screen.queryByText('Candidate-like decision')).toBeNull()
+    expect(screen.getByText('Active extracted decision')).toBeTruthy()
+    expect(screen.getByText('Confirmed decision')).toBeTruthy()
+    expect(screen.queryByText('Legacy confirmed decision')).toBeNull()
+  })
+
   it('prioritizes decisions captured since the last visit over older capture rows', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-05-20T12:00:00Z'))

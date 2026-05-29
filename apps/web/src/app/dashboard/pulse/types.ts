@@ -48,9 +48,9 @@ export interface WorkspaceFreshness {
 
 export interface MissedDecisionReviewActions {
   saveAsNewDecision: (candidateId: string) => Promise<void>
-  addAsEvidence: (candidateId: string) => Promise<void>
+  addAsEvidence: (candidateId: string, targetDecisionId?: string | null) => Promise<void>
   defer: (candidateId: string) => Promise<void>
-  dismiss: (candidateId: string) => Promise<void>
+  dismiss: (candidateId: string, reason?: string | null) => Promise<void>
   ignoreDuplicate: (candidateId: string) => Promise<void>
 }
 

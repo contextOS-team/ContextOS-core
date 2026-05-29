@@ -2,7 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { IntegrationStatusResponse, ProviderStatus } from '@/lib/api'
+import type { IntegrationStatusResponse, ProviderStatus, SuggestionItem } from '@/lib/api'
 import {
   DASHBOARD_REQUEST_TIMEOUT_MS,
   useDashboardData,
@@ -75,6 +75,7 @@ function Probe() {
         error: data.error,
         isLoading: data.isLoading,
         suggestions: data.suggestions.length,
+        suggestionTitles: data.suggestions.map((suggestion) => suggestion.title),
         missedDecisionScans: data.missedDecisionScans,
         needsReviewSuggestions: data.needsReviewSuggestions.length,
         needsReviewError: data.needsReviewError,
@@ -133,6 +134,34 @@ function integrationStatus(
   }
 }
 
+function dashboardSuggestion(overrides: Partial<SuggestionItem> = {}): SuggestionItem {
+  return {
+    id: overrides.id ?? 'suggestion-1',
+    workspace_id: 'workspace-1',
+    type: overrides.type ?? 'missing_source_coverage',
+    status: 'open',
+    priority: 'medium',
+    fingerprint: overrides.fingerprint ?? 'suggestion:1',
+    entity_type: 'graph_node',
+    entity_id: 'decision-1',
+    title: overrides.title ?? 'Review source coverage',
+    body: overrides.body ?? 'A source-backed suggestion needs review.',
+    primary_action: 'Review',
+    action_href: '/dashboard/suggestions',
+    evidence: {},
+    details: {},
+    provenance: {},
+    snoozed_until: null,
+    dismissed_at: null,
+    resolved_at: null,
+    reopened_at: null,
+    last_seen_at: null,
+    created_at: null,
+    updated_at: null,
+    ...overrides,
+  }
+}
+
 function mockDefaultDashboardFetches() {
   apiMocks.getDashboardAttention.mockResolvedValue([])
   apiMocks.getDashboardSuggestions.mockResolvedValue([])
@@ -185,6 +214,37 @@ describe('useDashboardData', () => {
       expect(state.error).toBeNull()
       expect(state.suggestions).toBe(0)
       expect(state.contextItems).toBe(1)
+    })
+  })
+
+  it('keeps missed-decision suggestions out of generic review suggestions', async () => {
+    mockDefaultDashboardFetches()
+    apiMocks.getDashboardSuggestions.mockResolvedValue([
+      dashboardSuggestion({
+        id: 'missed-decision-suggestion',
+        type: 'missed_decision',
+        title: 'Use the regional rollout guardrail',
+      }),
+      dashboardSuggestion({ id: 'suggestion-a', title: 'Review onboarding evidence' }),
+      dashboardSuggestion({ id: 'suggestion-b', title: 'Review billing source coverage' }),
+      dashboardSuggestion({ id: 'suggestion-c', title: 'Review incident postmortem' }),
+    ])
+
+    render(<Probe />)
+
+    await waitFor(() => {
+      const state = JSON.parse(screenText())
+
+      expect(state.isLoading).toBe(false)
+      expect(state.suggestions).toBe(3)
+      expect(state.suggestionTitles).toEqual([
+        'Review onboarding evidence',
+        'Review billing source coverage',
+        'Review incident postmortem',
+      ])
+    })
+    expect(apiMocks.getDashboardSuggestions).toHaveBeenCalledWith(3, {
+      excludeTypes: ['missed_decision'],
     })
   })
 
@@ -289,6 +349,7 @@ describe('useDashboardData', () => {
       sources_total: 10,
       progress_percent: 50,
       candidates_created: 0,
+      review_candidates: 0,
       started_at: '2026-05-25T09:00:00Z',
       completed_at: null,
       error_message: null,
@@ -299,6 +360,7 @@ describe('useDashboardData', () => {
       sources_scanned: 10,
       progress_percent: 100,
       candidates_created: 1,
+      review_candidates: 1,
       completed_at: '2026-05-25T09:01:00Z',
     }
     apiMocks.getMissedDecisionScanStatus
@@ -342,6 +404,7 @@ describe('useDashboardData', () => {
       sources_total: 70,
       progress_percent: 29,
       candidates_created: 2,
+      review_candidates: 1,
       started_at: '2026-05-25T09:00:00Z',
       completed_at: null,
       error_message: null,

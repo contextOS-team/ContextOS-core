@@ -16,6 +16,12 @@ function scan(
     sources_total: 10,
     progress_percent: 40,
     candidates_created: 0,
+    review_candidates: 0,
+    auto_saved: 0,
+    suppressed: 0,
+    source_resource_id: null,
+    source_window_start: '2026-05-25T08:00:00Z',
+    source_window_end: '2026-05-25T09:00:00Z',
     started_at: '2026-05-25T09:00:00Z',
     completed_at: null,
     error_message: null,
@@ -40,26 +46,32 @@ describe('DecisionScanProgress', () => {
     rerender(<DecisionScanProgress scans={[scan()]} />)
 
     expect(screen.getByText('Scanning Slack for missed decisions')).toBeTruthy()
-    expect(screen.getByText('4 of 10 messages checked · 0 candidates so far')).toBeTruthy()
+    expect(screen.getByText('4 of 10 messages checked · 0 need review')).toBeTruthy()
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('40')
   })
 
   it('shows candidates found during an active scan', () => {
     render(
-      <DecisionScanProgress scans={[scan({ candidates_created: 2 })]} />
+      <DecisionScanProgress scans={[scan({
+        candidates_created: 4,
+        review_candidates: 2,
+        auto_saved: 1,
+        suppressed: 1,
+      })]} />
     )
 
-    expect(screen.getByText('4 of 10 messages checked · 2 candidates found')).toBeTruthy()
+    expect(screen.getByText('4 candidates found · 2 need review · 1 auto-saved · 1 suppressed')).toBeTruthy()
   })
 
   it('renders candidate and empty completed states', () => {
     const { rerender } = render(
       <DecisionScanProgress
-        scans={[scan({ status: 'succeeded', candidates_created: 3 })]}
+        scans={[scan({ status: 'succeeded', candidates_created: 3, review_candidates: 2, auto_saved: 1 })]}
       />
     )
 
     expect(screen.getByText('Found 3 candidates')).toBeTruthy()
+    expect(screen.getByText('3 candidates found · 2 need review · 1 auto-saved')).toBeTruthy()
 
     rerender(
       <DecisionScanProgress

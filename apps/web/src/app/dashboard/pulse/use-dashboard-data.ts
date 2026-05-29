@@ -45,6 +45,7 @@ const EMPTY_DELTA: Delta = {
 }
 
 export const DASHBOARD_REQUEST_TIMEOUT_MS = 8_000
+const GENERIC_REVIEW_SUGGESTION_LIMIT = 3
 
 interface DashboardDataState extends NeedsReviewSuggestionsState {
   decisions: ApiNode[] | null
@@ -127,6 +128,12 @@ function settledValue<T>(result: PromiseSettledResult<T>, fallback: T): T {
   return result.status === 'fulfilled' ? result.value : fallback
 }
 
+function genericReviewSuggestions(suggestions: SuggestionItem[]): SuggestionItem[] {
+  return suggestions
+    .filter((suggestion) => suggestion.type !== 'missed_decision')
+    .slice(0, GENERIC_REVIEW_SUGGESTION_LIMIT)
+}
+
 function missedDecisionError(
   result: PromiseSettledResult<MissedDecisionReviewSuggestion[]>
 ): string | null {
@@ -142,9 +149,9 @@ function activeCandidateSignature(scans: MissedDecisionScanStatus[]): string {
   return scans
     .filter((scan) => (
       (scan.status === 'queued' || scan.status === 'running')
-      && scan.candidates_created > 0
+      && scan.review_candidates > 0
     ))
-    .map((scan) => `${scan.id}:${scan.candidates_created}`)
+    .map((scan) => `${scan.id}:${scan.review_candidates}`)
     .join('|')
 }
 
@@ -327,7 +334,12 @@ export function useDashboardData(
         githubIndexStatusResult,
       ] = await Promise.allSettled([
         withDashboardTimeout(getDashboardAttention(), 'Dashboard attention'),
-        withDashboardTimeout(getDashboardSuggestions(3), 'Dashboard suggestions'),
+        withDashboardTimeout(
+          getDashboardSuggestions(GENERIC_REVIEW_SUGGESTION_LIMIT, {
+            excludeTypes: ['missed_decision'],
+          }),
+          'Dashboard suggestions'
+        ),
         withDashboardTimeout(fetchContextPages(), 'Dashboard context'),
         withDashboardTimeout(fetchDecisions(20), 'Dashboard decisions'),
         withDashboardTimeout(
@@ -351,7 +363,7 @@ export function useDashboardData(
       if (cancelled) return
 
       const attention = settledValue(attentionResult, [])
-      const suggestions = settledValue(suggestionsResult, [])
+      const suggestions = genericReviewSuggestions(settledValue(suggestionsResult, []))
       const contextItems = settledValue(contextItemsResult, [])
       const decisions = settledValue(decisionsResult, null)
       const activityRows = settledValue(activityRowsResult, [])
@@ -498,8 +510,11 @@ export function useDashboardData(
     toast.success('Saved as decision receipt.')
   }, [removeMissedDecision])
 
-  const addAsEvidence = useCallback(async (candidateId: string) => {
-    await addMissedDecisionAsEvidence(candidateId)
+  const addAsEvidence = useCallback(async (
+    candidateId: string,
+    targetDecisionId?: string | null
+  ) => {
+    await addMissedDecisionAsEvidence(candidateId, targetDecisionId)
     removeMissedDecision(candidateId)
     toast.success('Added evidence to the existing decision.')
   }, [removeMissedDecision])
@@ -510,8 +525,11 @@ export function useDashboardData(
     toast.success('Deferred from review.')
   }, [removeMissedDecision])
 
-  const dismissCandidate = useCallback(async (candidateId: string) => {
-    await dismissMissedDecision(candidateId)
+  const dismissCandidate = useCallback(async (
+    candidateId: string,
+    reason?: string | null
+  ) => {
+    await dismissMissedDecision(candidateId, reason)
     removeMissedDecision(candidateId)
   }, [removeMissedDecision])
 
