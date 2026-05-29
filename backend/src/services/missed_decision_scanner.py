@@ -117,6 +117,7 @@ async def _has_queued_or_running_scan(
     session: AsyncSession,
     workspace_id: UUID,
     source_type: str,
+    source_resource_id: str | None,
 ) -> bool:
     stmt = (
         select(MissedDecisionScanRun.id)
@@ -130,6 +131,14 @@ async def _has_queued_or_running_scan(
         )
         .limit(1)
     )
+    if source_resource_id is None:
+        stmt = stmt.where(
+            MissedDecisionScanRun.source_resource_id.is_(None)  # type: ignore[union-attr]
+        )
+    else:
+        stmt = stmt.where(
+            MissedDecisionScanRun.source_resource_id == source_resource_id
+        )
     result = await session.execute(stmt)
     return result.scalar_one_or_none() is not None
 
@@ -184,6 +193,7 @@ async def enqueue_missed_decision_scan(
                 session,
                 workspace_id,
                 source_type,
+                source_resource_id,
             ):
                 return None
             window = await get_scan_window(
@@ -215,6 +225,102 @@ async def enqueue_missed_decision_scan(
         return None
 
 
+async def _find_existing_candidate(
+    session: AsyncSession,
+    *,
+    workspace_id: UUID,
+    source_type: str,
+    source_id: UUID,
+    quote_fp: str,
+    decision_fp: str,
+) -> MissedDecisionCandidate | None:
+    stmt = (
+        select(MissedDecisionCandidate)
+        .where(
+            MissedDecisionCandidate.workspace_id == workspace_id,
+            MissedDecisionCandidate.source_type == source_type,
+            MissedDecisionCandidate.source_id == source_id,
+            MissedDecisionCandidate.quote_fingerprint == quote_fp,
+            MissedDecisionCandidate.decision_fingerprint == decision_fp,
+            MissedDecisionCandidate.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        .limit(1)
+    )
+    result = await session.execute(stmt)
+    candidate = result.scalar_one_or_none()
+    if isinstance(candidate, MissedDecisionCandidate):
+        return candidate
+    return None
+
+
+def _record_match_metadata(
+    candidate: MissedDecisionCandidate,
+    classification,
+) -> None:
+    if not (
+        classification.matched_title
+        or classification.matched_href
+        or classification.match_reason
+    ):
+        return
+    evidence = dict(candidate.evidence or {})
+    evidence["possible_existing_match"] = {
+        "title": classification.matched_title,
+        "href": classification.matched_href,
+        "match_reason": classification.match_reason,
+    }
+    candidate.evidence = evidence
+
+
+def _record_artifact_search_metadata(
+    candidate: MissedDecisionCandidate,
+    classification,
+) -> None:
+    evidence = dict(candidate.evidence or {})
+    review_context = dict(evidence.get("review_context") or {})
+    searched_sources = review_context.get("searched_sources") or [
+        "Decision memory",
+        "Existing candidates",
+        "Suggestions",
+        "Tickets",
+        "PRs",
+        "Docs",
+    ]
+    review_context["searched_sources"] = searched_sources
+
+    quality_gate = dict(evidence.get("quality_gate") or {})
+    quality_gate["searched_sources"] = searched_sources
+
+    if classification.match_status == "strong_match":
+        review_context["missing_artifact_status"] = "already_backed"
+        review_context["missing_artifact_reason"] = (
+            classification.match_reason
+            or "A strong matching durable artifact already backs this decision."
+        )
+        quality_gate["passed"] = False
+        quality_gate["suppress_reason"] = (
+            classification.suppression_reason or "already_backed_by_artifact"
+        )
+    elif classification.match_status == "weak_match":
+        review_context["missing_artifact_status"] = "possible_match"
+        review_context["missing_artifact_reason"] = (
+            classification.match_reason
+            or "A possible existing artifact needs human inspection."
+        )
+        quality_gate["artifact_search"] = "possible_match"
+    else:
+        review_context["missing_artifact_status"] = "not_found"
+        review_context["missing_artifact_reason"] = (
+            "No strong matching Decision, ticket, PR, doc, suggestion, or "
+            "prior candidate was found."
+        )
+        quality_gate["artifact_search"] = "not_found"
+
+    evidence["review_context"] = review_context
+    evidence["quality_gate"] = quality_gate
+    candidate.evidence = evidence
+
+
 async def process_missed_decision_source_window(
     session: AsyncSession,
     scan_run: MissedDecisionScanRun,
@@ -222,14 +328,29 @@ async def process_missed_decision_source_window(
 ) -> dict:
     """Extract, dedupe, persist, and publish source-backed candidates."""
     candidates_created = 0
-    suggestions_published = 0
-    decisions_auto_saved = 0
+    review_candidates = 0
+    auto_saved = 0
+    suppressed = 0
 
     drafts = []
     for record in records:
         drafts.extend(await extract_missed_decision_candidates(record))
 
     for draft in drafts:
+        quote_fp = quote_fingerprint(draft.source_quote)
+        decision_fp = decision_fingerprint(draft.inferred_decision)
+        existing = await _find_existing_candidate(
+            session,
+            workspace_id=draft.workspace_id,
+            source_type=draft.source_type,
+            source_id=draft.source_id,
+            quote_fp=quote_fp,
+            decision_fp=decision_fp,
+        )
+        if existing is not None:
+            existing.scan_run_id = existing.scan_run_id or scan_run.id
+            continue
+
         candidate = MissedDecisionCandidate(
             workspace_id=draft.workspace_id,
             scan_run_id=scan_run.id,
@@ -241,8 +362,8 @@ async def process_missed_decision_source_window(
             inferred_rationale=draft.inferred_rationale,
             source_link=draft.source_link,
             confidence=draft.confidence,
-            quote_fingerprint=quote_fingerprint(draft.source_quote),
-            decision_fingerprint=decision_fingerprint(draft.inferred_decision),
+            quote_fingerprint=quote_fp,
+            decision_fingerprint=decision_fp,
             evidence=draft.evidence,
             people=draft.people,
             affected_systems=draft.affected_systems,
@@ -257,14 +378,18 @@ async def process_missed_decision_source_window(
         candidate.suppression_reason = classification.suppression_reason
         candidate.matched_entity_type = classification.matched_entity_type
         candidate.matched_entity_id = classification.matched_entity_id
+        _record_match_metadata(candidate, classification)
+        _record_artifact_search_metadata(candidate, classification)
 
         await _add(session, candidate)
         await session.flush()
         candidates_created += 1
+        if candidate.lifecycle_status == "suppressed":
+            suppressed += 1
 
         if should_auto_save_missed_decision(candidate, classification):
             await auto_confirm_candidate(session, candidate)
-            decisions_auto_saved += 1
+            auto_saved += 1
         elif classification.should_publish_suggestion and is_surfaceable_confidence(
             candidate.confidence
         ):
@@ -273,12 +398,15 @@ async def process_missed_decision_source_window(
                 candidate,
             )
             if suggestion is not None:
-                suggestions_published += 1
+                review_candidates += 1
 
     return {
         "candidates_created": candidates_created,
-        "decisions_auto_saved": decisions_auto_saved,
-        "suggestions_published": suggestions_published,
+        "decisions_auto_saved": auto_saved,
+        "suggestions_published": review_candidates,
+        "review_candidates": review_candidates,
+        "auto_saved": auto_saved,
+        "suppressed": suppressed,
     }
 
 
@@ -327,6 +455,9 @@ async def run_missed_decision_scan_once(
     try:
         sources_scanned = 0
         candidates_created = 0
+        review_candidates = 0
+        auto_saved = 0
+        suppressed = 0
         after_source_created_at: datetime | None = None
         after_source_id: UUID | None = None
         while True:
@@ -356,8 +487,14 @@ async def run_missed_decision_scan_once(
                 )
                 sources_scanned += len(progress_chunk)
                 candidates_created += int(result.get("candidates_created", 0))
+                review_candidates += int(result.get("review_candidates", 0))
+                auto_saved += int(result.get("auto_saved", 0))
+                suppressed += int(result.get("suppressed", 0))
                 scan_run.sources_scanned = sources_scanned
                 scan_run.candidates_created = candidates_created
+                scan_run.review_candidates = review_candidates
+                scan_run.auto_saved = auto_saved
+                scan_run.suppressed = suppressed
                 await session.flush()
                 await session.commit()
 
@@ -415,10 +552,10 @@ async def drain_queued_missed_decision_scans(
         .with_for_update(skip_locked=True)
     )
     result = await session.execute(stmt)
-    claimed_keys: set[tuple[UUID, str]] = set()
+    claimed_keys: set[tuple[UUID, str, str | None]] = set()
     runs: list[MissedDecisionScanRun] = []
     for run in result.scalars().all():
-        key = (run.workspace_id, run.source_type)
+        key = (run.workspace_id, run.source_type, run.source_resource_id)
         if key in claimed_keys:
             run.status = SCAN_STATUS_FAILED
             run.error_message = "Superseded by a newer active scan for this source."

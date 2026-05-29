@@ -81,6 +81,16 @@ def _raw_candidate(**overrides) -> RawMissedDecisionCandidate:
         "confidence": 0.84,
         "people": [],
         "affected_systems": [],
+        "business_category": "product_behavior",
+        "affected_objects": ["dashboard"],
+        "expected_artifact_type": "product_spec",
+        "expected_artifact": (
+            "Dashboard product spec should document the review rail boundary."
+        ),
+        "impact_level": "medium",
+        "impact_reason": (
+            "Forgetting this would blur confirmed decisions with review candidates."
+        ),
         "supporting_sources": [],
     }
     values.update(overrides)
@@ -157,6 +167,154 @@ def test_validation_drops_incomplete_and_hallucinated_candidates() -> None:
     assert drafts[0].source_quote in record.text
     assert drafts[0].confidence == CONFIDENCE_HIGH
     assert drafts[0].source_link == record.source_link
+
+
+def test_validation_rejects_provider_mismatched_external_source_links() -> None:
+    record = _record(source_type="slack_message")
+    raw = RawMissedDecisionExtractionResult(
+        candidates=[
+            _raw_candidate(source_link="https://example.com/not-a-slack-permalink"),
+            _raw_candidate(source_link="https://evilslack.com/archives/C123/p1716211200000000"),
+            _raw_candidate(source_link="https://slack.com/archives/C123/p1716211200000000"),
+        ]
+    )
+
+    drafts = validate_missed_decision_candidates(record, raw)
+
+    assert len(drafts) == 1
+    assert drafts[0].source_link == "https://slack.com/archives/C123/p1716211200000000"
+
+
+def test_validation_rejects_lookalike_telegram_hosts() -> None:
+    record = _record(
+        source_type="telegram_message",
+    )
+    raw = RawMissedDecisionExtractionResult(
+        candidates=[
+            _raw_candidate(source_link="https://not.me/c/123/456"),
+            _raw_candidate(source_link="https://t.me/c/123/456"),
+        ]
+    )
+
+    drafts = validate_missed_decision_candidates(record, raw)
+
+    assert len(drafts) == 1
+    assert drafts[0].source_link == "https://t.me/c/123/456"
+
+
+def test_validation_suppresses_casual_logistics_candidates() -> None:
+    record = _record(
+        "The team will have pizza at approximately 12:30 PM.",
+        source_type="slack_message",
+    )
+    raw = RawMissedDecisionExtractionResult(
+        candidates=[
+            _raw_candidate(
+                source_quote="The team will have pizza at approximately 12:30 PM.",
+                inferred_decision="The team will have pizza at approximately 12:30 PM.",
+                inferred_rationale="A group meal time was announced.",
+                business_category="team_logistics",
+                affected_systems=["Team Logistics"],
+                affected_objects=["Team Logistics"],
+                expected_artifact_type="none",
+                expected_artifact="",
+                impact_level="low",
+                impact_reason="No product, engineering, release, or customer impact.",
+            )
+        ]
+    )
+
+    drafts = validate_missed_decision_candidates(record, raw)
+
+    assert drafts == []
+
+
+def test_validation_requires_artifact_object_and_medium_impact_metadata() -> None:
+    record = _record(
+        "We decided billing-service deployment must run create topics before "
+        "the current release.",
+        source_type="slack_message",
+    )
+    missing_artifact = _raw_candidate(
+        source_quote=(
+            "We decided billing-service deployment must run create topics before "
+            "the current release."
+        ),
+        inferred_decision=(
+            "Run create topics before the current billing-service release."
+        ),
+        inferred_rationale="The deployment needs messaging infrastructure first.",
+        business_category="deployment_timing",
+        affected_systems=["billing-service"],
+        affected_objects=["billing-service", "current release"],
+        expected_artifact_type="",
+        expected_artifact="",
+        impact_level="medium",
+        impact_reason="This changes release execution.",
+    )
+    low_impact = missing_artifact.model_copy(
+        update={
+            "expected_artifact_type": "deployment_checklist",
+            "expected_artifact": (
+                "Deployment checklist should include the create topics step."
+            ),
+            "impact_level": "low",
+        }
+    )
+    valid = missing_artifact.model_copy(
+        update={
+            "expected_artifact_type": "deployment_checklist",
+            "expected_artifact": (
+                "Deployment checklist should include the create topics step."
+            ),
+            "impact_level": "medium",
+        }
+    )
+
+    drafts = validate_missed_decision_candidates(
+        record,
+        RawMissedDecisionExtractionResult(
+            candidates=[missing_artifact, low_impact, valid]
+        ),
+    )
+
+    assert len(drafts) == 1
+    assert drafts[0].affected_systems == ["billing-service"]
+    review_context = drafts[0].evidence["review_context"]
+    assert review_context["business_category"] == "deployment_timing"
+    assert review_context["affected_object"] == "billing-service"
+    assert review_context["expected_artifact_type"] == "deployment_checklist"
+    assert review_context["impact_level"] == "medium"
+    assert drafts[0].evidence["quality_gate"]["passed"] is True
+
+
+def test_validation_prefers_normalized_external_source_link_over_internal_ref() -> None:
+    record = _record(source_type="slack_message")
+    external_source_link = "https://slack.com/archives/C123/p1799436776018979"
+    record = MissedDecisionSourceRecord(
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        source_id=record.source_id,
+        text=record.text,
+        source_link=external_source_link,
+        source_created_at=record.source_created_at,
+        metadata=record.metadata,
+    )
+    internal_reference = build_internal_source_reference(
+        record.source_type,
+        record.workspace_id,
+        record.source_id,
+        record.source_created_at,
+    )
+    raw = RawMissedDecisionExtractionResult(
+        candidates=[_raw_candidate(source_link=internal_reference)]
+    )
+
+    drafts = validate_missed_decision_candidates(record, raw)
+
+    assert len(drafts) == 1
+    assert drafts[0].source_link == external_source_link
+    assert drafts[0].evidence["source_link"] == external_source_link
 
 
 def test_prompt_injection_guardrail_and_confidence_tiers() -> None:
@@ -303,8 +461,34 @@ async def test_exact_duplicate_is_suppressed_without_new_suggestion() -> None:
 
     assert classification.match_status == "strong_match"
     assert classification.lifecycle_status == "suppressed"
-    assert classification.suppression_reason == "duplicate_no_new_evidence"
+    assert classification.suppression_reason == "duplicate_existing_decision"
     assert not classification.should_publish_suggestion
+
+
+@pytest.mark.asyncio
+async def test_rejected_and_suppressed_candidates_do_not_poison_future_review() -> None:
+    candidate = _candidate()
+    rejected = _candidate(
+        workspace_id=candidate.workspace_id,
+        source_quote=candidate.source_quote,
+        inferred_decision=candidate.inferred_decision,
+    )
+    rejected.lifecycle_status = "rejected"
+    suppressed = _candidate(
+        workspace_id=candidate.workspace_id,
+        source_quote=candidate.source_quote,
+        inferred_decision=candidate.inferred_decision,
+    )
+    suppressed.lifecycle_status = "suppressed"
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[_result([rejected, suppressed]), _result([]), _result([])]
+    )
+
+    classification = await classify_missed_decision_candidate(session, candidate)
+
+    assert classification.match_status == "no_match"
+    assert classification.should_publish_suggestion
 
 
 def test_decision_fingerprint_catches_paraphrase_word_order() -> None:
@@ -323,7 +507,7 @@ async def test_dedupe_is_workspace_scoped() -> None:
     )
     session = AsyncMock()
     session.execute = AsyncMock(
-        side_effect=[_result([other_workspace_duplicate]), _result([])]
+        side_effect=[_result([other_workspace_duplicate]), _result([]), _result([])]
     )
 
     classification = await classify_missed_decision_candidate(session, candidate)
@@ -361,6 +545,98 @@ async def test_raw_digest_decision_guardrail_links_instead_of_fresh_review() -> 
     assert classification.matched_entity_type == "graph_node"
     assert classification.matched_entity_id == digest_node.id
     assert not classification.should_publish_suggestion
+
+
+@pytest.mark.asyncio
+async def test_strong_artifact_match_marks_candidate_already_backed() -> None:
+    candidate = _candidate(
+        inferred_decision="Run create topics before billing-service deployment",
+        inferred_rationale="Messaging infrastructure must exist before release.",
+    )
+    ticket_node = GraphNode(
+        id=uuid4(),
+        workspace_id=candidate.workspace_id,
+        entity_type="Ticket",
+        name="Run create topics before billing-service deployment",
+        fingerprint="ticket-node",
+        source_type="jira_issue",
+        source_id=uuid4(),
+        properties={
+            "identifier": "ENG-42",
+            "description": "Messaging infrastructure must exist before release.",
+            "url": "https://jira.example/browse/ENG-42",
+        },
+    )
+    session = AsyncMock()
+    session.execute = AsyncMock(side_effect=[_result([]), _result([ticket_node])])
+
+    classification = await classify_missed_decision_candidate(session, candidate)
+
+    assert classification.match_status == "strong_match"
+    assert classification.lifecycle_status == "linked"
+    assert classification.suppression_reason == "already_backed_by_artifact"
+    assert not classification.should_publish_suggestion
+
+
+@pytest.mark.asyncio
+async def test_open_or_resolved_suggestions_are_match_evidence() -> None:
+    candidate = _candidate(
+        inferred_decision="Preserve Decision Receipts before actions",
+        inferred_rationale="Automation needs source provenance.",
+    )
+    suggestion = Suggestion(
+        id=uuid4(),
+        workspace_id=candidate.workspace_id,
+        type="missing_source_coverage",
+        status="resolved",
+        priority="medium",
+        fingerprint="suggestion:decision-receipts",
+        entity_type="graph_node",
+        entity_id=uuid4(),
+        title="Preserve Decision Receipts before actions",
+        body="Automation needs source provenance.",
+        details={"decision_title": "Preserve Decision Receipts before actions"},
+    )
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[_result([]), _result([]), _result([suggestion])]
+    )
+
+    classification = await classify_missed_decision_candidate(session, candidate)
+
+    assert classification.match_status == "weak_match"
+    assert classification.should_publish_suggestion
+    assert classification.matched_entity_type == "suggestion"
+    assert classification.matched_entity_id == suggestion.id
+
+
+@pytest.mark.asyncio
+async def test_graph_match_query_includes_artifact_evidence_nodes() -> None:
+    from sqlalchemy.dialects import postgresql
+
+    candidate = _candidate()
+    captured_sql: list[str] = []
+
+    async def fake_execute(stmt):
+        captured_sql.append(
+            str(
+                stmt.compile(
+                    dialect=postgresql.dialect(),
+                    compile_kwargs={"literal_binds": True},
+                )
+            )
+        )
+        return _result([])
+
+    session = AsyncMock()
+    session.execute = AsyncMock(side_effect=fake_execute)
+
+    await classify_missed_decision_candidate(session, candidate)
+
+    graph_sql = "\n".join(captured_sql)
+    assert "graph_nodes.entity_type IN" in graph_sql
+    for entity_type in ("Decision", "Ticket", "PR", "NotionPage", "SlackThread"):
+        assert f"'{entity_type}'" in graph_sql
 
 
 @pytest.mark.asyncio
@@ -492,7 +768,7 @@ async def test_suppressed_candidate_is_not_published_from_scanner(
     session = AsyncMock()
     session.add = MagicMock()
     session.flush = AsyncMock()
-    session.execute = AsyncMock(return_value=_result([existing]))
+    session.execute = AsyncMock(side_effect=[_result([]), _result([existing])])
     run = MissedDecisionScanRun(
         workspace_id=record.workspace_id,
         source_type=record.source_type,
@@ -513,7 +789,7 @@ async def test_suppressed_candidate_is_not_published_from_scanner(
 
     added = session.add.call_args.args[0]
     assert added.lifecycle_status == "suppressed"
-    assert added.suppression_reason == "duplicate_no_new_evidence"
+    assert added.suppression_reason == "duplicate_existing_decision"
     assert result["candidates_created"] == 1
     assert result["decisions_auto_saved"] == 0
     assert result["suggestions_published"] == 0
@@ -609,6 +885,54 @@ async def test_scanner_persists_high_candidate_and_publishes_suggestion(
     assert result["candidates_created"] == 1
     assert result["decisions_auto_saved"] == 0
     assert result["suggestions_published"] == 1
+
+
+@pytest.mark.asyncio
+async def test_scanner_retry_reuses_existing_candidate_key_without_duplicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _record()
+    draft = _draft(
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        source_id=record.source_id,
+        source_link=record.source_link,
+        confidence=CONFIDENCE_HIGH,
+    )
+    existing = _candidate(
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        source_id=record.source_id,
+        source_quote=draft.source_quote,
+        inferred_decision=draft.inferred_decision,
+        lifecycle_status="surfaced",
+    )
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([existing]))
+    run = MissedDecisionScanRun(
+        id=uuid4(),
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        status="running",
+    )
+
+    async def fake_extract(_record):
+        return [draft]
+
+    monkeypatch.setattr(scanner, "extract_missed_decision_candidates", fake_extract)
+    monkeypatch.setattr(
+        scanner,
+        "publish_missed_decision_suggestion",
+        AsyncMock(side_effect=AssertionError("retry must not publish a duplicate")),
+    )
+
+    result = await scanner.process_missed_decision_source_window(session, run, [record])
+
+    session.add.assert_not_called()
+    assert result["candidates_created"] == 0
+    assert result["review_candidates"] == 0
 
 
 @pytest.mark.asyncio

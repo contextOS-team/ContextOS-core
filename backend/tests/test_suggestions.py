@@ -19,6 +19,7 @@ from src.services.suggestions import (
     DesignReviewGapAssessment,
     build_missing_source_suggestion,
     dismiss_suggestion,
+    list_visible_suggestions,
     refresh_missing_source_coverage_suggestions,
     reopen_suggestion,
     resolve_suggestion,
@@ -152,6 +153,29 @@ async def test_lifecycle_actions_persist_status_and_audit(mock_settings) -> None
         assert reopened.resolved_at is None
 
     assert session.flush.await_count == 4
+
+
+async def test_list_visible_suggestions_can_exclude_suggestion_types() -> None:
+    from sqlalchemy.dialects import postgresql
+
+    session = AsyncMock()
+    session.execute.return_value = _result_all([])
+
+    await list_visible_suggestions(
+        session,
+        WORKSPACE_ID,
+        limit=3,
+        exclude_types=("missed_decision",),
+    )
+
+    stmt = session.execute.await_args.args[0]
+    sql = str(
+        stmt.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
+    assert "suggestions.type NOT IN ('missed_decision')" in sql
 
 
 def test_build_missing_source_suggestion_is_decision_specific(mock_settings) -> None:

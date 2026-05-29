@@ -14,7 +14,9 @@ from fastapi.testclient import TestClient
 from src.db import get_session
 from src.dependencies import UserContext, get_current_user
 from src.models.audit_log import AuditLog
+from src.models.graph_node import GraphNode
 from src.models.missed_decision import MissedDecisionCandidate, MissedDecisionScanRun
+from src.models.slack import SlackMessage
 from src.services.missed_decision_actions import (
     CandidateNotFoundError,
     InvalidCandidateTransitionError,
@@ -133,6 +135,21 @@ async def test_surfaced_candidate_legal_transitions() -> None:
 
 
 @pytest.mark.asyncio
+async def test_deferred_candidate_reenters_review_after_snooze_expiry() -> None:
+    candidate = _candidate(lifecycle_status="deferred")
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([candidate]))
+    session.flush = AsyncMock()
+
+    rows = await list_review_candidates(session, WORKSPACE_ID, limit=5)
+
+    assert rows == [candidate]
+    assert candidate.lifecycle_status == "surfaced"
+    assert candidate.surfaced_at is not None
+    session.flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_terminal_candidates_cannot_be_confirmed_again() -> None:
     candidate = _candidate(lifecycle_status="confirmed")
     session = AsyncMock()
@@ -179,7 +196,7 @@ async def test_confirmed_decision_preserves_action_hint_grounding_metadata() -> 
     assert props["action_hint_grounding"][0]["no_write_boundary"] == (
         "phase_46_metadata_only"
     )
-    assert upsert_edge.await_args.kwargs["relationship_type"] == "evidenced_by"
+    upsert_edge.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -350,8 +367,116 @@ async def test_ignore_duplicate_suppresses_and_resolves_suggestion() -> None:
         )
 
     assert ignored.lifecycle_status == "suppressed"
-    assert ignored.suppression_reason == "duplicate_no_new_evidence"
+    assert ignored.suppression_reason == "duplicate_existing_decision"
     resolve.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_add_evidence_requires_explicit_target_for_weak_match() -> None:
+    existing_decision = GraphNode(
+        id=uuid4(),
+        workspace_id=WORKSPACE_ID,
+        entity_type="Decision",
+        name="Preserve Decision Receipts before actions",
+        fingerprint="decision",
+        properties={},
+    )
+    candidate = _candidate(
+        match_status="weak_match",
+        matched_entity_type="graph_node",
+        matched_entity_id=existing_decision.id,
+    )
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([candidate]))
+
+    with pytest.raises(InvalidCandidateTransitionError):
+        from src.services.missed_decision_actions import add_candidate_as_evidence
+
+        await add_candidate_as_evidence(session, WORKSPACE_ID, USER_ID, candidate.id)
+
+
+@pytest.mark.asyncio
+async def test_add_evidence_attaches_to_explicit_target_decision() -> None:
+    matched_decoy = uuid4()
+    selected_decision = GraphNode(
+        id=uuid4(),
+        workspace_id=WORKSPACE_ID,
+        entity_type="Decision",
+        name="Selected decision",
+        fingerprint="selected-decision",
+        properties={},
+    )
+    candidate = _candidate(
+        match_status="weak_match",
+        matched_entity_type="graph_node",
+        matched_entity_id=matched_decoy,
+    )
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[_result([candidate]), _result([selected_decision]), _result([])]
+    )
+    session.flush = AsyncMock()
+
+    from src.services.missed_decision_actions import add_candidate_as_evidence
+
+    with patch(
+        "src.services.missed_decision_actions.resolve_suggestion",
+        new=AsyncMock(),
+    ), patch(
+        "src.services.missed_decision_actions.upsert_edge",
+        new=AsyncMock(),
+    ) as upsert_edge:
+        linked = await add_candidate_as_evidence(
+            session,
+            WORKSPACE_ID,
+            USER_ID,
+            candidate.id,
+            target_decision_id=selected_decision.id,
+        )
+
+    assert linked.lifecycle_status == "linked"
+    assert candidate.matched_entity_id == selected_decision.id
+    assert selected_decision.properties["missed_decision_evidence"][0][
+        "candidate_id"
+    ] == str(candidate.id)
+    upsert_edge.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_add_evidence_rejects_explicit_target_for_no_match_candidate() -> None:
+    selected_decision = GraphNode(
+        id=uuid4(),
+        workspace_id=WORKSPACE_ID,
+        entity_type="Decision",
+        name="Selected decision",
+        fingerprint="selected-decision",
+        properties={},
+    )
+    candidate = _candidate(match_status="no_match")
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[_result([candidate]), _result([selected_decision]), _result([])]
+    )
+    session.flush = AsyncMock()
+
+    from src.services.missed_decision_actions import add_candidate_as_evidence
+
+    with (
+        patch(
+            "src.services.missed_decision_actions.resolve_suggestion",
+            new=AsyncMock(),
+        ),
+        pytest.raises(InvalidCandidateTransitionError),
+    ):
+        await add_candidate_as_evidence(
+            session,
+            WORKSPACE_ID,
+            USER_ID,
+            candidate.id,
+            target_decision_id=selected_decision.id,
+        )
+
+    session.flush.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -389,7 +514,27 @@ def _client(session: AsyncMock, user: UserContext | None = None) -> TestClient:
 
 
 def test_review_endpoint_returns_candidate_payload() -> None:
-    candidate = _candidate()
+    candidate = _candidate(
+        evidence={
+            "review_context": {
+                "business_category": "deployment_timing",
+                "affected_object": "billing-service",
+                "expected_artifact_type": "deployment_checklist",
+                "expected_artifact": (
+                    "Deployment checklist should include the create topics step."
+                ),
+                "impact_level": "medium",
+                "impact_reason": "This changes release execution.",
+                "searched_sources": [
+                    "Decision memory",
+                    "Tickets",
+                    "PRs",
+                    "Docs",
+                ],
+            },
+            "quality_gate": {"passed": True},
+        }
+    )
     session = AsyncMock()
     session.execute = AsyncMock(return_value=_result([candidate]))
 
@@ -400,24 +545,185 @@ def test_review_endpoint_returns_candidate_payload() -> None:
     assert body[0]["id"] == str(candidate.id)
     assert body[0]["source_quote"] == candidate.source_quote
     assert "confirm" in body[0]["legal_actions"]
+    assert body[0]["review_context"]["affected_object"] == "billing-service"
+    assert body[0]["review_context"]["expected_artifact_type"] == (
+        "deployment_checklist"
+    )
+    assert body[0]["review_context"]["impact_level"] == "medium"
 
 
-def test_scans_endpoint_returns_latest_workspace_scan_per_source() -> None:
+def test_review_endpoint_enriches_candidate_duplicate_with_human_title() -> None:
+    existing_candidate = _candidate(
+        id=uuid4(),
+        inferred_decision="Keep Release Candidate changes grouped by RC branch",
+    )
+    candidate = _candidate(
+        match_status="weak_match",
+        matched_entity_type="missed_decision_candidate",
+        matched_entity_id=existing_candidate.id,
+        evidence={},
+    )
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[_result([candidate]), _result([existing_candidate]), _result([])]
+    )
+
+    response = _client(session).get("/api/missed-decisions/review")
+
+    assert response.status_code == 200
+    match = response.json()[0]["possible_existing_match"]
+    assert match["title"] == existing_candidate.inferred_decision
+    assert match["match_reason"] == "Same decision was already captured for review."
+    assert match["entity_id"] == str(existing_candidate.id)
+
+
+def test_review_endpoint_upgrades_internal_slack_source_reference() -> None:
+    candidate = _candidate(
+        source_link=(
+            "/dashboard/source-reference?source_type=slack_message"
+            "&source_id=abc&workspace_id=def"
+            "&source_timestamp=2026-05-25T09:00:00Z"
+        )
+    )
+    slack_message = SlackMessage(
+        id=candidate.source_id,
+        workspace_id=WORKSPACE_ID,
+        channel_id="C123",
+        channel_name="dev-room",
+        slack_ts="1799436776.018979",
+        text=candidate.source_quote,
+    )
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[_result([candidate]), _result([slack_message])]
+    )
+
+    response = _client(session).get("/api/missed-decisions/review")
+
+    assert response.status_code == 200
+    assert response.json()[0]["source_link"] == (
+        "https://slack.com/archives/C123/p1799436776018979"
+    )
+
+
+def test_review_endpoint_preserves_external_slack_source_link() -> None:
+    internal_candidate = _candidate(
+        id=uuid4(),
+        source_link=(
+            "/dashboard/source-reference?source_type=slack_message"
+            "&source_id=abc&workspace_id=def"
+            "&source_timestamp=2026-05-25T09:00:00Z"
+        ),
+    )
+    external_link = "https://team.slack.com/archives/C999/p1799436776018980"
+    external_candidate = _candidate(
+        id=uuid4(),
+        source_id=uuid4(),
+        source_link=external_link,
+    )
+    internal_message = SlackMessage(
+        id=internal_candidate.source_id,
+        workspace_id=WORKSPACE_ID,
+        channel_id="C123",
+        channel_name="dev-room",
+        slack_ts="1799436776.018979",
+        text=internal_candidate.source_quote,
+    )
+    external_message = SlackMessage(
+        id=external_candidate.source_id,
+        workspace_id=WORKSPACE_ID,
+        channel_id="C999",
+        channel_name="dev-room",
+        slack_ts="1799436776.018980",
+        text=external_candidate.source_quote,
+    )
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[
+            _result([internal_candidate, external_candidate]),
+            _result([internal_message, external_message]),
+        ]
+    )
+
+    response = _client(session).get("/api/missed-decisions/review")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body[0]["source_link"] == (
+        "https://slack.com/archives/C123/p1799436776018979"
+    )
+    assert body[1]["source_link"] == external_link
+
+
+def test_review_endpoint_renders_slack_user_mentions_as_names() -> None:
+    candidate = _candidate(
+        source_quote=(
+            "Plugins will be integrated separately with <@U08SFLEN70R>."
+        ),
+        inferred_decision=(
+            "Coordinate plugin implementation with <@U08SFLEN70R>."
+        ),
+        inferred_rationale="<@U08SFLEN70R> owns the technical alignment.",
+        people=["U08SFLEN70R"],
+        evidence={
+            "source_metadata": {
+                "slack_user_names": {"U08SFLEN70R": "Daulet Ashikbayev"}
+            }
+        },
+    )
+    slack_message = SlackMessage(
+        id=candidate.source_id,
+        workspace_id=WORKSPACE_ID,
+        channel_id="C123",
+        channel_name="dev-room",
+        slack_ts="1799436776.018979",
+        text=candidate.source_quote,
+    )
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        side_effect=[_result([candidate]), _result([slack_message])]
+    )
+
+    response = _client(session).get("/api/missed-decisions/review")
+
+    assert response.status_code == 200
+    body = response.json()[0]
+    assert body["source_quote"] == (
+        "Plugins will be integrated separately with Daulet Ashikbayev."
+    )
+    assert body["inferred_decision"] == (
+        "Coordinate plugin implementation with Daulet Ashikbayev."
+    )
+    assert body["inferred_rationale"] == (
+        "Daulet Ashikbayev owns the technical alignment."
+    )
+    assert body["people"] == ["Daulet Ashikbayev"]
+
+
+def test_scans_endpoint_returns_latest_workspace_scan_per_source_resource() -> None:
     now = datetime.now(UTC)
-    latest_slack = _scan_run(
+    slack_general = _scan_run(
         id=uuid4(),
         source_type="slack_message",
+        source_resource_id=None,
         sources_scanned=4,
         sources_total=10,
         candidates_created=2,
+        review_candidates=1,
+        auto_saved=1,
+        suppressed=0,
         created_at=datetime(2026, 5, 25, 9, 5, tzinfo=UTC),
     )
-    older_slack = _scan_run(
+    slack_channel = _scan_run(
         id=uuid4(),
         source_type="slack_message",
-        sources_scanned=10,
-        sources_total=10,
-        candidates_created=0,
+        source_resource_id="C123",
+        sources_scanned=3,
+        sources_total=3,
+        candidates_created=1,
+        review_candidates=1,
+        auto_saved=0,
+        suppressed=0,
         created_at=datetime(2026, 5, 25, 9, 0, tzinfo=UTC),
     )
     failed_notion = _scan_run(
@@ -442,8 +748,8 @@ def test_scans_endpoint_returns_latest_workspace_scan_per_source() -> None:
     session = AsyncMock()
     session.execute = AsyncMock(
         return_value=_result([
-            latest_slack,
-            older_slack,
+            slack_general,
+            slack_channel,
             failed_notion,
             stale_failed_telegram,
             other_workspace,
@@ -455,24 +761,32 @@ def test_scans_endpoint_returns_latest_workspace_scan_per_source() -> None:
     assert response.status_code == 200
     body = response.json()
     assert [item["id"] for item in body] == [
-        str(latest_slack.id),
+        str(slack_general.id),
+        str(slack_channel.id),
         str(failed_notion.id),
     ]
     assert body[0] == {
-        "id": str(latest_slack.id),
+        "id": str(slack_general.id),
         "source_type": "slack_message",
+        "source_resource_id": None,
         "status": "running",
         "sources_scanned": 4,
         "sources_total": 10,
         "progress_percent": 40,
         "candidates_created": 2,
+        "review_candidates": 1,
+        "auto_saved": 1,
+        "suppressed": 0,
+        "source_window_start": None,
+        "source_window_end": None,
         "started_at": "2026-05-25T09:00:00Z",
         "completed_at": None,
         "error_message": None,
     }
-    assert body[1]["status"] == "failed"
-    assert body[1]["progress_percent"] is None
-    assert body[1]["error_message"] == "Extractor paused after provider timeout"
+    assert body[1]["source_resource_id"] == "C123"
+    assert body[2]["status"] == "failed"
+    assert body[2]["progress_percent"] is None
+    assert body[2]["error_message"] == "Extractor paused after provider timeout"
 
 
 def test_confirm_endpoint_returns_decision_node_id() -> None:

@@ -42,11 +42,17 @@ async def _not_found_as_404(coro):
 @router.get("")
 async def suggestions(
     limit: int = Query(default=3, ge=1, le=20),
+    exclude_type: list[str] = Query(default=[]),
     user: UserContext = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict]:
     """List visible dashboard suggestions."""
-    rows = await list_visible_suggestions(session, user.workspace_id, limit=limit)
+    rows = await list_visible_suggestions(
+        session,
+        user.workspace_id,
+        limit=limit,
+        exclude_types=tuple(exclude_type),
+    )
     return [serialize_suggestion(row) for row in rows]
 
 

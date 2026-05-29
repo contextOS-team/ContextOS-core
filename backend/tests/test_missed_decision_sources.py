@@ -191,6 +191,54 @@ async def test_slack_loader_includes_author_attribution_metadata(
 
 
 @pytest.mark.asyncio
+async def test_slack_loader_resolves_mentions_before_extraction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_id = uuid4()
+    start = datetime(2026, 5, 25, 9, 0, tzinfo=UTC)
+    message = SlackMessage(
+        workspace_id=workspace_id,
+        slack_ts="1716637200.000100",
+        channel_id="C123",
+        channel_name="product",
+        user_id="U111",
+        user_name="Ilya",
+        text="Please coordinate the plugin rollout with <@U08SFLEN70R>.",
+        slack_created_at=start,
+    )
+    session = _TextFilterAwareSession(
+        [message],
+        text_filter_fragments=("slack_messages.text IS NOT NULL",),
+        has_text=lambda row: bool(row.text),
+    )
+    monkeypatch.setattr(
+        missed_decision_sources,
+        "_slack_source_links",
+        AsyncMock(return_value={message.id: None}),
+    )
+    monkeypatch.setattr(
+        missed_decision_sources,
+        "resolve_slack_user_names",
+        AsyncMock(return_value={"U08SFLEN70R": "Daulet", "U111": "Ilya"}),
+    )
+
+    records = await load_source_window(
+        session,  # type: ignore[arg-type]
+        workspace_id,
+        "slack_message",
+        start - timedelta(minutes=1),
+        start + timedelta(minutes=1),
+        limit=2,
+    )
+
+    assert records[0].text == "Please coordinate the plugin rollout with Daulet."
+    assert records[0].metadata["slack_user_names"] == {
+        "U08SFLEN70R": "Daulet",
+        "U111": "Ilya",
+    }
+
+
+@pytest.mark.asyncio
 async def test_fathom_loader_filters_empty_transcripts_before_batch_limit() -> None:
     workspace_id = uuid4()
     start = datetime(2026, 5, 25, 9, 0, tzinfo=UTC)

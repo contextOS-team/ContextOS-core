@@ -61,6 +61,7 @@ def _candidate(**overrides) -> MissedDecisionCandidate:
 async def test_promote_candidate_to_decision_preserves_source_trail() -> None:
     candidate = _candidate()
     session = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([]))
     decision_node_id = uuid4()
 
     with patch(
@@ -87,7 +88,38 @@ async def test_promote_candidate_to_decision_preserves_source_trail() -> None:
     assert props["candidate_id"] == str(candidate.id)
     assert props["scan_run_id"] == str(candidate.scan_run_id)
     assert props["action_hints"] == candidate.action_hints
+    upsert_edge.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_promote_candidate_edges_to_real_source_node_when_available() -> None:
+    candidate = _candidate()
+    source_node = GraphNode(
+        id=uuid4(),
+        workspace_id=WORKSPACE_ID,
+        entity_type="SlackThread",
+        name="Source thread",
+        fingerprint="source-thread",
+        source_type=candidate.source_type,
+        source_id=candidate.source_id,
+        properties={},
+    )
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([source_node]))
+    decision_node_id = uuid4()
+
+    with patch(
+        "src.services.missed_decision_actions.upsert_node",
+        new=AsyncMock(return_value=decision_node_id),
+    ), patch(
+        "src.services.missed_decision_actions.upsert_edge",
+        new=AsyncMock(return_value=uuid4()),
+    ) as upsert_edge:
+        await promote_candidate_to_decision(session, candidate)
+
     upsert_edge.assert_awaited_once()
+    assert upsert_edge.await_args.kwargs["source_node_id"] == source_node.id
+    assert upsert_edge.await_args.kwargs["target_node_id"] == decision_node_id
 
 
 @pytest.mark.asyncio
@@ -146,7 +178,7 @@ async def test_add_evidence_links_candidate_to_existing_decision() -> None:
     )
     session = AsyncMock()
     session.execute = AsyncMock(
-        side_effect=[_result([candidate]), _result([existing_decision])]
+        side_effect=[_result([candidate]), _result([existing_decision]), _result([])]
     )
     session.flush = AsyncMock()
 
@@ -162,6 +194,7 @@ async def test_add_evidence_links_candidate_to_existing_decision() -> None:
             WORKSPACE_ID,
             USER_ID,
             candidate.id,
+            target_decision_id=existing_decision.id,
         )
 
     assert linked.lifecycle_status == "linked"
@@ -174,6 +207,7 @@ async def test_add_evidence_links_candidate_to_existing_decision() -> None:
 async def test_action_hints_remain_inert_metadata() -> None:
     candidate = _candidate()
     session = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([]))
     decision_node_id = uuid4()
 
     with patch(

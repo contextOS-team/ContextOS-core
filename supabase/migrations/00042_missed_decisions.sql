@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS public.missed_decision_scan_runs (
   sources_scanned INTEGER NOT NULL DEFAULT 0,
   sources_total INTEGER,
   candidates_created INTEGER NOT NULL DEFAULT 0,
+  review_candidates INTEGER NOT NULL DEFAULT 0,
+  auto_saved INTEGER NOT NULL DEFAULT 0,
+  suppressed INTEGER NOT NULL DEFAULT 0,
   attempts INTEGER NOT NULL DEFAULT 0,
   error_message TEXT,
   started_at TIMESTAMPTZ,
@@ -90,6 +93,16 @@ CREATE INDEX IF NOT EXISTS idx_missed_decision_candidates_quote_fingerprint
 
 CREATE INDEX IF NOT EXISTS idx_missed_decision_candidates_decision_fingerprint
   ON public.missed_decision_candidates (workspace_id, decision_fingerprint)
+  WHERE deleted_at IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_missed_decision_candidates_source_fingerprints
+  ON public.missed_decision_candidates (
+    workspace_id,
+    source_type,
+    source_id,
+    quote_fingerprint,
+    decision_fingerprint
+  )
   WHERE deleted_at IS NULL;
 
 ALTER TABLE public.missed_decision_scan_state ENABLE ROW LEVEL SECURITY;

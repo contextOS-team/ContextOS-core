@@ -128,6 +128,7 @@ async def list_visible_suggestions(
     workspace_id: UUID,
     *,
     limit: int = 3,
+    exclude_types: tuple[str, ...] = (),
 ) -> list[Suggestion]:
     """List open dashboard suggestions, excluding active snoozes."""
     now = _now()
@@ -142,9 +143,15 @@ async def list_visible_suggestions(
                 & (Suggestion.snoozed_until <= now),  # type: ignore[operator]
             ),
         )
-        .order_by(_priority_order(), Suggestion.created_at.desc())  # type: ignore[union-attr]
-        .limit(limit)
     )
+    if exclude_types:
+        stmt = stmt.where(
+            ~Suggestion.type.in_(list(exclude_types))  # type: ignore[attr-defined]
+        )
+    stmt = stmt.order_by(  # type: ignore[union-attr]
+        _priority_order(),
+        Suggestion.created_at.desc(),
+    ).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())
 

@@ -8,11 +8,13 @@ from datetime import UTC, datetime, timedelta
 from inspect import isawaitable
 from uuid import UUID
 
+from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from src.models.graph_node import GraphNode
 from src.models.missed_decision import MissedDecisionCandidate
+from src.models.suggestion import Suggestion
 from src.services.audit import log_audit_event
 from src.services.graph_ops import upsert_edge, upsert_node
 from src.services.missed_decision_attribution import (
@@ -27,7 +29,11 @@ from src.services.missed_decision_dedupe import (
     SUPPRESSION_DUPLICATE_NO_NEW_EVIDENCE,
 )
 from src.services.suggestion_quality import NO_WRITE_BOUNDARY, SuggestionGroundingTrace
-from src.services.suggestions import resolve_suggestion, snooze_suggestion
+from src.services.suggestions import (
+    SUGGESTION_STATUS_SNOOZED,
+    resolve_suggestion,
+    snooze_suggestion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -207,22 +213,40 @@ async def list_review_candidates(
     limit: int = 5,
 ) -> list[MissedDecisionCandidate]:
     """List open review candidates for the current workspace."""
+    now = _now()
     stmt = (
         select(MissedDecisionCandidate)
+        .outerjoin(Suggestion, MissedDecisionCandidate.suggestion_id == Suggestion.id)
         .where(
             MissedDecisionCandidate.workspace_id == workspace_id,
-            MissedDecisionCandidate.lifecycle_status == LIFECYCLE_SURFACED,
+            or_(
+                MissedDecisionCandidate.lifecycle_status == LIFECYCLE_SURFACED,
+                (
+                    (MissedDecisionCandidate.lifecycle_status == LIFECYCLE_DEFERRED)
+                    & (Suggestion.status == SUGGESTION_STATUS_SNOOZED)
+                    & (Suggestion.snoozed_until <= now)  # type: ignore[operator]
+                ),
+            ),
             MissedDecisionCandidate.deleted_at.is_(None),  # type: ignore[union-attr]
         )
         .order_by(MissedDecisionCandidate.detected_at.desc())  # type: ignore[union-attr]
         .limit(limit)
     )
     result = await session.execute(stmt)
-    return [
+    candidates = [
         candidate
         for candidate in result.scalars().all()
         if candidate.workspace_id == workspace_id
     ]
+    reopened = False
+    for candidate in candidates:
+        if candidate.lifecycle_status == LIFECYCLE_DEFERRED:
+            candidate.lifecycle_status = LIFECYCLE_SURFACED
+            candidate.surfaced_at = now
+            reopened = True
+    if reopened:
+        await session.flush()
+    return candidates
 
 
 def _decision_properties(
@@ -303,20 +327,22 @@ async def promote_candidate_to_decision(
             autosave_policy_version=autosave_policy_version,
         ),
     )
-    await _best_effort_evidence_edge(
-        session=session,
-        workspace_id=candidate.workspace_id,
-        source_node_id=decision_node_id,
-        target_node_id=decision_node_id,
-        relationship_type="evidenced_by",
-        properties={
-            "source_type": candidate.source_type,
-            "source_id": str(candidate.source_id),
-            "source_link": candidate.source_link,
-            "source_quote": candidate.source_quote,
-            "candidate_id": str(candidate.id),
-        },
-    )
+    source_node = await _find_source_graph_node(session, candidate, decision_node_id)
+    if source_node is not None:
+        await _best_effort_evidence_edge(
+            session=session,
+            workspace_id=candidate.workspace_id,
+            source_node_id=source_node.id,
+            target_node_id=decision_node_id,
+            relationship_type="evidenced_by",
+            properties={
+                "source_type": candidate.source_type,
+                "source_id": str(candidate.source_id),
+                "source_link": candidate.source_link,
+                "source_quote": candidate.source_quote,
+                "candidate_id": str(candidate.id),
+            },
+        )
     return decision_node_id
 
 
@@ -441,19 +467,57 @@ async def _load_graph_node(
     return node
 
 
+async def _find_source_graph_node(
+    session: AsyncSession,
+    candidate: MissedDecisionCandidate,
+    target_node_id: UUID,
+) -> GraphNode | None:
+    stmt = (
+        select(GraphNode)
+        .where(
+            GraphNode.workspace_id == candidate.workspace_id,
+            GraphNode.source_type == candidate.source_type,
+            GraphNode.source_id == candidate.source_id,
+            GraphNode.id != target_node_id,
+            GraphNode.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        .limit(1)
+    )
+    result = await session.execute(stmt)
+    node = result.scalar_one_or_none()
+    if isawaitable(node):
+        node = await node
+    if node is None or not isinstance(node, GraphNode):
+        return None
+    return node
+
+
 async def add_candidate_as_evidence(
     session: AsyncSession,
     workspace_id: UUID,
     user_id: UUID,
     candidate_id: UUID,
+    *,
+    target_decision_id: UUID | None = None,
 ) -> MissedDecisionCandidate:
     """Attach useful candidate source evidence to an existing graph Decision."""
     candidate = await _load_candidate(session, workspace_id, candidate_id)
     _ensure_actionable(candidate, "add_evidence")
-    if candidate.matched_entity_type != "graph_node" or not candidate.matched_entity_id:
+
+    if candidate.match_status not in {"weak_match", "strong_match"}:
+        raise InvalidCandidateTransitionError("Candidate has no existing match")
+    if candidate.matched_entity_type != "graph_node":
         raise InvalidCandidateTransitionError("Candidate has no graph match")
 
-    node = await _load_graph_node(session, workspace_id, candidate.matched_entity_id)
+    target_id = target_decision_id
+    if target_id is None and candidate.match_status == "strong_match":
+        target_id = candidate.matched_entity_id
+    if target_id is None:
+        raise InvalidCandidateTransitionError("Add evidence requires a target decision")
+
+    node = await _load_graph_node(session, workspace_id, target_id)
+    if node.entity_type != "Decision":
+        raise InvalidCandidateTransitionError("Target must be a Decision node")
     props = dict(node.properties or {})
     evidence = list(props.get("missed_decision_evidence") or [])
     evidence.append(
@@ -470,16 +534,20 @@ async def add_candidate_as_evidence(
     props["missed_decision_evidence"] = evidence
     node.properties = props
 
-    await _best_effort_evidence_edge(
-        session=session,
-        workspace_id=workspace_id,
-        source_node_id=node.id,
-        target_node_id=node.id,
-        relationship_type="has_evidence",
-        properties=evidence[-1],
-    )
+    source_node = await _find_source_graph_node(session, candidate, node.id)
+    if source_node is not None:
+        await _best_effort_evidence_edge(
+            session=session,
+            workspace_id=workspace_id,
+            source_node_id=source_node.id,
+            target_node_id=node.id,
+            relationship_type="has_evidence",
+            properties=evidence[-1],
+        )
     candidate.lifecycle_status = LIFECYCLE_LINKED
     candidate.resolved_at = _now()
+    candidate.matched_entity_type = "graph_node"
+    candidate.matched_entity_id = node.id
     _record_action(candidate, action="add_evidence", user_id=user_id)
     await _resolve_related_suggestion(session, candidate, workspace_id, user_id)
     await session.flush()

@@ -51,6 +51,9 @@ def test_missed_decision_models_capture_scan_and_candidate_contracts() -> None:
         source_window_start=datetime(2026, 5, 24, tzinfo=UTC),
         source_window_end=datetime(2026, 5, 25, tzinfo=UTC),
         sources_total=42,
+        review_candidates=3,
+        auto_saved=2,
+        suppressed=1,
         attempts=0,
     )
     candidate = MissedDecisionCandidate(
@@ -73,6 +76,9 @@ def test_missed_decision_models_capture_scan_and_candidate_contracts() -> None:
     assert state.last_missed_decision_scan_at is not None
     assert run.status == "queued"
     assert run.sources_total == 42
+    assert run.review_candidates == 3
+    assert run.auto_saved == 2
+    assert run.suppressed == 1
     assert candidate.lifecycle_status == "detected"
     assert candidate.evidence["source"] == "slack"
     assert candidate.people == ["Daulet"]
@@ -99,6 +105,9 @@ def test_missed_decision_scan_run_tracks_source_totals() -> None:
 
     assert column.nullable
     assert "sources_total" in MissedDecisionScanRun.model_fields
+    assert "review_candidates" in MissedDecisionScanRun.model_fields
+    assert "auto_saved" in MissedDecisionScanRun.model_fields
+    assert "suppressed" in MissedDecisionScanRun.model_fields
 
 
 def test_missed_decision_migration_defines_workspace_rls_and_lifecycles() -> None:
@@ -110,12 +119,29 @@ def test_missed_decision_migration_defines_workspace_rls_and_lifecycles() -> Non
     assert "missed_decision_candidates" in sql
     assert "last_missed_decision_scan_at" in sql
     assert "sources_total" in sql
+    assert "review_candidates" in sql
+    assert "auto_saved" in sql
+    assert "suppressed" in sql
     assert "workspace_members" in sql
     assert "status IN ('queued', 'running', 'succeeded', 'failed')" in sql
     assert (
         "lifecycle_status IN ('detected', 'surfaced', 'suppressed', 'linked', "
         "'confirmed', 'rejected', 'deferred')"
     ) in sql
+
+
+def test_reliability_counts_migration_dedupes_before_unique_index() -> None:
+    migration = Path(
+        "../supabase/migrations/00045_missed_decision_reliability_counts.sql"
+    )
+    sql = migration.read_text()
+    dedupe_index = sql.index("duplicate_live_candidates")
+    unique_index = sql.index("CREATE UNIQUE INDEX")
+
+    assert dedupe_index < unique_index
+    assert "ROW_NUMBER() OVER" in sql
+    assert "deleted_at = now()" in sql
+    assert "duplicate_existing_decision" in sql
 
 
 @pytest.mark.asyncio
@@ -228,6 +254,46 @@ async def test_enqueue_skips_when_source_scan_is_already_active() -> None:
 
 
 @pytest.mark.asyncio
+async def test_enqueue_active_scan_scope_includes_source_resource() -> None:
+    from sqlalchemy.dialects import postgresql
+
+    captured_sql = ""
+
+    class Savepoint:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    async def fake_execute(stmt):
+        nonlocal captured_sql
+        captured_sql = str(
+            stmt.compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        return _result_one(uuid4())
+
+    session = AsyncMock()
+    session.begin_nested = MagicMock(return_value=Savepoint())
+    session.execute = AsyncMock(side_effect=fake_execute)
+    session.add = MagicMock()
+
+    result = await scanner.enqueue_missed_decision_scan(
+        session,
+        uuid4(),
+        "slack_message",
+        source_resource_id="C123",
+    )
+
+    assert result is None
+    assert "source_resource_id = 'C123'" in captured_sql
+    session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_drain_claims_queued_runs_once(monkeypatch: pytest.MonkeyPatch) -> None:
     run = MissedDecisionScanRun(
         workspace_id=uuid4(),
@@ -289,6 +355,42 @@ async def test_drain_supersedes_duplicate_active_runs_for_same_source(
     assert older.status == "failed"
     assert older.error_message == "Superseded by a newer active scan for this source."
     assert older.completed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_drain_allows_parallel_runs_for_different_source_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_id = uuid4()
+    first = MissedDecisionScanRun(
+        workspace_id=workspace_id,
+        source_type="slack_message",
+        source_resource_id="C123",
+        status="queued",
+        created_at=datetime(2026, 5, 25, 10, 0, tzinfo=UTC),
+    )
+    second = MissedDecisionScanRun(
+        workspace_id=workspace_id,
+        source_type="slack_message",
+        source_resource_id="C456",
+        status="queued",
+        created_at=datetime(2026, 5, 25, 9, 0, tzinfo=UTC),
+    )
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_result_all([first, second]))
+    session.flush = AsyncMock()
+    processed: list[MissedDecisionScanRun] = []
+
+    async def fake_run_once(_session, scan_run):
+        processed.append(scan_run)
+        scan_run.status = "succeeded"
+
+    monkeypatch.setattr(scanner, "run_missed_decision_scan_once", fake_run_once)
+
+    count = await scanner.drain_queued_missed_decision_scans(session, limit=5)
+
+    assert count == 2
+    assert processed == [first, second]
 
 
 @pytest.mark.asyncio
@@ -354,7 +456,12 @@ async def test_run_success_advances_checkpoint_after_processing(
         return [record]
 
     async def fake_process(*_args, **_kwargs):
-        return {"candidates_created": 1}
+        return {
+            "candidates_created": 1,
+            "review_candidates": 1,
+            "auto_saved": 0,
+            "suppressed": 0,
+        }
 
     monkeypatch.setattr(scanner, "load_source_window", fake_load_window)
     monkeypatch.setattr(scanner, "process_missed_decision_source_window", fake_process)
@@ -364,6 +471,9 @@ async def test_run_success_advances_checkpoint_after_processing(
     assert run.status == "succeeded"
     assert run.sources_scanned == 1
     assert run.candidates_created == 1
+    assert run.review_candidates == 1
+    assert run.auto_saved == 0
+    assert run.suppressed == 0
     assert run.error_message is None
     assert run.completed_at is not None
     state = session.add.call_args.args[0]
@@ -480,7 +590,12 @@ async def test_run_processes_source_window_in_cursor_batches(
 
     async def fake_process(_session, _scan_run, batch):
         processed_batches.append([record.source_id for record in batch])
-        return {"candidates_created": len(batch)}
+        return {
+            "candidates_created": len(batch),
+            "review_candidates": len(batch),
+            "auto_saved": 0,
+            "suppressed": 0,
+        }
 
     monkeypatch.setattr(scanner, "SOURCE_WINDOW_BATCH_SIZE", 2)
     monkeypatch.setattr(scanner, "load_source_window", fake_load_window)
@@ -497,6 +612,7 @@ async def test_run_processes_source_window_in_cursor_batches(
     ]
     assert run.sources_scanned == 3
     assert run.candidates_created == 3
+    assert run.review_candidates == 3
     state = session.add.call_args.args[0]
     assert state.last_missed_decision_scan_at == source_window_end
 
@@ -553,7 +669,12 @@ async def test_run_commits_progress_every_five_sources_within_large_batch(
 
     async def fake_process(_session, _scan_run, batch):
         processed_sizes.append(len(batch))
-        return {"candidates_created": len(batch)}
+        return {
+            "candidates_created": len(batch),
+            "review_candidates": len(batch),
+            "auto_saved": 0,
+            "suppressed": 0,
+        }
 
     monkeypatch.setattr(scanner, "SOURCE_WINDOW_BATCH_SIZE", 12)
     monkeypatch.setattr(

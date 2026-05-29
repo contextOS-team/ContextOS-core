@@ -17,6 +17,12 @@ from src.models.notion import NotionPage
 from src.models.slack import SlackMessage
 from src.models.telegram import TelegramMessage
 from src.services.slack_events import resolve_slack_permalink, slack_archive_url
+from src.services.slack_text import (
+    clean_slack_name,
+    replace_slack_user_mentions,
+    resolve_slack_user_names,
+    slack_user_ids_in_text,
+)
 
 
 @dataclass(frozen=True)
@@ -215,15 +221,28 @@ async def _load_slack(
     result = await session.execute(stmt)
     rows = result.scalars().all()
     source_links = await _slack_source_links(session, workspace_id, list(rows))
+    user_ids: set[str] = set()
+    known_user_names: dict[str, str | None] = {}
+    for row in rows:
+        user_ids.update(slack_user_ids_in_text(row.text))
+        if row.user_id and row.user_name:
+            known_user_names[row.user_id] = row.user_name
+    user_names = await resolve_slack_user_names(
+        session,
+        workspace_id,
+        user_ids,
+        known_user_names=known_user_names,
+    )
     records: list[MissedDecisionSourceRecord] = []
     for row in rows:
         timestamp = row.slack_created_at or row.created_at or start
+        text = replace_slack_user_mentions(row.text, user_names)
         records.append(
             MissedDecisionSourceRecord(
                 workspace_id=workspace_id,
                 source_type="slack_message",
                 source_id=row.id,
-                text=row.text,
+                text=text,
                 source_link=_source_link(
                     "slack_message",
                     workspace_id,
@@ -235,7 +254,9 @@ async def _load_slack(
                 metadata={
                     "channel_id": row.channel_id,
                     "channel_name": row.channel_name,
-                    "user_name": row.user_name,
+                    "user_name": clean_slack_name(row.user_name)
+                    or (user_names.get(row.user_id) if row.user_id else None),
+                    "slack_user_names": user_names,
                     "slack_ts": row.slack_ts,
                     "thread_ts": row.thread_ts,
                 },

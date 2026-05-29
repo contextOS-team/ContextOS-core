@@ -64,6 +64,9 @@ class MissedDecisionScanRun(BaseModel, table=True):
     sources_scanned: int = Field(default=0, nullable=False)
     sources_total: int | None = Field(default=None, nullable=True)
     candidates_created: int = Field(default=0, nullable=False)
+    review_candidates: int = Field(default=0, nullable=False)
+    auto_saved: int = Field(default=0, nullable=False)
+    suppressed: int = Field(default=0, nullable=False)
     attempts: int = Field(default=0, nullable=False)
     error_message: str | None = Field(default=None)
     started_at: datetime | None = Field(
@@ -80,6 +83,18 @@ class MissedDecisionCandidate(BaseModel, table=True):
     """Source-backed missed-decision candidate before or after review."""
 
     __tablename__ = "missed_decision_candidates"
+    __table_args__ = (
+        Index(
+            "uq_missed_decision_candidates_source_fingerprints",
+            "workspace_id",
+            "source_type",
+            "source_id",
+            "quote_fingerprint",
+            "decision_fingerprint",
+            unique=True,
+            postgresql_where=sa_text("deleted_at IS NULL"),
+        ),
+    )
 
     workspace_id: uuid.UUID = Field(foreign_key="workspaces.id", nullable=False)
     scan_run_id: uuid.UUID | None = Field(

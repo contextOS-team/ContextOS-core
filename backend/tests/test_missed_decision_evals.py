@@ -71,6 +71,18 @@ def test_eval_runner_scores_expected_candidates_and_invalid_drops(
                             "confidence": 0.84,
                             "people": ["Daulet"],
                             "affected_systems": ["dashboard"],
+                            "business_category": "product_behavior",
+                            "affected_objects": ["dashboard"],
+                            "expected_artifact_type": "product_spec",
+                            "expected_artifact": (
+                                "Dashboard product spec should document the "
+                                "Needs review rail boundary."
+                            ),
+                            "impact_level": "medium",
+                            "impact_reason": (
+                                "Forgetting this would mix review candidates "
+                                "with confirmed decision memory."
+                            ),
                             "supporting_sources": [],
                         }
                     ]
@@ -201,6 +213,18 @@ def test_positive_cases_without_suggestion_payload_fail_completeness(
                             "confidence": 0.84,
                             "people": [],
                             "affected_systems": ["dashboard"],
+                            "business_category": "product_behavior",
+                            "affected_objects": ["dashboard"],
+                            "expected_artifact_type": "product_spec",
+                            "expected_artifact": (
+                                "Dashboard product spec should document the "
+                                "Needs review rail boundary."
+                            ),
+                            "impact_level": "medium",
+                            "impact_reason": (
+                                "Forgetting this would mix review candidates "
+                                "with confirmed decision memory."
+                            ),
                             "supporting_sources": [],
                         }
                     ]
