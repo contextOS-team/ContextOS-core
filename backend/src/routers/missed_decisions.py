@@ -90,6 +90,14 @@ class MissedDecisionScanStatus(BaseModel):
 def _legal_actions(candidate: MissedDecisionCandidate) -> list[str]:
     if candidate.lifecycle_status != "surfaced":
         return []
+    action = _draft_action(candidate)
+    action_kind = action.get("kind") if action else None
+    if action_kind in {"draft_ticket", "draft_doc_update"}:
+        return ["defer", "reject"]
+    if action_kind == "attach_evidence":
+        return ["add_evidence", "defer", "reject"]
+    if action_kind == "hold_for_reprocess":
+        return []
     actions = ["confirm", "defer", "reject"]
     if candidate.match_status in {"weak_match", "strong_match"}:
         actions.append("add_evidence")
@@ -118,6 +126,14 @@ def _recommended_action(
     candidate: MissedDecisionCandidate,
     match: dict | None,
 ) -> str:
+    action = _draft_action(candidate)
+    action_kind = action.get("kind") if action else None
+    if action_kind == "save_decision_receipt":
+        return "save_as_new_decision"
+    if action_kind == "attach_evidence":
+        return "add_as_evidence"
+    if action_kind in {"draft_ticket", "draft_doc_update", "hold_for_reprocess"}:
+        return str(action_kind)
     if candidate.match_status in {"weak_match", "strong_match"}:
         if match and match.get("entity_type") == "Decision":
             return "add_as_evidence"
@@ -125,6 +141,24 @@ def _recommended_action(
             return "ignore_duplicate"
         return "inspect_existing_match"
     return "save_as_new_decision"
+
+
+def _actionability(candidate: MissedDecisionCandidate) -> dict | None:
+    evidence = candidate.evidence or {}
+    value = evidence.get("actionability")
+    return dict(value) if isinstance(value, dict) else None
+
+
+def _draft_action(candidate: MissedDecisionCandidate) -> dict | None:
+    actionability = _actionability(candidate)
+    if actionability:
+        next_action = actionability.get("next_action")
+        if isinstance(next_action, dict):
+            return dict(next_action)
+    hints = candidate.action_hints or []
+    if hints and isinstance(hints[0], dict):
+        return dict(hints[0])
+    return None
 
 
 def _review_context(candidate: MissedDecisionCandidate) -> dict:
@@ -212,6 +246,8 @@ def _serialize_candidate(
             {key: value for key, value in match_metadata.items() if value is not None}
         )
 
+    actionability = _actionability(candidate)
+    draft_action = _draft_action(candidate)
     return {
         "id": str(candidate.id),
         "workspace_id": str(candidate.workspace_id),
@@ -239,6 +275,14 @@ def _serialize_candidate(
             "href": match["href"],
             "match_reason": match["match_reason"],
         },
+        "actionability": actionability,
+        "draft_action": draft_action,
+        "draft_title": (
+            draft_action.get("title") if isinstance(draft_action, dict) else None
+        ),
+        "draft_body": (
+            draft_action.get("body") if isinstance(draft_action, dict) else None
+        ),
         "recommended_action": _recommended_action(candidate, match),
         "legal_actions": _legal_actions(candidate),
     }
