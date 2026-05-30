@@ -55,6 +55,24 @@ def _candidate_id(candidate: MissedDecisionCandidate) -> UUID:
     return candidate.id
 
 
+def _actionability(candidate: MissedDecisionCandidate) -> dict | None:
+    evidence = candidate.evidence or {}
+    value = evidence.get("actionability")
+    return dict(value) if isinstance(value, dict) else None
+
+
+def _draft_action(candidate: MissedDecisionCandidate) -> dict | None:
+    actionability = _actionability(candidate)
+    if actionability:
+        next_action = actionability.get("next_action")
+        if isinstance(next_action, dict):
+            return dict(next_action)
+    hints = candidate.action_hints or []
+    if hints and isinstance(hints[0], dict):
+        return dict(hints[0])
+    return None
+
+
 def build_missed_decision_suggestion(
     candidate: MissedDecisionCandidate,
 ) -> Suggestion | None:
@@ -102,6 +120,10 @@ def build_missed_decision_suggestion(
     }
     if action_hint_grounding:
         provenance["no_write_boundary"] = NO_WRITE_BOUNDARY
+    actionability = _actionability(candidate)
+    draft_action = _draft_action(candidate)
+    if actionability:
+        provenance["actionability"] = actionability
 
     return Suggestion(
         workspace_id=candidate.workspace_id,
@@ -132,6 +154,14 @@ def build_missed_decision_suggestion(
             "people": candidate_people(candidate),
             "affected_systems": candidate.affected_systems or [],
             "match_status": candidate.match_status,
+            "actionability": actionability,
+            "draft_action": draft_action,
+            "draft_title": (
+                draft_action.get("title") if isinstance(draft_action, dict) else None
+            ),
+            "draft_body": (
+                draft_action.get("body") if isinstance(draft_action, dict) else None
+            ),
             "action_hints": candidate.action_hints or [],
             "action_hint_grounding": action_hint_grounding,
             "explanation": assessment.explanation(),

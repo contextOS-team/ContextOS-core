@@ -17,8 +17,15 @@ from src.models.missed_decision import (
     MissedDecisionScanRun,
     MissedDecisionScanState,
 )
+from src.services.missed_decision_actionability import (
+    ACTION_SAVE_DECISION_RECEIPT,
+    ACTIONABILITY_ACTIONABLE,
+    WRITE_POLICY_AUTO_INTERNAL,
+    WRITE_POLICY_DRAFT_EXTERNAL,
+    WRITE_POLICY_REVIEW_REQUIRED,
+    verify_candidate_actionability,
+)
 from src.services.missed_decision_actions import auto_confirm_candidate
-from src.services.missed_decision_autosave import should_auto_save_missed_decision
 from src.services.missed_decision_dedupe import (
     classify_missed_decision_candidate,
     decision_fingerprint,
@@ -380,6 +387,11 @@ async def process_missed_decision_source_window(
         candidate.matched_entity_id = classification.matched_entity_id
         _record_match_metadata(candidate, classification)
         _record_artifact_search_metadata(candidate, classification)
+        actionability = await verify_candidate_actionability(
+            session,
+            candidate,
+            classification,
+        )
 
         await _add(session, candidate)
         await session.flush()
@@ -387,11 +399,20 @@ async def process_missed_decision_source_window(
         if candidate.lifecycle_status == "suppressed":
             suppressed += 1
 
-        if should_auto_save_missed_decision(candidate, classification):
+        next_action = actionability.next_action
+        if (
+            actionability.status == ACTIONABILITY_ACTIONABLE
+            and next_action.kind == ACTION_SAVE_DECISION_RECEIPT
+            and next_action.write_policy == WRITE_POLICY_AUTO_INTERNAL
+        ):
             await auto_confirm_candidate(session, candidate)
             auto_saved += 1
-        elif classification.should_publish_suggestion and is_surfaceable_confidence(
-            candidate.confidence
+        elif (
+            actionability.status == ACTIONABILITY_ACTIONABLE
+            and next_action.write_policy
+            in {WRITE_POLICY_DRAFT_EXTERNAL, WRITE_POLICY_REVIEW_REQUIRED}
+            and classification.should_publish_suggestion
+            and is_surfaceable_confidence(candidate.confidence)
         ):
             suggestion = await publish_missed_decision_suggestion(
                 session,

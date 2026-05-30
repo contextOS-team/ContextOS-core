@@ -12,6 +12,18 @@ from src.models.graph_node import GraphNode
 from src.models.missed_decision import MissedDecisionCandidate, MissedDecisionScanRun
 from src.models.suggestion import Suggestion
 from src.services import missed_decision_scanner as scanner
+from src.services.missed_decision_actionability import (
+    ACTION_DRAFT_TICKET,
+    ACTION_HOLD_FOR_REPROCESS,
+    ACTION_SAVE_DECISION_RECEIPT,
+    ACTIONABILITY_ACTIONABLE,
+    ACTIONABILITY_STALE_SEARCH,
+    WRITE_POLICY_AUTO_INTERNAL,
+    WRITE_POLICY_DRAFT_EXTERNAL,
+    WRITE_POLICY_REVIEW_REQUIRED,
+    ActionabilityResult,
+    NextAction,
+)
 from src.services.missed_decision_autosave import should_auto_save_missed_decision
 from src.services.missed_decision_dedupe import (
     DedupeClassification,
@@ -147,6 +159,37 @@ def _classification(**overrides) -> DedupeClassification:
     }
     values.update(overrides)
     return DedupeClassification(**values)
+
+
+def _actionability(
+    candidate: MissedDecisionCandidate,
+    *,
+    status: str = ACTIONABILITY_ACTIONABLE,
+    kind: str = ACTION_DRAFT_TICKET,
+    write_policy: str = WRITE_POLICY_DRAFT_EXTERNAL,
+) -> ActionabilityResult:
+    action = NextAction(
+        kind=kind,
+        write_policy=write_policy,
+        title="Track decision",
+        body="Draft body",
+        source_quote=candidate.source_quote,
+        source_link=candidate.source_link,
+        artifact_type="ticket",
+        searched_sources=["Decision memory", "Tickets"],
+        copyable=write_policy == WRITE_POLICY_DRAFT_EXTERNAL,
+    )
+    result = ActionabilityResult(
+        status=status,
+        next_action=action,
+        searched_sources=["Decision memory", "Tickets"],
+        reason="test actionability",
+    )
+    evidence = dict(candidate.evidence or {})
+    evidence["actionability"] = result.to_payload()
+    candidate.evidence = evidence
+    candidate.action_hints = [action.to_hint()]
+    return result
 
 
 def test_validation_drops_incomplete_and_hallucinated_candidates() -> None:
@@ -642,7 +685,37 @@ async def test_graph_match_query_includes_artifact_evidence_nodes() -> None:
 @pytest.mark.asyncio
 async def test_publish_missed_decision_suggestion_references_candidate() -> None:
     candidate = _candidate(
-        action_hints=[{"kind": "ticket", "title": "Document the rail rule"}]
+        action_hints=[
+            {
+                "kind": "draft_ticket",
+                "write_policy": "draft_external",
+                "title": "Document the rail rule",
+                "body": "Draft ticket body",
+                "source_quote": (
+                    "We decided to keep the dashboard Needs review rail bounded"
+                ),
+                "source_link": "https://slack.example/archives/C123/p456",
+                "copyable": True,
+            }
+        ],
+        evidence={
+            "actionability": {
+                "status": "actionable",
+                "reason": "No matching ticket was found.",
+                "searched_sources": ["Decision memory", "Tickets"],
+                "next_action": {
+                    "kind": "draft_ticket",
+                    "write_policy": "draft_external",
+                    "title": "Document the rail rule",
+                    "body": "Draft ticket body",
+                    "source_quote": (
+                        "We decided to keep the dashboard Needs review rail bounded"
+                    ),
+                    "source_link": "https://slack.example/archives/C123/p456",
+                    "copyable": True,
+                },
+            }
+        },
     )
     candidate.id = uuid4()
     session = AsyncMock()
@@ -660,6 +733,10 @@ async def test_publish_missed_decision_suggestion_references_candidate() -> None
     assert suggestion.evidence["source_link"] == candidate.source_link
     assert suggestion.details["candidate_id"] == str(candidate.id)
     assert suggestion.details["match_status"] == candidate.match_status
+    assert suggestion.details["actionability"]["status"] == "actionable"
+    assert suggestion.details["draft_action"]["kind"] == "draft_ticket"
+    assert suggestion.details["draft_title"] == "Document the rail rule"
+    assert suggestion.details["draft_body"] == "Draft ticket body"
     assert suggestion.details["explanation"]["grounding_family"] == "missed_decision"
     assert suggestion.details["explanation"]["grounding_state"] == "source_backed"
     assert suggestion.details["action_hint_grounding"][0]["grounding_state"] == (
@@ -670,6 +747,7 @@ async def test_publish_missed_decision_suggestion_references_candidate() -> None
     )
     assert suggestion.provenance["candidate_id"] == str(candidate.id)
     assert suggestion.provenance["retrieval_signals"] == ["missed_decision_candidate"]
+    assert suggestion.provenance["actionability"]["status"] == "actionable"
     assert suggestion.provenance["no_write_boundary"] == "phase_46_metadata_only"
     assert suggestion.provenance["quality_gate"]["passed"] is True
     assert suggestion.provenance["quality_gate"]["required_evidence"] == [
@@ -768,7 +846,14 @@ async def test_suppressed_candidate_is_not_published_from_scanner(
     session = AsyncMock()
     session.add = MagicMock()
     session.flush = AsyncMock()
-    session.execute = AsyncMock(side_effect=[_result([]), _result([existing])])
+    session.execute = AsyncMock(
+        side_effect=[
+            _result([]),
+            _result([existing]),
+            _result([]),
+            _result([]),
+        ]
+    )
     run = MissedDecisionScanRun(
         workspace_id=record.workspace_id,
         source_type=record.source_type,
@@ -837,6 +922,168 @@ async def test_scanner_auto_saves_safe_very_high_candidate_without_suggestion(
     assert MissedDecisionCandidate in added_types
     assert Suggestion not in added_types
     assert result["candidates_created"] == 1
+    assert result["decisions_auto_saved"] == 1
+    assert result["suggestions_published"] == 0
+
+
+@pytest.mark.asyncio
+async def test_scanner_does_not_auto_save_external_draft_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _record()
+    draft = _draft(
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        source_id=record.source_id,
+        source_link=record.source_link,
+        confidence=CONFIDENCE_VERY_HIGH,
+        people=["Daulet"],
+        affected_systems=["dashboard"],
+        evidence={"source_metadata": {"channel_name": "product"}},
+    )
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([]))
+    run = MissedDecisionScanRun(
+        id=uuid4(),
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        status="running",
+    )
+
+    async def fake_extract(_record):
+        return [draft]
+
+    async def fake_actionability(_session, candidate, _classification):
+        return _actionability(
+            candidate,
+            status=ACTIONABILITY_ACTIONABLE,
+            kind=ACTION_DRAFT_TICKET,
+            write_policy=WRITE_POLICY_DRAFT_EXTERNAL,
+        )
+
+    monkeypatch.setattr(scanner, "extract_missed_decision_candidates", fake_extract)
+    monkeypatch.setattr(scanner, "verify_candidate_actionability", fake_actionability)
+    monkeypatch.setattr(
+        scanner,
+        "auto_confirm_candidate",
+        AsyncMock(side_effect=AssertionError("external drafts must not auto-confirm")),
+    )
+
+    result = await scanner.process_missed_decision_source_window(session, run, [record])
+
+    added_types = [type(call.args[0]) for call in session.add.call_args_list]
+    assert MissedDecisionCandidate in added_types
+    assert Suggestion in added_types
+    assert result["decisions_auto_saved"] == 0
+    assert result["suggestions_published"] == 1
+
+
+@pytest.mark.asyncio
+async def test_scanner_holds_non_actionable_candidates_without_suggestion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _record()
+    draft = _draft(
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        source_id=record.source_id,
+        source_link=record.source_link,
+        confidence=CONFIDENCE_HIGH,
+        people=["Daulet"],
+        affected_systems=["dashboard"],
+        evidence={"source_metadata": {"channel_name": "product"}},
+    )
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([]))
+    run = MissedDecisionScanRun(
+        id=uuid4(),
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        status="running",
+    )
+
+    async def fake_extract(_record):
+        return [draft]
+
+    async def fake_actionability(_session, candidate, _classification):
+        return _actionability(
+            candidate,
+            status=ACTIONABILITY_STALE_SEARCH,
+            kind=ACTION_HOLD_FOR_REPROCESS,
+            write_policy=WRITE_POLICY_REVIEW_REQUIRED,
+        )
+
+    monkeypatch.setattr(scanner, "extract_missed_decision_candidates", fake_extract)
+    monkeypatch.setattr(scanner, "verify_candidate_actionability", fake_actionability)
+    monkeypatch.setattr(
+        scanner,
+        "publish_missed_decision_suggestion",
+        AsyncMock(side_effect=AssertionError("held candidates must not publish")),
+    )
+
+    result = await scanner.process_missed_decision_source_window(session, run, [record])
+
+    added_types = [type(call.args[0]) for call in session.add.call_args_list]
+    assert MissedDecisionCandidate in added_types
+    assert Suggestion not in added_types
+    assert result["decisions_auto_saved"] == 0
+    assert result["suggestions_published"] == 0
+
+
+@pytest.mark.asyncio
+async def test_scanner_auto_confirms_only_auto_internal_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _record()
+    draft = _draft(
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        source_id=record.source_id,
+        source_link=record.source_link,
+        confidence=CONFIDENCE_VERY_HIGH,
+        people=["Daulet"],
+        affected_systems=["dashboard"],
+        evidence={"source_metadata": {"channel_name": "product"}},
+    )
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+    session.execute = AsyncMock(return_value=_result([]))
+    run = MissedDecisionScanRun(
+        id=uuid4(),
+        workspace_id=record.workspace_id,
+        source_type=record.source_type,
+        status="running",
+    )
+
+    async def fake_extract(_record):
+        return [draft]
+
+    async def fake_actionability(_session, candidate, _classification):
+        return _actionability(
+            candidate,
+            status=ACTIONABILITY_ACTIONABLE,
+            kind=ACTION_SAVE_DECISION_RECEIPT,
+            write_policy=WRITE_POLICY_AUTO_INTERNAL,
+        )
+
+    async def fake_auto_confirm(_session, candidate, **_kwargs):
+        candidate.lifecycle_status = "confirmed"
+        return None
+
+    monkeypatch.setattr(scanner, "extract_missed_decision_candidates", fake_extract)
+    monkeypatch.setattr(scanner, "verify_candidate_actionability", fake_actionability)
+    monkeypatch.setattr(scanner, "auto_confirm_candidate", fake_auto_confirm)
+
+    result = await scanner.process_missed_decision_source_window(session, run, [record])
+
+    added_types = [type(call.args[0]) for call in session.add.call_args_list]
+    assert MissedDecisionCandidate in added_types
+    assert Suggestion not in added_types
     assert result["decisions_auto_saved"] == 1
     assert result["suggestions_published"] == 0
 
