@@ -22,6 +22,18 @@ text, expected candidates, and structured candidate output. The runner validates
 source quotes and links through the production missed-decision validator, then
 reports precision, recall, invalid candidate drops, and threshold pass/fail.
 
+## Testing Split
+
+Deterministic evals validate AI/output contracts: source-backed extraction,
+serialized suggestion payloads, and actionability metadata such as status,
+write policy, and copyable draft fields.
+
+Mocked unit and workflow tests validate orchestration, persistence, provider
+boundaries, and UI behavior around those contracts.
+
+CI evals must stay deterministic: no live model calls, no database writes, and
+no external provider writes.
+
 ## Why Traces Are Not Enough
 
 Tracing answers operational questions:
