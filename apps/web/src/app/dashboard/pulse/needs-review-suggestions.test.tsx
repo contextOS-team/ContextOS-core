@@ -74,6 +74,26 @@ function candidate(
       impact_reason: 'Forgetting this would change release execution.',
       searched_sources: ['Decision memory', 'Tickets', 'PRs', 'Docs'],
     },
+    actionability: overrides.actionability ?? {
+      status: 'actionable',
+      reason: 'No matching fresh artifact was found.',
+      searched_sources: ['Decision memory', 'Tickets', 'PRs', 'Docs'],
+      stale_providers: [],
+      artifact_matches: [],
+      next_action: {
+        kind: 'attach_evidence',
+        write_policy: 'review_required',
+        title: 'Attach source evidence to existing decision',
+        body: 'Decision: Use the regional rollout guardrail',
+        source_quote: overrides.source_quote ?? 'Ship it to Region A first, then expand after support confirms.',
+        source_link: overrides.source_link ?? 'https://slack.com/archives/C123/p1716211200000000',
+        searched_sources: ['Decision memory', 'Tickets', 'PRs', 'Docs'],
+        copyable: false,
+      },
+    },
+    draft_action: overrides.draft_action ?? null,
+    draft_title: overrides.draft_title ?? null,
+    draft_body: overrides.draft_body ?? null,
     possible_existing_match: overrides.possible_existing_match ?? {
       match_status: 'weak_match',
       entity_type: 'Decision',
@@ -333,8 +353,8 @@ describe('NeedsReviewSuggestions', () => {
       />
     )
 
-    expect(screen.getByText('Needs review')).toBeTruthy()
-    expect(screen.getByText('Missed-decision candidates that need confirmation before becoming decision memory.')).toBeTruthy()
+    expect(screen.getByText('Decision actions')).toBeTruthy()
+    expect(screen.getByText('Source-backed decisions with one concrete next action.')).toBeTruthy()
     expect(screen.getByText('Decision 1')).toBeTruthy()
     expect(screen.getByText('Decision 2')).toBeTruthy()
     expect(screen.getByText('Decision 3')).toBeTruthy()
@@ -400,6 +420,119 @@ describe('NeedsReviewSuggestions', () => {
     expect(screen.getByRole('link', { name: /view all/i }).getAttribute('href'))
       .toBe('/dashboard/suggestions')
     expect(screen.queryByText(/Link existing/i)).toBeNull()
+  })
+
+  it('renders draft ticket copy and copies the generated draft', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    render(
+      <NeedsReviewSuggestions
+        suggestions={[
+          candidate({
+            possible_existing_match: {
+              match_status: 'no_match',
+              entity_type: null,
+              entity_id: null,
+              title: null,
+              href: null,
+              match_reason: null,
+            },
+            recommended_action: 'draft_ticket',
+            legal_actions: ['defer', 'reject'],
+            draft_title: 'Track decision: Use the regional rollout guardrail',
+            draft_body: 'Decision: Use the regional rollout guardrail\n\nSource quote: "Ship it to Region A first"',
+            draft_action: {
+              kind: 'draft_ticket',
+              write_policy: 'draft_external',
+              title: 'Track decision: Use the regional rollout guardrail',
+              body: 'Decision: Use the regional rollout guardrail\n\nSource quote: "Ship it to Region A first"',
+              source_quote: 'Ship it to Region A first, then expand after support confirms.',
+              source_link: 'https://slack.com/archives/C123/p1716211200000000',
+              searched_sources: ['Decision memory', 'Tickets', 'PRs', 'Docs'],
+              copyable: true,
+            },
+            actionability: {
+              status: 'actionable',
+              reason: 'No matching fresh ticket was found.',
+              searched_sources: ['Decision memory', 'Tickets', 'PRs', 'Docs'],
+              stale_providers: [],
+              artifact_matches: [],
+              next_action: {
+                kind: 'draft_ticket',
+                write_policy: 'draft_external',
+                title: 'Track decision: Use the regional rollout guardrail',
+                body: 'Decision: Use the regional rollout guardrail\n\nSource quote: "Ship it to Region A first"',
+                source_quote: 'Ship it to Region A first, then expand after support confirms.',
+                source_link: 'https://slack.com/archives/C123/p1716211200000000',
+                searched_sources: ['Decision memory', 'Tickets', 'PRs', 'Docs'],
+                copyable: true,
+              },
+            },
+          }),
+        ]}
+        onSaveAsNewDecision={vi.fn()}
+        onAddAsEvidence={vi.fn()}
+        onDefer={vi.fn()}
+        onDismiss={vi.fn()}
+        onIgnoreDuplicate={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Track decision: Use the regional rollout guardrail')).toBeTruthy()
+    expect(screen.getByText(/Decision: Use the regional rollout guardrail/)).toBeTruthy()
+    expect(screen.getByText('Decision memory, Tickets, PRs, Docs')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Save as new decision' })).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Copy draft' }))
+
+    expect(writeText).toHaveBeenCalledWith(
+      expect.stringContaining('Track decision: Use the regional rollout guardrail')
+    )
+  })
+
+  it('hides stale and unsupported candidates from the Decision actions rail', () => {
+    render(
+      <NeedsReviewSuggestions
+        suggestions={[
+          candidate({
+            id: 'stale-candidate',
+            inferred_decision: 'Stale search candidate',
+            actionability: {
+              status: 'stale_search',
+              reason: 'Provider is stale.',
+              searched_sources: [],
+              stale_providers: ['jira'],
+              artifact_matches: [],
+              next_action: null,
+            },
+          }),
+          candidate({
+            id: 'unsupported-candidate',
+            inferred_decision: 'Unsupported candidate',
+            actionability: {
+              status: 'unsupported_artifact',
+              reason: 'Unsupported.',
+              searched_sources: [],
+              stale_providers: [],
+              artifact_matches: [],
+              next_action: null,
+            },
+          }),
+        ]}
+        onSaveAsNewDecision={vi.fn()}
+        onAddAsEvidence={vi.fn()}
+        onDefer={vi.fn()}
+        onDismiss={vi.fn()}
+        onIgnoreDuplicate={vi.fn()}
+      />
+    )
+
+    expect(screen.queryByText('Stale search candidate')).toBeNull()
+    expect(screen.queryByText('Unsupported candidate')).toBeNull()
   })
 
   it('does not render raw matched entity ids when match title is missing', () => {

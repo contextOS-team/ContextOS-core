@@ -51,6 +51,7 @@ TERMINAL_LIFECYCLES = {
     LIFECYCLE_REJECTED,
 }
 ACTIONABLE_LIFECYCLES = {LIFECYCLE_SURFACED, LIFECYCLE_DEFERRED}
+VISIBLE_ACTIONABILITY_STATUSES = {None, "actionable"}
 
 
 class CandidateNotFoundError(Exception):
@@ -237,6 +238,7 @@ async def list_review_candidates(
         candidate
         for candidate in result.scalars().all()
         if candidate.workspace_id == workspace_id
+        and _visible_actionability_status(candidate) in VISIBLE_ACTIONABILITY_STATUSES
     ]
     reopened = False
     for candidate in candidates:
@@ -247,6 +249,15 @@ async def list_review_candidates(
     if reopened:
         await session.flush()
     return candidates
+
+
+def _visible_actionability_status(candidate: MissedDecisionCandidate) -> str | None:
+    evidence = candidate.evidence if isinstance(candidate.evidence, dict) else {}
+    actionability = evidence.get("actionability")
+    if not isinstance(actionability, dict):
+        return None
+    status = actionability.get("status")
+    return status if isinstance(status, str) else None
 
 
 def _decision_properties(
@@ -269,6 +280,10 @@ def _decision_properties(
         metadata={"candidate_id": str(candidate.id)},
     )
     action_hint_grounding = grounding.action_hint_grounding()
+    evidence = candidate.evidence or {}
+    actionability = evidence.get("actionability")
+    if not isinstance(actionability, dict):
+        actionability = None
     properties = {
         "description": candidate.inferred_decision,
         "rationale": candidate.inferred_rationale,
@@ -287,6 +302,7 @@ def _decision_properties(
         "source_context": source_context,
         "date": source_timestamp,
         "action_hints": candidate.action_hints or [],
+        "actionability": actionability,
         "action_hint_grounding": action_hint_grounding,
         "grounding_explanation": {
             "selected_because": (
@@ -298,6 +314,7 @@ def _decision_properties(
             "source_link": candidate.source_link,
             "retrieval_signals": grounding.retrieval_signals,
             "no_write_boundary": NO_WRITE_BOUNDARY,
+            "actionability": actionability,
         },
         "status": "confirmed",
         "model": "missed_decision:v1",

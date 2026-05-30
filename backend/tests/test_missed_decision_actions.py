@@ -161,7 +161,17 @@ async def test_terminal_candidates_cannot_be_confirmed_again() -> None:
 
 @pytest.mark.asyncio
 async def test_confirmed_decision_preserves_action_hint_grounding_metadata() -> None:
-    candidate = _candidate()
+    actionability = {
+        "status": "actionable",
+        "reason": "Source-backed internal Decision Receipt can be saved safely.",
+        "next_action": {
+            "kind": "save_decision_receipt",
+            "write_policy": "review_required",
+            "title": "Save Decision Receipt",
+            "body": "Decision body",
+        },
+    }
+    candidate = _candidate(evidence={"actionability": actionability})
     session = AsyncMock()
     session.execute = AsyncMock(return_value=_result([candidate]))
     session.flush = AsyncMock()
@@ -190,6 +200,7 @@ async def test_confirmed_decision_preserves_action_hint_grounding_metadata() -> 
         "phase_46_metadata_only"
     )
     assert props["action_hints"] == candidate.action_hints
+    assert props["actionability"] == actionability
     assert props["action_hint_grounding"][0]["grounding_state"] == "source_backed"
     assert props["action_hint_grounding"][0]["source_type"] == candidate.source_type
     assert props["action_hint_grounding"][0]["source_id"] == str(candidate.source_id)
@@ -490,6 +501,30 @@ async def test_list_review_candidates_returns_open_workspace_candidates() -> Non
     assert rows == [candidate]
 
 
+@pytest.mark.asyncio
+async def test_list_review_candidates_hides_non_actionable_rows() -> None:
+    actionable = _candidate(
+        evidence={"actionability": {"status": "actionable"}},
+    )
+    stale = _candidate(
+        id=uuid4(),
+        evidence={"actionability": {"status": "stale_search"}},
+    )
+    unsupported = _candidate(
+        id=uuid4(),
+        evidence={"actionability": {"status": "unsupported_artifact"}},
+    )
+    legacy = _candidate(id=uuid4(), evidence={})
+    session = AsyncMock()
+    session.execute = AsyncMock(
+        return_value=_result([stale, actionable, unsupported, legacy])
+    )
+
+    rows = await list_review_candidates(session, WORKSPACE_ID, limit=5)
+
+    assert rows == [actionable, legacy]
+
+
 def _client(session: AsyncMock, user: UserContext | None = None) -> TestClient:
     from src.routers.missed_decisions import router
 
@@ -515,6 +550,18 @@ def _client(session: AsyncMock, user: UserContext | None = None) -> TestClient:
 
 def test_review_endpoint_returns_candidate_payload() -> None:
     candidate = _candidate(
+        action_hints=[
+            {
+                "kind": "draft_ticket",
+                "write_policy": "draft_external",
+                "title": "Track decision: Run create topics first",
+                "body": "Decision: Run create topics before release",
+                "source_quote": "We decided to keep the review rail bounded.",
+                "source_link": "https://slack.example/archives/C123/p456",
+                "copyable": True,
+                "searched_sources": ["Decision memory", "Tickets"],
+            }
+        ],
         evidence={
             "review_context": {
                 "business_category": "deployment_timing",
@@ -533,6 +580,23 @@ def test_review_endpoint_returns_candidate_payload() -> None:
                 ],
             },
             "quality_gate": {"passed": True},
+            "actionability": {
+                "status": "actionable",
+                "reason": "No matching fresh ticket was found.",
+                "searched_sources": ["Decision memory", "Tickets"],
+                "stale_providers": [],
+                "artifact_matches": [],
+                "next_action": {
+                    "kind": "draft_ticket",
+                    "write_policy": "draft_external",
+                    "title": "Track decision: Run create topics first",
+                    "body": "Decision: Run create topics before release",
+                    "source_quote": "We decided to keep the review rail bounded.",
+                    "source_link": "https://slack.example/archives/C123/p456",
+                    "copyable": True,
+                    "searched_sources": ["Decision memory", "Tickets"],
+                },
+            },
         }
     )
     session = AsyncMock()
@@ -544,12 +608,19 @@ def test_review_endpoint_returns_candidate_payload() -> None:
     body = response.json()
     assert body[0]["id"] == str(candidate.id)
     assert body[0]["source_quote"] == candidate.source_quote
-    assert "confirm" in body[0]["legal_actions"]
+    assert "confirm" not in body[0]["legal_actions"]
+    assert body[0]["legal_actions"] == ["defer", "reject"]
     assert body[0]["review_context"]["affected_object"] == "billing-service"
     assert body[0]["review_context"]["expected_artifact_type"] == (
         "deployment_checklist"
     )
     assert body[0]["review_context"]["impact_level"] == "medium"
+    assert body[0]["actionability"]["status"] == "actionable"
+    assert body[0]["draft_action"]["kind"] == "draft_ticket"
+    assert body[0]["draft_action"]["write_policy"] == "draft_external"
+    assert body[0]["draft_action"]["copyable"] is True
+    assert body[0]["draft_title"] == "Track decision: Run create topics first"
+    assert body[0]["draft_body"] == "Decision: Run create topics before release"
 
 
 def test_review_endpoint_enriches_candidate_duplicate_with_human_title() -> None:

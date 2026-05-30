@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Ellipsis, ExternalLink } from 'lucide-react'
+import { Copy, Ellipsis, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -26,8 +26,8 @@ import type {
   MissedDecisionReviewSuggestion,
 } from '@/lib/api'
 
-const SECTION_LABEL = 'Needs review'
-const SUPPORT_COPY = 'Missed-decision candidates that need confirmation before becoming decision memory.'
+const SECTION_LABEL = 'Decision actions'
+const SUPPORT_COPY = 'Source-backed decisions with one concrete next action.'
 const ERROR_COPY = 'Could not load missed-decision suggestions. Refresh the dashboard or open Activity to confirm the source sync completed.'
 const ACTION_ERROR_COPY = 'Could not update this suggestion. Try again.'
 
@@ -151,6 +151,7 @@ function visibleSuggestions(
     .filter((suggestion) => suggestion.status === 'surfaced')
     .filter((suggestion) => !workspaceId || suggestion.workspace_id === workspaceId)
     .filter((suggestion) => suggestion.source_quote.length > 0 && suggestion.source_link.length > 0)
+    .filter((suggestion) => !suggestion.actionability || suggestion.actionability.status === 'actionable')
     .slice(0, Math.min(Math.max(limit, 0), 5))
 }
 
@@ -234,6 +235,7 @@ function reviewReasonRows(suggestion: MissedDecisionReviewSuggestion): Array<{
 function recommendedLegalAction(
   suggestion: MissedDecisionReviewSuggestion
 ): MissedDecisionLegalAction | null {
+  if (isDraftExternalAction(suggestion)) return null
   const legal = availableLegalActions(suggestion)
   const recommended = suggestion.recommended_action
   const preferred = recommended === 'add_as_evidence' && targetDecisionId(suggestion)
@@ -248,6 +250,27 @@ function recommendedLegalAction(
   if (legal.includes('add_evidence')) return 'add_evidence'
   if (legal.includes('confirm')) return 'confirm'
   return legal[0] ?? null
+}
+
+function isDraftExternalAction(suggestion: MissedDecisionReviewSuggestion): boolean {
+  const action = suggestion.draft_action
+  return Boolean(
+    action
+    && action.write_policy === 'draft_external'
+    && (action.kind === 'draft_ticket' || action.kind === 'draft_doc_update')
+  )
+}
+
+function draftActionLabel(kind: string | undefined): string {
+  if (kind === 'draft_doc_update') return 'Draft doc update'
+  if (kind === 'draft_ticket') return 'Draft ticket'
+  return 'Draft'
+}
+
+function draftCopyText(suggestion: MissedDecisionReviewSuggestion): string {
+  const title = suggestion.draft_title || suggestion.draft_action?.title || suggestion.inferred_decision
+  const body = suggestion.draft_body || suggestion.draft_action?.body || suggestion.inferred_rationale
+  return `${title}\n\n${body}`.trim()
 }
 
 function availableLegalActions(
@@ -300,6 +323,8 @@ function MissedDecisionSuggestionRow({
   const [error, setError] = useState<string | null>(null)
   const [expandedQuote, setExpandedQuote] = useState(false)
   const [confirming, setConfirming] = useState<PendingAction | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [copying, setCopying] = useState(false)
   const disabled = pending !== null
   const people = suggestion.people.slice(0, 3).join(', ')
   const systems = suggestion.affected_systems.slice(0, 3)
@@ -315,6 +340,9 @@ function MissedDecisionSuggestionRow({
   )
   const reasonRows = reviewReasonRows(suggestion)
   const confirmingCopy = confirming ? destructiveCopy(confirming) : null
+  const draftAction = isDraftExternalAction(suggestion)
+    ? suggestion.draft_action
+    : null
 
   async function run(action: PendingAction) {
     setPending(action)
@@ -332,6 +360,19 @@ function MissedDecisionSuggestionRow({
       setError(ACTION_ERROR_COPY)
     } finally {
       setPending(null)
+    }
+  }
+
+  async function copyDraft() {
+    setCopying(true)
+    setError(null)
+    try {
+      await navigator.clipboard.writeText(draftCopyText(suggestion))
+      setCopied(true)
+    } catch {
+      setError('Could not copy this draft. Try again.')
+    } finally {
+      setCopying(false)
     }
   }
 
@@ -433,7 +474,26 @@ function MissedDecisionSuggestionRow({
           </div>
         )}
 
-        {primaryAction && (
+        {draftAction && (
+          <div className="space-y-2 rounded-md border border-[var(--pulse-attention)]/25 bg-[var(--pulse-attention)]/8 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-medium uppercase text-[var(--pulse-muted)]">
+                {draftActionLabel(draftAction.kind)}
+              </p>
+              <span className="text-[11px] font-medium text-[var(--pulse-muted)]">
+                Review before creating externally
+              </span>
+            </div>
+            <p className="text-sm font-semibold leading-5 text-[var(--pulse-foreground)]">
+              {suggestion.draft_title || draftAction.title}
+            </p>
+            <p className="whitespace-pre-wrap text-xs leading-5 text-[var(--pulse-muted)]">
+              {suggestion.draft_body || draftAction.body}
+            </p>
+          </div>
+        )}
+
+        {!draftAction && primaryAction && (
           <div className="rounded-md border border-[var(--pulse-attention)]/25 bg-[var(--pulse-attention)]/8 px-3 py-2">
             <p className="text-xs font-medium uppercase text-[var(--pulse-muted)]">
               Recommended action
@@ -447,6 +507,18 @@ function MissedDecisionSuggestionRow({
         {error && <p className="text-xs text-destructive">{error}</p>}
 
         <div className="flex items-center gap-2 pt-0.5">
+          {draftAction && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={disabled || copying}
+              className="min-h-10 px-3"
+              onClick={() => void copyDraft()}
+            >
+              <Copy className="size-4" aria-hidden="true" />
+              {copying ? 'Copying...' : copied ? 'Copied' : 'Copy draft'}
+            </Button>
+          )}
           {primaryAction && (
             <Button
               type="button"
@@ -492,7 +564,7 @@ function MissedDecisionSuggestionRow({
                     {pending === action ? pendingLabel(action) : actionLabel(action)}
                   </DropdownMenuItem>
                 ))}
-                {FEEDBACK_REASONS.map((reason) => (
+                {!draftAction && FEEDBACK_REASONS.map((reason) => (
                   <DropdownMenuItem
                     key={reason}
                     variant="destructive"

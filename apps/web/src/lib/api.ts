@@ -182,11 +182,64 @@ export interface MissedDecisionReviewContext {
   }
 }
 
+export type MissedDecisionActionabilityStatus =
+  | 'actionable'
+  | 'already_backed'
+  | 'possible_match'
+  | 'stale_search'
+  | 'unsupported_artifact'
+  | 'insufficient_evidence'
+  | string
+
+export type MissedDecisionNextActionKind =
+  | 'save_decision_receipt'
+  | 'draft_ticket'
+  | 'draft_doc_update'
+  | 'attach_evidence'
+  | 'suppress_already_backed'
+  | 'hold_for_reprocess'
+  | string
+
+export type MissedDecisionWritePolicy =
+  | 'auto_internal'
+  | 'draft_external'
+  | 'review_required'
+  | 'no_write'
+  | string
+
+export interface MissedDecisionDraftAction {
+  kind: MissedDecisionNextActionKind
+  write_policy: MissedDecisionWritePolicy
+  title: string
+  body: string
+  source_quote?: string | null
+  source_link?: string | null
+  artifact_type?: string | null
+  searched_sources?: string[]
+  target_entity_type?: string | null
+  target_entity_id?: string | null
+  target_title?: string | null
+  target_href?: string | null
+  copyable?: boolean
+}
+
+export interface MissedDecisionActionability {
+  status: MissedDecisionActionabilityStatus
+  reason?: string | null
+  searched_sources?: string[]
+  stale_providers?: string[]
+  artifact_matches?: Array<Record<string, unknown>>
+  next_action?: MissedDecisionDraftAction | null
+}
+
 export type MissedDecisionRecommendedAction =
   | 'save_as_new_decision'
   | 'add_as_evidence'
   | 'inspect_existing_match'
   | 'ignore_duplicate'
+  | 'draft_ticket'
+  | 'draft_doc_update'
+  | 'hold_for_reprocess'
   | string
 
 export interface MissedDecisionReviewSuggestion {
@@ -206,6 +259,10 @@ export interface MissedDecisionReviewSuggestion {
   source_context?: string | null
   affected_systems: string[]
   review_context: MissedDecisionReviewContext
+  actionability?: MissedDecisionActionability | null
+  draft_action?: MissedDecisionDraftAction | null
+  draft_title?: string | null
+  draft_body?: string | null
   possible_existing_match: MissedDecisionPossibleExistingMatch | null
   recommended_action?: MissedDecisionRecommendedAction | null
   legal_actions: MissedDecisionLegalAction[]

@@ -24,6 +24,13 @@ from src.services.missed_decision_extractor import (
 from src.services.missed_decision_sources import MissedDecisionSourceRecord
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
+_DRAFT_ACTION_KINDS = {"draft_ticket", "draft_doc_update"}
+_REQUIRED_DRAFT_ACTION_FIELDS = (
+    "title",
+    "body",
+    "source_quote",
+    "source_link",
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +41,7 @@ class EvalThresholds:
     min_recall: float = 0.70
     min_source_link_accuracy: float = 0.90
     min_payload_completeness: float = 0.85
+    min_actionability_accuracy: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -44,12 +52,20 @@ class ExpectedCandidate:
 
 
 @dataclass(frozen=True)
+class ExpectedActionability:
+    status: str
+    next_action_kind: str
+    write_policy: str
+
+
+@dataclass(frozen=True)
 class MissedDecisionEvalCase:
     id: str
     source: MissedDecisionSourceRecord
     expected: list[ExpectedCandidate]
     model_output: RawMissedDecisionExtractionResult
     suggestion_payload: dict[str, Any] | None = None
+    expected_actionability: ExpectedActionability | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +80,8 @@ class CaseEvalResult:
     invalid_candidate_count: int
     source_link_match_count: int
     payload_completeness: float
+    expected_actionability_count: int
+    actionability_match_count: int
 
     @property
     def precision(self) -> float:
@@ -84,6 +102,12 @@ class CaseEvalResult:
             return 1.0 if self.expected_count == 0 else 0.0
         return self.source_link_match_count / self.true_positive_count
 
+    @property
+    def actionability_accuracy(self) -> float:
+        if self.expected_actionability_count == 0:
+            return 1.0
+        return self.actionability_match_count / self.expected_actionability_count
+
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
@@ -98,6 +122,9 @@ class CaseEvalResult:
             "recall": self.recall,
             "source_link_accuracy": self.source_link_accuracy,
             "payload_completeness": self.payload_completeness,
+            "expected_actionability_count": self.expected_actionability_count,
+            "actionability_match_count": self.actionability_match_count,
+            "actionability_accuracy": self.actionability_accuracy,
         }
 
 
@@ -115,6 +142,9 @@ class EvalReport:
     recall: float
     source_link_accuracy: float
     payload_completeness: float
+    expected_actionability_count: int
+    actionability_match_count: int
+    actionability_accuracy: float
     passed: bool
     thresholds: EvalThresholds
     cases: list[CaseEvalResult]
@@ -133,12 +163,18 @@ class EvalReport:
             "recall": self.recall,
             "source_link_accuracy": self.source_link_accuracy,
             "payload_completeness": self.payload_completeness,
+            "expected_actionability_count": self.expected_actionability_count,
+            "actionability_match_count": self.actionability_match_count,
+            "actionability_accuracy": self.actionability_accuracy,
             "passed": self.passed,
             "thresholds": {
                 "min_precision": self.thresholds.min_precision,
                 "min_recall": self.thresholds.min_recall,
                 "min_source_link_accuracy": self.thresholds.min_source_link_accuracy,
                 "min_payload_completeness": self.thresholds.min_payload_completeness,
+                "min_actionability_accuracy": (
+                    self.thresholds.min_actionability_accuracy
+                ),
             },
             "cases": [case.to_dict() for case in self.cases],
         }
@@ -177,12 +213,18 @@ def _case_from_json(value: dict[str, Any]) -> MissedDecisionEvalCase:
         )
         for candidate in value.get("expected", [])
     ]
+    expected_actionability = value.get("expected_actionability")
     return MissedDecisionEvalCase(
         id=value["id"],
         source=_source_from_json(value["source"]),
         expected=expected,
         model_output=RawMissedDecisionExtractionResult(candidates=raw_candidates),
         suggestion_payload=value.get("suggestion_payload"),
+        expected_actionability=(
+            ExpectedActionability(**expected_actionability)
+            if isinstance(expected_actionability, dict)
+            else None
+        ),
     )
 
 
@@ -240,6 +282,18 @@ def evaluate_case(case: MissedDecisionEvalCase) -> CaseEvalResult:
             case.suggestion_payload,
             expected_count=len(expected_keys),
         ),
+        expected_actionability_count=(
+            1 if case.expected_actionability is not None else 0
+        ),
+        actionability_match_count=(
+            1
+            if case.expected_actionability is not None
+            and _actionability_matches(
+                case.suggestion_payload,
+                case.expected_actionability,
+            )
+            else 0
+        ),
     )
 
 
@@ -283,6 +337,52 @@ def _path_value(payload: dict[str, Any], path: tuple[str, ...]) -> Any:
     return value
 
 
+def _actionability_matches(
+    payload: dict[str, Any] | None,
+    expected: ExpectedActionability,
+) -> bool:
+    actual = _actual_actionability(payload)
+    if not isinstance(actual, dict):
+        return False
+    next_action = actual.get("next_action")
+    if not isinstance(next_action, dict):
+        return False
+    if actual.get("status") != expected.status:
+        return False
+    if next_action.get("kind") != expected.next_action_kind:
+        return False
+    if next_action.get("write_policy") != expected.write_policy:
+        return False
+    if expected.next_action_kind in _DRAFT_ACTION_KINDS:
+        return _has_required_draft_action_metadata(next_action)
+    return True
+
+
+def _actual_actionability(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    details_actionability = _path_value(payload, ("details", "actionability"))
+    if isinstance(details_actionability, dict):
+        return details_actionability
+    provenance_actionability = _path_value(payload, ("provenance", "actionability"))
+    if isinstance(provenance_actionability, dict):
+        return provenance_actionability
+    return None
+
+
+def _has_required_draft_action_metadata(next_action: dict[str, Any]) -> bool:
+    for field in _REQUIRED_DRAFT_ACTION_FIELDS:
+        value = next_action.get(field)
+        if not isinstance(value, str) or not value.strip():
+            return False
+    searched_sources = next_action.get("searched_sources")
+    if not isinstance(searched_sources, list) or not any(
+        isinstance(item, str) and item.strip() for item in searched_sources
+    ):
+        return False
+    return next_action.get("copyable") is True
+
+
 def evaluate_dataset(
     cases: list[MissedDecisionEvalCase],
     *,
@@ -318,11 +418,23 @@ def evaluate_dataset(
         if case_results
         else 1.0
     )
+    expected_actionability_count = sum(
+        case.expected_actionability_count for case in case_results
+    )
+    actionability_match_count = sum(
+        case.actionability_match_count for case in case_results
+    )
+    actionability_accuracy = (
+        1.0
+        if expected_actionability_count == 0
+        else actionability_match_count / expected_actionability_count
+    )
     passed = (
         precision >= thresholds.min_precision
         and recall >= thresholds.min_recall
         and source_link_accuracy >= thresholds.min_source_link_accuracy
         and payload_completeness >= thresholds.min_payload_completeness
+        and actionability_accuracy >= thresholds.min_actionability_accuracy
     )
     return EvalReport(
         case_count=len(case_results),
@@ -337,6 +449,9 @@ def evaluate_dataset(
         recall=recall,
         source_link_accuracy=source_link_accuracy,
         payload_completeness=payload_completeness,
+        expected_actionability_count=expected_actionability_count,
+        actionability_match_count=actionability_match_count,
+        actionability_accuracy=actionability_accuracy,
         passed=passed,
         thresholds=thresholds,
         cases=case_results,
@@ -351,11 +466,14 @@ def _print_text_report(report: EvalReport) -> None:
     print(f"recall={report.recall:.3f}")
     print(f"source_link_accuracy={report.source_link_accuracy:.3f}")
     print(f"payload_completeness={report.payload_completeness:.3f}")
+    print(f"actionability_accuracy={report.actionability_accuracy:.3f}")
     print(f"invalid_candidates={report.invalid_candidate_count}")
     for case in report.cases:
         print(
             f"- {case.id}: precision={case.precision:.3f} "
-            f"recall={case.recall:.3f} invalid={case.invalid_candidate_count}"
+            f"recall={case.recall:.3f} "
+            f"actionability={case.actionability_accuracy:.3f} "
+            f"invalid={case.invalid_candidate_count}"
         )
 
 
@@ -371,6 +489,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-recall", type=float, default=0.70)
     parser.add_argument("--min-source-link-accuracy", type=float, default=0.90)
     parser.add_argument("--min-payload-completeness", type=float, default=0.85)
+    parser.add_argument("--min-actionability-accuracy", type=float, default=1.0)
     parser.add_argument("--json", action="store_true", help="Emit JSON report.")
     args = parser.parse_args(argv)
 
@@ -381,6 +500,7 @@ def main(argv: list[str] | None = None) -> int:
             min_recall=args.min_recall,
             min_source_link_accuracy=args.min_source_link_accuracy,
             min_payload_completeness=args.min_payload_completeness,
+            min_actionability_accuracy=args.min_actionability_accuracy,
         ),
     )
     if args.json:
