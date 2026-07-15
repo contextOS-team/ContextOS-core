@@ -45,6 +45,15 @@ class TestProductionDeploymentConfig:
         assert "/live/contextos.pro/privkey.pem" in api_config
         assert "/live/api.contextos.pro/" not in api_config
 
+    def test_bootstrap_uses_ipv4_session_pooler(self) -> None:
+        bootstrap = (
+            REPO_ROOT / "scripts" / "bootstrap-production-env.sh"
+        ).read_text()
+
+        assert 'pooler_host="aws-1-eu-central-1.pooler.supabase.com"' in bootstrap
+        assert "postgres.${project_ref}:${encoded_password}@${pooler_host}:5432" in bootstrap
+        assert 'psql --host "$pooler_host" --port 5432' in bootstrap
+
 
 # ---------------------------------------------------------------------------
 # Security headers

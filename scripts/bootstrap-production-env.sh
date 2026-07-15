@@ -84,7 +84,11 @@ encoded_password=$(
 )
 
 supabase_url="https://${project_ref}.supabase.co"
-database_url="postgresql+asyncpg://postgres:${encoded_password}@db.${project_ref}.supabase.co:5432/postgres"
+# Supabase's direct database endpoint is IPv6-only on this project, while the
+# default Docker bridge is IPv4-only. Session mode preserves prepared-statement
+# support while giving the persistent backend an IPv4 endpoint.
+pooler_host="aws-1-eu-central-1.pooler.supabase.com"
+database_url="postgresql+asyncpg://postgres.${project_ref}:${encoded_password}@${pooler_host}:5432/postgres"
 oauth_state_secret=$(openssl rand -hex 32)
 
 put ENVIRONMENT prod
@@ -121,8 +125,8 @@ if [[ $auth_status != 200 ]]; then
 fi
 
 if ! PGPASSWORD="$database_password" PGCONNECT_TIMEOUT=10 PGSSLMODE=require \
-  psql --host "db.${project_ref}.supabase.co" --port 5432 \
-  --username postgres --dbname postgres -X -v ON_ERROR_STOP=1 \
+  PGGSSENCMODE=disable psql --host "$pooler_host" --port 5432 \
+  --username "postgres.${project_ref}" --dbname postgres -X -v ON_ERROR_STOP=1 \
   -Atqc 'select 1' >/dev/null 2>&1; then
   echo "Supabase rejected the database password; nothing was installed." >&2
   exit 1
