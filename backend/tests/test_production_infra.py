@@ -3,12 +3,47 @@
 Covers: security headers, rate limiting on new paths, config validation.
 """
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
 import src.config
 from src.config import Environment, Settings
 from tests.conftest import _make_test_settings
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+# ---------------------------------------------------------------------------
+# Deployment configuration
+# ---------------------------------------------------------------------------
+
+
+class TestProductionDeploymentConfig:
+    """Keep rebuilt hosts aligned with the canonical production environment."""
+
+    def test_frontend_build_args_reuse_canonical_env_names(self) -> None:
+        compose = (REPO_ROOT / "docker-compose.prod.yml").read_text()
+
+        expected = {
+            "NEXT_PUBLIC_SUPABASE_URL": "SUPABASE_URL",
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY": "SUPABASE_ANON_KEY",
+            "NEXT_PUBLIC_BACKEND_URL": "BACKEND_URL",
+            "NEXT_PUBLIC_APP_URL": "APP_URL",
+        }
+        for build_arg, canonical_name in expected.items():
+            assert f"{build_arg}: ${{{canonical_name}}}" in compose
+
+        assert "NEXT_PUBLIC_SENTRY_DSN: ${SENTRY_DSN:-}" in compose
+
+    def test_api_uses_shared_san_certificate(self) -> None:
+        api_config = (REPO_ROOT / "nginx" / "api.conf").read_text()
+
+        assert "/live/contextos.pro/fullchain.pem" in api_config
+        assert "/live/contextos.pro/privkey.pem" in api_config
+        assert "/live/api.contextos.pro/" not in api_config
 
 
 # ---------------------------------------------------------------------------
@@ -124,27 +159,45 @@ class TestConfigValidation:
         with pytest.raises(RuntimeError, match="DATABASE_URL"):
             settings.validate_for_production()
 
-    def test_fails_with_empty_jwt_secret(self) -> None:
+    def test_allows_empty_legacy_jwt_secret_for_jwks(self) -> None:
         settings = _make_test_settings(
             ENVIRONMENT="prod",
             DATABASE_URL="postgresql+asyncpg://x:x@db/x",
             SUPABASE_JWT_SECRET="",
-            SENTRY_DSN="https://fake@sentry.io/1",
             CORS_ORIGINS="https://app.contextos.dev",
+            BACKEND_URL="https://api.contextos.dev",
         )
-        with pytest.raises(RuntimeError, match="SUPABASE_JWT_SECRET"):
-            settings.validate_for_production()
+        settings.validate_for_production()
 
-    def test_fails_with_empty_sentry_dsn(self) -> None:
+    def test_fails_with_empty_supabase_url(self) -> None:
         settings = _make_test_settings(
             ENVIRONMENT="prod",
             DATABASE_URL="postgresql+asyncpg://x:x@db/x",
-            SUPABASE_JWT_SECRET="real-secret",
-            SENTRY_DSN="",
+            SUPABASE_URL="",
             CORS_ORIGINS="https://app.contextos.dev",
         )
-        with pytest.raises(RuntimeError, match="SENTRY_DSN"):
+        with pytest.raises(RuntimeError, match="SUPABASE_URL"):
             settings.validate_for_production()
+
+    def test_fails_with_empty_supabase_anon_key(self) -> None:
+        settings = _make_test_settings(
+            ENVIRONMENT="prod",
+            DATABASE_URL="postgresql+asyncpg://x:x@db/x",
+            SUPABASE_ANON_KEY="",
+            CORS_ORIGINS="https://app.contextos.dev",
+        )
+        with pytest.raises(RuntimeError, match="SUPABASE_ANON_KEY"):
+            settings.validate_for_production()
+
+    def test_allows_empty_sentry_dsn(self) -> None:
+        settings = _make_test_settings(
+            ENVIRONMENT="prod",
+            DATABASE_URL="postgresql+asyncpg://x:x@db/x",
+            SENTRY_DSN="",
+            CORS_ORIGINS="https://app.contextos.dev",
+            BACKEND_URL="https://api.contextos.dev",
+        )
+        settings.validate_for_production()
 
     def test_fails_with_localhost_in_cors(self) -> None:
         settings = _make_test_settings(
@@ -189,6 +242,8 @@ class TestConfigValidation:
             ENVIRONMENT="prod",
             DATABASE_URL="",
             SUPABASE_JWT_SECRET="",
+            SUPABASE_URL="",
+            SUPABASE_ANON_KEY="",
             SENTRY_DSN="",
             CORS_ORIGINS="http://localhost:3000",
         )
@@ -196,8 +251,8 @@ class TestConfigValidation:
             settings.validate_for_production()
         msg = str(exc_info.value)
         assert "DATABASE_URL" in msg
-        assert "SUPABASE_JWT_SECRET" in msg
-        assert "SENTRY_DSN" in msg
+        assert "SUPABASE_URL" in msg
+        assert "SUPABASE_ANON_KEY" in msg
         assert "CORS_ORIGINS" in msg
 
 

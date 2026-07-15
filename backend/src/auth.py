@@ -32,7 +32,7 @@ def _get_jwks_client() -> PyJWKClient:
     global _jwks_client
     if _jwks_client is None:
         settings = get_settings()
-        jwks_url = f"{settings.SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+        jwks_url = f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
         _jwks_client = PyJWKClient(jwks_url, cache_keys=True)
     return _jwks_client
 
@@ -60,12 +60,14 @@ def decode_supabase_jwt(token: str) -> JWTPayload:
                 raise JWTError("SUPABASE_JWT_SECRET is not configured")
             key = settings.SUPABASE_JWT_SECRET
             algorithms = ["HS256"]
-        else:
+        elif alg in {"ES256", "RS256"}:
             # ES256/RS256: verify with JWKS public key
             jwks_client = _get_jwks_client()
             signing_key = jwks_client.get_signing_key_from_jwt(token)
             key = signing_key.key
             algorithms = [alg]
+        else:
+            raise JWTError(f"Unsupported JWT algorithm: {alg}")
 
         payload = jwt.decode(
             token,

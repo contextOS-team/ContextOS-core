@@ -183,10 +183,14 @@ class Settings(BaseSettings):
         missing: list[str] = []
         if not self.DATABASE_URL:
             missing.append("DATABASE_URL")
-        if not self.SUPABASE_JWT_SECRET:
-            missing.append("SUPABASE_JWT_SECRET")
-        if not self.SENTRY_DSN:
-            missing.append("SENTRY_DSN")
+
+        # Hosted Supabase projects can sign access tokens with asymmetric
+        # keys. Those tokens are verified through the project's public JWKS,
+        # so the legacy shared JWT secret is intentionally optional.
+        if not self.SUPABASE_URL.startswith("https://"):
+            missing.append("SUPABASE_URL (must be HTTPS in production)")
+        if not self.SUPABASE_ANON_KEY:
+            missing.append("SUPABASE_ANON_KEY")
 
         if not self.BACKEND_URL.startswith("https://"):
             missing.append("BACKEND_URL (must be HTTPS in production)")

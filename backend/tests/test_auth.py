@@ -6,6 +6,7 @@ from uuid import UUID
 
 import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 
 from src.auth import JWTError
@@ -36,6 +37,56 @@ def test_jwt_decode_valid_token(mock_settings) -> None:
     assert result.email == TEST_EMAIL
     assert result.role == "authenticated"
     assert result.exp is not None
+
+
+def test_jwt_decode_valid_es256_token_without_legacy_secret(
+    mock_settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ES256 Supabase tokens use JWKS and need no shared JWT secret."""
+    import src.auth
+
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    payload = {
+        "sub": TEST_USER_ID,
+        "email": TEST_EMAIL,
+        "role": "authenticated",
+        "exp": int(time.time()) + 3600,
+        "aud": "authenticated",
+    }
+    token = jwt.encode(
+        payload,
+        private_key,
+        algorithm="ES256",
+        headers={"kid": "test-key"},
+    )
+    mock_settings.SUPABASE_JWT_SECRET = ""
+
+    signing_key = MagicMock()
+    signing_key.key = private_key.public_key()
+    jwks_client = MagicMock()
+    jwks_client.get_signing_key_from_jwt.return_value = signing_key
+    monkeypatch.setattr(src.auth, "_get_jwks_client", lambda: jwks_client)
+
+    result = src.auth.decode_supabase_jwt(token)
+
+    assert result.sub == UUID(TEST_USER_ID)
+    assert result.email == TEST_EMAIL
+
+
+def test_jwt_decode_hs256_requires_legacy_secret(mock_settings) -> None:
+    """Legacy HS256 tokens still require the shared secret when encountered."""
+    from src.auth import decode_supabase_jwt
+
+    payload = {
+        "sub": TEST_USER_ID,
+        "exp": int(time.time()) + 3600,
+        "aud": "authenticated",
+    }
+    token = jwt.encode(payload, TEST_JWT_SECRET, algorithm="HS256")
+    mock_settings.SUPABASE_JWT_SECRET = ""
+
+    with pytest.raises(JWTError, match="SUPABASE_JWT_SECRET"):
+        decode_supabase_jwt(token)
 
 
 def test_jwt_decode_invalid_token(mock_settings) -> None:

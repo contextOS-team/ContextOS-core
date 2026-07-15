@@ -39,6 +39,8 @@ def _make_test_settings(**overrides: str) -> Settings:
     """Create a Settings instance with test defaults."""
     defaults = {
         "SUPABASE_JWT_SECRET": TEST_JWT_SECRET,
+        "SUPABASE_URL": "https://test-project.supabase.co",
+        "SUPABASE_ANON_KEY": "test-publishable-key",
         "DATABASE_URL": TEST_DATABASE_URL,
         "ENVIRONMENT": "dev",
         "BACKEND_URL": "http://localhost:8000",
