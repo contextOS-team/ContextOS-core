@@ -15,9 +15,11 @@ export function ProfileTab({ userEmail, userFullName }: ProfileTabProps) {
   const [nameSaved, setNameSaved] = useState(false)
   const [nameError, setNameError] = useState<string | null>(null)
 
-  const [resetSent, setResetSent] = useState(false)
-  const [isResetting, setIsResetting] = useState(false)
-  const [resetError, setResetError] = useState<string | null>(null)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
+  const [passwordSaved, setPasswordSaved] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
 
   async function handleSaveDisplayName() {
     setIsSavingName(true)
@@ -38,25 +40,38 @@ export function ProfileTab({ userEmail, userFullName }: ProfileTabProps) {
     }
   }
 
-  async function handleResetPassword() {
-    setIsResetting(true)
-    setResetError(null)
-    setResetSent(false)
+  async function handleSetPassword(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPasswordError(null)
+    setPasswordSaved(false)
+
+    if (newPassword.length < 12) {
+      setPasswordError('Password must be at least 12 characters')
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match')
+      return
+    }
+
+    setIsUpdatingPassword(true)
     try {
       const supabase = createClient()
-      const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
-        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
-      })
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
       if (error) {
-        setResetError(error.message || 'Failed to send reset email')
+        setPasswordError(error.message || 'Failed to set password')
         return
       }
-      setResetSent(true)
+
+      setNewPassword('')
+      setConfirmPassword('')
+      setPasswordSaved(true)
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to send reset email'
-      setResetError(message)
+      const message = err instanceof Error ? err.message : 'Failed to set password'
+      setPasswordError(message)
     } finally {
-      setIsResetting(false)
+      setIsUpdatingPassword(false)
     }
   }
 
@@ -131,30 +146,84 @@ export function ProfileTab({ userEmail, userFullName }: ProfileTabProps) {
         </div>
 
         <div className="space-y-4">
-          {/* Reset Password */}
-          <div>
+          {/* Set Password */}
+          <form onSubmit={handleSetPassword}>
             <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-              Password
+              Set or change password
             </label>
-            <p className="text-xs text-muted-foreground/60 mb-3">
-              Send a password reset link to your email address.
+            <p className="max-w-lg text-xs leading-5 text-muted-foreground/60 text-pretty">
+              Add email-and-password sign-in to this account. Your existing Google sign-in
+              will continue to work.
             </p>
-            <button
-              onClick={handleResetPassword}
-              disabled={isResetting || resetSent}
-              className="dashboard-input h-9 px-4 rounded-lg border text-sm font-medium text-foreground hover:bg-white/[0.055] disabled:opacity-50 disabled:cursor-not-allowed transition-[background-color,color,transform] active:scale-[0.96] flex items-center gap-2"
-            >
-              <Lock className="h-3.5 w-3.5" />
-              {resetSent
-                ? 'Reset link sent! Check your email.'
-                : isResetting
-                  ? 'Sending...'
-                  : 'Reset password'}
-            </button>
-            {resetError && (
-              <p className="mt-1.5 text-xs text-destructive">{resetError}</p>
-            )}
-          </div>
+
+            <div className="mt-3 grid max-w-lg gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="profile-new-password" className="sr-only">
+                  New password
+                </label>
+                <input
+                  id="profile-new-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  placeholder="New password"
+                  minLength={12}
+                  required
+                  className="dashboard-input h-10 w-full rounded-lg border px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/35"
+                />
+              </div>
+              <div>
+                <label htmlFor="profile-confirm-password" className="sr-only">
+                  Confirm password
+                </label>
+                <input
+                  id="profile-confirm-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  placeholder="Confirm password"
+                  minLength={12}
+                  required
+                  className="dashboard-input h-10 w-full rounded-lg border px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/35"
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="submit"
+                disabled={isUpdatingPassword || !newPassword || !confirmPassword}
+                className="h-10 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-[background-color,color,transform] hover:bg-primary/90 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <span className="flex items-center gap-2">
+                  {passwordSaved ? (
+                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  ) : (
+                    <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  {isUpdatingPassword
+                    ? 'Saving...'
+                    : passwordSaved
+                      ? 'Password set'
+                      : 'Set password'}
+                </span>
+              </button>
+              <p className="text-xs text-muted-foreground/60">Minimum 12 characters.</p>
+            </div>
+
+            <div aria-live="polite">
+              {passwordSaved && (
+                <p className="mt-2 text-xs text-emerald-400">
+                  Password saved. You can now sign in with {userEmail} and this password.
+                </p>
+              )}
+              {passwordError && (
+                <p className="mt-2 text-xs text-destructive">{passwordError}</p>
+              )}
+            </div>
+          </form>
 
           {/* Active Sessions */}
           <div>
