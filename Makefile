@@ -60,7 +60,7 @@ setup: check-prereqs setup-backend
 	docker compose up -d
 	@echo ""
 	@echo "Setup complete! Next steps:"
-	@echo "  1. Edit .env with your keys (or drop in the .env from DM)"
+	@echo "  1. Edit .env with your local development credentials"
 	@echo "  2. Run 'make setup-frontend-env' after updating .env"
 	@echo "  3. Terminal 1: make dev-frontend"
 	@echo "  4. Terminal 2: make dev-backend"
