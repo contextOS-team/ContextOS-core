@@ -38,6 +38,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application source
 COPY src/ ./src/
+COPY scripts/ ./scripts/
 
 USER appuser
 
