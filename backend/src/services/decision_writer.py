@@ -35,6 +35,16 @@ from src.models.decision import (
     DecisionEvidence,
     DecisionVersion,
 )
+from src.models.suggestion import Suggestion
+from src.services.decision_relations import (
+    EDGE_RELATIONS,
+    MERGE_RELATIONS,
+    PROPOSAL_RELATIONS,
+    RELATION_MIN_CONFIDENCE,
+    RELATION_SUPERSEDES,
+    RelationVerdict,
+    classify_decision_relation,
+)
 from src.services.graph_ops import upsert_node
 from src.services.llm_client import get_llm_client
 
@@ -76,18 +86,14 @@ class WriteResult:
     outcome: WriteOutcome
     decision_id: UUID | None = None
     graph_node_id: UUID | None = None
+    relation: str | None = None
+    related_decision_id: UUID | None = None
 
 
 class ConsequentialityVerdict(BaseModel):
     is_decision: bool
     consequential: bool
     score: float
-    reason: str
-
-
-class DuplicateVerdict(BaseModel):
-    same_decision: bool
-    confidence: float
     reason: str
 
 
@@ -99,13 +105,6 @@ _CONSEQUENTIALITY_SYSTEM = (
     "Status updates, opinions, questions, routine task assignments, and trivial "
     "choices are NOT consequential decisions. Score 0.0-1.0."
 )
-
-_DUPLICATE_SYSTEM = (
-    "You compare two decision statements from the same engineering organization "
-    "and judge whether they record the SAME decision (possibly reworded), as "
-    "opposed to different decisions on a related topic."
-)
-
 
 async def _assess_consequentiality(
     draft: DecisionDraft, workspace_id: UUID
@@ -164,29 +163,6 @@ async def _find_similar_active(
         # is not. (Also keeps callers testable with mocked sessions.)
         logger.exception("duplicate retrieval failed; skipping collapse")
         return []
-
-
-async def _confirm_duplicate(
-    workspace_id: UUID, new_statement: str, existing_statement: str
-) -> bool:
-    client = get_llm_client()
-    prompt = (
-        f"Existing decision:\n{existing_statement}\n\n"
-        f"New candidate:\n{new_statement}\n\n"
-        "Are these the same decision?"
-    )
-    try:
-        verdict = await client.generate_json(
-            prompt,
-            DuplicateVerdict,
-            system_prompt=_DUPLICATE_SYSTEM,
-            workspace_id=workspace_id,
-        )
-        return verdict.same_decision and verdict.confidence >= 0.7
-    except Exception:
-        logger.exception("duplicate confirm LLM call failed")
-        # Fail open to CREATE: a duplicate is recoverable, a lost decision is not.
-        return False
 
 
 def _snapshot(decision: Decision) -> dict:
@@ -286,10 +262,19 @@ async def create_decision(
             )
             return WriteResult(WriteOutcome.REJECTED_NOT_CONSEQUENTIAL)
 
-    # Gate 2: duplicate collapse.
+    # Gate 2: relation classification against similar active decisions.
+    # SAME/SUPPORTS merge as evidence; SUPERSEDES/CONTRADICTS/REFINES create
+    # the new decision plus an edge (and a review proposal for the first two);
+    # UNRELATED and low-confidence verdicts fall through to a plain create.
+    pending_relation: tuple[RelationVerdict, UUID] | None = None
     similar = await _find_similar_active(session, workspace_id, draft.statement)
     for existing_id, existing_statement, _sim in similar:
-        if await _confirm_duplicate(workspace_id, draft.statement, existing_statement):
+        verdict = await classify_decision_relation(
+            workspace_id, draft.statement, draft.rationale, existing_statement
+        )
+        if verdict is None or verdict.confidence < RELATION_MIN_CONFIDENCE:
+            continue
+        if verdict.relation in MERGE_RELATIONS:
             await add_evidence(
                 session, workspace_id, existing_id, draft.evidence, actor
             )
@@ -298,7 +283,12 @@ async def create_decision(
                 WriteOutcome.MERGED_AS_EVIDENCE,
                 existing_id,
                 existing.graph_node_id if existing else None,
+                relation=verdict.relation,
+                related_decision_id=existing_id,
             )
+        if verdict.relation in EDGE_RELATIONS:
+            pending_relation = (verdict, existing_id)
+            break
 
     # Create: decision row + version 1 + evidence + graph mirror node.
     decision = Decision(
@@ -355,8 +345,73 @@ async def create_decision(
         },
     )
     decision.graph_node_id = node_id
+
+    if pending_relation is not None:
+        rel_verdict, related_id = pending_relation
+        session.add(
+            DecisionEdge(
+                workspace_id=workspace_id,
+                from_decision=decision.id,
+                to_decision=related_id,
+                edge_type=rel_verdict.relation.lower(),
+                rationale=rel_verdict.rationale,
+                actor=actor,
+            )
+        )
+        if rel_verdict.relation in PROPOSAL_RELATIONS:
+            _publish_relation_proposal(
+                session, workspace_id, decision, related_id, rel_verdict
+            )
+
     await session.flush()
-    return WriteResult(WriteOutcome.CREATED, decision.id, node_id)
+    return WriteResult(
+        WriteOutcome.CREATED,
+        decision.id,
+        node_id,
+        relation=pending_relation[0].relation if pending_relation else None,
+        related_decision_id=pending_relation[1] if pending_relation else None,
+    )
+
+
+def _publish_relation_proposal(
+    session: AsyncSession,
+    workspace_id: UUID,
+    decision: Decision,
+    related_id: UUID,
+    verdict: RelationVerdict,
+) -> None:
+    """Surface a supersession/contradiction proposal for human review."""
+    kind = (
+        "supersession" if verdict.relation == RELATION_SUPERSEDES else "contradiction"
+    )
+    session.add(
+        Suggestion(
+            workspace_id=workspace_id,
+            type="decision_relation",
+            priority="high",
+            fingerprint=(
+                f"decision-relation:{decision.id}:{related_id}:"
+                f"{verdict.relation.lower()}"
+            ),
+            entity_type="decision",
+            entity_id=decision.id,
+            title=f"Possible {kind}: review decision state",
+            body=(
+                f'"{decision.statement[:140]}" appears to '
+                f"{verdict.relation.lower()} an existing active decision. "
+                f"{verdict.rationale[:300]}"
+            ),
+            primary_action="review_decision",
+            action_href=f"/dashboard/decisions/{decision.graph_node_id or decision.id}",
+            evidence={
+                "relation": verdict.relation,
+                "confidence": verdict.confidence,
+                "related_decision_id": str(related_id),
+                "rationale": verdict.rationale,
+            },
+            provenance={"producer": "decision_writer.relation_classifier"},
+        )
+    )
 
 
 async def change_status(
