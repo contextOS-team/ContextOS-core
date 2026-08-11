@@ -34,6 +34,12 @@ fi
 # Strip SQLAlchemy "+asyncpg" suffix that psql doesn't understand.
 DB_URL="${DATABASE_URL/postgresql+asyncpg:/postgresql:}"
 
+# Fail fast on lock contention with an explicit error instead of stalling into
+# the pooler's 2-minute statement timeout (seen 2026-08-11: a leaked
+# idle-in-transaction session on graph_nodes blocked CREATE TABLE). Long DDL
+# is still allowed once locks are acquired.
+export PGOPTIONS="-c lock_timeout=30s -c statement_timeout=10min"
+
 # Sanity check — refuse to run against localhost (would clobber dev DB).
 if echo "$DB_URL" | grep -qE '@(localhost|127\.0\.0\.1)'; then
   echo "ERROR: refusing to run against localhost (DATABASE_URL points to local DB)" >&2

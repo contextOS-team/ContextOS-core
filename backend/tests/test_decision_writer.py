@@ -6,7 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.models.decision import Decision, DecisionEvidence, DecisionVersion
+from src.models.suggestion import Suggestion
 from src.services import decision_writer as dw
+from src.services.decision_relations import RelationVerdict
 from src.services.decision_writer import (
     ConsequentialityVerdict,
     DecisionDraft,
@@ -94,7 +96,15 @@ async def test_duplicate_merges_as_evidence_instead_of_creating():
             "_find_similar_active",
             AsyncMock(return_value=[(existing_id, "Auth migration moved to Q1", 0.8)]),
         ),
-        patch.object(dw, "_confirm_duplicate", AsyncMock(return_value=True)),
+        patch.object(
+            dw,
+            "classify_decision_relation",
+            AsyncMock(
+                return_value=RelationVerdict(
+                    relation="SAME", confidence=0.9, rationale="same decision"
+                )
+            ),
+        ),
     ):
         result = await create_decision(session, WS, _draft(), actor="test")
 
@@ -202,3 +212,112 @@ async def test_change_status_rejects_invalid_status():
         await change_status(
             session, WS, uuid.uuid4(), "cancelled", reason="", actor="t"
         )
+
+
+def _verdict(relation: str, confidence: float = 0.9) -> RelationVerdict:
+    return RelationVerdict(relation=relation, confidence=confidence, rationale="r")
+
+
+@pytest.mark.asyncio
+async def test_supersedes_creates_decision_with_edge_and_proposal():
+    session = _session()
+    old_id = uuid.uuid4()
+    with (
+        patch.object(dw, "_assess_consequentiality", AsyncMock(return_value=_GOOD)),
+        patch.object(
+            dw,
+            "_find_similar_active",
+            AsyncMock(return_value=[(old_id, "Ship in Q4", 0.6)]),
+        ),
+        patch.object(
+            dw,
+            "classify_decision_relation",
+            AsyncMock(return_value=_verdict("SUPERSEDES")),
+        ),
+        patch.object(dw, "upsert_node", AsyncMock(return_value=uuid.uuid4())),
+    ):
+        result = await create_decision(session, WS, _draft(), actor="test")
+
+    assert result.outcome is WriteOutcome.CREATED
+    assert result.relation == "SUPERSEDES"
+    assert result.related_decision_id == old_id
+    edges = _added(session, dw.DecisionEdge)
+    assert len(edges) == 1
+    assert edges[0].edge_type == "supersedes"
+    assert edges[0].to_decision == old_id
+    suggestions = _added(session, Suggestion)
+    assert len(suggestions) == 1
+    assert suggestions[0].type == "decision_relation"
+    assert suggestions[0].evidence["relation"] == "SUPERSEDES"
+
+
+@pytest.mark.asyncio
+async def test_refines_creates_edge_without_proposal():
+    session = _session()
+    old_id = uuid.uuid4()
+    with (
+        patch.object(dw, "_assess_consequentiality", AsyncMock(return_value=_GOOD)),
+        patch.object(
+            dw,
+            "_find_similar_active",
+            AsyncMock(return_value=[(old_id, "Postgres everywhere", 0.5)]),
+        ),
+        patch.object(
+            dw,
+            "classify_decision_relation",
+            AsyncMock(return_value=_verdict("REFINES")),
+        ),
+        patch.object(dw, "upsert_node", AsyncMock(return_value=uuid.uuid4())),
+    ):
+        result = await create_decision(session, WS, _draft(), actor="test")
+
+    assert result.outcome is WriteOutcome.CREATED
+    assert result.relation == "REFINES"
+    assert len(_added(session, dw.DecisionEdge)) == 1
+    assert _added(session, Suggestion) == []
+
+
+@pytest.mark.asyncio
+async def test_low_confidence_relation_falls_through_to_plain_create():
+    session = _session()
+    with (
+        patch.object(dw, "_assess_consequentiality", AsyncMock(return_value=_GOOD)),
+        patch.object(
+            dw,
+            "_find_similar_active",
+            AsyncMock(return_value=[(uuid.uuid4(), "Vaguely similar", 0.4)]),
+        ),
+        patch.object(
+            dw,
+            "classify_decision_relation",
+            AsyncMock(return_value=_verdict("SUPERSEDES", confidence=0.4)),
+        ),
+        patch.object(dw, "upsert_node", AsyncMock(return_value=uuid.uuid4())),
+    ):
+        result = await create_decision(session, WS, _draft(), actor="test")
+
+    assert result.outcome is WriteOutcome.CREATED
+    assert result.relation is None
+    assert _added(session, dw.DecisionEdge) == []
+    assert _added(session, Suggestion) == []
+
+
+@pytest.mark.asyncio
+async def test_classifier_failure_treated_as_unrelated():
+    session = _session()
+    with (
+        patch.object(dw, "_assess_consequentiality", AsyncMock(return_value=_GOOD)),
+        patch.object(
+            dw,
+            "_find_similar_active",
+            AsyncMock(return_value=[(uuid.uuid4(), "Similar", 0.5)]),
+        ),
+        patch.object(
+            dw, "classify_decision_relation", AsyncMock(return_value=None)
+        ),
+        patch.object(dw, "upsert_node", AsyncMock(return_value=uuid.uuid4())),
+    ):
+        result = await create_decision(session, WS, _draft(), actor="test")
+
+    assert result.outcome is WriteOutcome.CREATED
+    assert len(_added(session, Decision)) == 1
