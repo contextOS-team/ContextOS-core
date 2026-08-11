@@ -323,6 +323,9 @@ describe('pulse components', () => {
   })
 
   it('renders Active context as an artifact card with bracket tags', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-20T12:00:00Z'))
+
     renderWithSeenProvider(
       <ActiveContext
         lastVisitedAt={new Date('2026-05-19T00:00:00Z')}

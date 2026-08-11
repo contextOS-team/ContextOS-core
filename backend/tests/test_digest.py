@@ -31,7 +31,9 @@ from src.services.digest import (
 # Stable test workspace ID
 WS_ID = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
-pytestmark = pytest.mark.asyncio
+# integration: requires a migrated local Supabase Postgres (make setup); CI runs
+# -m "not integration" until a supabase-backed CI job exists.
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 @pytest.fixture(autouse=True)
