@@ -373,6 +373,110 @@ export function ignoreMissedDecisionDuplicate(
   )
 }
 
+// --- Decision State (typed decisions API) ---
+
+export type DecisionStatus =
+  | 'active'
+  | 'superseded'
+  | 'tentative'
+  | 'reversed'
+  | 'unknown'
+
+export type DecisionFeedbackVerdict =
+  | 'correct'
+  | 'wrong'
+  | 'superseded'
+  | 'minor'
+  | 'missing_evidence'
+  | 'duplicate'
+  | 'not_important'
+
+export interface DecisionStateItem {
+  id: string
+  statement: string
+  rationale: string | null
+  status: DecisionStatus
+  valid_from: string | null
+  valid_until: string | null
+  confidence: number | null
+  consequentiality_score: number | null
+  producer: string
+  graph_node_id: string | null
+  created_at: string | null
+  evidence_count?: number
+}
+
+export interface DecisionStateDetail extends DecisionStateItem {
+  evidence: Array<{
+    id: string
+    source_type: string
+    source_id: string
+    quote: string
+    source_link: string | null
+    captured_at: string | null
+    added_by: string
+  }>
+  versions: Array<{
+    version: number
+    change_type: string
+    change_reason: string | null
+    actor: string
+    created_at: string | null
+    snapshot: Record<string, unknown>
+  }>
+  edges: Array<{
+    from_decision: string
+    to_decision: string
+    edge_type: string
+    rationale: string | null
+  }>
+}
+
+export function listDecisionState(
+  status?: DecisionStatus,
+  limit = 100
+): Promise<{ decisions: DecisionStateItem[] }> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (status) params.set('status', status)
+  return apiFetch<{ decisions: DecisionStateItem[] }>(
+    `/api/decisions?${params.toString()}`
+  )
+}
+
+export function getDecisionState(decisionId: string): Promise<DecisionStateDetail> {
+  return apiFetch<DecisionStateDetail>(
+    `/api/decisions/${encodeURIComponent(decisionId)}`
+  )
+}
+
+export function submitDecisionFeedback(
+  decisionId: string,
+  verdict: DecisionFeedbackVerdict,
+  note?: string | null
+): Promise<{ status: string; verdict: string }> {
+  return apiFetch<{ status: string; verdict: string }>(
+    `/api/decisions/${encodeURIComponent(decisionId)}/feedback`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ verdict, note: note ?? null }),
+    }
+  )
+}
+
+export function changeDecisionStatus(
+  decisionId: string,
+  status: DecisionStatus,
+  reason: string
+): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>(
+    `/api/decisions/${encodeURIComponent(decisionId)}/status`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ status, reason }),
+    }
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Integration status
 // ---------------------------------------------------------------------------

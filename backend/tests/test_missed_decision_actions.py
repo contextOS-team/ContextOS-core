@@ -17,6 +17,7 @@ from src.models.audit_log import AuditLog
 from src.models.graph_node import GraphNode
 from src.models.missed_decision import MissedDecisionCandidate, MissedDecisionScanRun
 from src.models.slack import SlackMessage
+from src.services.decision_writer import WriteOutcome, WriteResult
 from src.services.missed_decision_actions import (
     CandidateNotFoundError,
     InvalidCandidateTransitionError,
@@ -178,9 +179,11 @@ async def test_confirmed_decision_preserves_action_hint_grounding_metadata() -> 
 
     with (
         patch(
-            "src.services.missed_decision_actions.upsert_node",
-            new=AsyncMock(return_value=uuid4()),
-        ) as upsert_node,
+            "src.services.decision_writer.create_decision",
+            new=AsyncMock(
+                return_value=WriteResult(WriteOutcome.CREATED, uuid4(), uuid4())
+            ),
+        ) as create_decision,
         patch(
             "src.services.missed_decision_actions.upsert_edge",
             new=AsyncMock(),
@@ -192,7 +195,7 @@ async def test_confirmed_decision_preserves_action_hint_grounding_metadata() -> 
     ):
         await confirm_candidate(session, WORKSPACE_ID, USER_ID, candidate.id)
 
-    props = upsert_node.await_args.kwargs["properties"]
+    props = create_decision.await_args.kwargs["mirror_properties"]
     assert props["source_quote"] == candidate.source_quote
     assert props["source_link"] == candidate.source_link
     assert props["candidate_id"] == str(candidate.id)
@@ -229,8 +232,12 @@ async def test_confirm_succeeds_when_evidence_edge_write_fails() -> None:
     decision_node_id = uuid4()
     with (
         patch(
-            "src.services.missed_decision_actions.upsert_node",
-            new=AsyncMock(return_value=decision_node_id),
+            "src.services.decision_writer.create_decision",
+            new=AsyncMock(
+                return_value=WriteResult(
+                    WriteOutcome.CREATED, uuid4(), decision_node_id
+                )
+            ),
         ),
         patch(
             "src.services.missed_decision_actions.upsert_edge",
@@ -260,9 +267,13 @@ async def test_auto_confirm_candidate_records_system_action_and_audit() -> None:
 
     with (
         patch(
-            "src.services.missed_decision_actions.upsert_node",
-            new=AsyncMock(return_value=decision_node_id),
-        ) as upsert_node,
+            "src.services.decision_writer.create_decision",
+            new=AsyncMock(
+                return_value=WriteResult(
+                    WriteOutcome.CREATED, uuid4(), decision_node_id
+                )
+            ),
+        ) as create_decision,
         patch(
             "src.services.missed_decision_actions.upsert_edge",
             new=AsyncMock(return_value=uuid4()),
@@ -288,7 +299,7 @@ async def test_auto_confirm_candidate_records_system_action_and_audit() -> None:
     assert action["actor_type"] == "system"
     assert "actor_user_id" not in action
     assert action["autosave_policy_version"] == "conservative_v1"
-    props = upsert_node.await_args.kwargs["properties"]
+    props = create_decision.await_args.kwargs["mirror_properties"]
     assert props["autosave_policy_version"] == "conservative_v1"
     audit.assert_awaited_once()
     assert audit.await_args.kwargs["user_id"] is None
@@ -319,9 +330,11 @@ async def test_auto_confirm_candidate_uses_source_metadata_for_attribution() -> 
 
     with (
         patch(
-            "src.services.missed_decision_actions.upsert_node",
-            new=AsyncMock(return_value=uuid4()),
-        ) as upsert_node,
+            "src.services.decision_writer.create_decision",
+            new=AsyncMock(
+                return_value=WriteResult(WriteOutcome.CREATED, uuid4(), uuid4())
+            ),
+        ) as create_decision,
         patch(
             "src.services.missed_decision_actions.upsert_edge",
             new=AsyncMock(return_value=uuid4()),
@@ -333,7 +346,7 @@ async def test_auto_confirm_candidate_uses_source_metadata_for_attribution() -> 
     ):
         await auto_confirm_candidate(session, candidate)
 
-    props = upsert_node.await_args.kwargs["properties"]
+    props = create_decision.await_args.kwargs["mirror_properties"]
     assert props["author_name"] == "Daulet"
     assert props["person_name"] == "Daulet"
     assert props["participants"] == ["Daulet"]
@@ -868,8 +881,10 @@ def test_confirm_endpoint_returns_decision_node_id() -> None:
     session.commit = AsyncMock()
 
     with patch(
-        "src.services.missed_decision_actions.upsert_node",
-        new=AsyncMock(return_value=decision_node_id),
+        "src.services.decision_writer.create_decision",
+        new=AsyncMock(
+            return_value=WriteResult(WriteOutcome.CREATED, uuid4(), decision_node_id)
+        ),
     ), patch(
         "src.services.missed_decision_actions.upsert_edge",
         new=AsyncMock(return_value=uuid4()),

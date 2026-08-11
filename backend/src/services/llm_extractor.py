@@ -254,47 +254,63 @@ async def persist_decision(
     decision: ExtractedDecision,
     source_node_id: UUID,
     author_node_id: UUID | None = None,
-) -> UUID:
-    """Create Decision node and edges from extraction result.
+) -> UUID | None:
+    """Persist an extracted decision through the canonical decision writer.
 
-    Creates:
-    - Decision node with all extraction properties
+    The writer enforces the consequentiality gate (this producer is otherwise
+    ungated) and duplicate collapse; on CREATE it also makes the graph mirror
+    node. This function then wires the extraction-specific edges:
     - 'discussed_in' edge: Decision -> source_node_id
     - 'authored_by' edge: Decision -> author_node_id (if provided)
     - 'references' edges: Decision -> Ticket nodes (for each ticket_ref)
 
-    External ID uses hash of source_quote for deterministic dedup -- same
-    quote from the same source always maps to the same Decision node.
-
-    Args:
-        session: Async database session.
-        workspace_id: Workspace UUID.
-        decision: Extracted decision from Gemini.
-        source_node_id: UUID of the source content node (SlackThread, Meeting, etc.).
-        author_node_id: Optional UUID of the Person node who authored the decision.
-
     Returns:
-        UUID of the created/updated Decision node.
+        UUID of the Decision graph node, or None when the consequentiality
+        gate rejected the candidate (no node exists then).
     """
     from src.services import graph_ops
+    from src.services.decision_writer import (
+        DecisionDraft,
+        EvidenceRef,
+        WriteOutcome,
+        create_decision,
+    )
 
-    external_id = f"decision:{compute_content_hash(decision.source_quote)}"
+    source_node = await session.get(_get_graph_node_class(), source_node_id)
+    evidence: list[EvidenceRef] = []
+    if source_node is not None and source_node.source_type and source_node.source_id:
+        evidence.append(
+            EvidenceRef(
+                source_type=source_node.source_type,
+                source_id=source_node.source_id,
+                quote=decision.source_quote,
+            )
+        )
 
-    decision_node_id = await graph_ops.upsert_node(
-        session=session,
-        workspace_id=workspace_id,
-        entity_type="Decision",
-        external_id=external_id,
-        name=decision.description[:100],
-        properties={
+    result = await create_decision(
+        session,
+        workspace_id,
+        DecisionDraft(
+            statement=decision.description,
+            rationale=decision.rationale,
+            producer="llm_extractor",
+            evidence=evidence,
+            confidence=decision.confidence,
+        ),
+        actor="system:llm_extractor",
+        mirror_properties={
             "description": decision.description,
             "rationale": decision.rationale,
             "source_quote": decision.source_quote,
             "confidence": decision.confidence,
-            "status": "active",
             "extraction_model": "gemini-2.0-flash",
         },
     )
+    if result.outcome is WriteOutcome.REJECTED_NOT_CONSEQUENTIAL:
+        return None
+    decision_node_id = result.graph_node_id
+    if decision_node_id is None:
+        return None
 
     # Edge: Decision -> discussed_in -> Source (SlackThread/Meeting)
     await graph_ops.upsert_edge(
@@ -484,11 +500,12 @@ async def process_single_content(
 
     # Step 5: Persist decisions and blockers
     for decision in result.decisions:
-        await persist_decision(
+        node_id = await persist_decision(
             session, workspace_id, decision, source_node_id,
             author_node_id=author_node_id,
         )
-        stats["decisions"] += 1
+        if node_id is not None:
+            stats["decisions"] += 1
 
     for blocker in result.blockers:
         await persist_blocker(session, workspace_id, blocker, source_node_id)

@@ -16,7 +16,7 @@ from src.models.graph_node import GraphNode
 from src.models.missed_decision import MissedDecisionCandidate
 from src.models.suggestion import Suggestion
 from src.services.audit import log_audit_event
-from src.services.graph_ops import upsert_edge, upsert_node
+from src.services.graph_ops import upsert_edge
 from src.services.missed_decision_attribution import (
     candidate_author_name,
     candidate_people,
@@ -330,20 +330,54 @@ async def promote_candidate_to_decision(
     *,
     autosave_policy_version: str | None = None,
 ) -> UUID:
-    """Promote a confirmed candidate into source-backed Decision memory."""
-    decision_node_id = await upsert_node(
-        session=session,
-        workspace_id=candidate.workspace_id,
-        entity_type="Decision",
-        external_id=f"missed_decision:{candidate.id}",
-        name=candidate.inferred_decision,
-        source_type=candidate.source_type,
-        source_id=candidate.source_id,
-        properties=_decision_properties(
+    """Promote a confirmed candidate through the canonical decision writer.
+
+    gate_mode='report': this pipeline already gates consequentiality at
+    extraction time, and confirmation (human click or autosave policy) is the
+    authority here — the writer records its score but never rejects. Duplicate
+    collapse stays active: confirming the same decision from a second source
+    merges as evidence instead of duplicating.
+    """
+    from src.services.decision_writer import (
+        DecisionDraft,
+        EvidenceRef,
+        create_decision,
+    )
+
+    result = await create_decision(
+        session,
+        candidate.workspace_id,
+        DecisionDraft(
+            statement=candidate.inferred_decision,
+            rationale=candidate.inferred_rationale,
+            producer="missed_decision",
+            evidence=[
+                EvidenceRef(
+                    source_type=candidate.source_type,
+                    source_id=candidate.source_id,
+                    quote=candidate.source_quote,
+                    source_link=candidate.source_link,
+                )
+            ],
+            candidate_id=candidate.id,
+        ),
+        actor=(
+            f"system:autosave:{autosave_policy_version}"
+            if autosave_policy_version
+            else "user:confirm"
+        ),
+        gate_mode="report",
+        mirror_properties=_decision_properties(
             candidate,
             autosave_policy_version=autosave_policy_version,
         ),
     )
+    decision_node_id = result.graph_node_id
+    if decision_node_id is None:
+        # Merged into a decision that has no mirror node (shouldn't happen —
+        # every CREATE makes one). Fall back to the decision id so callers
+        # still record a linkage.
+        return result.decision_id
     source_node = await _find_source_graph_node(session, candidate, decision_node_id)
     if source_node is not None:
         await _best_effort_evidence_edge(

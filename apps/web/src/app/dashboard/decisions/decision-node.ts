@@ -12,6 +12,8 @@ export interface DecisionNodeView {
   date: string | null
   capturedAt: string | null
   confidence: number | null
+  decisionId: string | null
+  status: string | null
 }
 
 export function formatDecisionChannels(value: string | null): string[] {
@@ -65,6 +67,8 @@ export function toDecisionView(node: ApiNode): DecisionNodeView {
     date: asString(props.date),
     capturedAt: asString(node.created_at),
     confidence: asNumber(props.confidence),
+    decisionId: asString(props.decision_id),
+    status: asString(props.status),
   }
 }
 

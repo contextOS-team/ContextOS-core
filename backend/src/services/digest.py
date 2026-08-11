@@ -390,20 +390,27 @@ async def _wire_graph(
             except Exception:
                 logger.warning("Failed to upsert Ticket node %s", ref, exc_info=True)
 
-    # Create Decision nodes and wire person edges
+    # Create decisions through the canonical writer (consequentiality gate
+    # enforced — this producer was previously ungated) and wire person edges.
+    from src.services.decision_writer import (
+        DecisionDraft,
+        WriteOutcome,
+        create_decision,
+    )
+
     decision_node_ids: list[UUID] = []
     for decision in extraction.decisions:
-        ext_id = _decision_external_id(decision.title, today)
-        # Step 1: Create the Decision node
         try:
-            decision_node_id = await upsert_node(
+            result = await create_decision(
                 session,
-                workspace_id=workspace_id,
-                entity_type="Decision",
-                external_id=ext_id,
-                name=decision.title,
-                source_type="messages_digest",
-                properties={
+                workspace_id,
+                DecisionDraft(
+                    statement=decision.title,
+                    rationale=decision.rationale,
+                    producer="digest",
+                ),
+                actor="system:digest",
+                mirror_properties={
                     "rationale": decision.rationale,
                     "participants": decision.participants,
                     "date": today,
@@ -411,12 +418,18 @@ async def _wire_graph(
                     **({"source_channel": source_channel} if source_channel else {}),
                 },
             )
-            decision_node_ids.append(decision_node_id)
         except Exception:
             logger.warning(
                 "Failed to create Decision node: %s", decision.title, exc_info=True,
             )
             continue  # Skip edge creation if node failed
+        if (
+            result.outcome is WriteOutcome.REJECTED_NOT_CONSEQUENTIAL
+            or result.graph_node_id is None
+        ):
+            continue
+        decision_node_id = result.graph_node_id
+        decision_node_ids.append(decision_node_id)
 
         # Step 2: Wire Person → Decision edges (separate try so node isn't lost)
         for name in decision.participants:
