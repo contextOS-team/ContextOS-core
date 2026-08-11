@@ -460,10 +460,10 @@ def test_sprint_jira_returns_unsupported(
     mock_session: AsyncMock,
 ) -> None:
     """Sprint lens with Jira returns empty (not supported yet)."""
-    mock_session.execute.side_effect = [
-        _mock_membership(),
-        _mock_provider_query(["jira"]),
-    ]
+    mock_session.execute.side_effect = _LensRouter({
+        SIG_MEMBER: [_mock_membership()],
+        SIG_INTEGRATION: [_mock_provider_query(["jira"])],
+    })
 
     response = client.get("/api/graph/lens/sprint", headers=valid_auth_header)
 
@@ -575,11 +575,11 @@ def test_blocked_no_blocks_edges(
     mock_session: AsyncMock,
 ) -> None:
     """Blocked lens with no blocks edges returns empty."""
-    mock_session.execute.side_effect = [
-        _mock_membership(),
-        _mock_provider_query(["linear"]),
-        _mock_edge_result([]),  # no blocks edges
-    ]
+    mock_session.execute.side_effect = _LensRouter({
+        SIG_MEMBER: [_mock_membership()],
+        SIG_INTEGRATION: [_mock_provider_query(["linear"])],
+        SIG_EDGE: [_mock_edge_result([])],  # no blocks edges
+    })
 
     response = client.get("/api/graph/lens/blocked", headers=valid_auth_header)
 
