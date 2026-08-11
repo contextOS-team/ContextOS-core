@@ -71,6 +71,13 @@ class WriteOutcome(StrEnum):
     REJECTED_NOT_CONSEQUENTIAL = "rejected_not_consequential"
 
 
+@dataclass
+class WriteResult:
+    outcome: WriteOutcome
+    decision_id: UUID | None = None
+    graph_node_id: UUID | None = None
+
+
 class ConsequentialityVerdict(BaseModel):
     is_decision: bool
     consequential: bool
@@ -104,13 +111,13 @@ async def _assess_consequentiality(
     draft: DecisionDraft, workspace_id: UUID
 ) -> ConsequentialityVerdict | None:
     """Returns None when the LLM call fails — caller degrades to 'tentative'."""
-    client = get_llm_client()
     prompt = (
         f"Candidate decision statement:\n{draft.statement}\n\n"
         f"Rationale (may be empty):\n{draft.rationale or '-'}\n\n"
         "Judge whether this is a consequential decision."
     )
     try:
+        client = get_llm_client()
         return await client.generate_json(
             prompt,
             ConsequentialityVerdict,
@@ -130,27 +137,33 @@ async def _find_similar_active(
     ponytail: trigram similarity; switch retrieval to embeddings/hybrid_search
     when reworded duplicates start slipping past it.
     """
-    result = await session.execute(
-        sa_text(
-            """
-            SELECT id, statement, similarity(statement, :q) AS sim
-            FROM decisions
-            WHERE workspace_id = :ws
-              AND deleted_at IS NULL
-              AND status = 'active'
-              AND similarity(statement, :q) >= :min_sim
-            ORDER BY sim DESC
-            LIMIT :lim
-            """
-        ),
-        {
-            "q": statement,
-            "ws": str(workspace_id),
-            "min_sim": DUPLICATE_SIMILARITY_MIN,
-            "lim": DUPLICATE_CANDIDATES_LIMIT,
-        },
-    )
-    return [(row[0], row[1], row[2]) for row in result.fetchall()]
+    try:
+        result = await session.execute(
+            sa_text(
+                """
+                SELECT id, statement, similarity(statement, :q) AS sim
+                FROM decisions
+                WHERE workspace_id = :ws
+                  AND deleted_at IS NULL
+                  AND status = 'active'
+                  AND similarity(statement, :q) >= :min_sim
+                ORDER BY sim DESC
+                LIMIT :lim
+                """
+            ),
+            {
+                "q": statement,
+                "ws": str(workspace_id),
+                "min_sim": DUPLICATE_SIMILARITY_MIN,
+                "lim": DUPLICATE_CANDIDATES_LIMIT,
+            },
+        )
+        return [(row[0], row[1], row[2]) for row in result.fetchall()]
+    except Exception:
+        # Fail open to CREATE: a missed merge is recoverable, a lost decision
+        # is not. (Also keeps callers testable with mocked sessions.)
+        logger.exception("duplicate retrieval failed; skipping collapse")
+        return []
 
 
 async def _confirm_duplicate(
@@ -243,9 +256,14 @@ async def create_decision(
     workspace_id: UUID,
     draft: DecisionDraft,
     actor: str,
-    # 'enforce' rejects below-threshold; 'report' (imports) scores but never rejects.
+    # 'enforce' rejects below-threshold; 'report' scores but never rejects
+    # (imports and human-confirmed candidates — a human click outranks the gate).
     gate_mode: str = "enforce",
-) -> tuple[WriteOutcome, UUID | None]:
+    # Extra properties merged onto the graph mirror node. Producers pass their
+    # legacy property payloads here so the existing dashboard keeps rendering
+    # until the typed /api/decisions surface replaces it.
+    mirror_properties: dict | None = None,
+) -> WriteResult:
     """The single entry point for making a decision exist."""
     # Gate 1: consequentiality.
     verdict = await _assess_consequentiality(draft, workspace_id)
@@ -266,7 +284,7 @@ async def create_decision(
                 "decision rejected by consequentiality gate",
                 extra={"producer": draft.producer, "reason": verdict.reason},
             )
-            return WriteOutcome.REJECTED_NOT_CONSEQUENTIAL, None
+            return WriteResult(WriteOutcome.REJECTED_NOT_CONSEQUENTIAL)
 
     # Gate 2: duplicate collapse.
     similar = await _find_similar_active(session, workspace_id, draft.statement)
@@ -275,7 +293,12 @@ async def create_decision(
             await add_evidence(
                 session, workspace_id, existing_id, draft.evidence, actor
             )
-            return WriteOutcome.MERGED_AS_EVIDENCE, existing_id
+            existing = await session.get(Decision, existing_id)
+            return WriteResult(
+                WriteOutcome.MERGED_AS_EVIDENCE,
+                existing_id,
+                existing.graph_node_id if existing else None,
+            )
 
     # Create: decision row + version 1 + evidence + graph mirror node.
     decision = Decision(
@@ -325,6 +348,7 @@ async def create_decision(
         source_type=first.source_type if first else None,
         source_id=first.source_id if first else None,
         properties={
+            **(mirror_properties or {}),
             "decision_id": str(decision.id),
             "status": status,
             "producer": draft.producer,
@@ -332,7 +356,7 @@ async def create_decision(
     )
     decision.graph_node_id = node_id
     await session.flush()
-    return WriteOutcome.CREATED, decision.id
+    return WriteResult(WriteOutcome.CREATED, decision.id, node_id)
 
 
 async def change_status(

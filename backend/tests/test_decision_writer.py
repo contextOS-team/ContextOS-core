@@ -67,12 +67,10 @@ async def test_rejects_non_consequential_and_writes_nothing():
         patch.object(dw, "_assess_consequentiality", AsyncMock(return_value=_JUNK)),
         patch.object(dw, "_find_similar_active", AsyncMock(return_value=[])),
     ):
-        outcome, decision_id = await create_decision(
-            session, WS, _draft(), actor="test"
-        )
+        result = await create_decision(session, WS, _draft(), actor="test")
 
-    assert outcome is WriteOutcome.REJECTED_NOT_CONSEQUENTIAL
-    assert decision_id is None
+    assert result.outcome is WriteOutcome.REJECTED_NOT_CONSEQUENTIAL
+    assert result.decision_id is None
     session.add.assert_not_called()
 
 
@@ -98,12 +96,10 @@ async def test_duplicate_merges_as_evidence_instead_of_creating():
         ),
         patch.object(dw, "_confirm_duplicate", AsyncMock(return_value=True)),
     ):
-        outcome, decision_id = await create_decision(
-            session, WS, _draft(), actor="test"
-        )
+        result = await create_decision(session, WS, _draft(), actor="test")
 
-    assert outcome is WriteOutcome.MERGED_AS_EVIDENCE
-    assert decision_id == existing_id
+    assert result.outcome is WriteOutcome.MERGED_AS_EVIDENCE
+    assert result.decision_id == existing_id
     assert len(_added(session, DecisionEvidence)) == 1
     versions = _added(session, DecisionVersion)
     assert len(versions) == 1 and versions[0].change_type == "evidence_added"
@@ -120,11 +116,9 @@ async def test_creates_decision_with_version_evidence_and_mirror_node():
         patch.object(dw, "_find_similar_active", AsyncMock(return_value=[])),
         patch.object(dw, "upsert_node", AsyncMock(return_value=node_id)) as mock_node,
     ):
-        outcome, decision_id = await create_decision(
-            session, WS, _draft(), actor="test"
-        )
+        result = await create_decision(session, WS, _draft(), actor="test")
 
-    assert outcome is WriteOutcome.CREATED
+    assert result.outcome is WriteOutcome.CREATED
     decisions = _added(session, Decision)
     assert len(decisions) == 1
     d = decisions[0]
@@ -146,9 +140,9 @@ async def test_llm_failure_degrades_to_tentative_not_rejection():
         patch.object(dw, "_find_similar_active", AsyncMock(return_value=[])),
         patch.object(dw, "upsert_node", AsyncMock(return_value=uuid.uuid4())),
     ):
-        outcome, _ = await create_decision(session, WS, _draft(), actor="test")
+        result = await create_decision(session, WS, _draft(), actor="test")
 
-    assert outcome is WriteOutcome.CREATED
+    assert result.outcome is WriteOutcome.CREATED
     assert _added(session, Decision)[0].status == "tentative"
 
 
@@ -160,11 +154,11 @@ async def test_report_mode_stores_score_but_never_rejects():
         patch.object(dw, "_find_similar_active", AsyncMock(return_value=[])),
         patch.object(dw, "upsert_node", AsyncMock(return_value=uuid.uuid4())),
     ):
-        outcome, _ = await create_decision(
+        result = await create_decision(
             session, WS, _draft(producer="import"), actor="import", gate_mode="report"
         )
 
-    assert outcome is WriteOutcome.CREATED
+    assert result.outcome is WriteOutcome.CREATED
     d = _added(session, Decision)[0]
     assert d.consequentiality_score == 0.1
 

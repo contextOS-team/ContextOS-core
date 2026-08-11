@@ -9,6 +9,7 @@ import pytest
 
 from src.models.graph_node import GraphNode
 from src.models.missed_decision import MissedDecisionCandidate
+from src.services.decision_writer import WriteOutcome, WriteResult
 from src.services.missed_decision_actions import (
     add_candidate_as_evidence,
     confirm_candidate,
@@ -65,19 +66,25 @@ async def test_promote_candidate_to_decision_preserves_source_trail() -> None:
     decision_node_id = uuid4()
 
     with patch(
-        "src.services.missed_decision_actions.upsert_node",
-        new=AsyncMock(return_value=decision_node_id),
-    ) as upsert_node, patch(
+        "src.services.decision_writer.create_decision",
+        new=AsyncMock(
+            return_value=WriteResult(WriteOutcome.CREATED, uuid4(), decision_node_id)
+        ),
+    ) as create_decision, patch(
         "src.services.missed_decision_actions.upsert_edge",
         new=AsyncMock(return_value=uuid4()),
     ) as upsert_edge:
         result = await promote_candidate_to_decision(session, candidate)
 
     assert result == decision_node_id
-    call = upsert_node.await_args
-    assert call.kwargs["entity_type"] == "Decision"
-    assert call.kwargs["name"] == candidate.inferred_decision
-    props = call.kwargs["properties"]
+    call = create_decision.await_args
+    draft = call.args[2]
+    assert draft.statement == candidate.inferred_decision
+    assert draft.producer == "missed_decision"
+    assert draft.evidence[0].quote == candidate.source_quote
+    assert draft.evidence[0].source_link == candidate.source_link
+    assert call.kwargs["gate_mode"] == "report"
+    props = call.kwargs["mirror_properties"]
     assert props["description"] == candidate.inferred_decision
     assert props["rationale"] == candidate.inferred_rationale
     assert props["source_quote"] == candidate.source_quote
@@ -109,8 +116,10 @@ async def test_promote_candidate_edges_to_real_source_node_when_available() -> N
     decision_node_id = uuid4()
 
     with patch(
-        "src.services.missed_decision_actions.upsert_node",
-        new=AsyncMock(return_value=decision_node_id),
+        "src.services.decision_writer.create_decision",
+        new=AsyncMock(
+            return_value=WriteResult(WriteOutcome.CREATED, uuid4(), decision_node_id)
+        ),
     ), patch(
         "src.services.missed_decision_actions.upsert_edge",
         new=AsyncMock(return_value=uuid4()),
@@ -131,16 +140,16 @@ async def test_confirm_promotes_before_resolving_suggestion() -> None:
     session.flush = AsyncMock()
     calls: list[str] = []
 
-    async def fake_upsert_node(*_args, **_kwargs):
+    async def fake_create_decision(*_args, **_kwargs):
         calls.append("promote")
-        return decision_node_id
+        return WriteResult(WriteOutcome.CREATED, uuid4(), decision_node_id)
 
     async def fake_resolve(*_args, **_kwargs):
         calls.append("resolve")
 
     with patch(
-        "src.services.missed_decision_actions.upsert_node",
-        new=fake_upsert_node,
+        "src.services.decision_writer.create_decision",
+        new=fake_create_decision,
     ), patch(
         "src.services.missed_decision_actions.upsert_edge",
         new=AsyncMock(return_value=uuid4()),
@@ -211,13 +220,15 @@ async def test_action_hints_remain_inert_metadata() -> None:
     decision_node_id = uuid4()
 
     with patch(
-        "src.services.missed_decision_actions.upsert_node",
-        new=AsyncMock(return_value=decision_node_id),
-    ) as upsert_node, patch(
+        "src.services.decision_writer.create_decision",
+        new=AsyncMock(
+            return_value=WriteResult(WriteOutcome.CREATED, uuid4(), decision_node_id)
+        ),
+    ) as create_decision, patch(
         "src.services.missed_decision_actions.upsert_edge",
         new=AsyncMock(return_value=uuid4()),
     ):
         await promote_candidate_to_decision(session, candidate)
 
-    props = upsert_node.await_args.kwargs["properties"]
+    props = create_decision.await_args.kwargs["mirror_properties"]
     assert props["action_hints"] == candidate.action_hints

@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { fetchDecision } from '@/lib/api'
 import { formatRelativeTime } from '@/lib/utils'
 import { formatDecisionChannels, getDecisionPeople, toDecisionView, type DecisionNodeView } from '../decision-node'
+import { DecisionReviewPanel } from '../decision-review-panel'
 
 function isExternalSource(sourceLink: string): boolean {
   return sourceLink.startsWith('http://') || sourceLink.startsWith('https://')
@@ -160,6 +161,8 @@ export default function DecisionDetailPage() {
         </section>
 
         <aside className="space-y-3">
+          {decision.decisionId && <DecisionReviewPanel decisionId={decision.decisionId} />}
+
           {people.length > 0 && (
             <section className="dashboard-panel p-4">
               <h2 className="decision-panel-label">People</h2>

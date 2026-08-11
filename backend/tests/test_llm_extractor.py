@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from src.services.decision_writer import WriteOutcome, WriteResult
 from src.services.llm_extractor import (
     EXTRACTION_SYSTEM_PROMPT,
     ExtractedBlocker,
@@ -474,78 +475,82 @@ class TestDecisionNodeSchema:
         description, rationale, source_quote, confidence, status, extraction_model."""
         decision = _make_decision()
         mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=None)
         workspace_id = uuid4()
         source_node_id = uuid4()
         decision_node_id = uuid4()
 
         with patch(
-            "src.services.graph_ops.upsert_node",
+            "src.services.decision_writer.create_decision",
             new_callable=AsyncMock,
-            return_value=decision_node_id,
-        ) as mock_upsert_node, patch(
+            return_value=WriteResult(WriteOutcome.CREATED, uuid4(), decision_node_id),
+        ) as mock_create, patch(
             "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid4(),
         ):
-            await persist_decision(
+            result = await persist_decision(
                 mock_session, workspace_id, decision, source_node_id
             )
 
-            # Check the properties dict passed to the Decision upsert_node call
-            call_kwargs = self._find_decision_node_call(mock_upsert_node)
-            props = call_kwargs["properties"]
+            assert result == decision_node_id
+            call = mock_create.await_args
+            draft = call.args[2]
+            assert draft.statement == decision.description
+            assert draft.rationale == decision.rationale
+            assert draft.producer == "llm_extractor"
+            assert draft.confidence == decision.confidence
+            props = call.kwargs["mirror_properties"]
             assert props["description"] == decision.description
             assert props["rationale"] == decision.rationale
             assert props["source_quote"] == decision.source_quote
             assert props["confidence"] == decision.confidence
-            assert props["status"] == "active"
             assert props["extraction_model"] == "gemini-2.0-flash"
 
     @pytest.mark.asyncio
-    async def test_decision_external_id_uses_source_quote_hash(self):
-        """The external_id passed to upsert_node is 'decision:{hash_of_source_quote}'
-        for deterministic fingerprint dedup."""
-        decision = _make_decision(source_quote="we decided to use Redis for caching")
-        expected_hash = compute_content_hash("we decided to use Redis for caching")
-        expected_ext_id = f"decision:{expected_hash}"
-
+    async def test_gate_rejection_returns_none_and_creates_no_edges(self):
+        """A consequentiality-gate rejection produces no node and no edges."""
+        decision = _make_decision()
         mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=None)
         workspace_id = uuid4()
         source_node_id = uuid4()
-        decision_node_id = uuid4()
 
         with patch(
-            "src.services.graph_ops.upsert_node",
+            "src.services.decision_writer.create_decision",
             new_callable=AsyncMock,
-            return_value=decision_node_id,
-        ) as mock_upsert_node, patch(
+            return_value=WriteResult(WriteOutcome.REJECTED_NOT_CONSEQUENTIAL),
+        ), patch(
             "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
-            return_value=uuid4(),
-        ):
-            await persist_decision(
+        ) as mock_upsert_edge:
+            result = await persist_decision(
                 mock_session, workspace_id, decision, source_node_id
             )
 
-            call_kwargs = self._find_decision_node_call(mock_upsert_node)
-            assert call_kwargs["external_id"] == expected_ext_id
+            assert result is None
+            mock_upsert_edge.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_decision_name_truncated(self):
-        """The name passed to upsert_node is description truncated to 100 chars."""
-        long_desc = "A" * 200
-        decision = _make_decision(description=long_desc)
+    async def test_evidence_ref_frozen_from_source_node(self):
+        """When the source node points at a raw row, the draft carries an
+        evidence ref with the quote frozen at extraction time."""
+        decision = _make_decision()
+        raw_source_id = uuid4()
+        source_node = MagicMock()
+        source_node.source_type = "slack_message"
+        source_node.source_id = raw_source_id
 
         mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=source_node)
         workspace_id = uuid4()
         source_node_id = uuid4()
-        decision_node_id = uuid4()
 
         with patch(
-            "src.services.graph_ops.upsert_node",
+            "src.services.decision_writer.create_decision",
             new_callable=AsyncMock,
-            return_value=decision_node_id,
-        ) as mock_upsert_node, patch(
+            return_value=WriteResult(WriteOutcome.CREATED, uuid4(), uuid4()),
+        ) as mock_create, patch(
             "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
             return_value=uuid4(),
@@ -554,9 +559,11 @@ class TestDecisionNodeSchema:
                 mock_session, workspace_id, decision, source_node_id
             )
 
-            call_kwargs = self._find_decision_node_call(mock_upsert_node)
-            assert len(call_kwargs["name"]) == 100
-            assert call_kwargs["name"] == long_desc[:100]
+            draft = mock_create.await_args.args[2]
+            assert len(draft.evidence) == 1
+            assert draft.evidence[0].source_type == "slack_message"
+            assert draft.evidence[0].source_id == raw_source_id
+            assert draft.evidence[0].quote == decision.source_quote
 
 
 # ============================================================
@@ -577,10 +584,11 @@ class TestDecisionEdges:
         source_node_id = uuid4()
         decision_node_id = uuid4()
 
+        mock_session.get = AsyncMock(return_value=None)
         with patch(
-            "src.services.graph_ops.upsert_node",
+            "src.services.decision_writer.create_decision",
             new_callable=AsyncMock,
-            return_value=decision_node_id,
+            return_value=WriteResult(WriteOutcome.CREATED, uuid4(), decision_node_id),
         ), patch(
             "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
@@ -612,10 +620,11 @@ class TestDecisionEdges:
         author_node_id = uuid4()
         decision_node_id = uuid4()
 
+        mock_session.get = AsyncMock(return_value=None)
         with patch(
-            "src.services.graph_ops.upsert_node",
+            "src.services.decision_writer.create_decision",
             new_callable=AsyncMock,
-            return_value=decision_node_id,
+            return_value=WriteResult(WriteOutcome.CREATED, uuid4(), decision_node_id),
         ), patch(
             "src.services.graph_ops.upsert_edge",
             new_callable=AsyncMock,
