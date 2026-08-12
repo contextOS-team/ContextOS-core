@@ -1,7 +1,7 @@
 {
   "name": "@contextos/mcp-server",
   "version": "0.1.0",
-  "description": "MCP server for ContextOS — provides dev ticket context to AI coding assistants",
+  "description": "MCP server for ContextOS \u2014 provides dev ticket context to AI coding assistants",
   "type": "module",
   "bin": {
     "contextos-mcp": "./dist/index.js"
@@ -20,5 +20,10 @@
     "typescript": "^5.7.0",
     "tsx": "^4.19.0",
     "@types/node": "^22.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "hono": ">=4.12.34"
+    }
   }
 }
