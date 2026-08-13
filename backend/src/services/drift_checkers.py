@@ -96,12 +96,14 @@ async def _retrieve_artifacts(
     artifacts = artifacts[:RETRIEVAL_LIMIT]
 
     if artifacts:
+        # asyncpg binds a Python list to a uuid[] parameter directly; a Postgres
+        # array literal string ('{uuid,...}') raises DataError here.
         content_rows = await session.execute(
             sa_text(
                 "SELECT id, left(search_content, 600) FROM embeddings"
                 " WHERE id = ANY(CAST(:ids AS uuid[]))"
             ),
-            {"ids": "{" + ",".join(a["embedding_id"] for a in artifacts) + "}"},
+            {"ids": [a["embedding_id"] for a in artifacts]},
         )
         content_by_id = {str(r[0]): r[1] for r in content_rows.fetchall()}
         for a in artifacts:
