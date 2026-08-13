@@ -108,9 +108,18 @@ async def infer_expected_consequences(
 
 
 async def decisions_needing_inference(
-    session: AsyncSession, workspace_id: UUID, limit: int = 50
+    session: AsyncSession,
+    workspace_id: UUID,
+    limit: int = 50,
+    min_consequentiality: float = 0.6,
 ) -> list[Decision]:
-    """Active decisions with no expected consequences yet."""
+    """Active, consequential decisions with no expected consequences yet.
+
+    The consequentiality floor keeps low-scoring junk ("schedule a meeting")
+    out of the drift pipeline — inferring/checking those wastes LLM calls and
+    can only produce noise. NULL scores (never gated) are included so they get
+    a first look.
+    """
     stmt = (
         select(Decision)
         .outerjoin(
@@ -122,6 +131,8 @@ async def decisions_needing_inference(
             Decision.status == "active",
             Decision.deleted_at.is_(None),  # type: ignore[union-attr]
             ExpectedConsequence.id.is_(None),  # type: ignore[union-attr]
+            (Decision.consequentiality_score.is_(None))  # type: ignore[union-attr]
+            | (Decision.consequentiality_score >= min_consequentiality),
         )
         .limit(limit)
     )

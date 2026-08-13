@@ -73,7 +73,13 @@ async def scan_workspace_for_drift(
     max_decisions: int = 50,
     max_checks: int = 100,
 ) -> DriftScanStats:
-    """One full drift pass over a workspace. Commits are the caller's job."""
+    """One full drift pass over a workspace.
+
+    Commits incrementally (after each decision's inference and after each
+    surfaced drift) so a scan is never one long transaction — important
+    because LLM calls leave the DB session idle-in-transaction, and the prod
+    role kills sessions idle > 2 min.
+    """
     stats = DriftScanStats()
 
     # Stage 1: impact inference for active decisions that lack consequences.
@@ -81,6 +87,7 @@ async def scan_workspace_for_drift(
         session, workspace_id, limit=max_decisions
     ):
         rows = await infer_expected_consequences(session, decision)
+        await session.commit()
         stats.decisions_inferred += 1
         stats.consequences_created += len(rows)
 
@@ -103,6 +110,7 @@ async def scan_workspace_for_drift(
     )
     for consequence, decision in pending:
         observation = await check_consequence(session, decision, consequence)
+        await session.commit()
         if observation is None:
             continue
         stats.consequences_checked += 1
@@ -133,7 +141,7 @@ async def scan_workspace_for_drift(
         suggestion = _publish_drift_suggestion(session, drift, decision)
         await session.flush()
         drift.suggestion_id = suggestion.id
+        await session.commit()
         stats.drifts_created += 1
 
-    await session.flush()
     return stats

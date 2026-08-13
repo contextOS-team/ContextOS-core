@@ -408,6 +408,37 @@ async def _missed_decision_backstop_due(
     )
 
 
+async def _run_drift_backstop(workspace_ids: list[UUID]) -> None:
+    """Run a bounded drift pass per workspace.
+
+    Inference and checking are idempotent (only decisions without consequences
+    / pending consequences are processed), so once a workspace is caught up
+    this does nothing but a cheap query — safe to call every cycle.
+
+    ponytail: bounded in-process scan, one workspace at a time. Move to a Redis
+    Streams worker (gitlab_sync_worker pattern) when scan volume across many
+    pilot workspaces makes the 15-min loop a bottleneck.
+    """
+    from src.services.drift_engine import scan_workspace_for_drift
+
+    for workspace_id in workspace_ids:
+        try:
+            async with async_session() as session:
+                stats = await scan_workspace_for_drift(
+                    session, workspace_id, max_decisions=10, max_checks=20
+                )
+            if stats.drifts_created or stats.decisions_inferred:
+                logger.info(
+                    "Drift scan ws=%s inferred=%d checked=%d drifts=%d",
+                    workspace_id,
+                    stats.decisions_inferred,
+                    stats.consequences_checked,
+                    stats.drifts_created,
+                )
+        except Exception:
+            logger.exception("Drift scan failed for workspace %s", workspace_id)
+
+
 async def _enqueue_missed_decision_backstop(
     workspaces_by_provider: dict[Provider, list[UUID]],
     *,
@@ -495,6 +526,13 @@ async def _run_polling_cycle() -> None:
             await _drain_missed_decision_scans()
         except Exception:
             logger.exception("Missed-decision scan drain failed")
+
+        # Drift backstop: infer/check newly-confirmed decisions against reality.
+        # Self-limiting — does nothing once a workspace is caught up.
+        drift_workspaces = {
+            ws for wss in workspaces_by_provider.values() for ws in wss
+        }
+        await _run_drift_backstop(list(drift_workspaces))
 
         # Notion reconciliation
         notion_workspaces = workspaces_by_provider.get(Provider.NOTION, [])
