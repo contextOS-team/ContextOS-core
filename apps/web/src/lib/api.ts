@@ -477,6 +477,72 @@ export function changeDecisionStatus(
   )
 }
 
+// --- Decision Drift ---
+
+export type DriftLifecycle =
+  | 'detected'
+  | 'confirmed'
+  | 'owner_assigned'
+  | 'resolved'
+  | 'verified'
+
+export type DriftResolutionType =
+  | 'jira_updated'
+  | 'linear_updated'
+  | 'doc_updated'
+  | 'implementation_changed'
+  | 'work_cancelled'
+  | 'timeline_changed'
+  | 'intentional_exception'
+  | 'other'
+
+export interface DriftItem {
+  id: string
+  decision_id: string
+  decision_statement: string | null
+  summary: string
+  severity: 'high' | 'medium' | 'low'
+  lifecycle: DriftLifecycle
+  feedback_verdict: string | null
+  resolution_type: DriftResolutionType | null
+  detected_at: string | null
+  resolved_at: string | null
+  verifier_verdict: Record<string, unknown>
+}
+
+export function listDrifts(
+  state: 'open' | 'resolved' | 'all' = 'open'
+): Promise<{ drifts: DriftItem[] }> {
+  return apiFetch<{ drifts: DriftItem[] }>(`/api/drifts?state=${state}`)
+}
+
+export function confirmDrift(driftId: string): Promise<DriftItem> {
+  return apiFetch<DriftItem>(`/api/drifts/${encodeURIComponent(driftId)}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
+export function dismissDrift(
+  driftId: string,
+  verdict = 'false_positive'
+): Promise<DriftItem> {
+  return apiFetch<DriftItem>(`/api/drifts/${encodeURIComponent(driftId)}/dismiss`, {
+    method: 'POST',
+    body: JSON.stringify({ feedback_verdict: verdict }),
+  })
+}
+
+export function resolveDrift(
+  driftId: string,
+  resolutionType: DriftResolutionType
+): Promise<DriftItem> {
+  return apiFetch<DriftItem>(`/api/drifts/${encodeURIComponent(driftId)}/resolve`, {
+    method: 'POST',
+    body: JSON.stringify({ resolution_type: resolutionType }),
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Integration status
 // ---------------------------------------------------------------------------

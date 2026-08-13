@@ -20,6 +20,7 @@ from src.routers.auth import router as auth_router
 from src.routers.context import router as context_router
 from src.routers.dashboard import router as dashboard_router
 from src.routers.decisions import router as decisions_router
+from src.routers.drifts import router as drifts_router
 from src.routers.fathom import router as fathom_router
 from src.routers.github import router as github_router
 from src.routers.gitlab import router as gitlab_router
@@ -255,6 +256,7 @@ app.include_router(slack_router)
 app.include_router(suggestions_router)
 app.include_router(missed_decisions_router)
 app.include_router(decisions_router)
+app.include_router(drifts_router)
 app.include_router(fathom_router)
 app.include_router(github_router)
 app.include_router(gitlab_router)

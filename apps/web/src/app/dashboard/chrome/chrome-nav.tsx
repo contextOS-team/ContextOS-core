@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Activity, Gavel, Home, Layers, Network } from 'lucide-react'
+import { Activity, Gavel, Home, Layers, Network, TriangleAlert } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { AvatarPuck } from './avatar-puck'
 import { SyncIndicator } from './sync-indicator'
@@ -17,6 +17,7 @@ interface ChromeNavProps {
 const navItems = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/dashboard/decisions', label: 'Decisions', icon: Gavel },
+  { href: '/dashboard/drifts', label: 'Drift', icon: TriangleAlert },
   { href: '/dashboard/context', label: 'Context', icon: Layers },
   { href: '/dashboard/graph', label: 'Graph', icon: Network },
   { href: '/dashboard/activity', label: 'Activity', icon: Activity },
