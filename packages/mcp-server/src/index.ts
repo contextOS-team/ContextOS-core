@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * ContextOS MCP Server
+ * ContextOS MCP Server — Decision Context for AI coding agents.
  *
- * Provides dev ticket context to AI coding assistants via the Model Context Protocol.
- * Acts as a thin HTTP client calling the ContextOS backend API.
+ * An agent-neutral surface (Claude Code, Cursor, Codex, …): before acting, an
+ * agent can ask what the organization has actually decided. Thin stdio client
+ * over the read-only Decision Context API (/api/v1), authenticated by a
+ * workspace-scoped API key (cos_…).
  *
  * Tools:
- * - get_feature_context: Full context page for a ticket
- * - search_context: Semantic search across all content
- * - get_related_work: Related PRs, Slack threads, meetings for a ticket
+ * - get_current_decisions: active decisions, optionally ranked by relevance
+ * - get_decision:          one decision with evidence + supersession chain
+ * - get_constraints:       decisions most relevant to a proposed action
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -18,10 +20,40 @@ import { z } from "zod";
 const API_BASE_URL = process.env.CONTEXTOS_API_URL || "http://localhost:8000";
 const API_KEY = process.env.CONTEXTOS_API_KEY || "";
 
-async function apiRequest(
+interface DecisionData {
+  id: string;
+  statement: string;
+  rationale: string | null;
+  status: string;
+  valid_from: string | null;
+  valid_until: string | null;
+  confidence: number | null;
+  consequentiality_score: number | null;
+  verification: string;
+  evidence_count?: number;
+  evidence?: Array<{
+    source_type: string;
+    source_id: string;
+    quote: string;
+    source_link: string | null;
+    captured_at: string | null;
+  }>;
+  relations?: Array<{
+    from_decision: string;
+    to_decision: string;
+    edge_type: string;
+  }>;
+}
+
+interface Envelope<T> {
+  schema_version: string;
+  data: T;
+}
+
+async function apiRequest<T>(
   path: string,
   params?: Record<string, string>
-): Promise<unknown> {
+): Promise<T> {
   const url = new URL(path, API_BASE_URL);
   if (params) {
     for (const [key, value] of Object.entries(params)) {
@@ -40,147 +72,70 @@ async function apiRequest(
 
   if (!response.ok) {
     const body = await response.text();
+    if (response.status === 401) {
+      throw new Error(
+        "Unauthorized — set CONTEXTOS_API_KEY to a valid workspace API key (cos_…)."
+      );
+    }
     throw new Error(`API request failed (${response.status}): ${body}`);
   }
 
-  return response.json();
+  return (await response.json()) as T;
 }
 
-// Create server
-const server = new McpServer({
-  name: "contextos",
-  version: "0.1.0",
-});
-
-// Tool: get_feature_context
-server.tool(
-  "get_feature_context",
-  "Get the full context page for a Linear ticket. Returns a synthesized summary of all related information including background, decisions, requirements, related work, and open questions.",
-  {
-    ticket_identifier: z
-      .string()
-      .describe(
-        'The Linear ticket identifier (e.g., "CON-16", "ENG-42")'
-      ),
-  },
-  async ({ ticket_identifier }) => {
-    try {
-      const data = await apiRequest(
-        `/api/context/${encodeURIComponent(ticket_identifier)}`
-      );
-      const page = data as Record<string, unknown>;
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: [
-              `# ${page.title || ticket_identifier}`,
-              "",
-              page.content || "No context page available. Trigger generation first.",
-              "",
-              `---`,
-              `**Status:** ${page.status || "unknown"}`,
-              `**Generated:** ${page.generated_at || "never"}`,
-              `**Model:** ${page.generation_model || "unknown"}`,
-              `**Tokens used:** ${page.generation_tokens_used || 0}`,
-            ].join("\n"),
-          },
-        ],
-      };
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown error";
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Failed to get context for ${ticket_identifier}: ${message}\n\nYou may need to trigger generation first with the backend API.`,
-          },
-        ],
-        isError: true,
-      };
-    }
+function formatDecision(d: DecisionData): string {
+  const lines = [
+    `### ${d.statement}`,
+    `- status: **${d.status}** · verification: ${d.verification}`,
+  ];
+  if (d.rationale) lines.push(`- rationale: ${d.rationale}`);
+  if (d.consequentiality_score != null) {
+    lines.push(`- consequentiality: ${d.consequentiality_score.toFixed(2)}`);
   }
-);
+  if (d.valid_from) lines.push(`- decided: ${d.valid_from}`);
+  if (d.evidence_count != null) lines.push(`- evidence: ${d.evidence_count} source(s)`);
+  lines.push(`- id: ${d.id}`);
+  return lines.join("\n");
+}
 
-// Tool: search_context
+const server = new McpServer({ name: "contextos", version: "0.1.0" });
+
 server.tool(
-  "search_context",
-  "Search across all workspace content (tickets, PRs, Slack messages, meetings) using semantic similarity. Returns ranked results with relevance scores.",
+  "get_current_decisions",
+  "List the engineering organization's currently active decisions. Optionally pass a query to rank by relevance. Use this before starting work to understand what has already been decided.",
   {
     query: z
       .string()
-      .describe("Natural language search query"),
-    source_type: z
-      .string()
       .optional()
-      .describe(
-        "Optional filter by source type: linear_ticket, slack_message, github_pull_request, meeting_transcript, etc."
-      ),
-    limit: z
-      .number()
-      .optional()
-      .default(10)
-      .describe("Maximum number of results (1-50, default 10)"),
+      .describe("Optional topic to rank decisions by relevance"),
+    limit: z.number().optional().default(25).describe("Max decisions (1-200)"),
   },
-  async ({ query, source_type, limit }) => {
+  async ({ query, limit }) => {
     try {
-      const params: Record<string, string> = {
-        q: query,
-        limit: String(limit || 10),
-      };
-      if (source_type) {
-        params.source_type = source_type;
-      }
-
-      const data = await apiRequest("/api/context/", params);
-      const response = data as {
-        query: string;
-        results: Array<{
-          source_type: string;
-          source_id: string;
-          similarity: number;
-          metadata?: Record<string, unknown>;
-        }>;
-        count: number;
-      };
-
-      if (response.count === 0) {
+      const params: Record<string, string> = { limit: String(limit || 25) };
+      if (query) params.query = query;
+      const { data } = await apiRequest<
+        Envelope<{ decisions: DecisionData[]; count: number }>
+      >("/api/v1/decisions", params);
+      if (data.count === 0) {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: `No results found for: "${query}"`,
-            },
-          ],
+          content: [{ type: "text" as const, text: "No active decisions found." }],
         };
       }
-
-      const lines = [`## Search Results for: "${query}"\n`];
-      for (const result of response.results) {
-        lines.push(
-          `- **[${result.source_type}]** ${result.source_id} (similarity: ${result.similarity})`
-        );
-      }
-      lines.push(`\n_${response.count} results found_`);
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: lines.join("\n"),
-          },
-        ],
-      };
+      const text = [
+        `## ${data.count} active decision(s)`,
+        "",
+        ...data.decisions.map(formatDecision),
+      ].join("\n\n");
+      return { content: [{ type: "text" as const, text }] };
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown error";
       return {
         content: [
           {
             type: "text" as const,
-            text: `Search failed: ${message}`,
+            text: `Failed to fetch decisions: ${
+              error instanceof Error ? error.message : "unknown error"
+            }`,
           },
         ],
         isError: true,
@@ -189,82 +144,43 @@ server.tool(
   }
 );
 
-// Tool: get_related_work
 server.tool(
-  "get_related_work",
-  "Get related work items for a Linear ticket — PRs, Slack threads, meeting discussions, and other linked content. Useful for understanding the broader context around a feature or bug.",
+  "get_decision",
+  "Get one decision in full: its evidence (exact source quotes) and any supersession/contradiction relationships to other decisions.",
   {
-    ticket_identifier: z
-      .string()
-      .describe(
-        'The Linear ticket identifier (e.g., "CON-16", "ENG-42")'
-      ),
+    decision_id: z.string().describe("The decision id (uuid)"),
   },
-  async ({ ticket_identifier }) => {
+  async ({ decision_id }) => {
     try {
-      const data = await apiRequest(
-        `/api/context/${encodeURIComponent(ticket_identifier)}`
+      const { data } = await apiRequest<Envelope<DecisionData>>(
+        `/api/v1/decisions/${encodeURIComponent(decision_id)}`
       );
-      const page = data as {
-        sources: Array<{
-          type: string;
-          id: string;
-          title: string;
-          relevance_score: number;
-        }>;
-        title?: string;
-      };
-
-      const sources = page.sources || [];
-      if (sources.length === 0) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `No related work found for ${ticket_identifier}. The context page may not have been generated yet.`,
-            },
-          ],
-        };
-      }
-
-      const lines = [
-        `## Related Work for ${ticket_identifier}\n`,
-      ];
-
-      // Group by source type
-      const grouped: Record<string, typeof sources> = {};
-      for (const source of sources) {
-        const key = source.type || "other";
-        if (!grouped[key]) grouped[key] = [];
-        grouped[key].push(source);
-      }
-
-      for (const [type, items] of Object.entries(grouped)) {
-        lines.push(`### ${type.replace(/_/g, " ").toUpperCase()}`);
-        for (const item of items) {
+      const lines = [formatDecision(data)];
+      if (data.evidence?.length) {
+        lines.push("", "**Evidence:**");
+        for (const e of data.evidence) {
           lines.push(
-            `- **${item.title}** (relevance: ${item.relevance_score})`
+            `- [${e.source_type}] “${e.quote}”${
+              e.source_link ? ` (${e.source_link})` : ""
+            }`
           );
         }
-        lines.push("");
       }
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: lines.join("\n"),
-          },
-        ],
-      };
+      if (data.relations?.length) {
+        lines.push("", "**Relationships:**");
+        for (const r of data.relations) {
+          lines.push(`- ${r.edge_type}: ${r.from_decision} → ${r.to_decision}`);
+        }
+      }
+      return { content: [{ type: "text" as const, text: lines.join("\n") }] };
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unknown error";
       return {
         content: [
           {
             type: "text" as const,
-            text: `Failed to get related work for ${ticket_identifier}: ${message}`,
+            text: `Failed to fetch decision: ${
+              error instanceof Error ? error.message : "unknown error"
+            }`,
           },
         ],
         isError: true,
@@ -273,14 +189,60 @@ server.tool(
   }
 );
 
-// Start server
+server.tool(
+  "get_constraints",
+  "Given a proposed action (e.g. 'add MongoDB support', 'change the auth flow'), return the active decisions most relevant to it — the constraints to weigh before proceeding. Advisory only; not a verdict.",
+  {
+    action: z.string().describe("The proposed action, in plain language"),
+    limit: z.number().optional().default(10).describe("Max constraints (1-50)"),
+  },
+  async ({ action, limit }) => {
+    try {
+      const { data } = await apiRequest<
+        Envelope<{ action: string; constraints: DecisionData[]; count: number }>
+      >("/api/v1/constraints", { action, limit: String(limit || 10) });
+      if (data.count === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `No active decisions appear relevant to: "${action}". No known conflict — but ContextOS may not have complete coverage.`,
+            },
+          ],
+        };
+      }
+      const text = [
+        `## ${data.count} relevant decision(s) for: "${action}"`,
+        "Review these before proceeding — they may constrain this action.",
+        "",
+        ...data.constraints.map(formatDecision),
+      ].join("\n\n");
+      return { content: [{ type: "text" as const, text }] };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Failed to fetch constraints: ${
+              error instanceof Error ? error.message : "unknown error"
+            }`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("ContextOS MCP server running on stdio");
+  // eslint-disable-next-line no-console
+  console.error("ContextOS Decision Context MCP server running on stdio");
 }
 
 main().catch((error) => {
+  // eslint-disable-next-line no-console
   console.error("Fatal error:", error);
   process.exit(1);
 });
