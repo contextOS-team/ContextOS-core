@@ -4,6 +4,8 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, text
+from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.types import String
 from sqlmodel import Field, SQLModel
 
 
@@ -23,6 +25,20 @@ class ApiKey(SQLModel, table=True):
     key_prefix: str = Field(nullable=False)
     key_hash: str = Field(nullable=False)
     salt: str | None = Field(default=None)
+    scopes: list[str] = Field(
+        default_factory=lambda: ["decisions:read"],
+        sa_column=Column(
+            ARRAY(String),
+            nullable=False,
+            server_default=text("ARRAY['decisions:read']"),
+        ),
+    )
+    expires_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    last_used_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
     revoked_at: datetime | None = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
