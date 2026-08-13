@@ -406,6 +406,12 @@ async def process_missed_decision_source_window(
             and next_action.write_policy == WRITE_POLICY_AUTO_INTERNAL
         ):
             await auto_confirm_candidate(session, candidate)
+            # Commit immediately: auto_confirm writes a graph_nodes mirror via
+            # upsert_node, and the next loop iteration makes embedding/LLM calls
+            # that would otherwise leave that INSERT idle-in-transaction. The
+            # prod role kills sessions idle > 2 min, which was intermittently
+            # blocking deploy migrations behind the held lock.
+            await session.commit()
             auto_saved += 1
         elif (
             actionability.status == ACTIONABILITY_ACTIONABLE
