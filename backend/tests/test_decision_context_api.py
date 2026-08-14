@@ -98,3 +98,34 @@ def test_constraints_returns_relevant_active_decisions():
     body = resp.json()
     assert body["data"]["action"] == "publish npm"
     assert len(body["data"]["constraints"]) == 1
+
+
+def test_check_action_returns_verdict_envelope():
+    from unittest.mock import patch
+
+    from src.services.decision_guard import CheckActionResult
+
+    session = MagicMock()
+    result = CheckActionResult(
+        status="potential_conflict",
+        rationale="adds a datastore",
+        confidence=0.9,
+        decisions=[{"id": str(uuid.uuid4()), "statement": "Postgres only"}],
+    )
+    with patch(
+        "src.routers.decision_context_api.guard_check_action",
+        AsyncMock(return_value=result),
+    ):
+        resp = _client(session).post(
+            "/api/v1/check_action", json={"proposed_action": "add MongoDB"}
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["schema_version"] == "1"
+    assert body["data"]["status"] == "potential_conflict"
+
+
+def test_check_action_requires_non_empty_action():
+    session = MagicMock()
+    resp = _client(session).post("/api/v1/check_action", json={"proposed_action": "  "})
+    assert resp.status_code == 422

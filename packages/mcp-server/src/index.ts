@@ -62,24 +62,33 @@ async function apiRequest<T>(
       }
     }
   }
+  return httpJson<T>(url.toString(), { method: "GET" });
+}
 
-  const response = await fetch(url.toString(), {
+async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  return httpJson<T>(new URL(path, API_BASE_URL).toString(), {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+async function httpJson<T>(url: string, init: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
     headers: {
       Authorization: `Bearer ${API_KEY}`,
       "Content-Type": "application/json",
     },
   });
-
   if (!response.ok) {
-    const body = await response.text();
+    const bodyText = await response.text();
     if (response.status === 401) {
       throw new Error(
         "Unauthorized — set CONTEXTOS_API_KEY to a valid workspace API key (cos_…)."
       );
     }
-    throw new Error(`API request failed (${response.status}): ${body}`);
+    throw new Error(`API request failed (${response.status}): ${bodyText}`);
   }
-
   return (await response.json()) as T;
 }
 
@@ -224,6 +233,51 @@ server.tool(
           {
             type: "text" as const,
             text: `Failed to fetch constraints: ${
+              error instanceof Error ? error.message : "unknown error"
+            }`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.tool(
+  "check_action",
+  "Advisory Decision Guard: given a proposed action, get whether it conflicts with active decisions — no_known_conflict / potential_conflict / requires_review — plus the decisions that drove the verdict. Advisory only; never blocks, never 'allowed'. Call this before making a change that might contradict an existing decision.",
+  {
+    proposed_action: z
+      .string()
+      .describe("The action about to be taken, in plain language"),
+  },
+  async ({ proposed_action }) => {
+    try {
+      const { data } = await apiPost<
+        Envelope<{
+          status: string;
+          rationale: string;
+          confidence: number;
+          decisions: Array<{ statement: string; has_exception?: boolean }>;
+        }>
+      >("/api/v1/check_action", { proposed_action });
+      const lines = [
+        `## Guard: **${data.status}** (confidence ${data.confidence.toFixed(2)})`,
+        data.rationale,
+      ];
+      if (data.decisions.length) {
+        lines.push("", "Decisions considered:");
+        for (const d of data.decisions) {
+          lines.push(`- ${d.statement}${d.has_exception ? " (has exception)" : ""}`);
+        }
+      }
+      return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `check_action failed: ${
               error instanceof Error ? error.message : "unknown error"
             }`,
           },

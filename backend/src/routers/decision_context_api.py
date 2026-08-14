@@ -13,12 +13,14 @@ Envelope: {"schema_version": "1", "data": ...}
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api_auth import MachinePrincipal, require_scope
 from src.db import get_session
 from src.models.decision import Decision, DecisionEdge, DecisionEvidence
+from src.services.decision_guard import check_action as guard_check_action
 
 router = APIRouter(prefix="/api/v1", tags=["decision-context-api"])
 
@@ -180,3 +182,32 @@ async def get_constraints(
             "count": len(rows),
         }
     )
+
+
+class CheckActionRequest(BaseModel):
+    proposed_action: str
+    scope: dict | None = None
+
+
+@router.post("/check_action")
+async def check_action(
+    body: CheckActionRequest,
+    principal: MachinePrincipal = Depends(require_scope(_READ)),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Advisory Decision Guard. Given a proposed action, returns one of
+    no_known_conflict / potential_conflict / requires_review plus the decisions
+    that drove it. Advisory only — never a gate, never 'allowed'."""
+    if not body.proposed_action.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="proposed_action is required",
+        )
+    result = await guard_check_action(
+        session,
+        principal.workspace_id,
+        body.proposed_action,
+        actor=f"apikey:{principal.key_id}",
+        scope=body.scope,
+    )
+    return _envelope(result.model_dump())

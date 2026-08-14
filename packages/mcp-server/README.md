@@ -13,7 +13,8 @@ authenticated by a workspace-scoped API key.
 |---|---|
 | `get_current_decisions` | Active decisions, optionally ranked by a query |
 | `get_decision` | One decision with evidence quotes + supersession chain |
-| `get_constraints` | Decisions most relevant to a proposed action (advisory) |
+| `get_constraints` | Decisions most relevant to a proposed action |
+| `check_action` | Advisory Guard verdict for a proposed action (no_known_conflict / potential_conflict / requires_review) |
 
 ## Setup
 

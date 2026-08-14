@@ -35,6 +35,26 @@ class DriftScanStats:
     kill_reasons: list[str] = field(default_factory=list)
 
 
+async def _has_active_exception(
+    session: AsyncSession, workspace_id: UUID, decision_id: UUID
+) -> bool:
+    from sqlalchemy import text as sa_text
+
+    result = await session.execute(
+        sa_text(
+            """
+            SELECT 1 FROM decision_exceptions
+            WHERE workspace_id = :ws AND decision_id = :d
+              AND deleted_at IS NULL
+              AND (expires_at IS NULL OR expires_at > now())
+            LIMIT 1
+            """
+        ),
+        {"ws": str(workspace_id), "d": str(decision_id)},
+    )
+    return result.first() is not None
+
+
 async def _has_open_drift(session: AsyncSession, consequence_id: UUID) -> bool:
     stmt = select(Drift.id).where(
         Drift.expected_consequence_id == consequence_id,
@@ -115,6 +135,10 @@ async def scan_workspace_for_drift(
             continue
         stats.consequences_checked += 1
         if observation.consistent is not False:
+            continue
+        # A sanctioned exception on this decision means the deviation is
+        # intentional — not drift. (Guard consults the same table.)
+        if await _has_active_exception(session, workspace_id, decision.id):
             continue
         stats.inconsistent_found += 1
 
