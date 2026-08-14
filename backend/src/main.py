@@ -32,6 +32,7 @@ from src.routers.jira import router as jira_router
 from src.routers.linear import router as linear_router
 from src.routers.missed_decisions import router as missed_decisions_router
 from src.routers.notion import router as notion_router
+from src.routers.reports import router as reports_router
 from src.routers.slack import router as slack_router
 from src.routers.suggestions import router as suggestions_router
 from src.routers.telegram import router as telegram_router
@@ -257,6 +258,7 @@ app.include_router(slack_router)
 app.include_router(suggestions_router)
 app.include_router(missed_decisions_router)
 app.include_router(decisions_router)
+app.include_router(reports_router)
 app.include_router(drifts_router)
 app.include_router(decision_context_api_router)
 app.include_router(fathom_router)
