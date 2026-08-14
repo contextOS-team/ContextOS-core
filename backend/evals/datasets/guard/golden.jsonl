@@ -1,0 +1,8 @@
+{"id":"postgres-only-vs-mongodb","action":"Add MongoDB as a secondary datastore for the analytics service","active_decisions":["PostgreSQL is the only production datastore; no new database engines without an RFC"],"expected_status":"potential_conflict"}
+{"id":"postgres-only-vs-optimize","action":"Optimize a slow Postgres query on the orders table","active_decisions":["PostgreSQL is the only production datastore; no new database engines without an RFC"],"expected_status":"no_known_conflict"}
+{"id":"deferred-auth-vs-continue","action":"Continue implementing the self-hosted auth migration this sprint","active_decisions":["Self-hosted auth migration is deferred until Q1"],"expected_status":"potential_conflict"}
+{"id":"deferred-auth-vs-unrelated","action":"Fix a typo in the billing page footer","active_decisions":["Self-hosted auth migration is deferred until Q1"],"expected_status":"no_known_conflict"}
+{"id":"no-decisions","action":"Rename an internal helper function","active_decisions":[],"expected_status":"no_known_conflict"}
+{"id":"react-vs-vue","action":"Build the new settings page in Vue","active_decisions":["Frontend is standardized on React; no other UI frameworks"],"expected_status":"potential_conflict"}
+{"id":"react-vs-react-lib","action":"Add a React date-picker component to the settings page","active_decisions":["Frontend is standardized on React; no other UI frameworks"],"expected_status":"no_known_conflict"}
+{"id":"ambiguous-scope","action":"Migrate the caching layer","active_decisions":["Redis is the approved cache; evaluate alternatives only with sign-off from the platform lead"],"expected_status":"requires_review"}

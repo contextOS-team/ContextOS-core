@@ -153,6 +153,7 @@ async def test_engine_creates_drift_for_surviving_finding():
     )
     with (
         patch.object(de, "decisions_needing_inference", AsyncMock(return_value=[])),
+        patch.object(de, "_has_active_exception", AsyncMock(return_value=False)),
         patch.object(
             de,
             "check_consequence",
@@ -191,6 +192,7 @@ async def test_engine_verifier_kill_creates_no_drift():
     )
     with (
         patch.object(de, "decisions_needing_inference", AsyncMock(return_value=[])),
+        patch.object(de, "_has_active_exception", AsyncMock(return_value=False)),
         patch.object(
             de,
             "check_consequence",
@@ -242,6 +244,7 @@ async def test_engine_unverifiable_finding_is_dropped_not_surfaced():
 
     with (
         patch.object(de, "decisions_needing_inference", AsyncMock(return_value=[])),
+        patch.object(de, "_has_active_exception", AsyncMock(return_value=False)),
         patch.object(
             de,
             "check_consequence",
