@@ -543,6 +543,29 @@ export function resolveDrift(
   })
 }
 
+// --- Coverage Audit report ---
+
+export interface CoverageReport {
+  window_days: number
+  decisions: {
+    reconstructed: number
+    aligned: number
+    uncertain: number
+    drifted: number
+  }
+  drifts: {
+    total: number
+    confirmed: number
+    resolved: number
+    actioned: number
+    resolution_breakdown: Record<string, number>
+  }
+}
+
+export function getCoverageReport(windowDays = 90): Promise<CoverageReport> {
+  return apiFetch<CoverageReport>(`/api/reports/coverage?window_days=${windowDays}`)
+}
+
 // ---------------------------------------------------------------------------
 // Integration status
 // ---------------------------------------------------------------------------

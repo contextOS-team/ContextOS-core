@@ -1407,3 +1407,43 @@ textarea:focus-visible {
 .drift-resolve-select {
   cursor: pointer;
 }
+
+/* Coverage Audit report */
+.cov-hero-num {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--foreground);
+}
+.cov-window-btn {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.3rem 0.6rem;
+  border-radius: 0.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--muted-foreground);
+  transition: color 0.15s, border-color 0.15s;
+}
+.cov-window-btn--active {
+  color: var(--foreground);
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.06);
+}
+.cov-seg { height: 100%; }
+.cov-seg + .cov-seg { margin-left: 2px; }
+.cov-seg--good { background: #4ade80; }
+.cov-seg--warning { background: #fcd34d; }
+.cov-seg--serious { background: #f87171; }
+.cov-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+.cov-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 9999px;
+  display: inline-block;
+}
