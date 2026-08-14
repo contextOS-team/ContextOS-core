@@ -23,9 +23,11 @@ CREATE INDEX IF NOT EXISTS idx_decision_exceptions_workspace_decision
   ON public.decision_exceptions (workspace_id, decision_id)
   WHERE deleted_at IS NULL;
 
+-- Index active (non-deleted) exceptions by workspace. Expiry is filtered at
+-- query time (now() is not IMMUTABLE, so it cannot live in an index predicate).
 CREATE INDEX IF NOT EXISTS idx_decision_exceptions_active
-  ON public.decision_exceptions (workspace_id)
-  WHERE deleted_at IS NULL AND (expires_at IS NULL OR expires_at > now());
+  ON public.decision_exceptions (workspace_id, expires_at)
+  WHERE deleted_at IS NULL;
 
 -- Every advisory verdict, persisted as the offline eval set input.
 CREATE TABLE IF NOT EXISTS public.guard_verdicts (
